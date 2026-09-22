@@ -55,12 +55,20 @@ See `docs/dev/architecture.md`. Packages are named `@orchestrator/<folder>`. Lib
 
 Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid.
 
+| Variable | `pnpm dev` | `docker/compose.yml` |
+|---|---|---|
+| `DATABASE_URL` | used | ignored: the stack uses its own PostgreSQL |
+| `ORCHESTRATOR_SECRET_KEY` | required | required: Compose stops with a message if it is empty |
+| `PUBLIC_URL` | required | defaults to `http://localhost:<PORT>` |
+| `PORT` | port the server listens on, default 8080 | port published on the host, default 8080 |
+| `LOG_LEVEL` | default `info` | default `info` |
+
 ## Running the server
 
 ```sh
 docker compose -f docker/compose.dev.yml up -d --wait postgres
 pnpm dev
-curl http://localhost:8080/health
+curl http://localhost:8080/health   # or the PORT set in .env
 ```
 
 The server applies pending database migrations at start. Logs are JSON (ADR 0013).
@@ -71,7 +79,7 @@ The server applies pending database migrations at start. Logs are JSON (ADR 0013
 docker compose -f docker/compose.yml up --build
 ```
 
-Builds the server image (`docker/Dockerfile`) and starts it with its own PostgreSQL on `http://localhost:8080` (ADR 0014). The Compose project is `orchestrator`; data is in the `orchestrator_postgres-data` volume. The development database can run at the same time: it uses another project and volume.
+Builds the server image (`docker/Dockerfile`) and starts it with its own PostgreSQL on `http://localhost:8080`, or the port set by `PORT` (ADR 0014). The root `.env` is required. `docker/compose.yml` only loads it and includes `docker/services.yml`, which declares the containers: Compose otherwise reads `.env` from the compose file's folder only. A variable set in the shell takes precedence over `.env`, for example `PORT=9000 docker compose -f docker/compose.yml up`. The Compose project is `orchestrator`; data is in the `orchestrator_postgres-data` volume. The development database can run at the same time: it uses another project and volume.
 
 ## Database migrations
 

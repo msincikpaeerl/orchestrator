@@ -28,7 +28,7 @@ Only the server's dependencies exist so far; the others are added with the code 
 
 ## Deployment
 
-`docker/Dockerfile` and `docker/compose.yml`: see [09, section 7](../specs/09-architecture-and-deployment.md#7-deployment) and ADR 0014.
+`docker/Dockerfile`, `docker/compose.yml` and `docker/services.yml`: see [09, section 7](../specs/09-architecture-and-deployment.md#7-deployment) and ADR 0014.
 
 ## Decisions
 

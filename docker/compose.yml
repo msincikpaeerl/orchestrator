@@ -1,55 +1,10 @@
 # The Orchestrator: server and PostgreSQL (09, section 7.1; ADR 0014).
 # Start from the repository root: docker compose -f docker/compose.yml up --build
-# Configuration: the .env file at the repository root (copy .env.example).
+# Configuration: the .env file at the repository root (copy .env.example); it is required.
+# Values set in the shell take precedence over .env.
 name: orchestrator
 
-services:
-  orchestrator:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    env_file:
-      - path: ../.env
-        required: false
-    environment:
-      # Inside the Compose network; these replace any value from .env.
-      DATABASE_URL: postgres://orchestrator:orchestrator@postgres:5432/orchestrator
-      PORT: 8080
-    ports:
-      - 8080:8080
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
-      interval: 30s
-      timeout: 5s
-      start_period: 30s
-      start_interval: 2s
-      retries: 3
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:18.6-alpine3.24
-    environment:
-      # Not published outside the Compose network.
-      POSTGRES_USER: orchestrator
-      POSTGRES_PASSWORD: orchestrator
-      POSTGRES_DB: orchestrator
-    volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: [CMD-SHELL, pg_isready -U orchestrator -d orchestrator]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      start_interval: 2s
-      retries: 5
-    restart: unless-stopped
-
-volumes:
-  postgres-data:
+include:
+  # Compose reads .env from this file's folder only; include is how it reads the root .env.
+  - path: services.yml
+    env_file: ../.env
