@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_VERSION } from './index.js';
+import { PROTOCOL_VERSION } from './version.js';
 
 describe('PROTOCOL_VERSION', () => {
   it('is a positive integer', () => {
