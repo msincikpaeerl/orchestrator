@@ -17,9 +17,11 @@ Every session working on lot 0 follows these rules.
    - `pnpm verify` passes locally;
    - `docs/dev/` and `CLAUDE.md` are up to date (CLAUDE.md stays under 150 lines);
    - user-facing changes are documented in `docs/user/` and have a `CHANGELOG.md` entry;
-   - the step is checked off in this plan.
-7. **Git.** Commit with Conventional Commits, small commits with one purpose each. **Never push.**
-8. **Summary.** End the session with a short summary: what was done, what the owner should check, what comes next.
+   - the step is checked off in this plan;
+   - the work is committed on the step's branch, ready for a pull request.
+7. **Git.** From step B on, work on a branch named `lot0/<step letter>-<short-name>` (for example `lot0/b-server-db`) created from `main`. Commit with Conventional Commits, small commits with one purpose each. **Never commit to `main` directly and never push.** The owner pushes the branch, opens the pull request, checks CI and merges.
+8. **Nothing outside the repository.** Never install software or change anything outside this repository: no global installs, no files in the owner's home folder, no PATH or shell changes. Docker images pulled by the repository's own compose files and tests are fine. If a tool or version is missing, stop and tell the owner what to install.
+9. **Summary.** End the session with a short summary: what was done, what the owner should check, what comes next, and that the branch is ready for a pull request.
 
 ## Steps
 

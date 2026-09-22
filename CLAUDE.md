@@ -94,10 +94,12 @@ docker/          Dockerfile and compose files
 
 - Conventional Commits: `feat(scheduler): resume paused runs first`. Reference the ticket number when there is one.
 - Small commits with one purpose each.
+- Work on a branch (`lot0/<step letter>-<short-name>` during lot 0) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
 - Never commit secrets. Environment variables are listed in `.env.example`.
 
 ## Never
 
+- Never install software or change anything outside this repository (no global installs, no files in the home folder, no PATH or shell changes). If a tool is missing, stop and say what to install.
 - Never use `--dangerously-skip-permissions` in daemon code.
 - Never send Claude credentials or the GitHub token to agents, the browser or logs.
 - Never let an agent-facing path push to GitHub; only the daemon pushes, and only ticket branches.

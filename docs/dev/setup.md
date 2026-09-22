@@ -4,7 +4,7 @@
 
 | Tool | Version | Notes |
 |---|---|---|
-| Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. Without root access, unpack the official tarball in your home folder and put its `bin/` first on `PATH`. |
+| Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. |
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
 | Git | any recent | |
 | Docker | Engine or Docker Desktop with Compose | Needed from lot 0 step B (database, full stack). |
