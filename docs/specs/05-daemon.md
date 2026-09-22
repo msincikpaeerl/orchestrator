@@ -29,6 +29,7 @@ Non-responsibilities: deciding what runs next (scheduler), validating ticket tra
 | Service | systemd user service, installed by `orchestrator-daemon install-service`. On WSL, systemd must be enabled; the user documentation explains how, and how to keep WSL running. |
 | Dependencies checked at start | `git`, `tmux`, `claude` (version within the supported range). Missing or unsupported dependencies are reported to the server and the machine is marked unusable. |
 | Recommended setup | A dedicated Linux user for the daemon, so agents cannot read the owner's personal files. |
+| Claude configuration | Agents run with a **dedicated Claude Code configuration folder** (`CLAUDE_CONFIG_DIR=~/.orchestrator/claude-config`), separate from the owner's personal one. It holds its own login (same subscription), trust entries and transcripts. See ADR 0002. |
 
 The daemon runs as a normal process on the host, **not in Docker**, because it needs the machine's Claude Code login, tmux and toolchains (for example the Android SDK).
 
@@ -38,8 +39,9 @@ The daemon runs as a normal process on the host, **not in Docker**, because it n
 
 1. In the UI, the owner creates a machine and selects the Claude account it uses. The server shows a one-time enrollment command containing the server URL and an enrollment code valid for 15 minutes.
 2. On the machine, the owner runs `orchestrator-daemon enroll <server-url> <code>`.
-3. The daemon exchanges the code for a long-lived **machine token**, stored in `~/.orchestrator/config.json` with permissions `600`.
-4. The machine appears online in the UI. The owner can revoke the token at any time, which disconnects the daemon.
+3. The owner runs `orchestrator-daemon login`, which opens Claude Code once with the dedicated configuration folder so they can log in to their Claude account. This is the only interactive step, done once per machine.
+4. The daemon exchanges the code for a long-lived **machine token**, stored in `~/.orchestrator/config.json` with permissions `600`.
+5. The machine appears online in the UI. The owner can revoke the token at any time, which disconnects the daemon.
 
 ### 3.2 Connection
 
@@ -88,6 +90,7 @@ Everything the daemon manages lives under `~/.orchestrator/`:
 ```
 ~/.orchestrator/
   config.json              machine token, server URL
+  claude-config/           dedicated CLAUDE_CONFIG_DIR: login, trust entries, transcripts
   repos/<owner>/<name>.git bare clone, one per repository, reused across runs
   worktrees/<run-id>/      Git worktree for a run
   runs/<run-id>/           run files (never inside the worktree)
@@ -99,25 +102,40 @@ Everything the daemon manages lives under `~/.orchestrator/`:
 
 Preparation steps:
 
-1. Fetch the bare clone (clone it first if missing).
+1. Fetch the bare clone. If it is missing, clone it and **register workspace trust** for the bare clone's path in the dedicated configuration (section 4.2.1).
 2. Create the worktree: on the ticket branch if it exists on the remote, otherwise a new branch from the base branch.
 3. For `review` runs, the worktree is checked out on the ticket branch, read-only by convention and by allowlist (no write tools).
 4. For planning runs on a new project (no repository yet), the worktree is an empty scratch directory.
 
 Run files are written outside the worktree so they never end up in a commit.
 
+#### 4.2.1 Workspace trust
+
+Claude Code asks the user to trust a folder the first time it starts there, and does not load hooks or project settings before that. The spike (ADR 0002) showed that:
+
+- trust is recorded per exact path, never inherited from a parent folder;
+- for a Git worktree, trust is recorded on the **main repository** path, which here is the bare clone;
+- a trust entry written in advance in the configuration file is honoured: the session starts with no dialog.
+
+So the daemon registers trust **once per repository**, when it first clones it, by writing `projects["<bare clone path>"].hasTrustDialogAccepted = true` in the dedicated configuration file. The write is atomic (temporary file then rename) and done while no session of the dedicated configuration is starting. Every worktree of that repository then starts without a dialog. The owner's personal configuration is never modified.
+
+If a session does not report `SessionStart` within 30 seconds, the run fails with reason `crash` and the event says "workspace trust or startup dialog suspected", so a change in Claude Code's behaviour is visible immediately.
+
 ### 4.3 Starting Claude Code
 
-The daemon creates a detached tmux session named `orch-<run-id>`, with the worktree as working directory, and starts Claude Code in interactive mode with:
+The daemon creates a detached tmux session named `orch-<run-id>`, with the worktree as working directory and `CLAUDE_CONFIG_DIR` set to the dedicated configuration, and starts Claude Code in interactive mode. The command is built as an argument list, never as a shell string, in this order:
 
-- the model from the profile;
-- the agent instructions appended to the default system prompt (`system-prompt.md`), keeping Claude Code's own tool guidance;
-- the run's `settings.json` (hooks and permissions);
-- the run's `mcp.json`;
-- the initial prompt as the first message;
-- the session id to resume, for `run.resume`.
+| Argument | Purpose |
+|---|---|
+| `--mcp-config <run mcp.json>` | MCP relay for the run. First, because this option accepts several values. |
+| `--settings <run settings.json>` | Hooks and allowlist for the run. |
+| `--permission-mode dontAsk` | Refuse anything not allowed instead of prompting (section 4.6). |
+| `--model <profile model>` | Model from the agent profile. |
+| `--append-system-prompt <text>` | Common rules and role instructions, added to Claude Code's own system prompt. There is no file variant; the text is passed directly. |
+| `--resume <session id>` | Only for `run.resume`. The session keeps its id. |
+| `--` then the first message | Always after `--`, so the message can never be read as an option value. |
 
-The exact flags are pinned in the daemon code per supported Claude Code version range and covered by the spike in section 9.
+These arguments were validated on Claude Code 2.1.280 (ADR 0002). The daemon declares the supported version range and refuses unsupported versions (section 2).
 
 ### 4.4 Sending input
 
@@ -129,8 +147,8 @@ The daemon never reads the terminal display. It uses three sources.
 
 | Source | What it gives | Use |
 |---|---|---|
-| **Hooks** | Session start (session id, transcript path), each tool use before and after, notifications, end of each turn (`Stop`), session end. | Run state machine, permission enforcement, idle detection. |
-| **Transcript file** | The session's JSONL transcript written by Claude Code. | Live logs in the UI, activity summary, quota-limit detection. |
+| **Hooks** | `SessionStart` (session id, transcript path, `startup` or `resume`), `PreToolUse` and `PostToolUse`, `Notification` (including "waiting for your input" when idle), `Stop` at the end of **each turn** with the agent's last message (`last_assistant_message`), `SessionEnd`. | Run state machine, permission enforcement, idle detection, turn outcome without reading the transcript. |
+| **Transcript file** | The session's JSONL transcript, under the dedicated configuration folder. Includes `cost-state` entries with an equivalent cost and token usage per model. | Live logs in the UI, usage estimate per run (07), quota-limit detection. |
 | **MCP calls** | Explicit declarations by the agent: progress, question, submission, giving up. | Ticket state, run outcome. |
 
 Hooks are small commands declared in the run's `settings.json`. Each hook sends its input to the daemon through `daemon.sock` and returns the daemon's answer to Claude Code.
@@ -139,11 +157,17 @@ Hooks are small commands declared in the run's `settings.json`. Each hook sends 
 
 Interactive permission prompts would block unattended runs. They are avoided as follows:
 
-- The profile's allowlist is applied in the run's settings, so allowed tools run without prompts.
-- A `PreToolUse` hook checks every tool call against the profile. Calls outside the allowlist are **denied with a reason** that the agent can read, instead of prompting.
-- Bash commands are matched against allow patterns (for example `npm test`, `./gradlew *`, `git add/commit/status/diff/log`). `git push` and anything reaching GitHub is always denied: pushing is done by the daemon.
-- `--dangerously-skip-permissions` is never used.
-- If a permission prompt still appears (detected through a notification hook), the daemon denies it through the same path when possible, otherwise records the event and stops the run with reason `crash`, so the problem is visible and fixable in the profile.
+Two layers, validated by the spike (ADR 0002):
+
+1. **`dontAsk` permission mode with the profile's allowlist.** Allowed tools run without prompts. Anything else is refused automatically with a message telling the agent to stop and explain; the common rules tell the agent to use `ticket.ask` in that case (06, section 6).
+2. **`PreToolUse` hook for rules an allowlist cannot express.** It denies, with a reason the agent reads:
+   - `git push` and any command reaching GitHub (pushing is done by the daemon);
+   - any change to the repository's `.claude/` folder, because a trusted workspace loads its project settings, and an agent could otherwise grant itself permissions for the next run;
+   - any access outside the worktree and the run folder.
+
+Allowlist rules are strict: a prefix rule such as `Bash(echo:*)` does not cover the same command with a redirection. Every default profile's allowlist is therefore checked by a smoke test (03, section 6). The `ToolSearch` tool must always be allowed, because Claude Code uses it to load MCP tools.
+
+`--dangerously-skip-permissions` and the `bypassPermissions` mode are never used.
 
 ### 4.7 Run state machine on the daemon
 
@@ -167,7 +191,9 @@ stateDiagram-v2
 
 ### 4.8 End of turn without a decision
 
-When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge**: a short message reminding the agent that it must continue working or use one of these three tools. After the maximum number of nudges (default 3, configurable), the run ends with reason `agent_gave_up`.
+When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge**: a short message reminding the agent that it must continue working or use one of these three tools. After the maximum number of nudges (default 2, configurable), the run ends with reason `agent_gave_up`.
+
+Nudges are expensive: every turn reloads the whole session context (about 70,000 tokens from cache in the spike, even for a one-line answer). The instructions are designed so that agents rarely need one.
 
 ### 4.9 Submission and pushing
 
@@ -187,7 +213,7 @@ When the Claude account reaches its usage limit, Claude Code reports it in the s
 2. closes the tmux session but keeps the worktree and the Claude session id;
 3. waits for `run.resume` from the scheduler (see 07).
 
-The exact detection signal is covered by the spike in section 9.
+The exact signal is not known yet (section 9). Until it is, the daemon also treats as a possible quota limit a turn that ends with an API error and no tool use; the scheduler then applies the fallback delay (07, section 5.2).
 
 ### 4.11 Ending and cleanup
 
@@ -203,7 +229,7 @@ The exact detection signal is covered by the spike in section 9.
 | Maximum run duration | 90 minutes of working time | Run stopped with reason `timeout`. Time spent waiting for CI, the owner or the quota does not count. |
 | Idle timeout | 10 minutes | A session that is neither working nor waiting for something receives a nudge, then is stopped. |
 | Waiting run lifetime | 30 minutes | See 04, section 6. |
-| Maximum nudges per run | 3 | See section 4.8. |
+| Maximum nudges per run | 2 | See section 4.8. |
 
 All are configurable, following the rules in 04, section 8.
 
@@ -218,7 +244,7 @@ All are configurable, following the rules in 04, section 8.
 
 | Asset | Protection |
 |---|---|
-| Claude login | Stays on the machine. Never read or sent by the daemon. |
+| Claude login | Stays on the machine, in the dedicated configuration folder. Never read or sent by the daemon. Separate from the owner's personal Claude Code login. |
 | Machine token | File with permissions `600`, revocable from the UI. |
 | GitHub credential | Held by the server. Sent to the daemon only for a push, used in memory through a Git credential helper, never written to disk and never visible to the agent. |
 | Run token | Scoped to one run: one project, one ticket or request, the profile's MCP permissions. Expires when the run ends. |
@@ -232,6 +258,7 @@ In v1 the GitHub credential is the owner's fine-grained personal token. A GitHub
 | Command | Purpose |
 |---|---|
 | `orchestrator-daemon enroll <url> <code>` | Register the machine. |
+| `orchestrator-daemon login` | Open Claude Code once with the dedicated configuration folder to log in. |
 | `orchestrator-daemon start` | Run in the foreground. |
 | `orchestrator-daemon install-service` | Install and enable the systemd user service. |
 | `orchestrator-daemon status` | Connection state, versions, capabilities, live runs. |
@@ -239,15 +266,20 @@ In v1 the GitHub credential is the owner's fine-grained personal token. A GitHub
 | `orchestrator-daemon doctor` | Check dependencies, Claude Code login, WSL configuration. |
 | `orchestrator-daemon mcp --run <id>` | MCP server started by Claude Code for a run (internal). |
 
-## 9. Spike before implementation
+## 9. Spike results
 
-The following points depend on Claude Code's behaviour and must be verified on the supported version before the daemon is built. The results are recorded as an ADR.
+The Claude Code behaviour this document relies on was verified on version 2.1.280 by the scripts in `tools/spike/`. Results and decisions are recorded in [ADR 0002](../adr/0002-claude-code-interactive-runner.md).
 
-1. Exact flags to start an interactive session with appended instructions, run settings, MCP config, model, initial prompt and session resume.
-2. Hook payloads: session id and transcript path at start, `Stop` timing, `PreToolUse` deny with a reason, notification on permission prompts.
-3. Pasting multi-line input through tmux into an idle session, reliably.
-4. The signal written when the usage limit is reached, and whether the reset time can be read.
-5. Transcript format stability for the fields the daemon reads.
-6. Behaviour of an idle interactive session left open for 30 minutes.
-7. Whether recent Claude Code features for background sessions could replace part of the tmux layer without changing how usage is billed.
-8. The folder trust dialog shown when Claude Code starts in a new directory: whether it appears for each new worktree, whether hooks run before it, and how to pre-approve worktree folders.
+| Point | Status |
+|---|---|
+| Launch arguments, appended instructions, settings, MCP config, resume | Validated |
+| Hook payloads, `Stop` per turn, `PreToolUse` deny with reason | Validated |
+| Multi-line input through tmux | Validated |
+| Usage-limit signal | **Open**: to capture with `claude-code-spike.sh --scan-limit` the next time the limit is reached |
+| Transcript structure | Recorded; to compare when upgrading Claude Code |
+| Idle session for 30 minutes | Validated |
+| Remote Control | Not suitable to replace the daemon; possible later for taking over a session from a phone |
+| Workspace trust | Solved by a dedicated configuration folder and trust registered per repository |
+| `dontAsk` permission mode | Validated |
+
+The spike scripts are kept as a compatibility check: they are run again before raising the supported Claude Code version.

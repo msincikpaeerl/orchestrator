@@ -82,7 +82,9 @@ A Pro subscription does not expose its remaining usage. The Orchestrator cannot 
 
 ### 5.4 Daily working-time budget
 
-An optional limit on the total working time of runs per day and per account (default: none). Working time counts only periods where the agent is actually working (05, section 5), not waiting. When the budget is exhausted, no new run starts until the next day; the active run finishes.
+An optional daily limit per account (default: none), expressed either as working time or as **estimated usage**. Estimated usage is the equivalent cost that Claude Code records in each session transcript (`cost-state`, see ADR 0002). It does not convert exactly into Pro quota, but it measures what runs really consume, including the fixed cost of each turn, far better than time. Working time counts only periods where the agent is actually working (05, section 5), not waiting. When the budget is exhausted, no new run starts until the next day; the active run finishes.
+
+Estimated usage is also shown per run, per ticket and per day, so the owner can learn what a typical ticket costs and set the budget accordingly.
 
 This is the owner's main lever to keep quota for personal use.
 
@@ -99,7 +101,7 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 
 ## 7. What the owner sees
 
-- Per account: state, next window, time until reset when limited, working time today against the budget, runs today.
+- Per account: state, next window, time until reset when limited, working time and estimated usage today against the budget, runs today.
 - The queue: next candidates in order, with the reason when something cannot start ("waiting for window at 00:00", "no machine with android-sdk", "blocked by WEB-3").
 - Per run: time working, time waiting (owner, CI, quota).
 
@@ -108,7 +110,7 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 | Setting | Default | Scope |
 |---|---|---|
 | Schedule windows | None (always) | Account |
-| Daily working-time budget | None | Account |
+| Daily budget (working time or estimated usage) | None | Account |
 | Behaviour at window end | Finish current run | Account |
 | Fallback delay when reset time is unknown | 1 hour, doubling up to 4 hours | Global |
 | Dispatch acknowledgement timeout | 60 seconds | Global |

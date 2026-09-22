@@ -155,7 +155,8 @@ The server builds the first message of each run. It always states:
 - that the MCP tools are the only way to communicate with the owner and the system;
 - that a run must end with exactly one of `ticket.submit`, `ticket.ask` (then wait), or `ticket.give_up` (or `plan.propose` / review tools for planning and review runs);
 - that pushing to GitHub is done by the system, and the agent only commits;
-- where to find the project conventions (CLAUDE.md, docs, ADRs).
+- where to find the project conventions (CLAUDE.md, docs, ADRs);
+- that when a tool or command is refused, the agent must not look for a workaround: it uses `ticket.ask` to explain what it needs and why, or `ticket.give_up` if the ticket cannot be done without it.
 
 The template for each purpose is versioned with the application and documented in [03 — Agents](03-agents.md).
 

@@ -12,6 +12,7 @@ This document defines the six default agent profiles, how their instructions are
 3. **Instructions are short.** Role instructions stay under about 60 lines. Project-specific knowledge lives in the repository (CLAUDE.md, docs, ADRs), not in the profile, so every agent reads the same source of truth.
 4. **Sonnet by default.** All default profiles use Sonnet. The owner can switch a profile to another model; the UI warns about the quota impact.
 5. **Profiles are versioned.** Every run records the profile version it used, so behaviour changes can be traced.
+6. **Few turns.** Every turn reloads the whole session context, so each one has a fixed cost even when it does little (ADR 0002). Instructions ask agents to work through the ticket in as few turns as possible and to end each run explicitly.
 
 ## 2. Default agents
 
@@ -166,4 +167,6 @@ Agent instructions are part of the harness:
 
 - they live in the Orchestrator's repository, under `agents/`, one file per default profile;
 - changes go through a pull request like code;
-- each default profile has a small set of reference tickets used to check its behaviour after a change (a manual evaluation checklist in v1).
+- each default profile has a small set of reference tickets used to check its behaviour after a change (a manual evaluation checklist in v1);
+- each default profile's tool allowlist has an automated **smoke test**: a scripted session asks the agent to run the commands its role needs (install, build, test, lint, commit) and checks that none is refused and that forbidden ones are. Allowlist rules are strict (05, section 4.6), so this test runs whenever an allowlist changes;
+- every allowlist includes `ToolSearch`, which Claude Code needs to load MCP tools.

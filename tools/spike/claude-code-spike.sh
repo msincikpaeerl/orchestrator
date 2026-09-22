@@ -46,7 +46,9 @@ done
 
 WORK="$(mktemp -d "$HOME/orch-spike.XXXXXX")"
 LOG="$WORK/logs"
-PROJ="$WORK/project"
+# Runs happen in a subfolder of a root trusted once, as the daemon will do with its worktrees folder.
+TRUST_ROOT="$WORK/trusted-root"
+PROJ="$TRUST_ROOT/project"
 mkdir -p "$LOG" "$PROJ"
 echo "Working folder: $WORK"
 
@@ -55,10 +57,15 @@ echo "# spike" > "$PROJ/README.md"
 git -C "$PROJ" -c user.name=spike -c user.email=spike@localhost add -A
 git -C "$PROJ" -c user.name=spike -c user.email=spike@localhost commit -qm init
 
-claude --version > "$LOG/claude-version.txt" 2>&1
-claude --help > "$LOG/help.txt" 2>&1
+echo "Collecting Claude Code version and help outputs..."
+timeout 20 claude --version < /dev/null > "$LOG/claude-version.txt" 2>&1
+timeout 20 claude --help < /dev/null > "$LOG/help.txt" 2>&1
 for sub in daemon logs remote-control; do
-  claude "$sub" --help > "$LOG/help-$sub.txt" 2>&1 || true
+  # Some subcommands may start a process instead of printing help: never let them block the spike.
+  echo "  claude $sub --help"
+  timeout 15 claude "$sub" --help < /dev/null > "$LOG/help-$sub.txt" 2>&1
+  rc=$?
+  (( rc == 124 )) && echo "(timed out after 15 s: this subcommand does not print help and exit)" >> "$LOG/help-$sub.txt"
 done
 
 # Hook: logs every event; denies any Bash command containing "git push" (check 2)
@@ -177,16 +184,27 @@ wait_for() { # event, target count, timeout, tmux session
   while (( waited < timeout )); do
     (( $(count "$event") >= target )) && return 0
     local pane
-    pane="$(tmux capture-pane -p -t "$session" 2>/dev/null || true)"
-    if (( TRUST_SEEN == 0 )) && grep -qi 'trust' <<< "$pane"; then
+    pane="$(tmux capture-pane -p -S -200 -t "$session" 2>/dev/null || true)"
+    if grep -q 'CLAUDE-EXITED' <<< "$pane"; then
+      echo "$pane" > "$LOG/pane-exited.txt"
+      echo "  Claude Code exited. Screen saved to logs/pane-exited.txt"
+      return 1
+    fi
+    if (( TRUST_SEEN == 0 )) && grep -q 'Yes, I trust this folder' <<< "$pane"; then
       TRUST_SEEN=1
-      echo "$pane" > "$LOG/pane-trust-dialog.txt"
-      echo "  Trust dialog detected, accepting it."
-      tmux send-keys -t "$session" Enter
+      echo "$pane" > "$LOG/pane-trust-dialog-subfolder.txt"
+      echo "  Trust dialog shown again in the subfolder: accepting it to continue the other checks."
+      accept_trust "$session"
     fi
     sleep 2; waited=$((waited + 2))
   done
   return 1
+}
+
+accept_trust() { # session — the default option is "No, exit": move down to "Yes" first
+  tmux send-keys -t "$1" Down
+  sleep 1
+  tmux send-keys -t "$1" Enter
 }
 
 paste_text() { # session, file
@@ -197,14 +215,38 @@ paste_text() { # session, file
 }
 
 S1="orch-spike-$$"
-COMMON="claude --model '$MODEL' $SP_ARGS --settings '$WORK/settings.json' --mcp-config '$WORK/mcp.json'"
+# --mcp-config accepts several values: it is placed first so the next option ends its list,
+# and the prompt is always passed after "--" so it can never be read as an option value.
+COMMON="claude --mcp-config '$WORK/mcp.json' --model '$MODEL' $SP_ARGS --settings '$WORK/settings.json'"
 
 # ---------------------------------------------------------------------------
-# Turn 1: launch flags, MCP, allowlist, hook deny (checks 1, 2, 8)
+# Check 8: trust the root folder once, then see if subfolders inherit it
+# ---------------------------------------------------------------------------
+echo "Trust: opening Claude Code once in the root folder to accept the trust dialog..."
+S0="orch-spike-trust-$$"
+ROOT_TRUST_SHOWN=0
+tmux new-session -d -s "$S0" -x 220 -y 50 -c "$TRUST_ROOT" "claude; echo CLAUDE-EXITED; sleep 600"
+for _ in $(seq 1 15); do
+  sleep 2
+  pane="$(tmux capture-pane -p -t "$S0" 2>/dev/null || true)"
+  if grep -q 'Yes, I trust this folder' <<< "$pane"; then
+    ROOT_TRUST_SHOWN=1
+    echo "$pane" > "$LOG/pane-trust-dialog-root.txt"
+    accept_trust "$S0"
+    sleep 5
+    tmux capture-pane -p -t "$S0" > "$LOG/pane-after-root-trust.txt" 2>/dev/null
+    break
+  fi
+done
+tmux kill-session -t "$S0" 2>/dev/null
+(( ROOT_TRUST_SHOWN )) && echo "  Root folder trusted." || echo "  No trust dialog in the root folder (see logs)."
+
+# ---------------------------------------------------------------------------
+# Turn 1: launch flags, MCP, allowlist, hook deny (checks 1, 2)
 # ---------------------------------------------------------------------------
 echo "Turn 1: starting an interactive session in tmux ($S1)..."
 tmux new-session -d -s "$S1" -x 220 -y 50 -c "$PROJ" \
-  "$COMMON \"\$(cat '$WORK/prompt1.txt')\"; echo CLAUDE-EXITED; sleep 3600"
+  "$COMMON -- \"\$(cat '$WORK/prompt1.txt')\"; echo CLAUDE-EXITED; sleep 3600"
 tmux pipe-pane -t "$S1" -o "cat >> '$LOG/pane-raw.log'"
 
 T1_OK=1
@@ -247,7 +289,7 @@ if [[ -n "$SID" ]]; then
   S2="orch-spike-resume-$$"
   BEFORE_STOP="$(count Stop)"
   tmux new-session -d -s "$S2" -x 220 -y 50 -c "$PROJ" \
-    "$COMMON --resume '$SID' \"\$(cat '$WORK/prompt4.txt')\"; echo CLAUDE-EXITED; sleep 3600"
+    "$COMMON --resume '$SID' -- \"\$(cat '$WORK/prompt4.txt')\"; echo CLAUDE-EXITED; sleep 3600"
   wait_for Stop $((BEFORE_STOP + 1)) "$TURN_TIMEOUT" "$S2" && R_OK=1
   tmux capture-pane -p -t "$S2" > "$LOG/pane-after-resume.txt" 2>/dev/null
   tmux kill-session -t "$S2" 2>/dev/null
@@ -256,10 +298,10 @@ fi
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
-node - "$WORK" "$T1_OK" "$T2_OK" "$T3_STATUS" "$R_OK" "$TRUST_SEEN" "$SID" << 'EOF'
+node - "$WORK" "$T1_OK" "$T2_OK" "$T3_STATUS" "$R_OK" "$TRUST_SEEN" "$SID" "$ROOT_TRUST_SHOWN" << 'EOF'
 const fs = require('fs');
 const path = require('path');
-const [work, t1, t2, t3, r, trust, sid] = process.argv.slice(2);
+const [work, t1, t2, t3, r, trust, sid, rootTrust] = process.argv.slice(2);
 const log = path.join(work, 'logs');
 const read = (f) => { try { return fs.readFileSync(path.join(log, f), 'utf8'); } catch { return ''; } };
 const jsonl = (f) => read(f).trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
@@ -274,7 +316,7 @@ const stops = jsonl('Stop.jsonl');
 const notifs = jsonl('Notification.jsonl');
 const denied = jsonl('denied.jsonl');
 const mcpCalls = jsonl('mcp.jsonl').filter((e) => e.call);
-const spikeFile = fs.existsSync(path.join(work, 'project', 'spike.txt'));
+const spikeFile = fs.existsSync(path.join(work, 'trusted-root', 'project', 'spike.txt'));
 
 const transcriptPath = starts[0]?.input?.transcript_path;
 let transcript = '';
@@ -308,7 +350,8 @@ const rows = [
   ['5', 'Transcript format (see structure below; compare across versions)', entries.length ? 'CHECK' : 'FAIL'],
   ['6', 'Idle session usable after 30 minutes', t3],
   ['7', 'Native background session features (see help outputs)', 'MANUAL: review logs/help-*.txt'],
-  ['8', 'Trust dialog in a new folder', trust === '1' ? 'SHOWN (see logs/pane-trust-dialog.txt)' : 'NOT SHOWN'],
+  ['8a', 'Trust dialog shown in a new root folder', rootTrust === '1' ? 'SHOWN (accepted)' : 'NOT SHOWN'],
+  ['8b', 'Subfolder of a trusted root runs without a new trust dialog', trust === '1' ? 'FAIL (dialog shown again)' : 'PASS'],
 ];
 
 let md = `# Claude Code spike report\n\n`;

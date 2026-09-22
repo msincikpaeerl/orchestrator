@@ -24,7 +24,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 **Scope**
 
-- Spike on Claude Code behaviour (05, section 9), concluded by an ADR.
+- Spike on Claude Code behaviour (05, section 9): **done**, see ADR 0002. Remaining: capture the usage-limit signal when it happens.
 - Monorepo structure (09, section 2), lint, format, type check, tests, CI.
 - CLAUDE.md, `docs/` layout, ADRs for every choice in 09, section 3.
 - Docker Compose with the server and PostgreSQL, migrations at start, `/health`, `/version`.
@@ -49,12 +49,12 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 **Scope**
 
 - Claude accounts and machines screens; enrollment (05, section 3).
-- Daemon: connection, heartbeat, `doctor`, `status`, `attach`, systemd service.
+- Daemon: connection, heartbeat, `login` (dedicated Claude configuration), workspace trust per repository, `doctor`, `status`, `attach`, systemd service.
 - Run execution (05, section 4) for purpose `implement`, started manually with **Run now**.
 - Permission enforcement through hooks.
 - MCP relay and tools: reading tools, `ticket.progress`, `ticket.comment`, `ticket.ask`, `ticket.give_up`.
 - Live logs and questions in the UI; "Needs you" with questions.
-- Default profiles for Architect and Web Developer.
+- Default profiles for Architect and Web Developer, with their allowlist smoke tests.
 
 **Done when** the owner starts a run on a ticket, watches it live, answers a question, and finds the agent's commits on a local branch.
 
