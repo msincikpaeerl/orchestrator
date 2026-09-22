@@ -1,0 +1,14 @@
+{
+  "name": "@orchestrator/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "echo 'The daemon is built in lot 2.'"
+  },
+  "devDependencies": {
+    "vitest": "5.0.1"
+  }
+}
