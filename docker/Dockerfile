@@ -26,6 +26,12 @@ FROM node:24.21.0-trixie-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out ./
+# The `orchestrator` command (09, section 7.4), for example `orchestrator reset-password`.
+COPY <<'EOF' /usr/local/bin/orchestrator
+#!/bin/sh
+exec node /app/dist/cli.js "$@"
+EOF
+RUN chmod 755 /usr/local/bin/orchestrator
 USER node
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
