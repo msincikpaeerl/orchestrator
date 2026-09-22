@@ -1,2 +1,2 @@
-// Placeholder: the Drizzle schema and migrations are added in lot 0, step B.
-export const DB_PACKAGE = '@orchestrator/db';
+export { migrationsFolder, runMigrations } from './migrate.js';
+export * as schema from './schema.js';
