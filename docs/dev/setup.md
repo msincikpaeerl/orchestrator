@@ -37,6 +37,7 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
 | `pnpm test:e2e` | Placeholder until lot 0 step D (Playwright). |
 | `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`. The UI is added in step D. |
+| `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
 | `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
 | `pnpm --filter <folder> <script>` | Run a script in one package, for example `pnpm --filter daemon dev`. |
 

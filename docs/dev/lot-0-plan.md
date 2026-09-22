@@ -49,7 +49,7 @@ Every session working on lot 0 follows these rules.
 
 **Done when** `docker compose -f docker/compose.yml up --build` starts both containers, `/health` returns OK, `/version` returns the versions, migrations run at start, and integration tests pass in CI.
 
-### [ ] C. Owner account, login, password reset, setup wizard steps 1 and 2 (API)
+### [x] C. Owner account, login, password reset, setup wizard steps 1 and 2 (API)
 
 - **First:** verify the token permission list of 02, section 3.1 against the current GitHub documentation for fine-grained personal access tokens, and report any difference to the owner before implementing. *Done 2026-09-23; decisions below.*
 - `PUBLIC_URL` is optional: the server derives it from `PORT` (`http://localhost:<PORT>`).

@@ -24,6 +24,8 @@ They need the development PostgreSQL:
 docker compose -f docker/compose.dev.yml up -d --wait postgres
 ```
 
+GitHub is replaced by a local fake (`apps/server/test/fake-github.ts`) that answers like GitHub for the requests the server makes: tests configure the valid tokens and their permissions. The server takes the API address as `githubApiUrl` in `buildApp`. `apps/server/test/helpers.ts` starts the application on a new database and captures its logs, so tests can prove that passwords and tokens never reach them.
+
 Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
 
 ## Running tests
