@@ -1,0 +1,154 @@
+# 08 — Harness and Project Template
+
+> Status: Draft v0.1
+> Related: [00 — Vision and Scope](00-vision-and-scope.md), [03 — Agents](03-agents.md), [04 — Ticket Lifecycle](04-ticket-lifecycle.md)
+
+The harness is the set of documents, tests, automation and recorded decisions that lets agents work reliably and lets the owner use a project without reading its code. This document defines what every project contains, how it is created, and how the system keeps it alive.
+
+The Orchestrator itself follows this document.
+
+## 1. Goals
+
+1. **Agents find their way alone.** An agent starting a run can learn how to build, test and change the project from the repository in a few files.
+2. **Mistakes are caught by machines first.** Lint, type checks, tests and builds run on every pull request.
+3. **Decisions are not lost.** Every significant technical choice is recorded with its reasons.
+4. **The owner never needs the code.** User documentation explains every feature from the user's point of view.
+5. **Context stays small.** Files agents read at every run are short, because every token costs quota.
+
+## 2. Repository layout
+
+Every project has this layout, whatever its kind.
+
+```
+README.md              What the project is, how to run it, links to docs. One screen.
+CLAUDE.md              Instructions for agents (section 2.1).
+CHANGELOG.md           User-facing changes, one entry per merged ticket.
+docs/
+  user/                User documentation (section 2.2).
+    index.md
+    getting-started.md
+  dev/                 Developer documentation.
+    architecture.md    Components and how they fit together.
+    setup.md           Local setup, commands, environment variables.
+    testing.md         Test strategy and how to run each level.
+  adr/                 Architecture Decision Records (section 2.3).
+    0000-template.md
+    0001-record-architecture-decisions.md
+.github/
+  workflows/ci.yml     CI (section 4).
+  pull_request_template.md
+```
+
+### 2.1 CLAUDE.md
+
+The most important file for agents. Rules:
+
+- **At most 150 lines.** The Quality agent rejects changes that exceed it.
+- Contains only what an agent needs at every run: commands (install, build, test, lint, run), folder map, coding conventions, testing conventions, documentation rules, things never to do.
+- Points to `docs/dev/` and `docs/adr/` for details instead of copying them.
+- Owned by the Architect; builders propose changes through their pull requests when conventions evolve.
+
+### 2.2 User documentation
+
+- Written for someone who uses the product and never reads its code.
+- Organised by tasks ("Send a message through the contact form"), not by components.
+- Every user-visible feature has a page or a section, updated in the same pull request as the feature (04, section 3.3).
+- Includes: getting started, one page per feature area, settings reference, troubleshooting.
+- Plain Markdown. Rendered in the product when the product has a UI for it (the Orchestrator does, in its Help section).
+- English only.
+
+### 2.3 Architecture Decision Records
+
+- One file per decision: `NNNN-short-title.md`.
+- Format: context, decision, alternatives considered, consequences, status (`proposed`, `accepted`, `superseded by NNNN`).
+- Required for: choice of language, framework, database, major library, test tool, deployment approach, and any deviation from the default stack (section 3.2).
+- ADRs are never edited after acceptance except their status; a new ADR supersedes an old one.
+
+## 3. Project creation
+
+### 3.1 Skeleton
+
+When the owner approves a plan that creates a project, the server:
+
+1. creates the private GitHub repository;
+2. commits the **common skeleton**: the layout above with placeholder content, ADR 0001 and the ADR template, a minimal CI that runs a documentation link check;
+3. applies branch protection on the default branch when the GitHub plan allows it (pull request required, CI required). When it is not available (for example private repositories on a free plan), the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches.
+
+The skeleton contains no stack-specific code. Stack choices are made by the Architect and recorded, not hidden in a template.
+
+### 3.2 Bootstrap ticket
+
+Every plan for a new project starts with a bootstrap ticket assigned to the Architect (03, section 2.1). Its acceptance criteria are fixed:
+
+- the stack is chosen and recorded in ADRs, following the defaults below unless the request justifies another choice;
+- the project builds, and a sample test runs at each test level used by the project;
+- lint, format check and type check (when applicable) are configured;
+- CI runs all of the above on every pull request, plus the build artefact for Android;
+- CLAUDE.md is complete (commands, folder map, conventions);
+- `docs/dev/setup.md` and `docs/dev/testing.md` are written;
+- `docs/user/getting-started.md` explains how to run the product.
+
+All other tickets of the plan depend on it.
+
+### 3.3 Default stacks
+
+Defaults keep projects consistent so agents and the owner do not relearn everything each time. The Architect may deviate with an ADR explaining why.
+
+| Project kind | Default stack | Tests |
+|---|---|---|
+| `website` | Astro, TypeScript, static output | Vitest for logic, Playwright for key pages |
+| `web_app` | React + Vite + TypeScript (front), Node.js + Fastify + TypeScript (back), PostgreSQL, Docker Compose for local run | Vitest (unit), integration tests against a test database, Playwright (end-to-end) |
+| `android_app` | Kotlin, Jetpack Compose, Gradle Kotlin DSL | JUnit unit tests, Compose UI tests written but not run in v1 (no emulator) |
+
+Common to all: ESLint and Prettier for TypeScript, ktlint for Kotlin, a lock file committed, Node.js LTS.
+
+## 4. Continuous integration
+
+| Check | website | web_app | android_app |
+|---|---|---|---|
+| Install with lock file | ✓ | ✓ | ✓ |
+| Lint and format check | ✓ | ✓ | ✓ |
+| Type check | ✓ | ✓ | (compiler) |
+| Unit tests | ✓ | ✓ | ✓ |
+| Integration tests | — | ✓ | — |
+| End-to-end tests | ✓ | ✓ | — |
+| Build | ✓ | ✓ | ✓ (debug APK uploaded as artefact) |
+| Documentation link check | ✓ | ✓ | ✓ |
+
+CI must stay under 10 minutes; the Architect splits or optimises it when it grows. CI results are fed back to agents through `ci.status` and the submission flow (05, section 4.9), so failures must print a readable reason.
+
+## 5. Conventions
+
+| Topic | Rule |
+|---|---|
+| Commits | Conventional Commits, with the ticket number: `feat(WEB-12): add contact form`. |
+| Branches | `t/<number>-<slug>` (04, section 4). |
+| Pull requests | Template with summary, ticket link, acceptance criteria checklist, tests, documentation. Filled from the DoD report. |
+| Changelog | One entry per merged ticket with a user-visible effect, written for users. |
+| Secrets | Never committed. `.env.example` lists variables; real values stay out of the repository. |
+| Dependencies | Added only when needed; a new major dependency requires an ADR. |
+
+## 6. Tickets that are ready
+
+The Project Manager only proposes tickets that meet the **Definition of Ready**; `plan.propose` validates what can be checked mechanically.
+
+- A title that says what changes for the user or the system.
+- Acceptance criteria that can each be verified by a test or by reading the documentation.
+- Small enough for one run: as a guide, one feature slice, touching one area of the code.
+- A type, an assignee and dependencies.
+- No open technical question; otherwise a `spike` comes first.
+
+## 7. Keeping the harness alive
+
+- The Definition of Done (04, section 3) makes tests and documentation part of every ticket.
+- The Quality agent checks CLAUDE.md size, documentation quality and ADR compliance at every review.
+- A **harness check** can be scheduled per project (setting, off by default to save quota): the Architect runs a `chore` ticket that verifies CLAUDE.md is accurate, CI is green on the default branch, documentation links work, and dependencies have no known critical vulnerability. Findings become tickets.
+
+## 8. The Orchestrator's own harness
+
+The Orchestrator is developed with Claude Code under the same rules:
+
+- same repository layout, with these specs in `docs/specs/`;
+- its user documentation in `docs/user/`, displayed in the application's Help section;
+- default agent instructions in `agents/` (03, section 6);
+- every feature delivered with its user documentation, so the owner can use the tool without reading its code.
