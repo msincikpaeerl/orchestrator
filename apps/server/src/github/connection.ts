@@ -4,7 +4,7 @@ import { eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import { loadSecret, storeSecret, type SecretKey } from '../secrets.js';
+import { SecretUnreadableError, loadSecret, storeSecret, type SecretKey } from '../secrets.js';
 import type { Settings } from '../settings.js';
 import {
   acceptedPermissions,
@@ -52,6 +52,9 @@ export async function loadStatus(
   const refusals = z.array(Refusal).parse(row.refusals);
 
   const problems: GitHubProblem[] = [];
+  if (row.unreadableSince) {
+    problems.push({ type: 'token_unreadable', since: row.unreadableSince.toISOString() });
+  }
   if (row.invalidSince) {
     problems.push({ type: 'token_invalid', since: row.invalidSince.toISOString() });
   }
@@ -102,6 +105,7 @@ export async function saveToken(
     savedAt: now,
     checkedAt: now,
     permissions: input.permissions,
+    unreadableSince: null,
     invalidSince: null,
     refusals: [],
   };
@@ -180,6 +184,52 @@ export async function markTokenInvalid(
   });
 }
 
+/**
+ * The saved token cannot be decrypted: ORCHESTRATOR_SECRET_KEY was lost or changed (ADR 0016).
+ * "Needs you" asks the owner to enter the token again. Does nothing when already recorded.
+ */
+export async function markTokenUnreadable(db: Database): Promise<void> {
+  await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(schema.githubConnection)
+      .set({ unreadableSince: new Date() })
+      .where(isNull(schema.githubConnection.unreadableSince))
+      .returning({ id: schema.githubConnection.id });
+    if (updated.length === 0) return;
+    await recordEvent(tx, { actor: 'system', ...entity, type: 'github.token_unreadable' });
+  });
+}
+
+/**
+ * Reads the saved token. When it cannot be decrypted, records the problem for "Needs you" and
+ * throws `SecretUnreadableError`; the server keeps running.
+ */
+export async function loadToken(db: Database, key: SecretKey): Promise<string | null> {
+  try {
+    return await loadSecret(db, key, GITHUB_TOKEN_SECRET);
+  } catch (error) {
+    if (error instanceof SecretUnreadableError) await markTokenUnreadable(db);
+    throw error;
+  }
+}
+
+/** Run at start: records an unreadable token at once instead of at its first use. */
+export async function detectUnreadableToken(
+  db: Database,
+  key: SecretKey,
+  log: { warn: (object: object, message: string) => void },
+): Promise<void> {
+  try {
+    await loadToken(db, key);
+  } catch (error) {
+    if (!(error instanceof SecretUnreadableError)) throw error;
+    log.warn(
+      { err: error },
+      'saved GitHub token cannot be decrypted: ORCHESTRATOR_SECRET_KEY changed; the owner must enter the token again',
+    );
+  }
+}
+
 async function recordRefusal(db: Database, refusal: Refusal): Promise<void> {
   await db.transaction(async (tx) => {
     const [row] = await tx
@@ -221,10 +271,11 @@ export interface StoredTokenOptions {
 /**
  * Client for every GitHub request made with the saved token during normal operation. It records
  * refusals (ADR 0017): a 401 marks the token invalid, a "not accessible" 403 records the
- * permissions GitHub names. Null when no token is saved.
+ * permissions GitHub names. Null when no token is saved; throws `SecretUnreadableError` (after
+ * recording the problem) when the token cannot be decrypted.
  */
 export async function storedTokenClient(options: StoredTokenOptions): Promise<GitHubClient | null> {
-  const token = await loadSecret(options.db, options.key, GITHUB_TOKEN_SECRET);
+  const token = await loadToken(options.db, options.key);
   if (token === null) return null;
   return createGitHubClient({
     apiUrl: options.apiUrl,

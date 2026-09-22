@@ -11,7 +11,17 @@ import { storedTokenClient } from '../src/github/connection.js';
 import { deriveSecretKey } from '../src/secrets.js';
 import { defaultSettings } from '../src/settings.js';
 import { fullAccount, startFakeGitHub, type FakeAccount, type FakeGitHub } from './fake-github.js';
-import { TEST_SECRET_KEY, createOwner, startTestApp, type TestApp } from './helpers.js';
+import { createLogger } from '../src/logger.js';
+import { startServer } from '../src/server.js';
+import { SecretUnreadableError } from '../src/secrets.js';
+import {
+  OWNER,
+  TEST_SECRET_KEY,
+  createOwner,
+  sessionCookie,
+  startTestApp,
+  type TestApp,
+} from './helpers.js';
 
 const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
 
@@ -300,30 +310,55 @@ describe('the token never leaves the server', () => {
     expect(response.body).not.toContain(TOKEN);
     expect(t.logs.text).not.toContain(TOKEN);
   });
+});
 
-  it('cannot be read back with another ORCHESTRATOR_SECRET_KEY', async () => {
+describe('ORCHESTRATOR_SECRET_KEY lost or changed', () => {
+  const otherKey = 'another-secret-key-of-at-least-32-characters';
+
+  it('keeps the server running and asks in "Needs you" to enter the token again', async () => {
     await saveToken(fullAccount());
-    const other = await startTestApp({
-      githubApiUrl: github.url,
-      secretKey: 'another-secret-key-of-at-least-32-characters',
-    });
+    // Restart on the same database with another key.
+    const server = await startServer(
+      { databaseUrl: t.database.url, port: 0, secretKey: otherKey, publicUrl: 'http://localhost' },
+      createLogger('silent'),
+      { githubApiUrl: github.url },
+    );
     try {
-      // Same database content, different key: copy the rows into the other test database.
-      const [secret] = await t.db.select().from(schema.secrets);
-      const [connection] = await t.db.select().from(schema.githubConnection);
-      if (!secret || !connection) throw new Error('nothing saved');
-      await other.db.insert(schema.secrets).values(secret);
-      await other.db.insert(schema.githubConnection).values(connection);
-      const otherCookie = await createOwner(other.app);
-      const response = await other.app.inject({
-        method: 'POST',
-        url: '/api/github/token/check',
+      const { app } = server;
+      expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
+      const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: OWNER });
+      const otherCookie = sessionCookie(login.headers['set-cookie']);
+      const get = (url: string, method: 'GET' | 'POST' = 'GET') =>
+        app.inject({ method, url, headers: { cookie: otherCookie } });
+
+      // Detected at start, before any use of the token.
+      const status = connected(GitHubStatusResponse.parse((await get('/api/github')).json()));
+      expect(status.problems.map((problem) => problem.type)).toEqual(['token_unreadable']);
+
+      const check = await get('/api/github/token/check', 'POST');
+      expect(check.statusCode).toBe(409);
+      expect(ApiError.parse(check.json()).error.code).toBe('github_token_unreadable');
+      await expect(
+        storedTokenClient({
+          db: t.db,
+          key: deriveSecretKey(otherKey),
+          apiUrl: github.url,
+          settings: defaultSettings,
+        }),
+      ).rejects.toThrow(SecretUnreadableError);
+      const events = await t.db.select({ type: schema.events.type }).from(schema.events);
+      expect(events.filter((event) => event.type === 'github.token_unreadable')).toHaveLength(1);
+
+      // Entering the token again clears the problem.
+      const saved = await app.inject({
+        method: 'PUT',
+        url: '/api/github/token',
         headers: { cookie: otherCookie },
+        payload: { token: TOKEN, expiresOn: null },
       });
-      expect(response.statusCode).toBe(409);
-      expect(ApiError.parse(response.json()).error.code).toBe('github_token_unreadable');
+      expect(connected(GitHubStatusResponse.parse(saved.json())).problems).toEqual([]);
     } finally {
-      await other.close();
+      await server.close();
     }
   });
 });

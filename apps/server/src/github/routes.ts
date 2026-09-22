@@ -7,12 +7,12 @@ import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
 import { HttpError, parseInput } from '../http.js';
-import { SecretUnreadableError, loadSecret, type SecretKey } from '../secrets.js';
+import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import type { Settings } from '../settings.js';
 import { GitHubUnreachableError, createGitHubClient } from './client.js';
 import {
-  GITHUB_TOKEN_SECRET,
   isPast,
+  loadToken,
   loadStatus,
   markTokenInvalid,
   saveCheck,
@@ -101,7 +101,7 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
     await requireSession(db, request);
     let token: string | null;
     try {
-      token = await loadSecret(db, key, GITHUB_TOKEN_SECRET);
+      token = await loadToken(db, key);
     } catch (error) {
       if (!(error instanceof SecretUnreadableError)) throw error;
       request.log.error({ err: error }, 'stored GitHub token unreadable');

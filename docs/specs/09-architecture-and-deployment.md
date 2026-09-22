@@ -85,8 +85,8 @@ The server is a single process. Components are modules inside it, not separate s
 
 | Topic | Decision |
 |---|---|
-| Owner authentication | One local account created by the setup wizard. Password hashed with Argon2, session cookie (HTTP-only, SameSite strict). |
-| GitHub token | Entered in the UI, stored encrypted in the database with a key from the `ORCHESTRATOR_SECRET_KEY` environment variable. Never sent to the browser after being saved. |
+| Owner authentication | One local account created by the setup wizard. Password hashed with Argon2, session cookie (HTTP-only, SameSite strict, `Secure` only when `PUBLIC_URL` is HTTPS). Failed logins are throttled per username and per client address: after a number of failures, an increasing delay (thresholds are settings; ADR 0015). |
+| GitHub token | Entered in the UI, stored encrypted in the database with a key from the `ORCHESTRATOR_SECRET_KEY` environment variable. Never sent to the browser after being saved. If the key is lost or changed, the server still starts and "Needs you" asks to enter the token again (ADR 0016). |
 | Machine tokens | Stored as hashes; revocable (05, section 3.1). |
 | Run tokens | Random, scoped to one run, expire at run end (06, section 2). |
 | Network exposure | Local network or VPN only in v1. HTTPS through a reverse proxy recommended outside `localhost`. |

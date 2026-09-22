@@ -82,7 +82,7 @@ The owner's task list, ordered by age:
 - tickets stopped after repeated failures;
 - system problems: machine offline with active work, account limited, daemon incompatible;
 - setup still to do: steps added after the owner went through the wizard (section 3), for example "No machine connected yet";
-- GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, or missing a permission (sections 3.1 and 3.2).
+- GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).
 

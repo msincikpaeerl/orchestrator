@@ -54,7 +54,7 @@ See `docs/dev/architecture.md`. Packages are named `@orchestrator/<folder>`. Lib
 
 ## Environment variables
 
-Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid. Leave `PUBLIC_URL` unset unless the Orchestrator is reached from another host, through a reverse proxy or over HTTPS.
+Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid. Leave `PUBLIC_URL` unset unless the Orchestrator is reached from another host, through a reverse proxy or over HTTPS. Outside `localhost`, HTTPS is recommended (`docs/user/network-access.md`): the login cookie is marked `Secure` only when `PUBLIC_URL` is `https://`, so plain HTTP on a LAN address still works. If `ORCHESTRATOR_SECRET_KEY` changes, the server still starts and reports the saved GitHub token as unreadable (ADR 0016).
 
 | Variable | `pnpm dev` | `docker/compose.yml` |
 |---|---|---|

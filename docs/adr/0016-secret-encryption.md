@@ -12,7 +12,7 @@ The GitHub token is stored in the database, encrypted with a key from the `ORCHE
 - The encryption key is derived from `ORCHESTRATOR_SECRET_KEY` with HKDF-SHA256 (salt `orchestrator`, info `secrets aes-256-gcm v1`, 32 bytes), so any text of sufficient length gives a proper AES key.
 - Each secret is encrypted with AES-256-GCM, Node.js's built-in `crypto`, a random 96-bit nonce per encryption and the secret's name as associated data (a ciphertext cannot be moved to another name).
 - The `secrets` table stores the name, the scheme version (1), the nonce and the ciphertext followed by its 16-byte authentication tag.
-- If the key changed, decryption fails; the API answers `github_token_unreadable` and the owner saves the token again. The token is never written to logs, events or API answers.
+- If the key changed, decryption fails. The server keeps running: at start and at each use of the token it records the problem (`github_connection.unreadable_since`, event `github.token_unreadable`), "Needs you" asks to enter the token again, and the check endpoint answers `github_token_unreadable`. Saving a token clears it. The token is never written to logs, events or API answers.
 
 ## Alternatives considered
 
