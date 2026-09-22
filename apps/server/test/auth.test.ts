@@ -2,6 +2,8 @@ import { schema } from '@orchestrator/db';
 import { ApiError, SessionResponse, SetupStateResponse } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.js';
+import { createLogger } from '../src/logger.js';
 import { OWNER, createOwner, sessionCookie, startTestApp, type TestApp } from './helpers.js';
 
 let t: TestApp;
@@ -205,15 +207,34 @@ describe('login, session and logout', () => {
   });
 });
 
-it('marks the cookie Secure when PUBLIC_URL is HTTPS', async () => {
-  const { buildApp } = await import('../src/app.js');
-  const app = buildApp({
-    pool: t.pool,
-    logger: (await import('../src/logger.js')).createLogger('silent'),
-    secretKey: 'k'.repeat(32),
-    publicUrl: 'https://orchestrator.example.net',
+describe('Secure cookie flag', () => {
+  async function cookieFor(publicUrl: string): Promise<string> {
+    const app = buildApp({
+      pool: t.pool,
+      logger: createLogger('silent'),
+      secretKey: 'k'.repeat(32),
+      publicUrl,
+    });
+    try {
+      await t.db.delete(schema.owner);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/setup/owner',
+        payload: OWNER,
+      });
+      expect(response.statusCode).toBe(201);
+      return String(response.headers['set-cookie']);
+    } finally {
+      await app.close();
+    }
+  }
+
+  it('is set when PUBLIC_URL is HTTPS', async () => {
+    expect(await cookieFor('https://orchestrator.example.net')).toContain('Secure');
   });
-  const response = await app.inject({ method: 'POST', url: '/api/setup/owner', payload: OWNER });
-  expect(String(response.headers['set-cookie'])).toContain('Secure');
-  await app.close();
+
+  it('is not set over plain HTTP, on localhost or a LAN address, so login works there', async () => {
+    expect(await cookieFor('http://localhost:8080')).not.toContain('Secure');
+    expect(await cookieFor('http://192.168.1.20:8080')).not.toContain('Secure');
+  });
 });
