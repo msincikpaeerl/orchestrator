@@ -6,6 +6,8 @@ export const ApiErrorCode = z.enum([
   'not_authenticated',
   'owner_exists',
   'invalid_credentials',
+  /** Too many failed logins: wait `retryAfterSeconds` (also in the Retry-After header). */
+  'too_many_attempts',
   'github_not_connected',
   'github_token_invalid',
   'github_token_not_fine_grained',
@@ -18,6 +20,10 @@ export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
 /** Body of every 4xx and 5xx answer of the API. The message is English, for logs and developers. */
 export const ApiError = z.object({
-  error: z.object({ code: ApiErrorCode, message: z.string() }),
+  error: z.object({
+    code: ApiErrorCode,
+    message: z.string(),
+    retryAfterSeconds: z.int().positive().optional(),
+  }),
 });
 export type ApiError = z.infer<typeof ApiError>;

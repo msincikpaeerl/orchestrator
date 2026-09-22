@@ -99,6 +99,11 @@ const Timestamp = z.iso.datetime({ offset: true });
 export const GitHubProblem = z.discriminatedUnion('type', [
   /** GitHub rejected the token (expired, revoked or deleted), whatever its stored expiry date. */
   z.object({ type: z.literal('token_invalid'), since: Timestamp }),
+  /**
+   * The saved token cannot be decrypted: ORCHESTRATOR_SECRET_KEY was lost or changed. The owner
+   * must enter the token again.
+   */
+  z.object({ type: z.literal('token_unreadable'), since: Timestamp }),
   z.object({ type: z.literal('token_expired'), expiresOn: CalendarDate }),
   z.object({ type: z.literal('token_expiring'), expiresOn: CalendarDate }),
   /** Found by the last token check. */

@@ -4,6 +4,7 @@ import { NewPassword } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import { hashPassword } from './auth/password.js';
 import { revokeAllSessions } from './auth/sessions.js';
+import { clearAllLoginFailures } from './auth/throttle.js';
 import type { Database } from './database.js';
 import { recordEvent } from './events.js';
 
@@ -36,6 +37,7 @@ export async function resetPassword(db: Database, password: string): Promise<{ u
       );
     }
     const revokedSessions = await revokeAllSessions(tx);
+    await clearAllLoginFailures(tx);
     await recordEvent(tx, {
       actor: 'cli',
       entityType: 'owner',

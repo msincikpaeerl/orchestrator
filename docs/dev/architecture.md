@@ -10,7 +10,7 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | placeholder |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
 | `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list |
-| `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `secrets`, `github_connection`, `events` |
+| `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events` |
 
 ## Dependencies between packages
 
@@ -30,7 +30,7 @@ Only the server's dependencies exist so far; the others are added with the code 
 
 | Path | Role |
 |---|---|
-| `src/auth/` | Owner creation, login, logout, sessions (ADR 0015). `requireSession` guards every API route except `/api/setup` and login. |
+| `src/auth/` | Owner creation, login with throttling, logout, sessions (ADR 0015). `requireSession` guards every API route except `/api/setup` and login. |
 | `src/github/` | GitHub client, token check by probing (ADR 0017), connection state and "Needs you" problems, routes. Every request made with the saved token must use `storedTokenClient`, which records refusals. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
 | `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction. |

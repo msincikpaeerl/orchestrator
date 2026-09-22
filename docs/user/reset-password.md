@@ -26,6 +26,10 @@ The Orchestrator has no email address, so a forgotten password cannot be reset f
 - The change is recorded in the Orchestrator's activity log.
 - Your username, projects and GitHub connection do not change.
 
+## Too many failed logins
+
+After several wrong passwords, the login page asks you to wait before trying again, and the wait grows with each new mistake (up to 15 minutes). This protects your account against someone guessing the password. Resetting the password with the command above also lifts the wait.
+
 ## If something goes wrong
 
 | Message | What to do |

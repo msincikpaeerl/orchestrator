@@ -4,6 +4,7 @@ import {
   check,
   customType,
   date,
+  integer,
   jsonb,
   pgTable,
   smallint,
@@ -48,6 +49,19 @@ export const sessions = pgTable('sessions', {
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => 'bytea' });
 
+/**
+ * Recent failed logins per username and per client address (ADR 0015). Keys are
+ * `username:<name>` and `address:<ip>`. A row is deleted by a successful login, and ignored once
+ * its last failure is older than the loginFailureMemoryMinutes setting.
+ */
+export const loginFailures = pgTable('login_failures', {
+  key: text('key').primaryKey(),
+  failures: integer('failures').notNull(),
+  lastFailureAt: timestamp('last_failure_at', { withTimezone: true }).notNull(),
+  /** No login is tried for this key before this time. */
+  blockedUntil: timestamp('blocked_until', { withTimezone: true }),
+});
+
 /** Secrets encrypted with ORCHESTRATOR_SECRET_KEY (ADR 0016), for example the GitHub token. */
 export const secrets = pgTable('secrets', {
   name: text('name').primaryKey(),
@@ -71,6 +85,8 @@ export const githubConnection = pgTable(
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
     /** Result of the last token check: `PermissionCheck[]` of the protocol package. */
     permissions: jsonb('permissions').notNull(),
+    /** Set when the saved token cannot be decrypted (key changed, ADR 0016); cleared by a new token. */
+    unreadableSince: timestamp('unreadable_since', { withTimezone: true }),
     /** Set when GitHub rejects the token as invalid; cleared by a successful check or a new token. */
     invalidSince: timestamp('invalid_since', { withTimezone: true }),
     /** Permission refusals seen during use: `{ permissions, request, at }[]`. */

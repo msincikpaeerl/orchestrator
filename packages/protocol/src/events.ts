@@ -10,12 +10,14 @@ export type EventEntityType = z.infer<typeof EventEntityType>;
 /** Event types written so far; each lot adds its own. Payloads never contain secrets. */
 export const EventType = z.enum([
   'owner.created',
+  'owner.login_throttled',
   'owner.password_reset',
   'session.created',
   'session.revoked',
   'github.token_saved',
   'github.token_checked',
   'github.token_rejected',
+  'github.token_unreadable',
   'github.permission_refused',
 ]);
 export type EventType = z.infer<typeof EventType>;

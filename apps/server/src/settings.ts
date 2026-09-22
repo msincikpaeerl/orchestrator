@@ -9,10 +9,22 @@ export interface Settings {
   githubTokenExpiryWarningDays: number;
   /** Time allowed for one GitHub API request. */
   githubRequestTimeoutSeconds: number;
+  /** Failed logins allowed for one username or one client address before a delay applies. */
+  loginFailuresBeforeDelay: number;
+  /** Delay after the first failure over the limit; it doubles with each further failure. */
+  loginFirstDelaySeconds: number;
+  /** Longest delay between login attempts. */
+  loginMaxDelaySeconds: number;
+  /** Failed logins older than this are forgotten. */
+  loginFailureMemoryMinutes: number;
 }
 
 export const defaultSettings: Readonly<Settings> = {
   sessionLifetimeDays: 30,
   githubTokenExpiryWarningDays: 14,
   githubRequestTimeoutSeconds: 15,
+  loginFailuresBeforeDelay: 5,
+  loginFirstDelaySeconds: 10,
+  loginMaxDelaySeconds: 15 * 60,
+  loginFailureMemoryMinutes: 60,
 };

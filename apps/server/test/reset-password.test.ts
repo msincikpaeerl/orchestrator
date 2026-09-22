@@ -73,6 +73,17 @@ describe('orchestrator reset-password', () => {
     expect(JSON.stringify(events)).not.toContain(NEW_PASSWORD);
   });
 
+  it('lifts a login delay so the owner can log in at once', async () => {
+    await createOwner(t.app);
+    for (let attempt = 0; attempt < 5; attempt++) await login('wrong password!');
+    expect((await login(OWNER.password)).statusCode).toBe(429);
+
+    const result = await orchestrator(['reset-password'], `${NEW_PASSWORD}\n${NEW_PASSWORD}\n`);
+
+    expect(result.code).toBe(0);
+    expect((await login(NEW_PASSWORD)).statusCode).toBe(200);
+  });
+
   it('refuses a password shorter than 12 characters and keeps the old one', async () => {
     await createOwner(t.app);
     const result = await orchestrator(['reset-password'], 'elevenchars\nelevenchars\n');

@@ -33,7 +33,12 @@ export interface TestApp {
 
 /** The application on a new migrated database, with logs captured at the most verbose level. */
 export async function startTestApp(
-  options: { githubApiUrl?: string; settings?: Partial<Settings>; secretKey?: string } = {},
+  options: {
+    githubApiUrl?: string;
+    settings?: Partial<Settings>;
+    secretKey?: string;
+    now?: () => Date;
+  } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
   const pool = new pg.Pool({ connectionString: database.url });
@@ -46,6 +51,7 @@ export async function startTestApp(
     publicUrl: 'http://localhost:8080',
     settings: { ...defaultSettings, ...options.settings },
     githubApiUrl: options.githubApiUrl,
+    now: options.now,
   });
   await app.ready();
   return {

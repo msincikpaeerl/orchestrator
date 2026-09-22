@@ -1,5 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
+  type ApiError,
   CreateOwnerRequest,
   LoginRequest,
   type SessionResponse,
@@ -11,6 +12,7 @@ import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { Settings } from '../settings.js';
 import { hashPassword, unknownUserHash, verifyPassword } from './password.js';
+import { LoginThrottle } from './throttle.js';
 import {
   SESSION_COOKIE,
   createSession,
@@ -23,8 +25,13 @@ import {
 export interface AuthOptions {
   db: Database;
   settings: Settings;
-  /** Cookies get the Secure flag when the Orchestrator is served over HTTPS (PUBLIC_URL). */
+  /**
+   * Cookies get the Secure flag only when PUBLIC_URL is HTTPS: browsers never send a Secure
+   * cookie over plain HTTP, so login would silently fail on a LAN address.
+   */
   secureCookies: boolean;
+  /** Clock of the login throttle; tests replace it. */
+  now?: () => Date;
 }
 
 /** The logged-in session, or a 401 refusal. Every route except setup and login calls it. */
@@ -40,8 +47,10 @@ export async function requireSession(
 
 export function registerAuthRoutes(
   app: FastifyInstance,
-  { db, settings, secureCookies }: AuthOptions,
+  { db, settings, secureCookies, now }: AuthOptions,
 ) {
+  const throttle = new LoginThrottle(db, settings, now);
+
   async function ownerUsername(): Promise<string | null> {
     const [owner] = await db.select({ username: schema.owner.username }).from(schema.owner);
     return owner?.username ?? null;
@@ -100,6 +109,21 @@ export function registerAuthRoutes(
 
   app.post('/api/auth/login', async (request, reply) => {
     const input = parseInput(LoginRequest, request.body);
+    const attempt = { username: input.username, address: request.ip };
+    const wait = await throttle.waitSeconds(attempt);
+    if (wait > 0) {
+      request.log.warn({ wait }, 'login refused: too many failed attempts');
+      return reply
+        .code(429)
+        .header('retry-after', String(wait))
+        .send({
+          error: {
+            code: 'too_many_attempts',
+            message: `Too many failed logins; try again in ${String(wait)} seconds`,
+            retryAfterSeconds: wait,
+          },
+        } satisfies ApiError);
+    }
     const [owner] = await db.select().from(schema.owner);
     const matches = owner?.username === input.username;
     // Always verify a hash, so the answer takes as long for an unknown username.
@@ -109,8 +133,10 @@ export function registerAuthRoutes(
     );
     if (!owner || !matches || !valid) {
       request.log.warn('login refused');
+      await throttle.recordFailure(attempt);
       throw new HttpError(401, 'invalid_credentials', 'Wrong username or password');
     }
+    await throttle.clear(attempt);
     const session = await db.transaction((tx) => createSession(tx, settings.sessionLifetimeDays));
     return startSession(reply, session, owner.username);
   });

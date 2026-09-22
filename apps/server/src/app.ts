@@ -24,6 +24,8 @@ export interface AppDependencies {
   settings?: Settings;
   /** GitHub's REST API; tests use a local fake. */
   githubApiUrl?: string;
+  /** Clock for time-based rules (login throttling); tests replace it. */
+  now?: () => Date;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -55,6 +57,7 @@ export function buildApp(dependencies: AppDependencies) {
       db,
       settings,
       secureCookies: new URL(dependencies.publicUrl).protocol === 'https:',
+      now: dependencies.now,
     });
     registerGitHubRoutes(scope, {
       db,
