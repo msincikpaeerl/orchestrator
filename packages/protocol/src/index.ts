@@ -1,5 +1,2 @@
-/**
- * Version of the protocol between the server and daemons (09, section 6).
- * Sent by daemons in `hello`; the server accepts this version and the previous one.
- */
-export const PROTOCOL_VERSION = 1;
+export { PROTOCOL_VERSION } from './version.js';
+export { HealthResponse, VersionResponse } from './api/system.js';

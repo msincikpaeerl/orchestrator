@@ -29,8 +29,8 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Task | Command |
 |---|---|
 | Install | `pnpm install` |
-| Start database *(later)* | `docker compose -f docker/compose.dev.yml up -d postgres` |
-| Run server + UI in dev *(later)* | `pnpm dev` |
+| Start database | `docker compose -f docker/compose.dev.yml up -d postgres` |
+| Run server in dev (UI from step D) | `pnpm dev` |
 | Run daemon in dev *(later)* | `pnpm --filter daemon dev` |
 | Unit and integration tests | `pnpm test` |
 | End-to-end tests *(later)* | `pnpm test:e2e` |
@@ -39,10 +39,10 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Documentation link check | `pnpm docs:links` |
 | Build | `pnpm build` |
 | Everything CI runs | `pnpm verify` (never `pnpm ci`: built-in pnpm command) |
-| Database migration (new) *(later)* | `pnpm --filter db migrate:generate` |
-| Full stack in Docker *(later)* | `docker compose -f docker/compose.yml up --build` |
+| Database migration (new) | `pnpm --filter db migrate:generate` |
+| Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` before considering any task finished. Requires Node.js 24 (`.nvmrc`); setup details in `docs/dev/setup.md`.
+Run `pnpm verify` before considering any task finished; its integration tests need the database started. Requires Node.js 24 (`.nvmrc`) and Docker; setup details in `docs/dev/setup.md`.
 
 ## Repository map
 
@@ -78,8 +78,8 @@ docker/          Dockerfile and compose files
 ## Tests
 
 - New behaviour needs tests; a bug fix needs a regression test that fails before the fix.
-- Unit tests next to the code (`*.test.ts`), integration tests in `apps/*/test/`, end-to-end tests in `apps/web/e2e/`.
-- Integration tests use a real PostgreSQL (the dev compose database), never mocks of the database.
+- Unit tests next to the code (`*.test.ts`), integration tests in `apps/*/test/` and `packages/*/test/`, end-to-end tests in `apps/web/e2e/`.
+- Integration tests use a real PostgreSQL (the dev compose database), never mocks of the database: one throw-away database per test file (`createTestDatabase` from `@orchestrator/db/testing`).
 - The daemon's tmux and Claude Code layer is tested against a fake `claude` executable that emits hook calls and transcript lines; no real Claude Code in CI.
 - Details: `docs/dev/testing.md`.
 
@@ -94,10 +94,12 @@ docker/          Dockerfile and compose files
 
 - Conventional Commits: `feat(scheduler): resume paused runs first`. Reference the ticket number when there is one.
 - Small commits with one purpose each.
+- Work on a branch (`lot0/<step letter>-<short-name>` during lot 0) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
 - Never commit secrets. Environment variables are listed in `.env.example`.
 
 ## Never
 
+- Never install software or change anything outside this repository (no global installs, no files in the home folder, no PATH or shell changes). Only exception: Docker images declared in the repo's own files, pinned to an exact version. If a tool is missing, stop and say what to install.
 - Never use `--dangerously-skip-permissions` in daemon code.
 - Never send Claude credentials or the GitHub token to agents, the browser or logs.
 - Never let an agent-facing path push to GitHub; only the daemon pushes, and only ticket branches.

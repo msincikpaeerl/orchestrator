@@ -1,0 +1,10 @@
+# The Orchestrator: server and PostgreSQL (09, section 7.1; ADR 0014).
+# Start from the repository root: docker compose -f docker/compose.yml up --build
+# Configuration: the .env file at the repository root (copy .env.example); it is required.
+# Values set in the shell take precedence over .env.
+name: orchestrator
+
+include:
+  # Compose reads .env from this file's folder only; include is how it reads the root .env.
+  - path: services.yml
+    env_file: ../.env

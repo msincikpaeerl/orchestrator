@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "source": "./src/index.ts",
@@ -16,5 +19,8 @@
   },
   "devDependencies": {
     "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
   }
 }

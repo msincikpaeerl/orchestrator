@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "echo 'pnpm dev is added in lot 0 step B (server) and step D (UI).'",
+    "dev": "pnpm --filter @orchestrator/server dev",
     "test": "vitest run",
     "test:e2e": "echo 'pnpm test:e2e is added in lot 0 step D (Playwright).'",
     "lint": "eslint . && prettier --check .",
