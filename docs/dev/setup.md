@@ -7,7 +7,7 @@
 | Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. |
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
 | Git | any recent | |
-| Docker | Engine or Docker Desktop with Compose | Needed from lot 0 step B (database, full stack). |
+| Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, full stack. |
 
 Windows is supported through WSL 2 only.
 
@@ -15,10 +15,13 @@ Windows is supported through WSL 2 only.
 
 ```sh
 pnpm install
+docker compose -f docker/compose.dev.yml up -d --wait postgres
 pnpm verify
 ```
 
-`pnpm verify` must pass on a fresh clone. It runs lint, format check, type check, tests, build and the documentation link check.
+`pnpm verify` must pass on a fresh clone. It runs lint, format check, type check, tests, build and the documentation link check. The integration tests need the development PostgreSQL; without it they fail with the command above.
+
+The development database listens on `127.0.0.1:5432` (user, password and database `orchestrator`) and keeps its data in the `orchestrator-dev_postgres-data` volume. Stop it with `docker compose -f docker/compose.dev.yml down`; add `-v` to delete its data.
 
 ## Commands
 
@@ -33,7 +36,8 @@ pnpm verify
 | `pnpm build` | Build every package into its `dist/`. |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
 | `pnpm test:e2e` | Placeholder until lot 0 step D (Playwright). |
-| `pnpm dev` | Placeholder until lot 0 step B (server) and D (UI). |
+| `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`. The UI is added in step D. |
+| `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
 | `pnpm --filter <folder> <script>` | Run a script in one package, for example `pnpm --filter daemon dev`. |
 
 Do not use `pnpm ci`: it is a built-in pnpm command (clean install), not our CI script (ADR 0005).
@@ -49,4 +53,28 @@ See `docs/dev/architecture.md`. Packages are named `@orchestrator/<folder>`. Lib
 
 ## Environment variables
 
-Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` for local runs; `.env` is ignored by Git. Used from lot 0 step B.
+Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid.
+
+## Running the server
+
+```sh
+docker compose -f docker/compose.dev.yml up -d --wait postgres
+pnpm dev
+curl http://localhost:8080/health
+```
+
+The server applies pending database migrations at start. Logs are JSON (ADR 0013).
+
+## Full stack in Docker
+
+```sh
+docker compose -f docker/compose.yml up --build
+```
+
+Builds the server image (`docker/Dockerfile`) and starts it with its own PostgreSQL on `http://localhost:8080` (ADR 0014). The Compose project is `orchestrator`; data is in the `orchestrator_postgres-data` volume. The development database can run at the same time: it uses another project and volume.
+
+## Database migrations
+
+1. Change `packages/db/src/schema.ts`.
+2. Run `pnpm --filter db migrate:generate` and read the SQL written in `packages/db/migrations/`.
+3. Commit the schema change and the migration together. Migrations are forward only (ADR 0011).

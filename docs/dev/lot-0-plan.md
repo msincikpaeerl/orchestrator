@@ -39,7 +39,7 @@ Every session working on lot 0 follows these rules.
 
 **Done when** a fresh clone runs `pnpm install` then `pnpm verify` successfully, the workflow file is valid, and the ADRs are in `docs/adr/`.
 
-### [ ] B. Database, server skeleton and Docker Compose
+### [x] B. Database, server skeleton and Docker Compose
 
 - `packages/db`: Drizzle schema with a first migration (a `settings` or `schema_info` table only if needed to prove migrations; no lot 1 tables), `migrate:generate` and a programmatic migrate function.
 - `apps/server`: Fastify with Pino logging, config read and validated with Zod from environment variables (09, section 7.1), `GET /health` (checks the database) and `GET /version` (server and protocol versions from `packages/protocol`), migrations applied at start.
