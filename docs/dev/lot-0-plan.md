@@ -51,15 +51,17 @@ Every session working on lot 0 follows these rules.
 
 ### [ ] C. Owner account, login, password reset, setup wizard steps 1 and 2 (API)
 
-- **First:** verify the token permission list of 02, section 3.1 against the current GitHub documentation for fine-grained personal access tokens, and report any difference to the owner before implementing.
+- **First:** verify the token permission list of 02, section 3.1 against the current GitHub documentation for fine-grained personal access tokens, and report any difference to the owner before implementing. *Done 2026-09-23; decisions below.*
+- `PUBLIC_URL` is optional: the server derives it from `PORT` (`http://localhost:<PORT>`).
 - Tables: owner and sessions (01, section 3.11), encrypted secrets, events (only the event types this step emits, 01 section 3.10).
 - API: setup state, create owner (only while none exists; password of at least 12 characters), login, logout, current session; session cookie HTTP-only, SameSite strict (09, section 5); Argon2 password hashing.
 - `orchestrator reset-password` command in the server image (09, section 7.4): interactive prompt, same password rules, revokes all sessions, writes an event.
-- GitHub token: save, check against the GitHub API (identity, permissions of 02 section 3.1, expiry date), report missing permissions; stored encrypted with `ORCHESTRATOR_SECRET_KEY`; never returned to the browser after saving and never logged.
+- GitHub token: save, check against the GitHub API (identity, permissions of 02 sections 3.1 and 3.2), report each permission as OK, Missing or Could not verify, never creating or changing anything on GitHub; expiry date entered by the owner (or "No expiry date"), pre-filled from GitHub's header only when plausible; stored encrypted with `ORCHESTRATOR_SECRET_KEY`; never returned to the browser after saving and never logged.
+- GitHub refusals during use (token invalid, permission missing) are recorded for "Needs you" (02, section 4); the API exposes the token's problems and the pre-filled "Create the token on GitHub" link.
 - Request and response schemas in `packages/protocol`.
 - Integration tests for every endpoint and the reset command, including refusal cases; GitHub calls tested against a local fake.
 - `docs/user/`: password reset page (the command is user-facing even before the UI exists).
-- ADRs: Argon2 and session model, secret encryption scheme.
+- ADRs: Argon2 and session model, secret encryption scheme, GitHub token verification.
 
 **Done when** the API can create the owner, log in and out, save, check and encrypt a GitHub token and report its expiry and missing permissions; `reset-password` works in the container; tests prove the token never leaves the server.
 
@@ -77,6 +79,7 @@ Every session working on lot 0 follows these rules.
 ### [ ] E. End-to-end check of the lot 0 scenario on WSL
 
 - Follow `docs/user/getting-started.md` literally on a clean WSL checkout: start the stack with Docker Compose, create the account, connect GitHub with a real fine-grained token, read the guide in the Help section.
+- Confirm with the owner's real token the GitHub answers the token check relies on (ADR 0017): with each write permission removed in turn, the invalid requests are refused as "not accessible", and with it granted they fail validation.
 - Fix any gap in the documentation or code found on the way (each fix with its test).
 - Record the result in this plan; the owner runs the same scenario to close the lot (10, "Rules for every lot").
 
@@ -88,4 +91,5 @@ Every session working on lot 0 follows these rules.
 - Compose files are `docker/compose.yml` and `docker/compose.dev.yml` (09 updated).
 - The owner logs in with a username; password of at least 12 characters; password reset by a command in the server container (01 section 3.11, 09 section 7.4).
 - GitHub token permissions, expiry display and warning: 02, section 3.1 (to verify against GitHub's documentation at the start of step C).
+- Token check against GitHub's documentation (step C, 2026-09-23): no Checks permission for fine-grained tokens (`ci.status` uses Actions and commit statuses, 06 updated); Workflows has a single level; Metadata is added automatically; tokens may have no expiry; the token is for the owner's personal account. GitHub cannot list a token's permissions or reliably give its expiry date: the owner enters the date, and the check probes permissions without changing anything (02 section 3.2, ADR 0017).
 - The wizard covers only existing steps and ends on a Done page; later steps appear in "Needs you" (02, sections 3 and 4).

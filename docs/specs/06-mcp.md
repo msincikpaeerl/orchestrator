@@ -69,7 +69,7 @@ An agent can read anything in its own project. It can only change **its own tick
 | `ticket.comments` | Comments of a ticket, oldest first, including questions and answers. |
 | `request.get` | The request being planned, with its comments (planning runs). |
 | `agent.list` | Available agent profiles with their role and description, so tickets can be assigned. |
-| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. |
+| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). |
 
 ### 4.2 Working on the run's ticket
 
