@@ -53,13 +53,13 @@ See `docs/dev/architecture.md`. Packages are named `@orchestrator/<folder>`. Lib
 
 ## Environment variables
 
-Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid.
+Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env` at the repository root and set `ORCHESTRATOR_SECRET_KEY` (`openssl rand -base64 32`); `.env` is ignored by Git. Both `pnpm dev` and `docker/compose.yml` read it. The server refuses to start and names the variable when one is missing or invalid. Leave `PUBLIC_URL` unset unless the Orchestrator is reached from another host, through a reverse proxy or over HTTPS.
 
 | Variable | `pnpm dev` | `docker/compose.yml` |
 |---|---|---|
 | `DATABASE_URL` | used | ignored: the stack uses its own PostgreSQL |
 | `ORCHESTRATOR_SECRET_KEY` | required | required: Compose stops with a message if it is empty |
-| `PUBLIC_URL` | required | defaults to `http://localhost:<PORT>` |
+| `PUBLIC_URL` | optional, defaults to `http://localhost:<PORT>` | optional, defaults to `http://localhost:<PORT>` (host port) |
 | `PORT` | port the server listens on, default 8080 | port published on the host, default 8080 |
 | `LOG_LEVEL` | default `info` | default `info` |
 

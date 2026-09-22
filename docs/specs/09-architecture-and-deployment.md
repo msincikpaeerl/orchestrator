@@ -115,7 +115,7 @@ Environment variables:
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection. |
 | `ORCHESTRATOR_SECRET_KEY` | Encryption key for stored secrets. Must be backed up. |
-| `PUBLIC_URL` | URL used in enrollment commands and links. |
+| `PUBLIC_URL` | URL used in enrollment commands and links. Optional: defaults to `http://localhost:<PORT>`; set it for access from another host, through a reverse proxy or over HTTPS. |
 | `PORT` | HTTP port (default 8080). |
 | `LOG_LEVEL` | Log verbosity. |
 

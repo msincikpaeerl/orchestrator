@@ -7,7 +7,11 @@ const Environment = z.object({
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/, error: 'must be a postgres:// URL' }),
   // The encryption scheme using this key is defined in lot 0 step C.
   ORCHESTRATOR_SECRET_KEY: z.string().min(32, 'must be at least 32 characters'),
-  PUBLIC_URL: z.url({ protocol: /^https?$/, error: 'must be an http:// or https:// URL' }),
+  // Optional: derived from PORT when unset or empty (see loadConfig).
+  PUBLIC_URL: z
+    .url({ protocol: /^https?$/, error: 'must be an http:// or https:// URL' })
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   LOG_LEVEL: z.enum(logLevels).default('info'),
 });
@@ -41,7 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   return {
     databaseUrl: DATABASE_URL,
     secretKey: ORCHESTRATOR_SECRET_KEY,
-    publicUrl: PUBLIC_URL,
+    publicUrl: PUBLIC_URL ?? `http://localhost:${String(PORT)}`,
     port: PORT,
     logLevel: LOG_LEVEL,
   };

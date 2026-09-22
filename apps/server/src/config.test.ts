@@ -24,13 +24,32 @@ describe('loadConfig', () => {
     expect(config.logLevel).toBe('debug');
   });
 
+  it('derives the public URL from the port when it is not set', () => {
+    const withoutPublicUrl = { ...validEnv, PUBLIC_URL: undefined };
+    expect(loadConfig(withoutPublicUrl).publicUrl).toBe('http://localhost:8080');
+    expect(loadConfig({ ...withoutPublicUrl, PORT: '9000' }).publicUrl).toBe(
+      'http://localhost:9000',
+    );
+    expect(loadConfig({ ...validEnv, PUBLIC_URL: '', PORT: '9000' }).publicUrl).toBe(
+      'http://localhost:9000',
+    );
+  });
+
+  it('keeps the public URL when it is set', () => {
+    const config = loadConfig({
+      ...validEnv,
+      PUBLIC_URL: 'https://orchestrator.example.net',
+      PORT: '9000',
+    });
+    expect(config.publicUrl).toBe('https://orchestrator.example.net');
+  });
+
   it('names every missing variable', () => {
     expect(() => loadConfig({ ORCHESTRATOR_SECRET_KEY: '' })).toThrow(
       new ConfigError(
         'Invalid configuration (see .env.example):\n' +
           '- DATABASE_URL: missing\n' +
-          '- ORCHESTRATOR_SECRET_KEY: missing\n' +
-          '- PUBLIC_URL: missing',
+          '- ORCHESTRATOR_SECRET_KEY: missing',
       ),
     );
   });
@@ -45,6 +64,7 @@ describe('loadConfig', () => {
         ORCHESTRATOR_SECRET_KEY: secret,
         PORT: '70000',
         LOG_LEVEL: 'loud',
+        PUBLIC_URL: 'ftp://files.example.net',
       });
     } catch (error) {
       message = (error as Error).message;
@@ -53,6 +73,7 @@ describe('loadConfig', () => {
     expect(message).toContain('- ORCHESTRATOR_SECRET_KEY: must be at least 32 characters');
     expect(message).toContain('- PORT: ');
     expect(message).toContain('- LOG_LEVEL: ');
+    expect(message).toContain('- PUBLIC_URL: must be an http:// or https:// URL');
     expect(message).not.toContain(secret);
     expect(message).not.toContain('db-password');
     expect(message).not.toContain('loud');
