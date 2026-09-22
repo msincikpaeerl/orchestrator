@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.27.0
 # Orchestrator server image (09, section 7.1; ADR 0014). Build context: repository root.
 
 FROM node:24.21.0-trixie-slim AS build
