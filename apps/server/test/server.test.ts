@@ -5,8 +5,10 @@ import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { startServer, type RunningServer } from '../src/server.js';
+import { TEST_SECRET_KEY } from './helpers.js';
 
 const logger = pino({ level: 'silent' });
+const keys = { secretKey: TEST_SECRET_KEY, publicUrl: 'http://localhost:8080' };
 
 describe('server started on a new database', () => {
   let database: TestDatabase;
@@ -15,7 +17,7 @@ describe('server started on a new database', () => {
 
   beforeAll(async () => {
     database = await createTestDatabase();
-    server = await startServer({ databaseUrl: database.url, port: 0 }, logger);
+    server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, logger);
     const address = server.app.server.address();
     if (address === null || typeof address === 'string') throw new Error('no TCP address');
     baseUrl = `http://127.0.0.1:${String(address.port)}`;
@@ -62,7 +64,7 @@ describe('health when the database is unreachable', () => {
 
   it('answers 503 and names the database', async () => {
     pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
-    const app = buildApp({ pool, logger });
+    const app = buildApp({ pool, logger, ...keys });
 
     const response = await app.inject({ method: 'GET', url: '/health' });
 
@@ -74,7 +76,10 @@ describe('health when the database is unreachable', () => {
 describe('start when the database is unreachable', () => {
   it('fails instead of listening without migrations', async () => {
     await expect(
-      startServer({ databaseUrl: 'postgres://nobody:secret@127.0.0.1:1/none', port: 0 }, logger),
+      startServer(
+        { databaseUrl: 'postgres://nobody:secret@127.0.0.1:1/none', port: 0, ...keys },
+        logger,
+      ),
     ).rejects.toThrow();
   });
 });

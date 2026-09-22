@@ -1,5 +1,5 @@
-import { pino } from 'pino';
 import { ConfigError, loadConfig } from './config.js';
+import { createLogger } from './logger.js';
 import { startServer } from './server.js';
 
 // Entry point of the server process (`node dist/main.js`).
@@ -13,7 +13,7 @@ try {
   process.exit(1);
 }
 
-const logger = pino({ level: config.logLevel });
+const logger = createLogger(config.logLevel);
 
 try {
   const server = await startServer(config, logger);
