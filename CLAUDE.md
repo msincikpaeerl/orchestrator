@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Bootstrapping: lot 0 of `docs/specs/10-delivery-plan.md`. Commands below describe the target setup; if one does not exist yet, creating it may be part of your task. Update this file when the setup changes.
+Lot 0 of `docs/specs/10-delivery-plan.md`, following `docs/dev/lot-0-plan.md` (read it; do only the next unchecked step). Commands marked *(later)* print which step adds them. Update this file when the setup changes.
 
 ## Read before working
 
@@ -29,18 +29,20 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Task | Command |
 |---|---|
 | Install | `pnpm install` |
-| Start database | `docker compose -f docker/compose.dev.yml up -d postgres` |
-| Run server + UI in dev | `pnpm dev` |
-| Run daemon in dev | `pnpm --filter daemon dev` |
+| Start database *(later)* | `docker compose -f docker/compose.dev.yml up -d postgres` |
+| Run server + UI in dev *(later)* | `pnpm dev` |
+| Run daemon in dev *(later)* | `pnpm --filter daemon dev` |
 | Unit and integration tests | `pnpm test` |
-| End-to-end tests | `pnpm test:e2e` |
-| Lint and format check | `pnpm lint` |
+| End-to-end tests *(later)* | `pnpm test:e2e` |
+| Lint and format check | `pnpm lint` (fix formatting: `pnpm format`) |
 | Type check | `pnpm typecheck` |
-| Everything CI runs | `pnpm verify` |
-| Database migration (new) | `pnpm --filter db migrate:generate` |
-| Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
+| Documentation link check | `pnpm docs:links` |
+| Build | `pnpm build` |
+| Everything CI runs | `pnpm verify` (never `pnpm ci`: built-in pnpm command) |
+| Database migration (new) *(later)* | `pnpm --filter db migrate:generate` |
+| Full stack in Docker *(later)* | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` before considering any task finished.
+Run `pnpm verify` before considering any task finished. Requires Node.js 24 (`.nvmrc`); setup details in `docs/dev/setup.md`.
 
 ## Repository map
 
@@ -71,6 +73,7 @@ docker/          Dockerfile and compose files
 - Logs: Pino, structured, with run id, ticket number and machine when relevant.
 - Names: files in kebab-case, types in PascalCase, functions and variables in camelCase.
 - All text (UI, docs, comments, commit messages) in English.
+- Markdown is not formatted by Prettier: keep tables unpadded (`| a | b |`) to save context (ADR 0007).
 
 ## Tests
 

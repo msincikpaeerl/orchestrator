@@ -23,7 +23,7 @@ Every session working on lot 0 follows these rules.
 
 ## Steps
 
-### [ ] A. Monorepo, tooling and CI
+### [x] A. Monorepo, tooling and CI
 
 - pnpm workspaces with the structure of 09, section 2: `apps/server`, `apps/web`, `apps/daemon`, `packages/protocol`, `packages/db`. Each is a minimal placeholder that builds and has one passing test.
 - Shared strict `tsconfig` base, ESLint (flat config), Prettier, Vitest (workspace config).
@@ -32,7 +32,7 @@ Every session working on lot 0 follows these rules.
 - Documentation link check (08, section 4) over `docs/` and the root Markdown files.
 - GitHub Actions `ci.yml`: on pull requests and pushes to `main`, pnpm cache, runs `pnpm verify`, `pnpm audit --audit-level critical`.
 - Harness files still missing from 08, section 2: `README.md`, `CHANGELOG.md`, `.github/pull_request_template.md`, `docs/dev/architecture.md` (short), `.gitignore`, `.editorconfig`, `.env.example` (variables of 09, section 7.1).
-- ADRs: TypeScript, Node.js LTS, pnpm workspaces, Vitest + ESLint + Prettier (test and lint tooling), GitHub Actions.
+- ADRs: TypeScript (0003), Node.js LTS (0004), pnpm workspaces (0005), Vitest (0006), ESLint + Prettier + link check (0007), GitHub Actions (0008).
 - `docs/dev/setup.md` and `docs/dev/testing.md` written; CLAUDE.md commands corrected.
 
 **Done when** a fresh clone runs `pnpm install` then `pnpm verify` successfully, the workflow file is valid, and the ADRs are in `docs/adr/`.
