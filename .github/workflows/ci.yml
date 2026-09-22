@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
       # Integration tests (docs/dev/testing.md). Same image as docker/compose.dev.yml.
@@ -51,7 +51,7 @@ jobs:
 
   docker:
     # Builds the image and starts docker/compose.yml as the owner would.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
