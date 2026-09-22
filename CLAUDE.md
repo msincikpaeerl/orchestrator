@@ -36,11 +36,11 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | End-to-end tests | `pnpm test:e2e` |
 | Lint and format check | `pnpm lint` |
 | Type check | `pnpm typecheck` |
-| Everything CI runs | `pnpm ci` |
+| Everything CI runs | `pnpm verify` |
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm ci` before considering any task finished.
+Run `pnpm verify` before considering any task finished.
 
 ## Repository map
 

@@ -195,11 +195,24 @@ A run in `paused_quota` keeps its session and worktree. It resumes on the same m
 
 Append-only log of everything that happens: status changes, MCP calls, run lifecycle, scheduler decisions. Used for the activity feed, debugging and audit. Fields: id, timestamp, actor, entity type and id, event type, payload.
 
+### 3.11 Owner
+
+The single human user (v1). Created by the setup wizard (02, section 3); at most one exists.
+
+| Field | Description |
+|---|---|
+| username | Used to log in. |
+| password_hash | Argon2 hash (09, section 5). The password has at least 12 characters. |
+| created_at | Timestamp. |
+| sessions | Active login sessions: id, token hash, created_at, expires_at. Revocable from Settings (02, section 10). |
+
+There is no email address. A forgotten password is reset with a command run inside the server container (09, section 7.4).
+
 ## 4. Where things live
 
 | Information | Location |
 |---|---|
-| Projects, tickets, plans, comments, runs, machines, accounts, profiles, events | PostgreSQL (web application). |
+| Owner, projects, tickets, plans, comments, runs, machines, accounts, profiles, events | PostgreSQL (web application). |
 | Code, tests, ADRs, project documentation | The project's GitHub repository. |
 | Run transcripts | On the machine; streamed to the web application and kept there in summarised form. |
 | Claude credentials | On the machine only. Never sent to the web application. |

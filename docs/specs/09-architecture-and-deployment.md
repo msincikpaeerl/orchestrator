@@ -107,7 +107,9 @@ The server is a single process. Components are modules inside it, not separate s
 | `orchestrator` | The server, with the built UI as static files. Runs database migrations at start. |
 | `postgres` | PostgreSQL with a named volume. |
 
-One `docker-compose.yml` for all targets, configured by environment variables:
+One compose file, `docker/compose.yml`, for all targets, configured by environment variables. `docker/compose.dev.yml` runs only PostgreSQL for development and integration tests.
+
+Environment variables:
 
 | Variable | Purpose |
 |---|---|
@@ -133,6 +135,16 @@ The daemon is never containerised (05, section 2).
 
 - The only state to back up is the PostgreSQL database and the `ORCHESTRATOR_SECRET_KEY`. Code lives on GitHub.
 - A `backup` command in the container produces a `pg_dump` file; the user documentation explains how to schedule it on each target and how to restore.
+
+### 7.4 Owner password reset
+
+The owner account has no email address (01, section 3.11). A forgotten password is reset from the host with a command run inside the server container:
+
+```
+docker compose -f docker/compose.yml exec orchestrator orchestrator reset-password
+```
+
+It asks for the new password interactively (never as an argument, so it does not stay in the shell history), applies the minimum length, revokes all sessions and writes an event. The user documentation explains it.
 
 ## 8. Observability
 

@@ -29,13 +29,33 @@ This document describes the screens of the web application and what the owner ca
 
 ## 3. First launch: setup wizard
 
-Shown until completed. Each step links to its help page.
+Shown on first launch until completed. Each step links to its help page.
 
-1. **Create the owner account**: name, password.
-2. **Connect GitHub**: paste a fine-grained personal token; the application checks it and lists the permissions it still needs.
-3. **Add a Claude account**: label, plan, optional schedule windows and daily budget.
-4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks.
-5. **Done**: suggests submitting a first request.
+The wizard covers only the steps that exist in the current version and ends on a **Done** page linking to Help. Steps added by later versions are not forced through the wizard again: until they are done, they appear as items in "Needs you" (for example "No machine connected yet") with a link to the right screen.
+
+1. **Create the owner account**: username and password (at least 12 characters). See 01, section 3.11.
+2. **Connect GitHub**: paste a fine-grained personal access token; the application checks it, shows its expiry date and lists the permissions it still needs (section 3.1).
+3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Lot 2.)*
+4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Lot 2.)*
+5. **Done**: links to Help; once requests exist, suggests submitting a first request.
+
+### 3.1 GitHub token requirements
+
+A fine-grained personal access token with:
+
+| Setting | Value | Why |
+|---|---|---|
+| Repository access | All repositories | Repositories created later by the Orchestrator must be covered. |
+| Administration | Read and write | Create repositories, apply branch protection. |
+| Contents | Read and write | Skeleton commits, branches. |
+| Pull requests | Read and write | Open pull requests, post review comments, detect merges. |
+| Workflows | Read and write | The skeleton and agents commit `.github/workflows` files; GitHub rejects them without it. |
+| Checks | Read | GitHub Actions results are check runs. |
+| Commit statuses | Read | CI status reported as commit statuses. |
+| Actions | Read | Failed job logs for `ci.status` (06). |
+| Metadata | Read | Required by GitHub for any repository access. |
+
+The wizard and Settings show the token's expiry date. "Needs you" warns 14 days before it expires (the delay is a setting).
 
 ## 4. Needs you
 
@@ -45,7 +65,9 @@ The owner's task list, ordered by age:
 - questions from agents (tickets and requests), answerable inline;
 - pull requests awaiting merge, with a link to GitHub and the review summary;
 - tickets stopped after repeated failures;
-- system problems: machine offline with active work, account limited, daemon incompatible.
+- system problems: machine offline with active work, account limited, daemon incompatible;
+- setup still to do: steps added after the owner went through the wizard (section 3), for example "No machine connected yet";
+- GitHub token expiring within 14 days, expired, or missing permissions (section 3.1).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).
 
@@ -135,7 +157,7 @@ State, plan, schedule windows, daily budget, behaviour at window end, limit hist
 ## 10. Settings
 
 - Global limits and scheduler settings (04, section 8; 07, section 8).
-- GitHub connection: token status, permissions check, replace token.
+- GitHub connection: token status, expiry date, permissions check, replace token.
 - Owner account: change password, sessions.
 - Backup reminder with a link to the backup guide.
 
