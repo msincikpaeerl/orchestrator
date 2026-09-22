@@ -99,7 +99,7 @@ docker/          Dockerfile and compose files
 
 ## Never
 
-- Never install software or change anything outside this repository (no global installs, no files in the home folder, no PATH or shell changes). If a tool is missing, stop and say what to install.
+- Never install software or change anything outside this repository (no global installs, no files in the home folder, no PATH or shell changes). Only exception: Docker images declared in the repo's own files, pinned to an exact version. If a tool is missing, stop and say what to install.
 - Never use `--dangerously-skip-permissions` in daemon code.
 - Never send Claude credentials or the GitHub token to agents, the browser or logs.
 - Never let an agent-facing path push to GitHub; only the daemon pushes, and only ticket branches.
