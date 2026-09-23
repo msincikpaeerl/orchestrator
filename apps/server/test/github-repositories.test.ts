@@ -117,6 +117,7 @@ describe('creating a repository with the skeleton', () => {
       private: isPrivate,
       archived: false,
       defaultBranch: 'main',
+      createdAt: expect.any(String) as unknown,
     });
     expect(requestsTo('POST', /^\/user\/repos$/)[0]?.body).toEqual({
       name: 'shop',
@@ -403,6 +404,7 @@ describe('repositories of the account', () => {
       private: false,
       archived: true,
       defaultBranch: 'main',
+      createdAt: '2020-01-01T00:00:00Z',
     });
     expect(requestsTo('GET', /^\/user\/repos\?affiliation=owner/)).toHaveLength(2);
   });

@@ -88,7 +88,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 *Done 2026-09-23.* `apps/server/src/github/repositories.ts` and `skeleton.ts`, ADR 0023; the fake GitHub now keeps commits, trees, branches and rulesets. Choices within the step: `templates/` is a workspace package the server depends on (bundled like the UI); the skeleton also fills in the default branch (for its CI) and the date (ADR 0001), and has a `.remarkrc.json` for its link check and a `.gitignore` for the `node_modules/` that check installs; its CLAUDE.md (reviewed by the owner) has Tests and Before finishing sections and the link check as one runnable command, identical to the CI's; the ruleset requires only the final CI job `ci`, which needs every other job (owner's review; 08, section 4), and no approving review (GitHub never lets the owner approve their own pull request); applying the skeleton or the ruleset again is safe (no duplicate commit or ruleset). The skeleton's CI command was also run in the pinned `node` image: it passes on the skeleton and fails on a broken link. Requests added to the step A table, needing no new permission: `GET .../git/ref/heads/{branch}` and `GET .../git/commits/{sha}` (Contents read) to find the head, `GET .../rulesets` (Metadata read) to find a ruleset left by an earlier attempt.
 
-### [ ] C. Projects: database and API
+### [x] C. Projects: database and API
 
 - Table `projects` (01, section 3.1) with its migration; key rules (2 to 6 uppercase letters, unique including archived projects, immutable); slug from the name.
 - API with protocol schemas: list (archived hidden unless asked), detail, create with a new repository, create by linking, repositories available to link, name and key availability, **Try again** for a failed setup, **Check again** for harness elements, archive, unarchive, edit name and description.
@@ -96,6 +96,8 @@ Compared with 02, section 3.1: every permission used is already required, with t
 - Events for every change (`project.created`, `project.setup_step`, `project.setup_failed`, `project.ready`, `project.archived`, ...). "Needs you" API gains "project setup failed".
 
 **Done when** integration tests cover each endpoint with its refusal cases (bad or duplicate key, repository name taken, repository already linked, archived GitHub repository, GitHub refusal, edit of an archived project), the restart case, and prove archiving sends no request to GitHub.
+
+*Done 2026-09-23.* `apps/server/src/projects/` (routes, setup runner), `src/needs-you.ts`, migration `0003_projects`, tests in `apps/server/test/projects.test.ts`. Spec 08, section 3.2 gained a bootstrap ticket criterion (owner's request): the link check moves into the stack's own tooling. Choices within the step: the setup steps are `repository`, `skeleton`, `branch_protection` for a new repository and `harness` for a linked one, whose setup is its first harness check; a refused branch protection fails the setup at that step (08, section 3.1); if the answer to the repository creation was lost, trying again reuses the repository found under that name only when GitHub created it after the creation request (with a clock tolerance setting, 2 minutes by default) and its default branch holds at most GitHub's first commit, otherwise the setup fails with "Repository name already taken" and nothing is written (owner's review; 08, section 3.1 and ADR 0023); API addresses use the project key; the slug of a linked project comes from its name; archiving is refused while a setup runs, and **Check again** needs a linked project whose setup is done; `GET /api/needs-you` lists failed setups of active projects (GitHub problems stay in `GET /api/github`); name at most 100 characters, description at most 1,000. `required_capabilities` (01, section 3.1) is not added yet: it comes with machines, like the ticket columns of later lots.
 
 ### [ ] D. Projects: screens and user documentation
 
@@ -127,7 +129,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 ### [ ] G. Settings screen with limits
 
-- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout) move to it.
+- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout, and the GitHub clock tolerance added in step C, `githubClockToleranceSeconds`, default 120 seconds) move to it and to Settings > Limits.
 - Each setting described once in `packages/protocol` (name, description, unit, allowed range, default, overridable per project).
 - Settings > Limits (02, section 10): value, default, description, **Reset to default**; project settings show the overridable ones. Settings used only by later lots say "Used from version ...". Changes apply to future actions only, and write an event.
 - `docs/user/`: a Settings reference page listing every setting with its effect (04, section 8).

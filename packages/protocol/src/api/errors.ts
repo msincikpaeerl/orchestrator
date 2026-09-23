@@ -17,6 +17,23 @@ export const ApiErrorCode = z.enum([
   'github_token_unreadable',
   'github_unreachable',
   'expiry_date_in_past',
+  /** GitHub answered a request, but refused it or not as expected; the message says why. */
+  'github_request_failed',
+  'project_not_found',
+  'project_key_taken',
+  /** A repository with this name exists on the owner's GitHub account. */
+  'repository_name_taken',
+  'repository_not_found',
+  'repository_archived',
+  'repository_already_linked',
+  /** Archived projects are read-only: unarchive first. */
+  'project_archived',
+  'project_not_archived',
+  'project_setup_in_progress',
+  'project_setup_not_failed',
+  /** Check again is for linked repositories whose setup is done. */
+  'project_not_linked',
+  'project_not_ready',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

@@ -3,7 +3,9 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { runMigrations } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
+import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { TEST_SECRET_KEY } from './helpers.js';
 
@@ -81,5 +83,32 @@ describe('start when the database is unreachable', () => {
         logger,
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('start after a restart during a project setup', () => {
+  it('marks the interrupted setup as failed, so the owner can try again', async () => {
+    const database = await createTestDatabase();
+    const pool = new pg.Pool({ connectionString: database.url });
+    try {
+      await runMigrations(pool);
+      await pool.query(
+        `INSERT INTO projects (key, name, slug, description, kind, repo_owner, repo_name,
+           repo_origin, repo_private, setup_status, setup_step)
+         VALUES ('SHOP', 'Shop', 'shop', '', 'web_app', 'octo-owner', 'shop', 'created', true,
+           'in_progress', 'skeleton')`,
+      );
+      const server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, logger);
+      await server.close();
+      const { rows } = await pool.query(
+        'SELECT setup_status, setup_step, setup_failure FROM projects',
+      );
+      expect(rows).toEqual([
+        { setup_status: 'failed', setup_step: 'skeleton', setup_failure: INTERRUPTED_REASON },
+      ]);
+    } finally {
+      await pool.end();
+      await database.drop();
+    }
   });
 });

@@ -16,6 +16,7 @@ A project with a new repository gets the common skeleton in one commit and, when
 - **One required check, `ci`.** A ruleset requires checks by job name. The skeleton's CI ends with a job named `ci` that needs every other job, runs even when one of them fails (`if: always()`), and fails when any of them failed, was cancelled or was skipped. The ruleset requires only `ci`. The skeleton's CLAUDE.md says that every job is listed in the needs of `ci`, and that `ci` is never renamed or removed. A test checks that the ruleset and the skeleton's workflow use the same name.
 - **Harness elements** are read from one recursive tree listing of the default branch (`GET /git/trees/{branch}?recursive=1`); 409 means an empty repository, with every element missing.
 - **Skeleton CI** installs `remark-cli` and `remark-validate-links`, pinned to this repository's versions, with `npm install --no-save --no-package-lock`, then runs `remark`, so the skeleton needs no `package.json` before the bootstrap ticket chooses the stack. The skeleton's CLAUDE.md gives the same one-line command, word for word, and its `.gitignore` ignores the `node_modules/` it creates. (`npx --package` without installing was tried: remark then cannot find its plugin.) Tests keep the versions and Node.js in step with this repository, keep CLAUDE.md's command identical to the CI's, and run the check on the rendered skeleton.
+- **Reusing a repository after a lost answer.** The time the creation request is sent is stored with the project. When trying again finds a repository with the project's name, it is reused only if GitHub's `created_at` is not earlier than that time minus the `githubClockToleranceSeconds` setting (default 120), and its default branch is empty or holds a single commit without parent whose only file is `README.md` (GitHub's `auto_init` commit). Otherwise the setup fails with "Repository name already taken" and nothing is written. Reads only: `GET /repos/{owner}/{repo}`, the branch head, its commit and its tree (Metadata and Contents read).
 - Failures are `GitHubOperationError`, whose message is written for the owner ("Could not create the repository shop: ...") and becomes the setup's reason.
 
 ## Alternatives considered
@@ -25,11 +26,13 @@ A project with a new repository gets the common skeleton in one commit and, when
 - One `PUT /contents` request per file: one commit per file, against "one commit" in 08.
 - Classic branch protection (`PUT /branches/{branch}/protection`): same plan limit, one branch name fixed at creation; rulesets follow the default branch if it is renamed and are GitHub's current feature.
 - Requiring each CI job by name (for example the skeleton's `docs-links`): the bootstrap ticket rewrites CI for the project's stack, and a renamed or removed job would leave the ruleset waiting for a check that never comes, so no pull request could be merged.
+- Reusing any repository found under the name after a creation request (the first version of lot 1 step C): it could take over a repository the owner created in the meantime and commit the skeleton into it. Always failing on "name already taken" instead: safe, but the owner would have to delete on GitHub a repository the Orchestrator created itself.
 - Requiring approving reviews: the owner opens pull requests with their own token, and GitHub never lets an author approve their own pull request.
 
 ## Consequences
 
 - A setup can be tried again from the failed step without duplicating commits or rulesets.
+- A repository the Orchestrator did not create is never written to; a lost creation answer is recovered without the owner's help unless GitHub's clock differs from the server's by more than the tolerance, in which case the owner sees "Repository name already taken".
 - The history of a new repository has two commits (GitHub's README, then the skeleton).
 - Moving the branch needs Workflows (write) because the skeleton contains `.github/workflows/ci.yml`; the fake GitHub assumes GitHub refuses it with "not accessible" like other missing permissions. The lot 1 check with the real GitHub (step I) confirms the plan refusal message and the ruleset.
 - Every CI job of a project must be listed in the needs of `ci`; a job left out is not required for merging. `ci` must keep its name.

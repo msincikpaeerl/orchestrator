@@ -78,6 +78,8 @@ For a new repository, the server:
 
 Each step is recorded as an event. If a step fails, the project's setup is `failed` with the reason and the owner can try again; trying again resumes from the failed step.
 
+The server never takes over a repository it did not create. When trying again finds a repository with the project's name (for example because GitHub created it but its answer was lost in a restart), it is reused only if both are true: GitHub created it after the attempt that sent the creation request started, give or take a clock tolerance (a setting, 2 minutes by default), and its default branch is empty or holds only GitHub's first commit (the README alone). Otherwise the setup fails with "Repository name already taken" and nothing is written to that repository.
+
 ### 3.2 Bootstrap ticket
 
 Every plan for a new project starts with a bootstrap ticket assigned to the Architect (03, section 2.1). Its acceptance criteria are fixed:
@@ -86,6 +88,7 @@ Every plan for a new project starts with a bootstrap ticket assigned to the Arch
 - the project builds, and a sample test runs at each test level used by the project;
 - lint, format check and type check (when applicable) are configured;
 - CI runs all of the above on every pull request, plus the build artefact for Android;
+- the documentation link check is moved into the stack's own tooling (for example a pinned dev dependency and a script), replacing the skeleton's npm install command in CLAUDE.md and CI; both stay identical;
 - CLAUDE.md is complete (commands, folder map, conventions);
 - `docs/dev/setup.md` and `docs/dev/testing.md` are written;
 - `docs/user/getting-started.md` explains how to run the product.

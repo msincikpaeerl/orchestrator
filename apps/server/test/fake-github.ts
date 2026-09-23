@@ -16,6 +16,8 @@ export interface FakeRepository {
   empty?: boolean;
   /** Default `main`. */
   defaultBranch?: string;
+  /** GitHub's `created_at`; default an old date, set to the current time by `POST /user/repos`. */
+  createdAt?: string;
   /** Files of the first commit when not empty; default a README. */
   files?: Record<string, string>;
   /** Rulesets created on the repository, by name. */
@@ -187,6 +189,7 @@ function repositoryJson(account: FakeAccount, repo: FakeRepository) {
     archived: repo.archived ?? false,
     description: repo.description ?? null,
     default_branch: branchOf(repo),
+    created_at: repo.createdAt ?? '2020-01-01T00:00:00Z',
   };
 }
 
@@ -262,6 +265,7 @@ function answer(account: FakeAccount, request: RecordedRequest): FakeReply {
       private: body.private === true,
       description,
       defaultBranch: account.defaultBranch ?? 'main',
+      createdAt: new Date().toISOString(),
       empty: body.auto_init !== true,
       files: { 'README.md': `# ${name}\n\n${description}\n` },
     };

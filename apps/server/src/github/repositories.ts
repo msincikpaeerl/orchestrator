@@ -28,6 +28,8 @@ export interface GitHubRepository extends RepositoryRef {
   private: boolean;
   archived: boolean;
   defaultBranch: string;
+  /** When GitHub created the repository, ISO 8601 (GitHub's clock). */
+  createdAt: string;
 }
 
 const Repository = z.object({
@@ -36,6 +38,7 @@ const Repository = z.object({
   private: z.boolean(),
   archived: z.boolean(),
   default_branch: z.string(),
+  created_at: z.string(),
 });
 
 const ErrorBody = z.object({
@@ -61,6 +64,7 @@ function toRepository(body: z.infer<typeof Repository>): GitHubRepository {
     private: body.private,
     archived: body.archived,
     defaultBranch: body.default_branch,
+    createdAt: body.created_at,
   };
 }
 
@@ -155,7 +159,11 @@ export async function createRepository(
 }
 
 const Ref = z.object({ object: z.object({ sha: z.string() }) });
-const Commit = z.object({ sha: z.string(), tree: z.object({ sha: z.string() }) });
+const Commit = z.object({
+  sha: z.string(),
+  tree: z.object({ sha: z.string() }),
+  parents: z.array(z.object({ sha: z.string() })),
+});
 const Tree = z.object({
   sha: z.string(),
   truncated: z.boolean().optional(),
@@ -169,7 +177,7 @@ async function readHead(
   client: GitHubClient,
   repo: RepositoryRef,
   branch: string,
-): Promise<{ commit: string; tree: string } | null> {
+): Promise<{ commit: string; tree: string; parents: number } | null> {
   const refResponse = await client.request({
     method: 'GET',
     path: `${repoPath(repo)}/git/ref/heads/${branchPath(branch)}`,
@@ -182,7 +190,8 @@ async function readHead(
     path: `${repoPath(repo)}/git/commits/${sha}`,
   });
   if (commitResponse.status !== 200) throw refused(`read the commit ${sha}`, commitResponse);
-  return { commit: sha, tree: parsed(Commit, `read the commit ${sha}`, commitResponse).tree.sha };
+  const commit = parsed(Commit, `read the commit ${sha}`, commitResponse);
+  return { commit: sha, tree: commit.tree.sha, parents: commit.parents.length };
 }
 
 /**
@@ -250,6 +259,27 @@ export async function applySkeleton(
     throw refused(`move the branch ${branch} to the skeleton commit`, refResponse);
   }
   return { commit, alreadyApplied: false };
+}
+
+/**
+ * True when the default branch is empty or holds only GitHub's first commit: one commit with no
+ * parent whose files are just the README (`auto_init`). Reads only.
+ */
+export async function holdsOnlyInitialCommit(
+  client: GitHubClient,
+  repo: RepositoryRef & { defaultBranch: string },
+): Promise<boolean> {
+  const head = await readHead(client, repo, repo.defaultBranch);
+  if (head === null) return true;
+  if (head.parents > 0) return false;
+  const action = `read the files of ${repo.owner}/${repo.name}`;
+  const response = await client.request({
+    method: 'GET',
+    path: `${repoPath(repo)}/git/trees/${head.tree}`,
+  });
+  if (response.status !== 200) throw refused(action, response);
+  const { tree } = parsed(Tree, action, response);
+  return tree.length === 1 && tree[0]?.path === 'README.md' && tree[0].type === 'blob';
 }
 
 /** Name of the ruleset the Orchestrator creates; also how a retry finds it. */
