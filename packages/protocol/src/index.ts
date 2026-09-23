@@ -29,3 +29,4 @@ export {
   type RequiredGitHubPermission,
 } from './api/github.js';
 export { EventActor, EventEntityType, EventType } from './events.js';
+export { BranchProtection, HarnessElement } from './api/projects.js';
