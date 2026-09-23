@@ -139,7 +139,7 @@ The project page shows the repository setup while it runs (refreshing on its own
 
 - Header: number, title, type, status, priority, assignee, links to branch and pull request.
 - Description and acceptance criteria.
-- Dependencies: blocked by, blocks. Only tickets of the same project; a dependency that would create a cycle is refused with an explanation.
+- Dependencies: blocked by, blocks. Only tickets of the same project; a dependency that would create a cycle is refused with an explanation. Dependencies can be added or removed only while the waiting ticket is `proposed` or `todo`; the blocking ticket can be in any state (owner's decision, lot 1 step E).
 - DoD report of the latest submission, with each check's result.
 - Timeline: comments, questions and answers, status changes, reviews, runs.
 - Runs: list with purpose, machine, duration (working and waiting), outcome; open a run to see its live or recorded log.
