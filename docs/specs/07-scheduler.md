@@ -107,14 +107,14 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 
 ## 8. Settings
 
-| Setting | Default | Scope |
-|---|---|---|
-| Schedule windows | None (always) | Account |
-| Daily budget (working time or estimated usage) | None | Account |
-| Behaviour at window end | Finish current run | Account |
-| Fallback delay when reset time is unknown (doubles each time the limit is still reached) | 1 hour | Global |
-| Longest fallback delay | 4 hours | Global |
-| Dispatch acknowledgement timeout (also for runs started with **Run now**) | 60 seconds | Global |
-| Scheduler tick | 30 seconds | Global |
+| Setting | Default | Allowed range | Scope |
+|---|---|---|---|
+| Schedule windows | None (always) | Set on the account | Account |
+| Daily budget (working time or estimated usage) | None | Set on the account | Account |
+| Behaviour at window end | Finish current run | Set on the account | Account |
+| Fallback delay when reset time is unknown (doubles each time the limit is still reached) | 1 hour | 1 to 1,440 minutes | Global |
+| Longest fallback delay | 4 hours | 1 to 2,880 minutes | Global |
+| Dispatch acknowledgement timeout (also for runs started with **Run now**) | 60 seconds | 5 to 600 seconds | Global |
+| Scheduler tick | 30 seconds | 5 to 600 seconds | Global |
 
 All follow the settings rules of 04, section 8. The global ones are shown on Settings > Limits (02, section 10); the others are set on the account (02, section 9.1).
