@@ -62,11 +62,12 @@ The "Create the token on GitHub" link pre-fills the token name, a one-year expir
 
 ### 3.2 Token check
 
-GitHub has no way to list the permissions of a fine-grained token, so the application tries requests with it ([ADR 0017](../adr/0017-github-token-verification.md)). The check never creates or changes anything on GitHub:
+GitHub has no way to list the permissions of a fine-grained token, so the application tries requests with it ([ADR 0022](../adr/0022-github-token-verification-confirmed.md)). The check never creates or changes anything on GitHub:
 
 1. The token is valid: `GET /user` succeeds. This gives the account name shown to the owner. A classic token (not starting with `github_pat_`) is refused.
 2. Read permissions (Metadata, Actions, Commit statuses), with read requests on one existing private repository of the owner, when there is one.
-3. Write permissions (Administration, Contents, Pull requests, Workflows), with deliberately invalid requests: GitHub answers "validation failed" when the permission is granted and "not accessible" when it is missing.
+3. Write permissions (Administration, Contents, Pull requests, Workflows), with deliberately invalid requests: GitHub answers "validation failed" when the permission is granted and "not accessible" when it is missing (confirmed with the real GitHub in lot 0 step E).
+4. A probe that depends on another permission is sent only when that permission is OK: GitHub refuses a workflow file without Contents write before looking at Workflows. Otherwise the result is **Could not verify** with the reason (for example "Requires Contents (Read and write) first"), never **Missing**.
 
 When GitHub refuses a request and sends the `X-Accepted-GitHub-Permissions` header, the permissions it names are used. Each permission shows one of **OK**, **Missing** or **Could not verify** (for example: no repository to test on, GitHub unreachable, or an answer the check does not recognise). The check never guesses.
 

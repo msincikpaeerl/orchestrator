@@ -270,7 +270,7 @@ export interface StoredTokenOptions {
 
 /**
  * Client for every GitHub request made with the saved token during normal operation. It records
- * refusals (ADR 0017): a 401 marks the token invalid, a "not accessible" 403 records the
+ * refusals (ADR 0022): a 401 marks the token invalid, a "not accessible" 403 records the
  * permissions GitHub names. Null when no token is saved; throws `SecretUnreadableError` (after
  * recording the problem) when the token cannot be decrypted.
  */
