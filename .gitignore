@@ -9,3 +9,6 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+
+# Browsers of `pnpm test:e2e:host` (ADR 0021).
+.playwright-browsers/

@@ -30,20 +30,20 @@ The specs are the source of truth. If the code must differ from a spec, update t
 |---|---|
 | Install | `pnpm install` |
 | Start database | `docker compose -f docker/compose.dev.yml up -d postgres` |
-| Run server in dev (UI from step D) | `pnpm dev` |
+| Run server and UI in dev (UI on port 5173) | `pnpm dev` |
 | Run daemon in dev *(later)* | `pnpm --filter daemon dev` |
 | Unit and integration tests | `pnpm test` |
-| End-to-end tests *(later)* | `pnpm test:e2e` |
+| End-to-end tests (Playwright Docker image, desktop and phone) | `pnpm test:e2e` |
 | Lint and format check | `pnpm lint` (fix formatting: `pnpm format`) |
 | Type check | `pnpm typecheck` |
 | Documentation link check | `pnpm docs:links` |
 | Build | `pnpm build` |
-| Everything CI runs | `pnpm verify` (never `pnpm ci`: built-in pnpm command) |
+| Everything CI runs | `pnpm verify` then `pnpm test:e2e` (never `pnpm ci`: built-in pnpm command) |
 | Reset the owner password (dev) | `pnpm --filter server orchestrator reset-password` |
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` before considering any task finished; its integration tests need the database started. Requires Node.js 24 (`.nvmrc`) and Docker; setup details in `docs/dev/setup.md`.
+Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the database started. Requires Node.js 24 (`.nvmrc`) and Docker; setup details in `docs/dev/setup.md`.
 
 ## Repository map
 
@@ -79,7 +79,7 @@ docker/          Dockerfile and compose files
 ## Tests
 
 - New behaviour needs tests; a bug fix needs a regression test that fails before the fix.
-- Unit tests next to the code (`*.test.ts`), integration tests in `apps/*/test/` and `packages/*/test/`, end-to-end tests in `apps/web/e2e/`.
+- Unit tests next to the code (`*.test.ts`), integration tests in `apps/*/test/` and `packages/*/test/`, end-to-end tests in `apps/web/e2e/` (`*.e2e.ts`, run on desktop and phone viewports; browsers come from the Playwright image, never from the home folder).
 - Integration tests use a real PostgreSQL (the dev compose database), never mocks of the database: one throw-away database per test file (`createTestDatabase` from `@orchestrator/db/testing`).
 - The daemon's tmux and Claude Code layer is tested against a fake `claude` executable that emits hook calls and transcript lines; no real Claude Code in CI.
 - Details: `docs/dev/testing.md`.

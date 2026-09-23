@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+/* Help pages: Markdown rendered from docs/user/ (ADR 0020). */
+@layer components {
+  .prose-help {
+    @apply space-y-4 leading-relaxed text-slate-800;
+  }
+  .prose-help h1 {
+    @apply text-2xl font-semibold text-slate-900;
+  }
+  .prose-help h2 {
+    @apply pt-4 text-xl font-semibold text-slate-900;
+  }
+  .prose-help h3 {
+    @apply pt-2 text-lg font-semibold text-slate-900;
+  }
+  .prose-help a {
+    @apply text-blue-700 underline;
+  }
+  .prose-help ul {
+    @apply list-disc space-y-1 pl-6;
+  }
+  .prose-help ol {
+    @apply list-decimal space-y-1 pl-6;
+  }
+  .prose-help code {
+    @apply rounded bg-slate-100 px-1 py-0.5 text-sm break-words;
+  }
+  .prose-help pre {
+    @apply overflow-x-auto rounded bg-slate-900 p-3 text-sm text-slate-100;
+  }
+  .prose-help pre code {
+    @apply bg-transparent p-0 text-slate-100;
+  }
+  .prose-help table {
+    @apply block w-full overflow-x-auto border-collapse text-sm;
+  }
+  .prose-help th,
+  .prose-help td {
+    @apply border border-slate-300 px-2 py-1 text-left align-top;
+  }
+  .prose-help th {
+    @apply bg-slate-100;
+  }
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}

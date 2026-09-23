@@ -49,6 +49,62 @@ jobs:
       - name: Dependency audit (fails on critical vulnerabilities)
         run: pnpm audit --audit-level critical
 
+  e2e:
+    # End-to-end tests in the same pinned Playwright image as `pnpm test:e2e` (ADR 0021).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      # Keep in step with @playwright/test in apps/web (apps/web/e2e/image-version.test.ts).
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.24
+        env:
+          POSTGRES_USER: orchestrator
+          POSTGRES_PASSWORD: orchestrator
+          POSTGRES_DB: orchestrator
+        options: >-
+          --health-cmd "pg_isready -U orchestrator -d orchestrator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      # From the job container, the service is reached by its name.
+      TEST_DATABASE_URL: postgres://orchestrator:orchestrator@postgres:5432/orchestrator
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The image's Node.js runs pnpm (pinned by packageManager, through Corepack) and the tests.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-e2e-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: corepack pnpm install --frozen-lockfile
+
+      - run: corepack pnpm --filter @orchestrator/web build
+
+      # Same command as tools/e2e-docker.sh runs in the image locally.
+      - name: End-to-end tests
+        working-directory: apps/web
+        run: ./node_modules/.bin/playwright test
+
+      - name: Keep the report of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+
   docker:
     # Builds the image and starts docker/compose.yml as the owner would.
     runs-on: ubuntu-24.04
@@ -64,10 +120,11 @@ jobs:
       - name: Start the stack
         run: docker compose -f docker/compose.yml up --build --detach --wait
 
-      - name: Check health and version
+      - name: Check health, version and the UI
         run: |
           curl --fail --silent --show-error http://localhost:8080/health
           curl --fail --silent --show-error http://localhost:8080/version
+          curl --fail --silent --show-error http://localhost:8080/settings/github | grep --quiet '<div id="root">'
 
       - name: Server logs
         if: always()

@@ -6,8 +6,8 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 
 | Folder | Package | Role | State |
 |---|---|---|---|
-| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token (API only), `orchestrator reset-password` |
-| `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | placeholder |
+| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, `orchestrator reset-password`, serves the UI |
+| `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you (GitHub problems), Settings > GitHub connection, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
 | `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list |
 | `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events` |
@@ -15,12 +15,12 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 ## Dependencies between packages
 
 ```
-apps/server  ──► packages/protocol, packages/db
+apps/server  ──► packages/protocol, packages/db, apps/web (its built dist/)
 apps/daemon  ──► packages/protocol
 apps/web     ──► packages/protocol
 ```
 
-Only the server's dependencies exist so far; the others are added with the code that needs them.
+The daemon's dependency is added with the code that needs it.
 
 ## Server start
 
@@ -37,6 +37,7 @@ Only the server's dependencies exist so far; the others are added with the code 
 | `src/settings.ts` | Settings with their defaults (04, section 8). Not editable yet. |
 | `src/http.ts` | Input validation with the protocol schemas and the error format (`ApiError`). |
 | `src/cli.ts` | The `orchestrator` command of the image: `reset-password` (`src/reset-password.ts`). |
+| `src/web.ts` | Serves the built UI, and its `index.html` for screen addresses; unknown API addresses answer `not_found` (ADR 0018). |
 
 ## API
 
@@ -50,7 +51,20 @@ Only the server's dependencies exist so far; the others are added with the code 
 | `PUT /api/github/token` | yes | Save (or replace) the token with its expiry date, then check it. |
 | `POST /api/github/token/check` | yes | Check the saved token again. |
 
-Request and response schemas are in `packages/protocol/src/api/`.
+Request and response schemas are in `packages/protocol/src/api/`. Any other `GET` address outside `/api`, `/health`, `/version` and `/assets` returns the UI.
+
+## UI
+
+| Path in `apps/web/src` | Role |
+|---|---|
+| `main.tsx`, `app.tsx` | Entry point; routes (ADR 0019), and the redirections to the wizard or the login page. |
+| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session and GitHub status. |
+| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Settings, Help, "Coming in a later version". |
+| `components/` | Shell (navigation, "Menu" on a phone) and shared form elements. |
+| `github/` | Token instructions and form, permission results, wording of GitHub problems. |
+| `help/` | `docs/user/` bundled at build time, page order, links and search (ADR 0020). |
+
+Help is readable without logging in, so the login page and the wizard can link to it.
 
 ## Deployment
 

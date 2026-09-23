@@ -3,6 +3,8 @@ import { z } from 'zod';
 /** Machine-readable reason of an API refusal; the UI chooses its message from it. */
 export const ApiErrorCode = z.enum([
   'invalid_request',
+  /** No route at this address. */
+  'not_found',
   'not_authenticated',
   'owner_exists',
   'invalid_credentials',
