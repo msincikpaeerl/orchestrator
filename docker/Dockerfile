@@ -11,6 +11,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/daemon/package.json apps/daemon/
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/db/package.json packages/db/
+COPY templates/package.json templates/
 # pnpm at the version pinned by packageManager in package.json.
 RUN npm install --global "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \

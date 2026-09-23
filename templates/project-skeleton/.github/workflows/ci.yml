@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ['{{defaultBranch}}']
+
+permissions:
+  contents: read
+
+jobs:
+  # Branch protection requires this job by its name: keep it.
+  docs-links:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24.21.0
+
+      # Pinned versions, installed without a package.json. The check runs offline.
+      - name: Install the link checker
+        run: npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0
+
+      - name: Check documentation links
+        run: npx remark . --frail --quiet --no-stdout

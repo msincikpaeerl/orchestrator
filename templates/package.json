@@ -1,0 +1,12 @@
+{
+  "name": "@orchestrator/templates",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Files the server writes to GitHub: the project skeleton (docs/specs/08-harness.md, section 3.1).",
+  "files": [
+    "project-skeleton"
+  ],
+  "exports": {
+    "./package.json": "./package.json"
+  }
+}
