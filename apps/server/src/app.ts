@@ -14,7 +14,7 @@ import { handleError } from './http.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
 import { deriveSecretKey } from './secrets.js';
-import { defaultSettings, type Settings } from './settings.js';
+import { registerSettingRoutes } from './settings/routes.js';
 import { registerTicketRoutes } from './tickets/routes.js';
 import { registerUiSettingsRoutes } from './ui-settings.js';
 import { SERVER_VERSION } from './version.js';
@@ -26,7 +26,6 @@ export interface AppDependencies {
   /** ORCHESTRATOR_SECRET_KEY: encrypts stored secrets (ADR 0016). */
   secretKey: string;
   publicUrl: string;
-  settings?: Settings;
   /** GitHub's REST API; tests use a local fake. */
   githubApiUrl?: string;
   /** Clock for time-based rules (login throttling) and timestamps; tests replace it. */
@@ -39,7 +38,6 @@ export interface AppDependencies {
 export function buildApp(dependencies: AppDependencies) {
   const { pool, logger } = dependencies;
   const db = createDatabase(pool);
-  const settings = dependencies.settings ?? defaultSettings;
   const app = Fastify({ loggerInstance: logger });
   app.setErrorHandler(handleError);
   void app.register(cookie);
@@ -62,21 +60,20 @@ export function buildApp(dependencies: AppDependencies) {
   void app.register((scope, _options, done) => {
     registerAuthRoutes(scope, {
       db,
-      settings,
       secureCookies: new URL(dependencies.publicUrl).protocol === 'https:',
       now: dependencies.now,
     });
     const github = {
       db,
       key: deriveSecretKey(dependencies.secretKey),
-      settings,
       apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
-    registerTicketRoutes(scope, { db, settings, now: dependencies.now });
+    registerTicketRoutes(scope, { db, now: dependencies.now });
     registerNeedsYouRoutes(scope, { db });
-    registerUiSettingsRoutes(scope, { db, settings });
+    registerUiSettingsRoutes(scope, { db });
+    registerSettingRoutes(scope, { db });
     done();
   });
 

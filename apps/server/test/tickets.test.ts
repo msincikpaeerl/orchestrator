@@ -7,16 +7,16 @@ import {
   TicketListResponse,
   TicketStatus,
   type OwnerTicketAction,
+  type SettingValues,
 } from '@orchestrator/protocol';
 import { and, asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Settings } from '../src/settings.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
 
 let t: TestApp;
 let cookie: string;
 
-async function start(settings: Partial<Settings> = {}) {
+async function start(settings: Partial<SettingValues> = {}) {
   t = await startTestApp({ settings });
   cookie = await createOwner(t.app);
 }

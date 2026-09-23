@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { SecretUnreadableError, loadSecret, storeSecret, type SecretKey } from '../secrets.js';
-import type { Settings } from '../settings.js';
+import { resolveSettings } from '../settings/store.js';
 import {
   acceptedPermissions,
   createGitHubClient,
@@ -41,11 +41,7 @@ export function isPast(date: string, now = new Date()): boolean {
 }
 
 /** The connection as shown by the wizard, Settings and "Needs you". Never includes the token. */
-export async function loadStatus(
-  db: Executor,
-  settings: Settings,
-  now = new Date(),
-): Promise<GitHubStatusResponse> {
+export async function loadStatus(db: Executor, now = new Date()): Promise<GitHubStatusResponse> {
   const [row] = await db.select().from(schema.githubConnection);
   if (!row) return { connected: false };
   const permissions = z.array(PermissionCheck).parse(row.permissions);
@@ -60,8 +56,11 @@ export async function loadStatus(
   }
   if (row.expiresOn !== null) {
     const daysLeft = daysBetween(today(now), row.expiresOn);
+    const { githubTokenExpiryWarningDays } = await resolveSettings(db, [
+      'githubTokenExpiryWarningDays',
+    ]);
     if (daysLeft < 0) problems.push({ type: 'token_expired', expiresOn: row.expiresOn });
-    else if (daysLeft <= settings.githubTokenExpiryWarningDays) {
+    else if (daysLeft <= githubTokenExpiryWarningDays) {
       problems.push({ type: 'token_expiring', expiresOn: row.expiresOn });
     }
   }
@@ -265,7 +264,6 @@ export interface StoredTokenOptions {
   db: Database;
   key: SecretKey;
   apiUrl: string;
-  settings: Settings;
 }
 
 /**
@@ -277,10 +275,13 @@ export interface StoredTokenOptions {
 export async function storedTokenClient(options: StoredTokenOptions): Promise<GitHubClient | null> {
   const token = await loadToken(options.db, options.key);
   if (token === null) return null;
+  const { githubRequestTimeoutSeconds } = await resolveSettings(options.db, [
+    'githubRequestTimeoutSeconds',
+  ]);
   return createGitHubClient({
     apiUrl: options.apiUrl,
     token,
-    timeoutSeconds: options.settings.githubRequestTimeoutSeconds,
+    timeoutSeconds: githubRequestTimeoutSeconds,
     onResponse: async (request: GitHubRequest, response: GitHubResponse) => {
       if (response.status === 401) {
         await markTokenInvalid(options.db, 'system', describe(request));

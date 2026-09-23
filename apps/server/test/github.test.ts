@@ -9,7 +9,6 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { storedTokenClient } from '../src/github/connection.js';
 import { deriveSecretKey } from '../src/secrets.js';
-import { defaultSettings } from '../src/settings.js';
 import { fullAccount, startFakeGitHub, type FakeAccount, type FakeGitHub } from './fake-github.js';
 import { createLogger } from '../src/logger.js';
 import { startServer } from '../src/server.js';
@@ -365,7 +364,6 @@ describe('ORCHESTRATOR_SECRET_KEY lost or changed', () => {
           db: t.db,
           key: deriveSecretKey(otherKey),
           apiUrl: github.url,
-          settings: defaultSettings,
         }),
       ).rejects.toThrow(SecretUnreadableError);
       const events = await t.db.select({ type: schema.events.type }).from(schema.events);
@@ -416,7 +414,6 @@ describe('refusals during normal operation (the safety net)', () => {
       db: t.db,
       key: deriveSecretKey(TEST_SECRET_KEY),
       apiUrl: github.url,
-      settings: defaultSettings,
     });
     if (!stored) throw new Error('no token');
     return stored;

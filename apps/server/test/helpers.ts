@@ -4,8 +4,8 @@ import pg from 'pg';
 import { buildApp, type App } from '../src/app.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
-import { runMigrations } from '@orchestrator/db';
-import { defaultSettings, type Settings } from '../src/settings.js';
+import { runMigrations, schema } from '@orchestrator/db';
+import type { SettingName, SettingValues } from '@orchestrator/protocol';
 
 export const TEST_SECRET_KEY = 'test-secret-key-that-is-at-least-32-characters';
 export const OWNER = { username: 'owner', password: 'correct horse battery' };
@@ -35,7 +35,8 @@ export interface TestApp {
 export async function startTestApp(
   options: {
     githubApiUrl?: string;
-    settings?: Partial<Settings>;
+    /** Global values stored before the application starts, as if the owner had set them. */
+    settings?: Partial<SettingValues>;
     secretKey?: string;
     now?: () => Date;
   } = {},
@@ -43,20 +44,25 @@ export async function startTestApp(
   const database = await createTestDatabase();
   const pool = new pg.Pool({ connectionString: database.url });
   await runMigrations(pool);
+  const db = createDatabase(pool);
+  const values = Object.entries(options.settings ?? {}).map(([name, value]) => ({
+    name: name as SettingName,
+    value,
+  }));
+  if (values.length > 0) await db.insert(schema.settingValues).values(values);
   const logs = new LogCapture();
   const app = buildApp({
     pool,
     logger: createLogger('trace', logs),
     secretKey: options.secretKey ?? TEST_SECRET_KEY,
     publicUrl: 'http://localhost:8080',
-    settings: { ...defaultSettings, ...options.settings },
     githubApiUrl: options.githubApiUrl,
     now: options.now,
   });
   await app.ready();
   return {
     app,
-    db: createDatabase(pool),
+    db,
     pool,
     logs,
     database,

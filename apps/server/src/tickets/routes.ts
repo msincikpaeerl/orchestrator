@@ -23,7 +23,7 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
-import type { Settings } from '../settings.js';
+import { resolveSettings } from '../settings/store.js';
 import {
   StatusChangedPayload,
   acceptanceCriteria,
@@ -39,7 +39,6 @@ import { applyOwnerAction, insertOwnerTicket } from './transitions.js';
 
 export interface TicketRoutesOptions {
   db: Database;
-  settings: Settings;
   now?: () => Date;
 }
 
@@ -69,7 +68,7 @@ function parseNumber(value: string): number | null {
  * one request at a time per project, and a change and its event are written together.
  */
 export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutesOptions) {
-  const { db, settings } = options;
+  const { db } = options;
   const now = () => options.now?.() ?? new Date();
 
   async function findProject(key: string): Promise<ProjectRow> {
@@ -142,13 +141,19 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
 
   /**
    * Length and count limits of 04, section 8: settings, so the refusal gives each field over its
-   * limit and the limit's value.
+   * limit and the limit's value. Global only: a project cannot override them.
    */
-  function checkLimits(fields: {
+  async function checkLimits(fields: {
     title?: string;
     description?: string;
     acceptanceCriteria?: string[];
   }) {
+    const settings = await resolveSettings(db, [
+      'ticketTitleMaxLength',
+      'ticketDescriptionMaxLength',
+      'ticketMaxAcceptanceCriteria',
+      'acceptanceCriterionMaxLength',
+    ]);
     const exceeded: LimitExceeded[] = [];
     if (fields.title !== undefined && fields.title.length > settings.ticketTitleMaxLength) {
       exceeded.push({ field: 'title', max: settings.ticketTitleMaxLength, unit: 'characters' });
@@ -185,10 +190,11 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   }
 
   /** `apiField`: the comment's field in the request, `body` for a note, `comment` otherwise. */
-  function checkCommentLength(text: string, apiField: 'body' | 'comment') {
-    if (text.length > settings.commentMaxLength) {
+  async function checkCommentLength(text: string, apiField: 'body' | 'comment') {
+    const { commentMaxLength } = await resolveSettings(db, ['commentMaxLength']);
+    if (text.length > commentMaxLength) {
       throw limitRefusal(
-        [{ field: 'comment', max: settings.commentMaxLength, unit: 'characters' }],
+        [{ field: 'comment', max: commentMaxLength, unit: 'characters' }],
         apiField,
       );
     }
@@ -298,7 +304,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   app.post<{ Params: { key: string } }>('/api/projects/:key/tickets', async (request, reply) => {
     await requireSession(db, request);
     const input = parseInput(CreateTicketRequest, request.body);
-    checkLimits(input);
+    await checkLimits(input);
     const created = await change(request.params.key, async (tx, project) => {
       const blockerNumbers = [...new Set(input.blockedBy)];
       const blockers =
@@ -381,7 +387,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   app.patch<TicketParams>('/api/projects/:key/tickets/:number', async (request) => {
     await requireSession(db, request);
     const input = parseInput(UpdateTicketRequest, request.body);
-    checkLimits(input);
+    await checkLimits(input);
     return change(request.params.key, async (tx, project) => {
       const ticket = await findTicket(tx, project.id, request.params.number);
       requireEditable(ticket, 'A ticket');
@@ -555,7 +561,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   app.post<TicketParams>('/api/projects/:key/tickets/:number/comments', async (request, reply) => {
     await requireSession(db, request);
     const input = parseInput(AddCommentRequest, request.body);
-    checkCommentLength(input.body, 'body');
+    await checkCommentLength(input.body, 'body');
     const result = await change(request.params.key, async (tx, project) => {
       // Owner notes are allowed on any ticket of an active project, terminal ones included.
       const ticket = await findTicket(tx, project.id, request.params.number);
@@ -591,7 +597,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     app.post<TicketParams>(`/api/projects/:key/tickets/:number/${path}`, async (request) => {
       await requireSession(db, request);
       const text = comment(request.body);
-      if (text !== undefined) checkCommentLength(text, 'comment');
+      if (text !== undefined) await checkCommentLength(text, 'comment');
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
         const updated = await applyOwnerAction(tx, {

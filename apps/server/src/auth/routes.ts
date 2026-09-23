@@ -10,7 +10,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Database } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
-import type { Settings } from '../settings.js';
 import { hashPassword, unknownUserHash, verifyPassword } from './password.js';
 import { LoginThrottle } from './throttle.js';
 import {
@@ -24,7 +23,6 @@ import {
 
 export interface AuthOptions {
   db: Database;
-  settings: Settings;
   /**
    * Cookies get the Secure flag only when PUBLIC_URL is HTTPS: browsers never send a Secure
    * cookie over plain HTTP, so login would silently fail on a LAN address.
@@ -45,11 +43,8 @@ export async function requireSession(
   return session;
 }
 
-export function registerAuthRoutes(
-  app: FastifyInstance,
-  { db, settings, secureCookies, now }: AuthOptions,
-) {
-  const throttle = new LoginThrottle(db, settings, now);
+export function registerAuthRoutes(app: FastifyInstance, { db, secureCookies, now }: AuthOptions) {
+  const throttle = new LoginThrottle(db, now);
 
   async function ownerUsername(): Promise<string | null> {
     const [owner] = await db.select({ username: schema.owner.username }).from(schema.owner);
@@ -100,7 +95,7 @@ export function registerAuthRoutes(
         type: 'owner.created',
         payload: { username: input.username },
       });
-      return createSession(tx, settings.sessionLifetimeDays);
+      return createSession(tx);
     });
     if (!session) throw new HttpError(409, 'owner_exists', 'The owner account already exists');
     request.log.info('owner account created');
@@ -137,7 +132,7 @@ export function registerAuthRoutes(
       throw new HttpError(401, 'invalid_credentials', 'Wrong username or password');
     }
     await throttle.clear(attempt);
-    const session = await db.transaction((tx) => createSession(tx, settings.sessionLifetimeDays));
+    const session = await db.transaction((tx) => createSession(tx));
     return startSession(reply, session, owner.username);
   });
 

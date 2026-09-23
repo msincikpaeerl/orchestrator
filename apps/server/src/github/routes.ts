@@ -8,7 +8,7 @@ import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
 import { HttpError, parseInput } from '../http.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
-import type { Settings } from '../settings.js';
+import { resolveSettings } from '../settings/store.js';
 import { GitHubUnreachableError, createGitHubClient } from './client.js';
 import {
   isPast,
@@ -23,7 +23,6 @@ import { checkToken, inspectToken, isFineGrainedToken } from './token-check.js';
 export interface GitHubRoutesOptions {
   db: Database;
   key: SecretKey;
-  settings: Settings;
   apiUrl: string;
 }
 
@@ -32,10 +31,14 @@ export interface GitHubRoutesOptions {
  * the browser to the server and GitHub only: no answer contains it and it is never logged.
  */
 export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutesOptions) {
-  const { db, key, settings, apiUrl } = options;
+  const { db, key, apiUrl } = options;
 
-  const clientFor = (token: string) =>
-    createGitHubClient({ apiUrl, token, timeoutSeconds: settings.githubRequestTimeoutSeconds });
+  async function clientFor(token: string) {
+    const { githubRequestTimeoutSeconds } = await resolveSettings(db, [
+      'githubRequestTimeoutSeconds',
+    ]);
+    return createGitHubClient({ apiUrl, token, timeoutSeconds: githubRequestTimeoutSeconds });
+  }
 
   function requireFineGrained(token: string) {
     if (!isFineGrainedToken(token)) {
@@ -68,14 +71,14 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
 
   app.get('/api/github', async (request) => {
     await requireSession(db, request);
-    return loadStatus(db, settings);
+    return loadStatus(db);
   });
 
   app.post('/api/github/token/inspect', async (request) => {
     await requireSession(db, request);
     const { token } = parseInput(InspectGitHubTokenRequest, request.body);
     requireFineGrained(token);
-    const identity = await reachingGitHub(() => inspectToken(clientFor(token)));
+    const identity = await reachingGitHub(async () => inspectToken(await clientFor(token)));
     if (!identity.valid) throw invalidToken();
     return {
       account: identity.account,
@@ -90,11 +93,11 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
     if (expiresOn !== null && isPast(expiresOn)) {
       throw new HttpError(422, 'expiry_date_in_past', 'The expiry date is in the past');
     }
-    const check = await reachingGitHub(() => checkToken(clientFor(token)));
+    const check = await reachingGitHub(async () => checkToken(await clientFor(token)));
     if (!check.valid) throw invalidToken();
     await saveToken(db, key, { token, expiresOn, ...check });
     request.log.info({ account: check.account }, 'GitHub token saved');
-    return loadStatus(db, settings);
+    return loadStatus(db);
   });
 
   app.post('/api/github/token/check', async (request) => {
@@ -112,9 +115,9 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
       );
     }
     if (token === null) throw new HttpError(409, 'github_not_connected', 'No GitHub token saved');
-    const check = await reachingGitHub(() => checkToken(clientFor(token)));
+    const check = await reachingGitHub(async () => checkToken(await clientFor(token)));
     if (check.valid) await saveCheck(db, check);
     else await markTokenInvalid(db, 'owner', 'GET /user');
-    return loadStatus(db, settings);
+    return loadStatus(db);
   });
 }
