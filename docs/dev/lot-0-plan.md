@@ -65,7 +65,7 @@ Every session working on lot 0 follows these rules.
 
 **Done when** the API can create the owner, log in and out, save, check and encrypt a GitHub token and report its expiry and missing permissions; `reset-password` works in the container; tests prove the token never leaves the server.
 
-### [ ] D. Web UI shell, wizard screens and Help section
+### [x] D. Web UI shell, wizard screens and Help section
 
 - `apps/web`: React + Vite + TanStack Query + Tailwind, served by the server as static files.
 - Screens: setup wizard steps 1 and 2 ending on the Done page (02, section 3), login, app shell with the navigation of 02, section 2 (sections of later lots show "Coming in a later version"), Settings > GitHub connection (status, expiry date, check, replace token), a minimal "Needs you" page showing the token expiry warning (14 days, a setting) and missing permissions.
@@ -75,6 +75,8 @@ Every session working on lot 0 follows these rules.
 - ADRs: React + Vite + TanStack Query + Tailwind, Playwright, Markdown rendering library.
 
 **Done when** Playwright covers first launch → account → GitHub token → Help page, all green in CI, and every screen works on a phone-sized viewport.
+
+*Done 2026-09-23.* End-to-end tests run in the pinned Playwright image locally and in CI (ADR 0021); every test runs on a desktop and a phone viewport. ADRs 0018 to 0021.
 
 ### [ ] E. End-to-end check of the lot 0 scenario on WSL
 
@@ -93,3 +95,4 @@ Every session working on lot 0 follows these rules.
 - GitHub token permissions, expiry display and warning: 02, section 3.1 (to verify against GitHub's documentation at the start of step C).
 - Token check against GitHub's documentation (step C, 2026-09-23): no Checks permission for fine-grained tokens (`ci.status` uses Actions and commit statuses, 06 updated); Workflows has a single level; Metadata is added automatically; tokens may have no expiry; the token is for the owner's personal account. GitHub cannot list a token's permissions or reliably give its expiry date: the owner enters the date, and the check probes permissions without changing anything (02 section 3.2, ADR 0017).
 - The wizard covers only existing steps and ends on a Done page; later steps appear in "Needs you" (02, sections 3 and 4).
+- End-to-end tests (step D, 2026-09-23): Chromium's system libraries are missing on the owner's WSL and are not installed; the tests run in the pinned Playwright Docker image, locally and in CI (ADR 0021). Host runs keep browsers in `.playwright-browsers/` in the repository.

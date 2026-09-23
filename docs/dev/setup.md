@@ -7,7 +7,7 @@
 | Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. |
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
 | Git | any recent | |
-| Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, full stack. |
+| Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, end-to-end tests, full stack. |
 
 Windows is supported through WSL 2 only.
 
@@ -35,8 +35,9 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `pnpm test` | Vitest, all packages. |
 | `pnpm build` | Build every package into its `dist/`. |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
-| `pnpm test:e2e` | Placeholder until lot 0 step D (Playwright). |
-| `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`. The UI is added in step D. |
+| `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the development database. |
+| `pnpm test:e2e:host` | The same on the host, with Chromium downloaded into `.playwright-browsers/`; needs Chromium's system libraries. |
+| `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`, and the UI with Vite on `http://localhost:5173`. |
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
 | `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
 | `pnpm --filter <folder> <script>` | Run a script in one package, for example `pnpm --filter daemon dev`. |
@@ -69,10 +70,11 @@ Listed in `.env.example` with their purpose (09, section 7.1). Copy it to `.env`
 ```sh
 docker compose -f docker/compose.dev.yml up -d --wait postgres
 pnpm dev
-curl http://localhost:8080/health   # or the PORT set in .env
 ```
 
-The server applies pending database migrations at start. Logs are JSON (ADR 0013).
+`pnpm dev` starts two processes: the server on `PORT` (default 8080) and Vite on `http://localhost:5173`. Open the UI on port 5173: changes to `apps/web` show at once, and Vite forwards `/api` to the server. The Help section reads `docs/user/` directly. The server applies pending database migrations at start. Logs are JSON (ADR 0013).
+
+The server also serves the built UI (`apps/web/dist`, from `pnpm build`) on its own port, as in production; without it, it logs "UI not built: serving the API only".
 
 ## Full stack in Docker
 
