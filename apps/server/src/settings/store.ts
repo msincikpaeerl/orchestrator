@@ -1,8 +1,11 @@
 import { schema } from '@orchestrator/db';
-import { SETTINGS, SettingName, type SettingValues } from '@orchestrator/protocol';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
-import type { Executor } from '../database.js';
+import { SETTING_ORDER, SETTINGS, SettingName, type SettingValues } from '@orchestrator/protocol';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
+import { HttpError } from '../http.js';
+
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /**
  * Values of settings (04, section 8), read when they are needed so a change applies to the next
@@ -91,7 +94,7 @@ function eventPayload(name: SettingName, target: SettingScope) {
  * null when the default (or, for a project, the global value) was used. Nothing is written when
  * the value does not change.
  */
-export async function storeSetting(
+async function storeSetting(
   tx: Executor,
   name: SettingName,
   target: SettingScope,
@@ -128,11 +131,7 @@ export async function storeSetting(
  * **Reset to default**: deletes the stored value and writes `setting.reset`. For a project, the
  * global value applies again. Nothing is written when no value was stored.
  */
-export async function resetSetting(
-  tx: Executor,
-  name: SettingName,
-  target: SettingScope,
-): Promise<void> {
+async function resetSetting(tx: Executor, name: SettingName, target: SettingScope): Promise<void> {
   const previous = await current(tx, name, target.projectId);
   if (!previous) return;
   await tx
@@ -145,4 +144,47 @@ export async function resetSetting(
     type: 'setting.reset',
     payload: { ...eventPayload(name, target), previous: previous.value },
   });
+}
+
+/**
+ * After a change or reset of `name`, in its transaction: refuses it (rolling it back with its
+ * event) when a pair of `SETTING_ORDER` is no longer in order (07, section 8).
+ */
+async function checkOrder(tx: Executor, name: SettingName, projectId: string | null) {
+  for (const { smaller, larger } of SETTING_ORDER) {
+    if (name !== smaller && name !== larger) continue;
+    const values = await resolveSettings(tx, [smaller, larger], projectId ?? undefined);
+    if (values[smaller] <= values[larger]) continue;
+    throw new HttpError(
+      409,
+      'setting_order_invalid',
+      `${smaller} (${String(values[smaller])}) cannot be above ${larger} (${String(values[larger])})`,
+      {
+        settingOrder: {
+          smaller,
+          larger,
+          smallerValue: values[smaller],
+          largerValue: values[larger],
+        },
+      },
+    );
+  }
+}
+
+/**
+ * The only way to change a setting: stores `value` (already checked against its range), or
+ * deletes the stored value for **Reset to default** when `value` is null, then checks the order
+ * of related settings. Changes run one at a time (a table lock that does not block reads), so two
+ * changes each valid alone cannot together break an order.
+ */
+export async function changeSetting(
+  tx: Transaction,
+  name: SettingName,
+  target: SettingScope,
+  value: number | null,
+): Promise<void> {
+  await tx.execute(sql`LOCK TABLE setting_values IN SHARE ROW EXCLUSIVE MODE`);
+  if (value === null) await resetSetting(tx, name, target);
+  else await storeSetting(tx, name, target, value);
+  await checkOrder(tx, name, target.projectId);
 }

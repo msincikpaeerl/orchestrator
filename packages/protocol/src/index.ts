@@ -88,6 +88,7 @@ export {
   ProjectSetting,
   ProjectSettingsResponse,
   SETTINGS,
+  SETTING_ORDER,
   SetSettingRequest,
   SettingGroup,
   SettingName,

@@ -325,6 +325,15 @@ export type SettingName = keyof typeof definitions;
 export const SETTINGS: Readonly<Record<SettingName, Readonly<SettingDefinition>>> = definitions;
 export const SettingName = z.enum(Object.keys(SETTINGS) as [SettingName, ...SettingName[]]);
 
+/**
+ * Pairs of settings whose values must stay in order: `smaller` never above `larger` (07,
+ * section 8). A change or reset breaking the order is refused with `setting_order_invalid`.
+ * Both settings of a pair are global only, so no project override can break the order.
+ */
+export const SETTING_ORDER: readonly { smaller: SettingName; larger: SettingName }[] = [
+  { smaller: 'quotaFallbackDelayMinutes', larger: 'quotaFallbackMaxDelayMinutes' },
+];
+
 /** Resolved values of settings, by name. */
 export type SettingValues = { [Name in SettingName]: number };
 

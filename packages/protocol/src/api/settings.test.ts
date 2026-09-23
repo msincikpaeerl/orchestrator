@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { PROJECT_SETTINGS, SETTINGS, SettingName, settingValue } from './settings.js';
+import {
+  PROJECT_SETTINGS,
+  SETTING_ORDER,
+  SETTINGS,
+  SettingName,
+  settingValue,
+} from './settings.js';
 
 describe('SETTINGS', () => {
   it.each(SettingName.options)('%s has a default inside its allowed range', (name) => {
@@ -25,6 +31,15 @@ describe('SETTINGS', () => {
       'maxFailedAttempts',
       'ciWaitTimeoutMinutes',
     ]);
+  });
+
+  it('keeps ordered pairs global only, with defaults in order', () => {
+    for (const { smaller, larger } of SETTING_ORDER) {
+      // An overridable pair would need checks across projects when a global value changes.
+      expect([SETTINGS[smaller].perProject, SETTINGS[larger].perProject]).toEqual([false, false]);
+      expect(SETTINGS[smaller].default).toBeLessThanOrEqual(SETTINGS[larger].default);
+      expect(SETTINGS[smaller].unit).toBe(SETTINGS[larger].unit);
+    }
   });
 
   it('refuses values outside the range and fractions', () => {

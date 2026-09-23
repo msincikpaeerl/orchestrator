@@ -14,8 +14,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database, Executor } from '../database.js';
 import { HttpError, parseInput } from '../http.js';
-import type { ProjectRow } from '../projects/model.js';
-import { resetSetting, storedValues, storeSetting } from './store.js';
+import { changeSetting, storedValues } from './store.js';
 
 type SettingParams = { Params: { name: string } };
 type ProjectSettingParams = { Params: { key: string; name: string } };
@@ -82,7 +81,7 @@ export function registerSettingRoutes(app: FastifyInstance, { db }: { db: Databa
     await requireSession(db, request);
     const name = findName(request.params.name);
     const value = parseValue(name, request.body);
-    await db.transaction((tx) => storeSetting(tx, name, { projectId: null }, value));
+    await db.transaction((tx) => changeSetting(tx, name, { projectId: null }, value));
     request.log.info({ setting: name, value }, 'setting changed');
     return globalSettings(db);
   });
@@ -90,15 +89,16 @@ export function registerSettingRoutes(app: FastifyInstance, { db }: { db: Databa
   app.delete<SettingParams>('/api/settings/:name', async (request) => {
     await requireSession(db, request);
     const name = findName(request.params.name);
-    await db.transaction((tx) => resetSetting(tx, name, { projectId: null }));
+    await db.transaction((tx) => changeSetting(tx, name, { projectId: null }, null));
     request.log.info({ setting: name }, 'setting reset to default');
     return globalSettings(db);
   });
 
-  /** Runs a change of a project's overrides under its row lock, so archiving waits for it. */
+  /** Changes a project's override under the project's row lock, so archiving waits for it. */
   async function changeProject(
     key: string,
-    work: (tx: Executor, project: ProjectRow) => Promise<void>,
+    name: SettingName,
+    value: number | null,
   ): Promise<ProjectSettingsResponse> {
     const parsed = ProjectKey.safeParse(key);
     return db.transaction(async (tx) => {
@@ -117,7 +117,7 @@ export function registerSettingRoutes(app: FastifyInstance, { db }: { db: Databa
           'This project is archived and read-only: unarchive it first',
         );
       }
-      await work(tx, project);
+      await changeSetting(tx, name, { projectId: project.id, projectKey: project.key }, value);
       return projectSettings(tx, project.id);
     });
   }
@@ -136,9 +136,7 @@ export function registerSettingRoutes(app: FastifyInstance, { db }: { db: Databa
     await requireSession(db, request);
     const name = findProjectName(request.params.name);
     const value = parseValue(name, request.body);
-    const result = await changeProject(request.params.key, (tx, project) =>
-      storeSetting(tx, name, { projectId: project.id, projectKey: project.key }, value),
-    );
+    const result = await changeProject(request.params.key, name, value);
     request.log.info({ setting: name, project: request.params.key, value }, 'setting overridden');
     return result;
   });
@@ -146,9 +144,7 @@ export function registerSettingRoutes(app: FastifyInstance, { db }: { db: Databa
   app.delete<ProjectSettingParams>('/api/projects/:key/settings/:name', async (request) => {
     await requireSession(db, request);
     const name = findProjectName(request.params.name);
-    const result = await changeProject(request.params.key, (tx, project) =>
-      resetSetting(tx, name, { projectId: project.id, projectKey: project.key }),
-    );
+    const result = await changeProject(request.params.key, name, null);
     request.log.info({ setting: name, project: request.params.key }, 'setting override removed');
     return result;
   });

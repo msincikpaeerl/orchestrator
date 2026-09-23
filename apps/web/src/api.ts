@@ -12,6 +12,8 @@ export class ApiRequestError extends Error {
     readonly limits?: LimitExceeded[],
     /** Tickets of the cycle, for `dependency_cycle`. */
     readonly cycle?: string[],
+    /** The two settings out of order, for `setting_order_invalid`. */
+    readonly settingOrder?: ApiError['error']['settingOrder'],
   ) {
     super(message);
   }
@@ -49,9 +51,17 @@ export async function api<T>(
     if (!parsed.success) {
       throw new ApiRequestError(response.status, 'unexpected', `Error ${String(response.status)}`);
     }
-    const { code, message, retryAfterSeconds, limits, cycle } = parsed.data.error;
+    const { code, message, retryAfterSeconds, limits, cycle, settingOrder } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
-    throw new ApiRequestError(response.status, code, message, retryAfterSeconds, limits, cycle);
+    throw new ApiRequestError(
+      response.status,
+      code,
+      message,
+      retryAfterSeconds,
+      limits,
+      cycle,
+      settingOrder,
+    );
   }
   if (schema === null) return undefined as T;
   return schema.parse(await response.json());

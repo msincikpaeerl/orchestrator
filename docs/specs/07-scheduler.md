@@ -117,4 +117,6 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 | Dispatch acknowledgement timeout (also for runs started with **Run now**) | 60 seconds | 5 to 600 seconds | Global |
 | Scheduler tick | 30 seconds | 5 to 600 seconds | Global |
 
+The longest fallback delay is never below the fallback delay: a change or a **Reset to default** that would make it so is refused, naming both settings.
+
 All follow the settings rules of 04, section 8. The global ones are shown on Settings > Limits (02, section 10); the others are set on the account (02, section 9.1).

@@ -9,7 +9,7 @@ import {
 } from '@orchestrator/protocol';
 import { asc, like } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { resolveSettings } from '../src/settings/store.js';
+import { changeSetting, resolveSettings } from '../src/settings/store.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
 
 let t: TestApp;
@@ -228,6 +228,99 @@ describe('Settings > Limits', () => {
       payload: ticket,
     });
     expect(created.statusCode, created.body).toBe(201);
+  });
+});
+
+describe('settings that must stay in order', () => {
+  const first = 'settings/quotaFallbackDelayMinutes';
+  const longest = 'settings/quotaFallbackMaxDelayMinutes';
+
+  it('refuses a first quota wait above the longest, and a longest below the first', async () => {
+    const above = await call('PUT', first, { value: 241 });
+    expect(above.statusCode).toBe(409);
+    expect(error(above)).toMatchObject({
+      code: 'setting_order_invalid',
+      settingOrder: {
+        smaller: 'quotaFallbackDelayMinutes',
+        larger: 'quotaFallbackMaxDelayMinutes',
+        smallerValue: 241,
+        largerValue: 240,
+      },
+    });
+    const below = await call('PUT', longest, { value: 59 });
+    expect(below.statusCode).toBe(409);
+    expect(error(below).settingOrder).toMatchObject({ smallerValue: 60, largerValue: 59 });
+    // Equal values are in order.
+    expect((await call('PUT', longest, { value: 60 })).statusCode).toBe(200);
+    // Nothing was stored or recorded for the refused changes.
+    expect((await settingEvents()).map((event) => event.payload)).toEqual([
+      { name: 'quotaFallbackMaxDelayMinutes', scope: 'global', previous: null, value: 60 },
+    ]);
+  });
+
+  it('refuses a Reset to default that would break the order', async () => {
+    await call('PUT', first, { value: 10 });
+    await call('PUT', longest, { value: 30 });
+    // The first wait's default (60) would be above the longest (30).
+    const reset = await call('DELETE', first);
+    expect(reset.statusCode).toBe(409);
+    expect(error(reset).settingOrder).toMatchObject({ smallerValue: 60, largerValue: 30 });
+    const values = await globalValues();
+    expect(values.find((s) => s.name === 'quotaFallbackDelayMinutes')?.value).toBe(10);
+    // Reset the longest wait first (240), then the first wait: both allowed.
+    expect((await call('DELETE', longest)).statusCode).toBe(200);
+    expect((await call('DELETE', first)).statusCode).toBe(200);
+  });
+
+  it('never lets two changes that are each in order break the order together', async () => {
+    await call('PUT', first, { value: 100 });
+    await call('PUT', longest, { value: 200 });
+    // The first change stays uncommitted while the second one runs: the second must wait for it,
+    // then see it. Without waiting, both would be committed (150 above 120).
+    let firstChanged!: () => void;
+    const changed = new Promise<void>((resolve) => (firstChanged = resolve));
+    let commitFirst!: () => void;
+    const commit = new Promise<void>((resolve) => (commitFirst = resolve));
+    const one = t.db.transaction(async (tx) => {
+      await changeSetting(tx, 'quotaFallbackDelayMinutes', { projectId: null }, 150);
+      firstChanged();
+      await commit;
+    });
+    await changed;
+    const two = t.db
+      .transaction((tx) =>
+        changeSetting(tx, 'quotaFallbackMaxDelayMinutes', { projectId: null }, 120),
+      )
+      .then(
+        () => 'committed',
+        (refusal: unknown) => refusal,
+      );
+    const early = await Promise.race([
+      two,
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve('waiting');
+        }, 300);
+      }),
+    ]);
+    expect(early).toBe('waiting');
+    commitFirst();
+    await one;
+    expect(await two).toMatchObject({ code: 'setting_order_invalid' });
+    const values = Object.fromEntries((await globalValues()).map((s) => [s.name, s.value]));
+    expect([values.quotaFallbackDelayMinutes, values.quotaFallbackMaxDelayMinutes]).toEqual([
+      150, 200,
+    ]);
+  });
+
+  it('cannot be broken by a project, since both are global only', async () => {
+    await seedProject('WEB');
+    for (const response of [
+      await call('PUT', 'projects/WEB/settings/quotaFallbackDelayMinutes', { value: 300 }),
+      await call('PUT', 'projects/WEB/settings/quotaFallbackMaxDelayMinutes', { value: 1 }),
+    ]) {
+      expect(error(response).code).toBe('setting_not_per_project');
+    }
   });
 });
 

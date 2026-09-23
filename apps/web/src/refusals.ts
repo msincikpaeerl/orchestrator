@@ -1,5 +1,6 @@
-import type { ApiErrorCode, LimitExceeded } from '@orchestrator/protocol';
+import { SETTINGS, type ApiErrorCode, type LimitExceeded } from '@orchestrator/protocol';
 import { ApiRequestError } from './api';
+import { amount } from './settings/text';
 
 /** Shown when the refusal is not one of the API's: a bug or a network problem. */
 export const UNEXPECTED_TEXT = 'Something went wrong. Try again.';
@@ -95,6 +96,10 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'This setting does not exist in this version of the Orchestrator. Reload the page.',
   setting_not_per_project: () =>
     'This setting cannot be changed for one project. Change it in Settings > Limits.',
+  setting_order_invalid: ({ settingOrder: order }) =>
+    order
+      ? `${SETTINGS[order.smaller].label} (${amount(order.smaller, order.smallerValue)}) cannot be more than ${SETTINGS[order.larger].label} (${amount(order.larger, order.largerValue)}). Change the other one first, or choose another value.`
+      : 'This value would put two related limits in the wrong order. Check both and try again.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */
