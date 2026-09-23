@@ -1,6 +1,6 @@
 # Lot 0 — Implementation plan
 
-> Status: approved 2026-09-23
+> Status: done 2026-09-23 (version 0.1.0)
 > Scope: "Lot 0 — Foundations" in [10 — Delivery Plan](../specs/10-delivery-plan.md). The spike is done ([ADR 0002](../adr/0002-claude-code-interactive-runner.md)).
 > **Lot 0 is done when** the owner can start the stack on WSL, create the account, connect GitHub and read the getting started guide in the application.
 
@@ -78,7 +78,7 @@ Every session working on lot 0 follows these rules.
 
 *Done 2026-09-23.* End-to-end tests run in the pinned Playwright image locally and in CI (ADR 0021); every test runs on a desktop and a phone viewport. ADRs 0018 to 0021.
 
-### [ ] E. End-to-end check of the lot 0 scenario on WSL
+### [x] E. End-to-end check of the lot 0 scenario on WSL
 
 - Follow `docs/user/getting-started.md` literally on a clean WSL checkout: start the stack with Docker Compose, create the account, connect GitHub with a real fine-grained token, read the guide in the Help section.
 - Confirm with the owner's real token the GitHub answers the token check relies on (ADR 0017): with each write permission removed in turn, the invalid requests are refused as "not accessible", and with it granted they fail validation.
@@ -86,6 +86,17 @@ Every session working on lot 0 follows these rules.
 - Record the result in this plan; the owner runs the same scenario to close the lot (10, "Rules for every lot").
 
 **Done when** the scenario passes following the user documentation alone, and the owner has confirmed it.
+
+*Done 2026-09-23.* The owner ran the scenario on a clean WSL checkout, following `docs/user/getting-started.md` literally with a real fine-grained token: completed without problems up to the Done page. Token check with the real GitHub, one permission removed at a time, then "Check again":
+
+| Token change | Result | Correct |
+|---|---|---|
+| Administration removed | only Administration Missing | yes |
+| Pull requests removed | only Pull requests Missing | yes |
+| Workflows removed | only Workflows Missing | yes |
+| Contents set to read-only | Contents Missing, Workflows also Missing | Contents yes, Workflows no |
+
+GitHub refuses a workflow file without Contents write before looking at Workflows. Fixed: a probe depending on a permission that is not OK is not sent and shows Could not verify with the reason ("Requires Contents (Read and write) first"), with a regression test. ADR 0022 supersedes ADR 0017 with these results; 02 section 3.2 and the GitHub token help page updated. Lot 0 is closed as version 0.1.0.
 
 ## Decisions taken on the open questions (2026-09-23)
 

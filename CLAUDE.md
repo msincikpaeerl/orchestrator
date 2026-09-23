@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lot 0 of `docs/specs/10-delivery-plan.md`, following `docs/dev/lot-0-plan.md` (read it; do only the next unchecked step). Commands marked *(later)* print which step adds them. Update this file when the setup changes.
+Lot 0 of `docs/specs/10-delivery-plan.md` is done (version 0.1.0, `docs/dev/lot-0-plan.md`). Lot 1 has no plan yet: wait for the owner's instructions. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
