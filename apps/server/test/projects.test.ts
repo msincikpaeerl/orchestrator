@@ -385,24 +385,130 @@ describe('trying the setup again', () => {
     expect(repositoryHistory(repository('online-shop'))).toHaveLength(2);
   });
 
-  it('uses the repository an interrupted attempt created', async () => {
-    // GitHub created the repository, but the server stopped before reading the answer.
-    github.override = (request) =>
-      request.method === 'POST' && request.path === '/user/repos'
-        ? { status: 503, body: { message: 'Unavailable' } }
-        : undefined;
-    await create(newRepository);
-    await settled('SHOP');
-    account.repositories.push({ name: 'online-shop', private: true });
+  describe('when the answer to the repository creation was lost', () => {
+    /** First attempt: GitHub gets the creation request, but its answer never arrives. */
+    async function lostAnswer() {
+      github.override = (request) =>
+        request.method === 'POST' && request.path === '/user/repos'
+          ? { status: 503, body: { message: 'Unavailable' } }
+          : undefined;
+      await create(newRepository);
+      expect((await settled('SHOP')).setup.step).toBe('repository');
+      github.override = undefined;
+    }
 
-    github.override = undefined;
-    github.requests.length = 0;
-    expect((await call('POST', '/api/projects/SHOP/setup/retry')).statusCode).toBe(202);
-    expect((await settled('SHOP')).setup.status).toBe('ready');
-    expect(github.requests.some((r) => r.method === 'POST' && r.path === '/user/repos')).toBe(
-      false,
-    );
-    expect(repositoryHistory(repository('online-shop'))).toHaveLength(2);
+    async function retry() {
+      github.requests.length = 0;
+      expect((await call('POST', '/api/projects/SHOP/setup/retry')).statusCode).toBe(202);
+      return settled('SHOP');
+    }
+
+    const nameTaken =
+      'Repository name already taken: octo-owner/online-shop exists on your GitHub account and was not created by this setup. Nothing was written to it.';
+
+    it('reuses the repository GitHub created for it', async () => {
+      await lostAnswer();
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: new Date().toISOString(),
+      });
+      const ready = await retry();
+      expect(ready.setup.status).toBe('ready');
+      expect(github.requests.some((r) => r.method === 'POST' && r.path === '/user/repos')).toBe(
+        false,
+      );
+      expect(repositoryHistory(repository('online-shop'))).toHaveLength(2);
+      expect(await events('project.setup_step')).toContainEqual(
+        expect.objectContaining({
+          payload: expect.objectContaining({ step: 'repository', reused: true }) as unknown,
+        }),
+      );
+    });
+
+    it('accepts a GitHub clock slightly behind the server', async () => {
+      await lostAnswer();
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: new Date(Date.now() - 60_000).toISOString(),
+      });
+      expect((await retry()).setup.status).toBe('ready');
+    });
+
+    it('never reuses a repository created before the attempt', async () => {
+      await lostAnswer();
+      // Created on GitHub long before, for example by the owner.
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: '2025-01-01T00:00:00Z',
+      });
+      const failed = await retry();
+      expect(failed.setup).toEqual({ status: 'failed', step: 'repository', failure: nameTaken });
+      expect(failed.repository.defaultBranch).toBeNull();
+      expect(writes()).toEqual([]);
+      expect(repositoryHistory(repository('online-shop'))).toHaveLength(1);
+    });
+
+    it('never reuses a repository with commits after GitHub first one', async () => {
+      await lostAnswer();
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: new Date().toISOString(),
+      });
+      const pushed = await fetch(`${github.url}/repos/octo-owner/online-shop/contents/app.ts`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ message: 'Add app', content: Buffer.from('x').toString('base64') }),
+      });
+      expect(pushed.status).toBe(201);
+      const before = repositoryHistory(repository('online-shop'));
+      expect(before).toHaveLength(2);
+
+      expect((await retry()).setup).toEqual({
+        status: 'failed',
+        step: 'repository',
+        failure: nameTaken,
+      });
+      expect(writes()).toEqual([]);
+      expect(repositoryHistory(repository('online-shop'))).toEqual(before);
+    });
+
+    it('never reuses a repository whose first commit has more than the README', async () => {
+      await lostAnswer();
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: new Date().toISOString(),
+        files: { 'README.md': '# Shop', 'src/app.ts': 'x' },
+      });
+      expect((await retry()).setup.failure).toBe(nameTaken);
+      expect(writes()).toEqual([]);
+    });
+
+    it('never reuses a repository when no creation was requested', async () => {
+      // The first attempt failed before asking GitHub to create the repository: its check of
+      // the name (the second one, after the form's) got no answer.
+      let checks = 0;
+      github.override = (request) =>
+        request.method === 'GET' &&
+        request.path === '/repos/octo-owner/online-shop' &&
+        ++checks === 2
+          ? { status: 503, body: { message: 'Unavailable' } }
+          : undefined;
+      await create(newRepository);
+      expect((await settled('SHOP')).setup).toMatchObject({ status: 'failed', step: 'repository' });
+      github.override = undefined;
+      account.repositories.push({
+        name: 'online-shop',
+        private: true,
+        createdAt: new Date().toISOString(),
+      });
+      expect((await retry()).setup.failure).toBe(nameTaken);
+      expect(writes()).toEqual([]);
+    });
   });
 });
 

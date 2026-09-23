@@ -13,6 +13,8 @@ import {
   createRepository,
   findMissingHarness,
   findRepository,
+  holdsOnlyInitialCommit,
+  type GitHubRepository,
 } from '../github/repositories.js';
 import { renderSkeleton } from '../github/skeleton.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
@@ -144,15 +146,22 @@ export class ProjectSetupRunner {
     const defaultBranch = project.defaultBranch ?? '';
     switch (step) {
       case 'repository': {
-        // An earlier attempt may have created it without the answer reaching us.
-        let created = project.repoRequestedAt === null ? null : await findRepository(client, repo);
-        if (created === null) {
+        const existing = await findRepository(client, repo);
+        let created;
+        if (existing === null) {
           await this.update(project, { repoRequestedAt: this.now() });
           created = await createRepository(client, {
             name: project.repoName,
             description: project.description,
             private: project.repoPrivate,
           });
+        } else if (await this.createdByEarlierAttempt(client, project, existing)) {
+          // The creation succeeded on GitHub, but its answer was lost (for example a restart).
+          created = existing;
+        } else {
+          throw new SetupError(
+            `Repository name already taken: ${existing.owner}/${existing.name} exists on your GitHub account and was not created by this setup. Nothing was written to it.`,
+          );
         }
         await this.update(project, {
           repoOwner: created.owner,
@@ -164,6 +173,7 @@ export class ProjectSetupRunner {
           repository: `${created.owner}/${created.name}`,
           private: created.private,
           defaultBranch: created.defaultBranch,
+          reused: created === existing,
         };
       }
       case 'skeleton': {
@@ -187,6 +197,25 @@ export class ProjectSetupRunner {
         return { missing };
       }
     }
+  }
+
+  /**
+   * A repository found under the project's name is reused only when this setup created it
+   * (08, section 3.1): GitHub created it after the creation request was sent, give or take the
+   * clock tolerance, and its default branch is empty or holds only GitHub's first commit.
+   */
+  private async createdByEarlierAttempt(
+    client: GitHubClient,
+    project: ProjectRow,
+    repo: GitHubRepository,
+  ): Promise<boolean> {
+    if (project.repoRequestedAt === null) return false;
+    const tolerance = this.options.settings.githubClockToleranceSeconds * 1000;
+    const createdAt = Date.parse(repo.createdAt);
+    if (Number.isNaN(createdAt) || createdAt < project.repoRequestedAt.getTime() - tolerance) {
+      return false;
+    }
+    return holdsOnlyInitialCommit(client, repo);
   }
 
   private now(): Date {
