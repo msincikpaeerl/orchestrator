@@ -1,5 +1,12 @@
 import type { Page } from '@playwright/test';
-import { completeSetup, expect, expectFitsScreen, openSection, test } from './fixtures';
+import {
+  completeSetup,
+  createReadyProject,
+  expect,
+  expectFitsScreen,
+  openSection,
+  test,
+} from './fixtures';
 
 // Tickets (02, sections 6.3 and 6.4; 04, section 2), on a project created through the API with
 // the fake GitHub of apps/server/test/e2e-server.ts.
@@ -7,25 +14,7 @@ import { completeSetup, expect, expectFitsScreen, openSection, test } from './fi
 /** A ready project `WEB`, created as the new project form would. */
 async function readyProject(page: Page) {
   await completeSetup(page);
-  const created = await page.request.post('/api/projects', {
-    data: {
-      name: 'Web shop',
-      key: 'WEB',
-      kind: 'web_app',
-      repository: { origin: 'created', name: 'web-shop', private: true },
-    },
-  });
-  expect(created.status()).toBe(201);
-  await expect
-    .poll(
-      async () =>
-        (
-          (await (await page.request.get('/api/projects/WEB')).json()) as {
-            setup: { status: string };
-          }
-        ).setup.status,
-    )
-    .toBe('ready');
+  await createReadyProject(page, { key: 'WEB', name: 'Web shop', repository: 'web-shop' });
 }
 
 async function createTicket(page: Page, body: Record<string, unknown>) {

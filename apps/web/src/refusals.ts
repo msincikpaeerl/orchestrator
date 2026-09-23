@@ -91,6 +91,10 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
       ? `Refused: this would make a loop in which each ticket waits for the next, so none of them could ever start: ${error.cycle.join(' → ')}.`
       : 'Refused: this would make a loop of tickets waiting for each other, so none of them could ever start.',
   dependency_not_found: () => 'This dependency was already removed. Reload the page.',
+  setting_not_found: () =>
+    'This setting does not exist in this version of the Orchestrator. Reload the page.',
+  setting_not_per_project: () =>
+    'This setting cannot be changed for one project. Change it in Settings > Limits.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */

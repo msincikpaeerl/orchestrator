@@ -9,6 +9,7 @@ import { NewProjectPage } from './pages/new-project';
 import { ProjectPage, ProjectSettingsPage } from './pages/project';
 import { ProjectsPage } from './pages/projects';
 import { EditTicketPage, NewTicketPage } from './pages/ticket-form';
+import { LimitsPage } from './pages/limits';
 import { GitHubSettingsPage, SettingsPage } from './pages/settings';
 import { SetupDonePage, SetupPage } from './pages/setup';
 import { useSession, useSetupState } from './queries';
@@ -87,6 +88,7 @@ export function App() {
           <Route path="/projects/:key/tickets/:number/edit" element={<EditTicketPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/github" element={<GitHubSettingsPage />} />
+          <Route path="/settings/limits" element={<LimitsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

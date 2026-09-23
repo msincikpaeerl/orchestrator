@@ -14,6 +14,8 @@ const linked = [
   'tickets#edit-a-ticket',
   'projects#branch-protection',
   'projects#if-the-setup-fails',
+  'settings#change-a-limit',
+  'settings#override-a-limit-for-one-project',
   ...Object.values(harnessElement).map((element) => element.help),
 ];
 
@@ -31,7 +33,7 @@ function anchors(slug: string): string[] {
   return [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1] ?? '');
 }
 
-describe('help links of the project and ticket screens', () => {
+describe('help links of the project, ticket and settings screens', () => {
   it.each(linked)('%s exists', (link) => {
     const [slug = '', section = ''] = link.split('#');
     expect(anchors(slug)).toContain(section);

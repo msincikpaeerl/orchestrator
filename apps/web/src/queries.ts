@@ -1,8 +1,10 @@
 import {
   GitHubStatusResponse,
+  GlobalSettingsResponse,
   NeedsYouResponse,
   Project,
   ProjectListResponse,
+  ProjectSettingsResponse,
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
@@ -23,9 +25,11 @@ export const keys = {
   github: ['github'],
   needsYou: ['needs-you'],
   uiSettings: ['ui-settings'],
+  settings: ['settings'],
   projects: ['projects'],
   projectList: (archived: boolean) => ['projects', 'list', archived] as const,
   project: (key: string) => ['projects', 'detail', key] as const,
+  projectSettings: (key: string) => ['projects', 'settings', key] as const,
   tickets: (key: string) => ['projects', 'tickets', key] as const,
   ticket: (key: string, number: number) => ['projects', 'tickets', key, number] as const,
 } as const;
@@ -78,6 +82,39 @@ export function useUiSettings() {
     queryFn: () => api('GET', '/api/ui-settings', UiSettingsResponse),
     staleTime: Infinity,
   });
+}
+
+/** Settings > Limits: every setting with its global value. */
+export function useGlobalSettings() {
+  return useQuery({
+    queryKey: keys.settings,
+    queryFn: () => api('GET', '/api/settings', GlobalSettingsResponse),
+  });
+}
+
+/** The settings a project can override, with its overrides and the global values. */
+export function useProjectSettings(projectKey: string) {
+  return useQuery({
+    queryKey: keys.projectSettings(projectKey),
+    queryFn: () =>
+      api(
+        'GET',
+        `/api/projects/${encodeURIComponent(projectKey)}/settings`,
+        ProjectSettingsResponse,
+      ),
+  });
+}
+
+/**
+ * After a change of a global value: the settings the screens use and every project's overrides
+ * (they show the global value) are read again.
+ */
+export async function settingsChanged(settings: GlobalSettingsResponse) {
+  queryClient.setQueryData(keys.settings, settings);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: keys.uiSettings }),
+    queryClient.invalidateQueries({ queryKey: ['projects', 'settings'] }),
+  ]);
 }
 
 export function useProjects(archived: boolean) {

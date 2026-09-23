@@ -8,13 +8,13 @@ import { CreateTokenInstructions, PermissionResults, TokenForm } from '../github
 import { formatDate, formatDateTime, problemText } from '../github/text';
 import { keys, queryClient, useGitHubStatus } from '../queries';
 
-/** Settings (02, section 10): only the GitHub connection exists so far. */
+/** Settings (02, section 10): GitHub connection and limits so far. */
 export function SettingsPage() {
   const github = useGitHubStatus();
   const status = github.data;
   return (
     <>
-      <PageHeader title="Settings" help="index" />
+      <PageHeader title="Settings" help="settings" />
       <div className="space-y-3">
         <Link to="/settings/github" className="block">
           <Card className="hover:border-slate-400">
@@ -26,7 +26,15 @@ export function SettingsPage() {
             </p>
           </Card>
         </Link>
-        {['Global settings', 'Owner account', 'Backups'].map((title) => (
+        <Link to="/settings/limits" className="block">
+          <Card className="hover:border-slate-400">
+            <h2 className="font-semibold text-blue-700 underline">Limits</h2>
+            <p className="text-slate-700">
+              Limits and timeouts: sessions, login, GitHub, tickets, and those of later versions.
+            </p>
+          </Card>
+        </Link>
+        {['Owner account', 'Backups'].map((title) => (
           <Card key={title}>
             <h2 className="font-semibold text-slate-900">{title}</h2>
             <p className="text-slate-700">Coming in a later version.</p>

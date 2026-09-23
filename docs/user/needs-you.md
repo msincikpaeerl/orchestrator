@@ -10,7 +10,7 @@ Each item has a link to **Settings > GitHub connection**, where you fix it by en
 
 | Item | Why it appears | What to do |
 |---|---|---|
-| Your GitHub token expires soon | The expiry date you entered is less than 14 days away. | Create a new token and enter it with **Replace the token**. |
+| Your GitHub token expires soon | The expiry date you entered is less than 14 days away (the **GitHub token expiry warning** setting, see [Settings](settings.md#settings-reference)). | Create a new token and enter it with **Replace the token**. |
 | Your GitHub token has expired | The expiry date you entered has passed. | Create a new token and enter it. |
 | GitHub no longer accepts your token | GitHub refused the token: it was deleted, revoked or has expired. | Create a new token and enter it. |
 | The GitHub token is missing a permission | The permissions check found it missing. | Create a new token with the **Create the token on GitHub** button, which fills in every permission, and enter it. |
