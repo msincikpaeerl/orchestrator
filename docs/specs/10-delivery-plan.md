@@ -18,6 +18,8 @@ The Orchestrator is delivered in lots. Each lot ends with something the owner ca
 | 6 | Agent management | Custom agents, profile editing, Technical Writer, Android projects. |
 | 7 | Hardening | Deployment guides, backups, harness checks, resilience. |
 
+Lot N is released as version 0.(N+1).0: lot 0 is 0.1.0, lot 1 is 0.2.0, lot 2 is 0.3.0, and so on (owner's decision, lot 1 step G). Screens refer to features of later lots by that version ("Used from version 0.3.0").
+
 Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orchestrator can take tickets for its own development, and from lot 5 new features can be requested through it.
 
 ## Lot 0 — Foundations
@@ -50,9 +52,9 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 - Claude accounts and machines screens; enrollment (05, section 3).
 - Daemon: connection, heartbeat, `login` (dedicated Claude configuration), workspace trust per repository, `doctor`, `status`, `attach`, systemd service.
-- Run execution (05, section 4) for purpose `implement`, started manually with **Run now**.
+- Run execution (05, section 4) for purpose `implement`, started manually with **Run now**; the run is cancelled if the daemon does not acknowledge it within the dispatch acknowledgement timeout (07, section 8).
 - Permission enforcement through hooks.
-- MCP relay and tools: reading tools, `ticket.progress`, `ticket.comment`, `ticket.ask`, `ticket.give_up`.
+- MCP relay and tools: reading tools, `ticket.progress`, `ticket.comment`, `ticket.ask`, `ticket.give_up`, `ticket.create` (limited per run, 04 section 8).
 - Live logs and questions in the UI; "Needs you" with questions.
 - Default profiles for Architect and Web Developer, with their allowlist smoke tests.
 

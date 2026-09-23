@@ -188,7 +188,7 @@ State, plan, schedule windows, daily budget, behaviour at window end, limit hist
 
 ## 10. Settings
 
-- Global limits and scheduler settings (04, section 8; 07, section 8): each shows its value, its default, what it does, and a **Reset to default** action. Settings that can be overridden per project say so.
+- **Limits** (Settings > Limits): every global setting of 04 section 8, 05 section 5 and 07 section 8. Each shows its value, its default, what it does, and a **Reset to default** action. Settings that can be overridden per project say so; settings used only from a later version say "Used from version ...". Settings of a Claude account are on the account (section 9.1), not here.
 - GitHub connection: token status, expiry date, permissions check, replace token.
 - Owner account: change password, sessions.
 - Backup reminder with a link to the backup guide.

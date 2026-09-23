@@ -224,7 +224,7 @@ There is no email address. A forgotten password is reset with a command run insi
 
 | Information | Location |
 |---|---|
-| Owner, projects, tickets, plans, comments, runs, machines, accounts, profiles, events | PostgreSQL (web application). |
+| Owner, projects, tickets, plans, comments, runs, machines, accounts, profiles, events, setting values | PostgreSQL (web application). |
 | Code, tests, ADRs, project documentation | The project's GitHub repository. |
 | Run transcripts | On the machine; streamed to the web application and kept there in summarised form. |
 | Claude credentials | On the machine only. Never sent to the web application. |

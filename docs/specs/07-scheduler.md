@@ -17,7 +17,7 @@ The scheduler decides **which run starts, when, and on which machine**. It is de
 
 ## 2. Scheduling loop
 
-The loop runs when something relevant happens (ticket status change, run end, machine online, account available, schedule window opens, setting change) and at least every 30 seconds.
+The loop runs when something relevant happens (ticket status change, run end, machine online, account available, schedule window opens, setting change) and at least once per scheduler tick (section 8).
 
 For each Claude account:
 
@@ -25,7 +25,7 @@ For each Claude account:
 2. **Pick the next candidate** in priority order (section 3).
 3. **Pick a machine** (section 4). If none fits, try the next candidate.
 4. **Create the run** in `queued`, then send `run.start` to the machine; the run becomes `dispatched`.
-5. If the daemon does not acknowledge within 60 seconds, the run is cancelled without counting as a failed attempt, and the candidate goes back to the queue.
+5. If the daemon does not acknowledge within the dispatch acknowledgement timeout (section 8), the run is cancelled without counting as a failed attempt, and the candidate goes back to the queue.
 
 Only one scheduler instance runs at a time, guarded by a PostgreSQL advisory lock, so the loop can never start the same work twice.
 
@@ -112,8 +112,9 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 | Schedule windows | None (always) | Account |
 | Daily budget (working time or estimated usage) | None | Account |
 | Behaviour at window end | Finish current run | Account |
-| Fallback delay when reset time is unknown | 1 hour, doubling up to 4 hours | Global |
-| Dispatch acknowledgement timeout | 60 seconds | Global |
+| Fallback delay when reset time is unknown (doubles each time the limit is still reached) | 1 hour | Global |
+| Longest fallback delay | 4 hours | Global |
+| Dispatch acknowledgement timeout (also for runs started with **Run now**) | 60 seconds | Global |
 | Scheduler tick | 30 seconds | Global |
 
-All follow the settings rules of 04, section 8.
+All follow the settings rules of 04, section 8. The global ones are shown on Settings > Limits (02, section 10); the others are set on the account (02, section 9.1).
