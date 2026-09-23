@@ -129,7 +129,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 ### [ ] G. Settings screen with limits
 
-- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout) move to it.
+- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout, and the GitHub clock tolerance added in step C, `githubClockToleranceSeconds`, default 120 seconds) move to it and to Settings > Limits.
 - Each setting described once in `packages/protocol` (name, description, unit, allowed range, default, overridable per project).
 - Settings > Limits (02, section 10): value, default, description, **Reset to default**; project settings show the overridable ones. Settings used only by later lots say "Used from version ...". Changes apply to future actions only, and write an event.
 - `docs/user/`: a Settings reference page listing every setting with its effect (04, section 8).
