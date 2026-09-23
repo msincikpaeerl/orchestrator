@@ -5,12 +5,16 @@ import {
   check,
   customType,
   date,
+  foreignKey,
+  index,
   integer,
   jsonb,
   pgTable,
   smallint,
   text,
+  primaryKey,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -143,6 +147,11 @@ export const projects = pgTable(
     missingHarness: jsonb('missing_harness'),
     harnessCheckedAt: timestamp('harness_checked_at', { withTimezone: true }),
     status: text('status').notNull().default('active'),
+    /**
+     * Number of the project's last ticket. Incremented under the project's row lock when a ticket
+     * is created, never decremented: numbers are never reused (01, section 3.4).
+     */
+    lastTicketNumber: integer('last_ticket_number').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -157,5 +166,100 @@ export const projects = pgTable(
       sql`lower(${table.repoOwner})`,
       sql`lower(${table.repoName})`,
     ),
+  ],
+);
+
+/**
+ * Tickets (01, section 3.4). Never deleted: cancelled. Allowed values of the text columns are the
+ * enums of `@orchestrator/protocol` (`TicketType`, `TicketStatus`, ...). `status` is written only
+ * by the server's transition module (04, section 2).
+ */
+export const tickets = pgTable(
+  'tickets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    /** Shown with the project key: `WEB-12`. */
+    number: integer('number').notNull(),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    /** Ordered list of statements: `string[]`. */
+    acceptanceCriteria: jsonb('acceptance_criteria').notNull().default([]),
+    priority: text('priority').notNull(),
+    status: text('status').notNull(),
+    /** `owner`; agent profiles come with lot 2. */
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('tickets_project_number').on(table.projectId, table.number),
+    // Target of the dependencies' foreign keys, which keep both tickets in one project.
+    unique('tickets_project_id').on(table.projectId, table.id),
+    check('tickets_number', sql`${table.number} >= 1`),
+    check('tickets_type', sql`${table.type} IN ('feature', 'bug', 'chore', 'docs', 'spike')`),
+    check('tickets_priority', sql`${table.priority} IN ('low', 'normal', 'high')`),
+    check(
+      'tickets_status',
+      sql`${table.status} IN ('proposed', 'todo', 'in_progress', 'waiting_human', 'in_review', 'awaiting_merge', 'done', 'cancelled')`,
+    ),
+  ],
+);
+
+/**
+ * `ticket_id` is blocked by `blocked_by_id` (01, section 3.4): same project, never itself.
+ * Cycles are refused by the server, which changes a project's dependencies under its row lock.
+ */
+export const ticketDependencies = pgTable(
+  'ticket_dependencies',
+  {
+    projectId: uuid('project_id').notNull(),
+    ticketId: uuid('ticket_id').notNull(),
+    blockedById: uuid('blocked_by_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ticketId, table.blockedById] }),
+    foreignKey({
+      name: 'ticket_dependencies_ticket',
+      columns: [table.projectId, table.ticketId],
+      foreignColumns: [tickets.projectId, tickets.id],
+    }),
+    foreignKey({
+      name: 'ticket_dependencies_blocked_by',
+      columns: [table.projectId, table.blockedById],
+      foreignColumns: [tickets.projectId, tickets.id],
+    }),
+    check('ticket_dependencies_not_itself', sql`${table.ticketId} <> ${table.blockedById}`),
+    index('ticket_dependencies_blocked_by_id').on(table.blockedById),
+  ],
+);
+
+/**
+ * Comments on tickets (01, section 3.5); comments on requests come with lot 5. `author` is
+ * `owner` or `system`; agent profiles come with lot 2.
+ */
+export const comments = pgTable(
+  'comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    author: text('author').notNull(),
+    kind: text('kind').notNull(),
+    /** Markdown, rendered sanitized (01, section 3.5). */
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'comments_kind',
+      sql`${table.kind} IN ('note', 'question', 'answer', 'review', 'status_change')`,
+    ),
+    index('comments_ticket_id').on(table.ticketId, table.createdAt),
   ],
 );

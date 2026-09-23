@@ -26,6 +26,8 @@ docker compose -f docker/compose.dev.yml up -d --wait postgres
 
 GitHub is replaced by a local fake (`apps/server/test/fake-github.ts`) that answers like GitHub for the requests the server makes: tests configure the valid tokens, their permissions, the account's plan and repositories. Repositories keep commits, trees, branches and rulesets in memory; `repositoryHistory` and `repositoryFiles` read them back, and `override` injects any answer (for example a refusal) for one request. The server takes the API address as `githubApiUrl` in `buildApp`. `apps/server/test/helpers.ts` starts the application on a new database and captures its logs, so tests can prove that passwords and tokens never reach them.
 
+Rules about concurrent requests (ticket numbers, dependency cycles, project keys) are tested by sending the requests at the same time with `Promise.all`; the dependency test was checked to fail without the project lock. Ticket states no lot 1 action reaches (`proposed`, `in_progress`, ...) are seeded directly in the database, never through an API.
+
 Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
 
 ## Running tests

@@ -34,6 +34,16 @@ export const ApiErrorCode = z.enum([
   /** Check again is for linked repositories whose setup is done. */
   'project_not_linked',
   'project_not_ready',
+  /** No ticket with this number in the project. */
+  'ticket_not_found',
+  /** Tickets can be edited only in `proposed` and `todo`. */
+  'ticket_not_editable',
+  /** The action is not possible from the ticket's status (04, section 2); the message says why. */
+  'ticket_transition_not_allowed',
+  'dependency_on_itself',
+  /** The dependency would close a cycle; the message names it (`WEB-1 → WEB-2 → WEB-1`). */
+  'dependency_cycle',
+  'dependency_not_found',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

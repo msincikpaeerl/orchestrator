@@ -6,11 +6,11 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 
 | Folder | Package | Role | State |
 |---|---|---|---|
-| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, "Needs you" API, UI settings, `orchestrator reset-password`, serves the UI |
+| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, `orchestrator reset-password`, serves the UI |
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you (GitHub problems), Settings > GitHub connection, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
-| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, projects and "Needs you" items |
-| `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events`, `projects` |
+| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, projects, tickets and comments, "Needs you" items |
+| `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events`, `projects`, `tickets`, `ticket_dependencies`, `comments` |
 | `templates` | `@orchestrator/templates` | Files the server writes to GitHub, bundled in the image through the server's dependency (ADR 0023). | `project-skeleton/`: the common skeleton of a new repository (08, section 3.1) |
 
 ## Dependencies between packages
@@ -37,9 +37,11 @@ The daemon's dependency is added with the code that needs it.
 | `src/github/skeleton.ts` | Reads `templates/project-skeleton` and fills in its placeholders. |
 | `src/projects/` | Projects: routes (`routes.ts`), the API view of a row (`model.ts`) and the repository setup (`setup.ts`). |
 | `src/projects/setup.ts` | `ProjectSetupRunner` runs a project's setup in the background after it is saved: `repository`, `skeleton`, `branch_protection` for a new repository, `harness` for a linked one. Each step records its result and an event before the next starts, so **Try again** resumes from the failed step. A failure stores the reason written for the owner. The server waits for running setups before closing; at start, `failInterruptedSetups` turns a setup left `in_progress` into `failed` ("interrupted by a restart"). If the answer to the repository creation was lost, trying again reuses the repository found under that name only when GitHub created it after the request (`repo_requested_at`, with the `githubClockToleranceSeconds` tolerance) and it holds at most GitHub's first commit; otherwise "Repository name already taken" (ADR 0023). |
+| `src/tickets/` | Tickets: routes (`routes.ts`), the API view of rows and the board order (`model.ts`), and the transition module (`transitions.ts`). Every change runs in one transaction that first locks the project's row (`FOR NO KEY UPDATE`) and refuses an archived or not ready project: ticket numbers (`projects.last_ticket_number`, never decremented), dependency cycle checks and archiving are decided one request at a time per project. "Blocked" is computed when read (a dependency not `done`). |
+| `src/tickets/transitions.ts` | The only code that writes `tickets.status` (04, section 2): owner creation in `todo`, **Cancel**, **Mark as done manually** (its mandatory comment written as a `status_change` comment) and **Reopen**; any other action from a state is refused with an explanation. The status, its `ticket.status_changed` event and the comment are written in the caller's transaction. Edits and dependency changes are allowed in `EDITABLE_STATUSES` (`proposed`, `todo`). |
 | `src/needs-you.ts` | "Needs you" items other than GitHub problems: failed setups of active projects. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
-| `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction. |
+| `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction; ticket events take the time of the change so the timeline keeps its order. |
 | `src/settings.ts` | Settings with their defaults (04, section 8). Not editable yet. |
 | `src/http.ts` | Input validation with the protocol schemas and the error format (`ApiError`). |
 | `src/cli.ts` | The `orchestrator` command of the image: `reset-password` (`src/reset-password.ts`). |
@@ -64,6 +66,11 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/projects/:key/setup/retry` | yes | **Try again** a failed setup, from the failed step. |
 | `POST /api/projects/:key/harness/check` | yes | **Check again** the harness elements of a linked repository. |
 | `POST /api/projects/:key/archive`, `.../unarchive` | yes | Archive (refused while the setup runs) or unarchive; no request to GitHub. |
+| `GET /api/projects/:key/tickets`, `POST ...` | yes | Board data (every ticket in board order with its blocked flag); create a ticket in `todo`, with optional dependencies. |
+| `GET /api/projects/:key/tickets/:number`, `PATCH ...` | yes | Detail with "Blocked by", "Blocks" and the timeline (comments and status changes); edit in `proposed` or `todo`. |
+| `POST /api/projects/:key/tickets/:number/dependencies`, `DELETE .../dependencies/:blockedBy` | yes | Add (same project, not itself, no cycle: the refusal names it) or remove a dependency, while the waiting ticket is `proposed` or `todo`. |
+| `POST /api/projects/:key/tickets/:number/comments` | yes | Owner note, on any ticket of an active, ready project. |
+| `POST /api/projects/:key/tickets/:number/cancel`, `.../mark-done`, `.../reopen` | yes | Owner status changes (04, section 2); `mark-done` needs `{ comment }`. |
 | `GET /api/needs-you` | yes | "Needs you" items besides GitHub problems, oldest first. |
 | `GET /api/ui-settings` | yes | Settings the screens use: `projectSetupPollSeconds`. |
 

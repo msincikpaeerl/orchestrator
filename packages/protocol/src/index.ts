@@ -53,5 +53,26 @@ export {
   UpdateProjectRequest,
   slugify,
 } from './api/projects.js';
+export {
+  AddCommentRequest,
+  AddDependencyRequest,
+  Comment,
+  CommentAuthor,
+  CommentKind,
+  CreateTicketRequest,
+  MarkDoneRequest,
+  OwnerTicketAction,
+  TicketCreator,
+  TicketDetail,
+  TicketLink,
+  TicketListResponse,
+  TicketNumber,
+  TicketPriority,
+  TicketStatus,
+  TicketSummary,
+  TicketType,
+  TimelineEntry,
+  UpdateTicketRequest,
+} from './api/tickets.js';
 export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
 export { UiSettingsResponse } from './api/ui-settings.js';
