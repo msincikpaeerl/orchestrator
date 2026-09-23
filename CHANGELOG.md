@@ -4,6 +4,8 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Projects: create a project with a new GitHub repository (private by default) or link one of your repositories, follow its setup on the project page, try a failed setup again, change its name and description, archive and unarchive it (the GitHub repository is never changed). A linked repository shows the harness elements it is missing, with **Check again**. "Needs you" lists projects whose setup failed. Help: "Projects".
+
 ## 0.1.0 — 2026-09-23
 
 First version (lot 0, Foundations): install the Orchestrator with Docker Compose, create your account, connect GitHub and read the user guide in the Help section. Projects, machines and agents come in the next versions.

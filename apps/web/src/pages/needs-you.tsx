@@ -1,18 +1,26 @@
 import { Link } from 'react-router';
 import { Card, HelpLink, Loading, PageHeader } from '../components/ui';
 import { problemText } from '../github/text';
-import { useGitHubStatus } from '../queries';
+import { sentence, stepLabel } from '../projects/text';
+import { useGitHubStatus, useNeedsYou } from '../queries';
 
-/** Home page: everything waiting for the owner (02, section 4). Only GitHub problems so far. */
+/** Home page: everything waiting for the owner (02, section 4). */
 export function NeedsYouPage() {
   const github = useGitHubStatus();
-  if (github.isPending) return <Loading />;
+  const needsYou = useNeedsYou();
+  if (github.isPending || needsYou.isPending) return <Loading />;
   const problems = github.data?.connected ? github.data.problems : [];
+  const items = needsYou.data?.items ?? [];
 
   return (
     <>
       <PageHeader title="Needs you" help="needs-you" />
-      {problems.length === 0 ? (
+      {needsYou.isError && (
+        <p role="alert" className="mb-3 text-red-800">
+          Some items could not be loaded. Reload the page.
+        </p>
+      )}
+      {problems.length === 0 && items.length === 0 ? (
         <Card>
           <p>Nothing needs you right now.</p>
         </Card>
@@ -35,6 +43,24 @@ export function NeedsYouPage() {
               </li>
             );
           })}
+          {items.map((item) => (
+            <li key={`${item.type}-${item.project.key}`}>
+              <Card className="space-y-2">
+                <h2 className="font-semibold break-words text-slate-900">
+                  Project setup failed: {item.project.key} · {item.project.name}
+                </h2>
+                <p className="break-words text-slate-700">
+                  Step “{stepLabel[item.step]}”: {sentence(item.reason)}
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <Link to={`/projects/${item.project.key}`} className="text-blue-700 underline">
+                    Open the project
+                  </Link>
+                  <HelpLink page="projects#if-the-setup-fails">What to do</HelpLink>
+                </div>
+              </Card>
+            </li>
+          ))}
         </ul>
       )}
     </>

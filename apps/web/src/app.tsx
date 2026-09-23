@@ -5,6 +5,9 @@ import { CenteredPage, Loading } from './components/ui';
 import { ComingLaterPage } from './pages/coming-later';
 import { LoginPage } from './pages/login';
 import { NeedsYouPage } from './pages/needs-you';
+import { NewProjectPage } from './pages/new-project';
+import { ProjectPage, ProjectSettingsPage } from './pages/project';
+import { ProjectsPage } from './pages/projects';
 import { GitHubSettingsPage, SettingsPage } from './pages/settings';
 import { SetupDonePage, SetupPage } from './pages/setup';
 import { useSession, useSetupState } from './queries';
@@ -15,7 +18,6 @@ const HelpPage = lazy(() => import('./pages/help'));
 /** Sections of later lots, with their purpose from 02, section 2. */
 const later: Record<string, string> = {
   '/requests': 'Talk to the Project Manager.',
-  '/projects': 'Project list, board, tickets.',
   '/activity': 'Live and past runs, event log.',
   '/agents': 'Default and custom agent profiles.',
   '/machines': 'Machines and Claude accounts.',
@@ -72,6 +74,10 @@ export function App() {
                 element={<ComingLaterPage title={label} purpose={later[path] ?? ''} />}
               />
             ))}
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/new" element={<NewProjectPage />} />
+          <Route path="/projects/:key" element={<ProjectPage />} />
+          <Route path="/projects/:key/settings" element={<ProjectSettingsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/github" element={<GitHubSettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />

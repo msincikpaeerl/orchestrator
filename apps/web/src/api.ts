@@ -24,7 +24,7 @@ export function setUnauthenticatedHandler(handler: () => void) {
  * answers without a body.
  */
 export async function api<T>(
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
   path: string,
   schema: { parse(value: unknown): T } | null,
   body?: unknown,
