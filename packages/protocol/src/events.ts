@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const EventActor = z.enum(['owner', 'system', 'cli']);
 export type EventActor = z.infer<typeof EventActor>;
 
-export const EventEntityType = z.enum(['owner', 'session', 'github_connection', 'project']);
+export const EventEntityType = z.enum(['owner', 'session', 'github_connection', 'project', 'ticket']);
 export type EventEntityType = z.infer<typeof EventEntityType>;
 
 /** Event types written so far; each lot adds its own. Payloads never contain secrets. */
@@ -28,5 +28,11 @@ export const EventType = z.enum([
   'project.harness_checked',
   'project.archived',
   'project.unarchived',
+  'ticket.created',
+  'ticket.updated',
+  'ticket.status_changed',
+  'ticket.dependency_added',
+  'ticket.dependency_removed',
+  'ticket.commented',
 ]);
 export type EventType = z.infer<typeof EventType>;
