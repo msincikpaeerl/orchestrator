@@ -6,7 +6,7 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 
 | Folder | Package | Role | State |
 |---|---|---|---|
-| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, "Needs you" API, `orchestrator reset-password`, serves the UI |
+| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, "Needs you" API, UI settings, `orchestrator reset-password`, serves the UI |
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you (GitHub problems), Settings > GitHub connection, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
 | `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, projects and "Needs you" items |
@@ -65,6 +65,7 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/projects/:key/harness/check` | yes | **Check again** the harness elements of a linked repository. |
 | `POST /api/projects/:key/archive`, `.../unarchive` | yes | Archive (refused while the setup runs) or unarchive; no request to GitHub. |
 | `GET /api/needs-you` | yes | "Needs you" items besides GitHub problems, oldest first. |
+| `GET /api/ui-settings` | yes | Settings the screens use: `projectSetupPollSeconds`. |
 
 Request and response schemas are in `packages/protocol/src/api/`. Any other `GET` address outside `/api`, `/health`, `/version` and `/assets` returns the UI.
 
@@ -73,9 +74,10 @@ Request and response schemas are in `packages/protocol/src/api/`. Any other `GET
 | Path in `apps/web/src` | Role |
 |---|---|
 | `main.tsx`, `app.tsx` | Entry point; routes (ADR 0019), and the redirections to the wizard or the login page. |
-| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session and GitHub status. |
-| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Settings, Help, "Coming in a later version". |
-| `components/` | Shell (navigation, "Menu" on a phone) and shared form elements. |
+| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings and projects. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
+| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), Settings, Help, "Coming in a later version". |
+| `components/` | Shell (navigation, "Menu" on a phone), shared form elements with field errors, confirmation dialog. |
+| `projects/` | Project wording: labels, plain-words text and field of every API refusal, key suggestion, archive and unarchive with confirmation. |
 | `github/` | Token instructions and form, permission results, wording of GitHub problems. |
 | `help/` | `docs/user/` bundled at build time, page order, links and search (ADR 0020). |
 
