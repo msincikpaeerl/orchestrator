@@ -88,6 +88,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 - Requests screens, planning runs, `request.ask`, `plan.propose` with validation.
 - Plan review screen with dependency graph, approve, reject with feedback, edit before approving.
+- The same dependency graph on the project board (02, section 6.3). Until then, the ticket page lists "Blocked by" and "Blocks" and the board shows a "Blocked" badge.
 - Project Manager profile.
 - Project creation from an approved plan, with the bootstrap ticket (08, section 3.2).
 - Setup wizard steps 3 to 5.

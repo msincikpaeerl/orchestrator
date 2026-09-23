@@ -40,7 +40,6 @@ stateDiagram-v2
     waiting_human --> cancelled
     in_review --> cancelled
     awaiting_merge --> cancelled
-    proposed --> done: owner marks as done manually
     todo --> done: owner marks as done manually
     in_progress --> done: owner marks as done manually
     waiting_human --> done: owner marks as done manually
@@ -69,7 +68,7 @@ stateDiagram-v2
 | `awaiting_merge` → `done` | System | GitHub reports the pull request merged into the default branch. |
 | `awaiting_merge` → `todo` | Owner | Owner comment explaining the requested change. |
 | any non-terminal → `cancelled` | Owner; Project Manager with owner approval | Active run is stopped; the branch and pull request are closed but kept. |
-| any non-terminal → `done` | Owner, with **Mark as done manually** | A comment explaining why is mandatory (posted as a `status_change` comment). Active run is stopped; the branch and pull request are left as they are. Tickets it blocked are unblocked. |
+| `todo`, `in_progress`, `waiting_human`, `in_review` or `awaiting_merge` → `done` | Owner, with **Mark as done manually** | A comment explaining why is mandatory (posted as a `status_change` comment). Active run is stopped; the branch and pull request are left as they are. Tickets it blocked are unblocked. |
 | `cancelled` → `todo` | Owner, with **Reopen** | None. The ticket keeps its number, history and dependencies; `attempt_count` is reset to 0. |
 
 Every transition writes an event (01, section 3.10) naming who performed it. Tickets are never deleted: a ticket created by mistake is cancelled.

@@ -131,8 +131,8 @@ The project page shows the repository setup while it runs and its result. If it 
 
 - Header: key, name, repository link, setup status, branch protection status (applied, or not available on the owner's GitHub plan, with a help link), and for a linked repository the missing harness elements with **Check again**.
 - Columns by state (04, section 1); `proposed` hidden by default, `done` and `cancelled` collapsed.
-- Cards show number, title, type, assignee, blocked indicator, active run indicator.
-- Filters: type, assignee, text. Toggle to show the dependency graph.
+- Cards show number, title, type, assignee, a "Blocked" badge, active run indicator.
+- Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph)*.
 - Actions: create a ticket manually, open project settings.
 
 ### 6.4 Ticket detail

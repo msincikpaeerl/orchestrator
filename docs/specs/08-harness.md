@@ -73,10 +73,10 @@ A project is created either with a **new repository**, which receives the skelet
 For a new repository, the server:
 
 1. creates the GitHub repository on the owner's personal account: **private** by default, public when the owner chose it;
-2. commits the **common skeleton** as the repository's **only initial commit** on the default branch: the layout above with placeholder content (project name and description filled in), ADR 0001 and the ADR template, a minimal CI that runs a documentation link check;
+2. commits the **common skeleton** in one commit on the default branch: the layout above with placeholder content (project name and description filled in), ADR 0001 and the ADR template, a minimal CI that runs a documentation link check. The repository is created with GitHub's first commit (a README), because GitHub's API cannot build commits in an empty repository; the skeleton commit follows it and the default branch moves forward to it, never with a forced update. The history therefore has two commits;
 3. applies branch protection on the default branch (pull request required, CI required) when the GitHub plan allows it. GitHub Free does not offer it on private repositories: GitHub answers that the account must be upgraded or the repository made public. The project then shows "Branch protection: not available on your GitHub plan", which is information, not an error: the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches. Any other refusal is a failure of the setup.
 
-Each step is recorded as an event. If a step fails, the project's setup is `failed` with the reason and the owner can try again; trying again resumes from the failed step and never replaces a commit it did not make.
+Each step is recorded as an event. If a step fails, the project's setup is `failed` with the reason and the owner can try again; trying again resumes from the failed step.
 
 ### 3.2 Bootstrap ticket
 
