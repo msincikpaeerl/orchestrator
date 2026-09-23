@@ -138,7 +138,7 @@ export const UpdateTicketRequest = z
     priority: TicketPriority,
   })
   .partial()
-  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+  .refine((value) => Object.keys(value).length > 0, {
     message: 'nothing to change',
   });
 export type UpdateTicketRequest = z.infer<typeof UpdateTicketRequest>;

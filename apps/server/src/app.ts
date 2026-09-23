@@ -15,6 +15,7 @@ import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
 import { deriveSecretKey } from './secrets.js';
 import { defaultSettings, type Settings } from './settings.js';
+import { registerTicketRoutes } from './tickets/routes.js';
 import { registerUiSettingsRoutes } from './ui-settings.js';
 import { SERVER_VERSION } from './version.js';
 import { registerWeb } from './web.js';
@@ -73,6 +74,7 @@ export function buildApp(dependencies: AppDependencies) {
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
+    registerTicketRoutes(scope, { db, settings, now: dependencies.now });
     registerNeedsYouRoutes(scope, { db });
     registerUiSettingsRoutes(scope, { db, settings });
     done();
