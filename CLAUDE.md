@@ -96,6 +96,7 @@ docker/          Dockerfile and compose files
 - Conventional Commits: `feat(scheduler): resume paused runs first`. Reference the ticket number when there is one.
 - Small commits with one purpose each.
 - Work on a branch (`lot0/<step letter>-<short-name>` during lot 0) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
+- At the end of every step, give the owner a pull request title and description ready to paste, in one code block (`docs/dev/lot-0-plan.md`, working rule 10).
 - Never commit secrets. Environment variables are listed in `.env.example`.
 
 ## Never

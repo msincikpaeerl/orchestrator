@@ -22,6 +22,9 @@ Every session working on lot 0 follows these rules.
 7. **Git.** From step B on, work on a branch named `lot0/<step letter>-<short-name>` (for example `lot0/b-server-db`) created from `main`. Commit with Conventional Commits, small commits with one purpose each. **Never commit to `main` directly and never push.** The owner pushes the branch, opens the pull request, checks CI and merges.
 8. **Nothing outside the repository.** Never install software or change anything outside this repository: no global installs, no files in the owner's home folder, no PATH or shell changes. The only exception: Docker may pull images declared in the repository's own files (Dockerfiles, compose files, CI workflow, documented commands), pinned to an exact version. If a tool or version is missing, stop and tell the owner what to install.
 9. **Summary.** End the session with a short summary: what was done, what the owner should check, what comes next, and that the branch is ready for a pull request.
+10. **Pull request text.** At the end of every step, give the owner a pull request title and description ready to paste, both in one Markdown code block:
+    - title in Conventional Commits style, for example `feat(auth): owner account and login`;
+    - description following `.github/pull_request_template.md`, fully filled in: a summary written for the owner (what changes for the user), the ticket or "none", the acceptance criteria as checked items (the step's "Done when"), the tests added and how they were run, and the documentation checklist with each box checked or marked "not needed" with the reason.
 
 ## Steps
 
