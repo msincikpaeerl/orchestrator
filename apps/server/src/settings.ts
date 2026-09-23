@@ -27,6 +27,16 @@ export interface Settings {
   loginMaxDelaySeconds: number;
   /** Failed logins older than this are forgotten. */
   loginFailureMemoryMinutes: number;
+  /** Longest ticket title, in characters. */
+  ticketTitleMaxLength: number;
+  /** Longest ticket description, in characters. */
+  ticketDescriptionMaxLength: number;
+  /** Most acceptance criteria on one ticket. */
+  ticketMaxAcceptanceCriteria: number;
+  /** Longest acceptance criterion, in characters. */
+  acceptanceCriterionMaxLength: number;
+  /** Longest comment, in characters. */
+  commentMaxLength: number;
 }
 
 export const defaultSettings: Readonly<Settings> = {
@@ -39,4 +49,9 @@ export const defaultSettings: Readonly<Settings> = {
   loginFirstDelaySeconds: 10,
   loginMaxDelaySeconds: 15 * 60,
   loginFailureMemoryMinutes: 60,
+  ticketTitleMaxLength: 200,
+  ticketDescriptionMaxLength: 20_000,
+  ticketMaxAcceptanceCriteria: 20,
+  acceptanceCriterionMaxLength: 500,
+  commentMaxLength: 20_000,
 };
