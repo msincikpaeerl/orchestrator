@@ -34,14 +34,14 @@ Shown on first launch until completed. Each step links to its help page.
 The wizard covers only the steps that exist in the current version and ends on a **Done** page linking to Help. Steps added by later versions are not forced through the wizard again: until they are done, they appear as items in "Needs you" (for example "No machine connected yet") with a link to the right screen.
 
 1. **Create the owner account**: username and password (at least 12 characters). See 01, section 3.11.
-2. **Connect GitHub**: paste a fine-grained personal access token; the application checks it, shows its expiry date and lists the permissions it still needs (section 3.1).
+2. **Connect GitHub**: a "Create the token on GitHub" button opens GitHub's token form with the name, expiry and permissions already filled in (section 3.1). The owner pastes the token and enters its expiry date, or chooses "No expiry date"; the application checks the token and shows the result of each permission (section 3.2).
 3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Lot 2.)*
 4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Lot 2.)*
 5. **Done**: links to Help; once requests exist, suggests submitting a first request.
 
 ### 3.1 GitHub token requirements
 
-A fine-grained personal access token with:
+A fine-grained personal access token whose resource owner is the owner's **personal GitHub account** (a fine-grained token covers a single account or organization; organizations are not supported in v1), with:
 
 | Setting | Value | Why |
 |---|---|---|
@@ -49,13 +49,28 @@ A fine-grained personal access token with:
 | Administration | Read and write | Create repositories, apply branch protection. |
 | Contents | Read and write | Skeleton commits, branches. |
 | Pull requests | Read and write | Open pull requests, post review comments, detect merges. |
-| Workflows | Read and write | The skeleton and agents commit `.github/workflows` files; GitHub rejects them without it. |
-| Checks | Read | GitHub Actions results are check runs. |
+| Workflows | Read and write (GitHub offers only this level) | The skeleton and agents commit `.github/workflows` files; GitHub rejects them without it. |
 | Commit statuses | Read | CI status reported as commit statuses. |
-| Actions | Read | Failed job logs for `ci.status` (06). |
-| Metadata | Read | Required by GitHub for any repository access. |
+| Actions | Read | GitHub Actions results for `ci.status` (06): workflow runs, jobs and failed job logs. |
+| Metadata | Read | Required by GitHub for any repository access; GitHub adds it automatically. |
 
-The wizard and Settings show the token's expiry date. "Needs you" warns 14 days before it expires (the delay is a setting).
+Fine-grained tokens cannot use GitHub's Checks API and have no Checks permission, so CI results come from the Actions permission.
+
+The "Create the token on GitHub" link pre-fills the token name, a one-year expiry and the permissions above, using GitHub's URL parameters for fine-grained tokens. The link cannot select "All repositories": the wizard tells the owner to choose it. The user documentation recommends keeping an expiry date (for example one year).
+
+**Expiry date.** GitHub has no documented way to read a fine-grained token's expiry date, and a token may have none. The owner enters the date GitHub showed when creating the token, or chooses "No expiry date". The field is pre-filled from GitHub's `GitHub-Authentication-Token-Expiration` response header only when it gives a plausible date: in the future and at most 366 days ahead. The wizard and Settings show the stored date; "Needs you" warns 14 days before it (the delay is a setting). A token with no expiry date gets no expiry warning.
+
+### 3.2 Token check
+
+GitHub has no way to list the permissions of a fine-grained token, so the application tries requests with it ([ADR 0017](../adr/0017-github-token-verification.md)). The check never creates or changes anything on GitHub:
+
+1. The token is valid: `GET /user` succeeds. This gives the account name shown to the owner. A classic token (not starting with `github_pat_`) is refused.
+2. Read permissions (Metadata, Actions, Commit statuses), with read requests on one existing private repository of the owner, when there is one.
+3. Write permissions (Administration, Contents, Pull requests, Workflows), with deliberately invalid requests: GitHub answers "validation failed" when the permission is granted and "not accessible" when it is missing.
+
+When GitHub refuses a request and sends the `X-Accepted-GitHub-Permissions` header, the permissions it names are used. Each permission shows one of **OK**, **Missing** or **Could not verify** (for example: no repository to test on, GitHub unreachable, or an answer the check does not recognise). The check never guesses.
+
+The check is a convenience. The safety net is normal operation: any request GitHub refuses because the token is invalid or a permission is missing creates a "Needs you" item naming the problem or the permission (section 4), whatever the stored expiry date says.
 
 ## 4. Needs you
 
@@ -67,7 +82,7 @@ The owner's task list, ordered by age:
 - tickets stopped after repeated failures;
 - system problems: machine offline with active work, account limited, daemon incompatible;
 - setup still to do: steps added after the owner went through the wizard (section 3), for example "No machine connected yet";
-- GitHub token expiring within 14 days, expired, or missing permissions (section 3.1).
+- GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).
 

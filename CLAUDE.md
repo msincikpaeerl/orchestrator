@@ -39,6 +39,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Documentation link check | `pnpm docs:links` |
 | Build | `pnpm build` |
 | Everything CI runs | `pnpm verify` (never `pnpm ci`: built-in pnpm command) |
+| Reset the owner password (dev) | `pnpm --filter server orchestrator reset-password` |
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
