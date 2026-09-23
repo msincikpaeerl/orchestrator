@@ -5,6 +5,8 @@ import {
   ProjectListResponse,
   SessionResponse,
   SetupStateResponse,
+  TicketDetail,
+  TicketListResponse,
   UiSettingsResponse,
 } from '@orchestrator/protocol';
 import { QueryClient, useQuery } from '@tanstack/react-query';
@@ -24,6 +26,8 @@ export const keys = {
   projects: ['projects'],
   projectList: (archived: boolean) => ['projects', 'list', archived] as const,
   project: (key: string) => ['projects', 'detail', key] as const,
+  tickets: (key: string) => ['projects', 'tickets', key] as const,
+  ticket: (key: string, number: number) => ['projects', 'tickets', key, number] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -106,4 +110,34 @@ export async function projectsChanged(project?: Project) {
     queryClient.invalidateQueries({ queryKey: keys.projects }),
     queryClient.invalidateQueries({ queryKey: keys.needsYou }),
   ]);
+}
+
+export function useTickets(projectKey: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.tickets(projectKey),
+    queryFn: () =>
+      api('GET', `/api/projects/${encodeURIComponent(projectKey)}/tickets`, TicketListResponse),
+    enabled,
+  });
+}
+
+export function useTicket(projectKey: string, number: number) {
+  return useQuery({
+    queryKey: keys.ticket(projectKey, number),
+    queryFn: () =>
+      api(
+        'GET',
+        `/api/projects/${encodeURIComponent(projectKey)}/tickets/${String(number)}`,
+        TicketDetail,
+      ),
+  });
+}
+
+/**
+ * After an action on a ticket, or a refusal of one: the ticket, the board, the other tickets
+ * (their dependency lists) and the project list's counts are read again.
+ */
+export async function ticketsChanged(ticket?: TicketDetail) {
+  if (ticket) queryClient.setQueryData(keys.ticket(ticket.projectKey, ticket.number), ticket);
+  await queryClient.invalidateQueries({ queryKey: keys.projects });
 }

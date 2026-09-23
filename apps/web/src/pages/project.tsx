@@ -31,6 +31,7 @@ import {
   stepLabel,
 } from '../projects/text';
 import { projectsChanged, useProject } from '../queries';
+import { Board } from '../tickets/board';
 import { ProjectBadges } from './projects';
 
 function projectPath(project: ProjectData, action: string): string {
@@ -38,7 +39,7 @@ function projectPath(project: ProjectData, action: string): string {
 }
 
 /** Loads the project of the address, or says why it cannot. */
-function WithProject({ children }: { children: (project: ProjectData) => ReactNode }) {
+export function WithProject({ children }: { children: (project: ProjectData) => ReactNode }) {
   const { key = '' } = useParams();
   const project = useProject(key);
   if (project.isPending) return <Loading />;
@@ -225,8 +226,8 @@ function HarnessCard({ project }: { project: ProjectData }) {
 }
 
 /**
- * Project page (02, sections 6.2 and 6.3): repository, setup progress and result, branch
- * protection, missing harness elements. Tickets come with a later step.
+ * Project page (02, sections 6.2 and 6.3): repository, the board once the setup is done, setup
+ * progress and result, branch protection, missing harness elements.
  */
 export function ProjectPage() {
   return (
@@ -270,6 +271,17 @@ export function ProjectPage() {
                 Project settings
               </Link>
             </Card>
+            {project.setup.status === 'ready' && (
+              <section aria-labelledby="tickets-heading" className="space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 id="tickets-heading" className="text-xl font-semibold text-slate-900">
+                    Tickets
+                  </h2>
+                  <HelpLink page="tickets">Help about tickets</HelpLink>
+                </div>
+                <Board project={project} />
+              </section>
+            )}
             <SetupCard project={project} />
             <BranchProtectionCard project={project} />
             <HarnessCard project={project} />
