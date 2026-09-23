@@ -6,6 +6,7 @@ import type { Config } from './config.js';
 import { createDatabase } from './database.js';
 import { detectUnreadableToken } from './github/connection.js';
 import { deriveSecretKey } from './secrets.js';
+import { defaultWebRoot } from './web.js';
 
 export interface RunningServer {
   app: App;
@@ -17,7 +18,7 @@ export interface RunningServer {
 export async function startServer(
   config: Pick<Config, 'databaseUrl' | 'port' | 'secretKey' | 'publicUrl'>,
   logger: FastifyBaseLogger,
-  options: Pick<AppDependencies, 'settings' | 'githubApiUrl'> = {},
+  options: Pick<AppDependencies, 'settings' | 'githubApiUrl' | 'webRoot'> = {},
 ): Promise<RunningServer> {
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
   pool.on('error', (error) => {
@@ -33,6 +34,7 @@ export async function startServer(
       logger,
       secretKey: config.secretKey,
       publicUrl: config.publicUrl,
+      webRoot: defaultWebRoot(),
       ...options,
     });
     await app.listen({ port: config.port, host: '0.0.0.0' });

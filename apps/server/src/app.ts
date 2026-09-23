@@ -14,6 +14,7 @@ import { handleError } from './http.js';
 import { deriveSecretKey } from './secrets.js';
 import { defaultSettings, type Settings } from './settings.js';
 import { SERVER_VERSION } from './version.js';
+import { registerWeb } from './web.js';
 
 export interface AppDependencies {
   pool: Pool;
@@ -26,6 +27,8 @@ export interface AppDependencies {
   githubApiUrl?: string;
   /** Clock for time-based rules (login throttling); tests replace it. */
   now?: () => Date;
+  /** Folder of the built UI; `null` or absent serves the API only. */
+  webRoot?: string | null;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -67,6 +70,8 @@ export function buildApp(dependencies: AppDependencies) {
     });
     done();
   });
+
+  registerWeb(app, dependencies.webRoot ?? null);
 
   return app;
 }
