@@ -6,25 +6,7 @@
 
 ## Working rules
 
-Every session working on lot 0 follows these rules.
-
-1. **Read first.** Read `CLAUDE.md` and this plan before working. Implement **only the next unchecked step**, nothing from later steps.
-2. **Current, pinned versions.** Use the current stable version of every tool and library. Check it with `npm view <package> version` (or the official release index for Node.js and Docker images) instead of relying on memory, and pin it: exact versions in `package.json`, lock file committed, image tags pinned in Dockerfiles, compose files and the CI workflow, and CI runners pinned to an OS version (`ubuntu-24.04`, not `ubuntu-latest`).
-3. **One ADR per choice.** Every technical choice from [09, section 3](../specs/09-architecture-and-deployment.md#3-technology-choices) gets its own short ADR (next number, copied from `docs/adr/0000-template.md`, status `accepted`) **in the step that introduces it**. The same applies to any other significant choice made along the way (library, test tool, encryption scheme).
-4. **Do not invent.** If a spec is wrong, incomplete or contradicts another, stop and ask the owner. If a spec is changed, say so in the summary.
-5. **No speculative code.** No feature code beyond what the step needs. Placeholders for later lots stay empty.
-6. **Definition of done for a step:**
-   - `pnpm verify` passes locally;
-   - `docs/dev/` and `CLAUDE.md` are up to date (CLAUDE.md stays under 150 lines);
-   - user-facing changes are documented in `docs/user/` and have a `CHANGELOG.md` entry;
-   - the step is checked off in this plan;
-   - the work is committed on the step's branch, ready for a pull request.
-7. **Git.** From step B on, work on a branch named `lot0/<step letter>-<short-name>` (for example `lot0/b-server-db`) created from `main`. Commit with Conventional Commits, small commits with one purpose each. **Never commit to `main` directly and never push.** The owner pushes the branch, opens the pull request, checks CI and merges.
-8. **Nothing outside the repository.** Never install software or change anything outside this repository: no global installs, no files in the owner's home folder, no PATH or shell changes. The only exception: Docker may pull images declared in the repository's own files (Dockerfiles, compose files, CI workflow, documented commands), pinned to an exact version. If a tool or version is missing, stop and tell the owner what to install.
-9. **Summary.** End the session with a short summary: what was done, what the owner should check, what comes next, and that the branch is ready for a pull request.
-10. **Pull request text.** At the end of every step, give the owner a pull request title and description ready to paste, both in one Markdown code block:
-    - title in Conventional Commits style, for example `feat(auth): owner account and login`;
-    - description following `.github/pull_request_template.md`, fully filled in: a summary written for the owner (what changes for the user), the ticket or "none", the acceptance criteria as checked items (the step's "Done when"), the tests added and how they were run, and the documentation checklist with each box checked or marked "not needed" with the reason.
+Lot 0 followed the rules now kept in [working rules](working-rules.md), which apply to every lot. During lot 0, branches were named `lot0/<step letter>-<short-name>`.
 
 ## Steps
 

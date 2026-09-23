@@ -15,8 +15,8 @@ This document defines the ticket states, who may move a ticket between them, and
 | `waiting_human` | An agent asked the owner a question. Work is paused until it is answered. |
 | `in_review` | A pull request is open, CI is green, and the Quality agent is reviewing it. |
 | `awaiting_merge` | Review approved. The owner must merge the pull request on GitHub. |
-| `done` | Pull request merged. Terminal. |
-| `cancelled` | Abandoned. Terminal. |
+| `done` | Pull request merged, or marked as done manually by the owner. Terminal. |
+| `cancelled` | Abandoned. Terminal, except that the owner can reopen it. |
 
 Blocked and eligible are derived conditions of `todo` (see 01, section 3.4). They are shown in the UI but are not states.
 
@@ -40,6 +40,12 @@ stateDiagram-v2
     waiting_human --> cancelled
     in_review --> cancelled
     awaiting_merge --> cancelled
+    todo --> done: owner marks as done manually
+    in_progress --> done: owner marks as done manually
+    waiting_human --> done: owner marks as done manually
+    in_review --> done: owner marks as done manually
+    awaiting_merge --> done: owner marks as done manually
+    cancelled --> todo: owner reopens
     done --> [*]
     cancelled --> [*]
 ```
@@ -62,8 +68,12 @@ stateDiagram-v2
 | `awaiting_merge` → `done` | System | GitHub reports the pull request merged into the default branch. |
 | `awaiting_merge` → `todo` | Owner | Owner comment explaining the requested change. |
 | any non-terminal → `cancelled` | Owner; Project Manager with owner approval | Active run is stopped; the branch and pull request are closed but kept. |
+| `todo`, `in_progress`, `waiting_human`, `in_review` or `awaiting_merge` → `done` | Owner, with **Mark as done manually** | A comment explaining why is mandatory (posted as a `status_change` comment). Active run is stopped; the branch and pull request are left as they are. Tickets it blocked are unblocked. |
+| `cancelled` → `todo` | Owner, with **Reopen** | None. The ticket keeps its number, history and dependencies; `attempt_count` is reset to 0. |
 
-Agents can never set `done` or `awaiting_merge` on their own work, and the Quality agent can never review a ticket it implemented.
+Every transition writes an event (01, section 3.10) naming who performed it. Tickets are never deleted: a ticket created by mistake is cancelled.
+
+Agents can never set `done` or `awaiting_merge` on their own work, and the Quality agent can never review a ticket it implemented. Only the owner can mark a ticket as done manually or reopen it.
 
 ## 3. Definition of Done
 

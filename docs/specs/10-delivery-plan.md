@@ -37,8 +37,8 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 **Scope**
 
-- Projects: create (with GitHub repository and skeleton, 08, section 3.1), list, archive, settings.
-- Tickets: create, edit, board, detail, comments, dependencies, manual status changes restricted to owner transitions.
+- Projects: create with a new GitHub repository and the skeleton (08, section 3.1) or by linking an existing repository (08, section 3.4), list, archive, settings.
+- Tickets: create, edit, board, detail, comments, dependencies, manual status changes restricted to owner transitions (cancel, mark as done manually, reopen; 04, section 2).
 - Settings screen with limits (04, section 8).
 - Event log.
 
@@ -88,6 +88,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 - Requests screens, planning runs, `request.ask`, `plan.propose` with validation.
 - Plan review screen with dependency graph, approve, reject with feedback, edit before approving.
+- The same dependency graph on the project board (02, section 6.3). Until then, the ticket page lists "Blocked by" and "Blocks" and the board shows a "Blocked" badge.
 - Project Manager profile.
 - Project creation from an approved plan, with the bootstrap ticket (08, section 3.2).
 - Setup wizard steps 3 to 5.

@@ -11,7 +11,8 @@ This document describes the screens of the web application and what the owner ca
 - **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading.
 - **Help everywhere.** Each screen has a help link to the matching page of the user documentation.
 - **English only** for all text.
-- **Confirmation** for destructive actions (cancel ticket, revoke machine, delete agent).
+- **Confirmation** for destructive actions (cancel ticket, mark as done manually, archive project, revoke machine, delete agent).
+- **Markdown** in descriptions and comments is rendered sanitized: it can never run a script (01, section 3.5).
 - **Notifications**: a badge on "Needs you" and optional browser notifications for new questions, plans to approve and pull requests to merge.
 
 ## 2. Navigation
@@ -46,13 +47,13 @@ A fine-grained personal access token whose resource owner is the owner's **perso
 | Setting | Value | Why |
 |---|---|---|
 | Repository access | All repositories | Repositories created later by the Orchestrator must be covered. |
-| Administration | Read and write | Create repositories, apply branch protection. |
-| Contents | Read and write | Skeleton commits, branches. |
+| Administration | Read and write | Create repositories, apply branch protection (08, section 3.1). |
+| Contents | Read and write | Skeleton commit, branches; read the files of a linked repository to find missing harness elements (08, section 3.4). |
 | Pull requests | Read and write | Open pull requests, post review comments, detect merges. |
 | Workflows | Read and write (GitHub offers only this level) | The skeleton and agents commit `.github/workflows` files; GitHub rejects them without it. |
 | Commit statuses | Read | CI status reported as commit statuses. |
 | Actions | Read | GitHub Actions results for `ci.status` (06): workflow runs, jobs and failed job logs. |
-| Metadata | Read | Required by GitHub for any repository access; GitHub adds it automatically. |
+| Metadata | Read | Required by GitHub for any repository access; GitHub adds it automatically. Lists the owner's repositories that can be linked to a project. |
 
 Fine-grained tokens cannot use GitHub's Checks API and have no Checks permission, so CI results come from the Actions permission.
 
@@ -111,28 +112,42 @@ Open and closed requests, with their status and project.
 
 ### 6.1 Project list
 
-Name, kind, repository link, counts of tickets per state, last activity. Action: archive.
+Key, name, kind, repository link (with "private" or "public"), counts of tickets per state, last activity. Archived projects are hidden behind a "Show archived" toggle. Actions: new project, archive, unarchive.
 
-### 6.2 Project board
+Archiving asks for confirmation and says what happens: the project and its tickets are kept and read-only, no new work starts, and the GitHub repository is not changed.
 
+### 6.2 New project
+
+The owner chooses one of two ways:
+
+- **Create a new repository**: name, key, kind, description, and visibility (**private** by default, public can be chosen). The repository name is the slug of the name and can be edited; the form checks it is free on the owner's account. The Orchestrator creates the repository with the skeleton (08, section 3.1).
+- **Link an existing repository**: pick one of the owner's repositories (from their personal account, not archived, not already linked), then name, key, kind and description. Nothing is written to the repository; the Orchestrator lists the harness elements it is missing (08, section 3.4).
+
+The key (2 to 6 uppercase letters) is suggested from the name and can be edited; the form explains that it prefixes ticket numbers and cannot be changed later.
+
+The project page shows the repository setup while it runs and its result. If it fails (for example GitHub refused a request), the reason is shown with a **Try again** action, and "Needs you" lists the project until it is ready.
+
+### 6.3 Project board
+
+- Header: key, name, repository link, setup status, branch protection status (applied, or not available on the owner's GitHub plan, with a help link), and for a linked repository the missing harness elements with **Check again**.
 - Columns by state (04, section 1); `proposed` hidden by default, `done` and `cancelled` collapsed.
-- Cards show number, title, type, assignee, blocked indicator, active run indicator.
-- Filters: type, assignee, text. Toggle to show the dependency graph.
+- Cards show number, title, type, assignee, a "Blocked" badge, active run indicator.
+- Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph)*.
 - Actions: create a ticket manually, open project settings.
 
-### 6.3 Ticket detail
+### 6.4 Ticket detail
 
 - Header: number, title, type, status, priority, assignee, links to branch and pull request.
 - Description and acceptance criteria.
-- Dependencies: blocked by, blocks.
+- Dependencies: blocked by, blocks. Only tickets of the same project; a dependency that would create a cycle is refused with an explanation.
 - DoD report of the latest submission, with each check's result.
 - Timeline: comments, questions and answers, status changes, reviews, runs.
 - Runs: list with purpose, machine, duration (working and waiting), outcome; open a run to see its live or recorded log.
-- Actions depending on state: edit (in `proposed` or `todo`), change assignee, **Run now**, answer a question, request changes (in `awaiting_merge`), cancel.
+- Actions depending on state (04, section 2): edit (in `proposed` or `todo`), change assignee, **Run now**, answer a question, add a comment, request changes (in `awaiting_merge`), cancel, **Mark as done manually** (with a mandatory comment), **Reopen** (in `cancelled`).
 
-### 6.4 Project settings
+### 6.5 Project settings
 
-Name, description, required capabilities, per-project overrides of settings (04, section 8), harness check schedule (08, section 7).
+Name, description, required capabilities, per-project overrides of settings (04, section 8), harness check schedule (08, section 7). The key, the repository and the kind cannot be changed.
 
 ## 7. Activity
 
@@ -172,7 +187,7 @@ State, plan, schedule windows, daily budget, behaviour at window end, limit hist
 
 ## 10. Settings
 
-- Global limits and scheduler settings (04, section 8; 07, section 8).
+- Global limits and scheduler settings (04, section 8; 07, section 8): each shows its value, its default, what it does, and a **Reset to default** action. Settings that can be overridden per project say so.
 - GitHub connection: token status, expiry date, permissions check, replace token.
 - Owner account: change password, sessions.
 - Backup reminder with a link to the backup guide.

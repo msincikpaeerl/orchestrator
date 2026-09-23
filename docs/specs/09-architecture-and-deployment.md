@@ -89,6 +89,7 @@ The server is a single process. Components are modules inside it, not separate s
 | GitHub token | Entered in the UI, stored encrypted in the database with a key from the `ORCHESTRATOR_SECRET_KEY` environment variable. Never sent to the browser after being saved. If the key is lost or changed, the server still starts and "Needs you" asks to enter the token again (ADR 0016). |
 | Machine tokens | Stored as hashes; revocable (05, section 3.1). |
 | Run tokens | Random, scoped to one run, expire at run end (06, section 2). |
+| Untrusted content | Markdown written by the owner or agents (descriptions, comments, requests, plans) is rendered in the UI without raw HTML, with links limited to `http`, `https` and `mailto`; it can never run a script (01, section 3.5). Images in it are shown as links, so viewing content never contacts another site. |
 | Network exposure | Local network or VPN only in v1. HTTPS through a reverse proxy recommended outside `localhost`. |
 | Dependencies | Lock file committed; `pnpm audit` in CI, failing on critical vulnerabilities. |
 
