@@ -163,8 +163,9 @@ function MarkDoneAction({ ticket }: { ticket: TicketDetail }) {
           }}
         >
           <p>
-            Use this when the work was done another way, or is no longer needed as described. The
-            ticket goes to Done, and tickets waiting for it are no longer blocked by it.
+            Use this when the result exists because the work was done another way. The ticket goes
+            to Done, and tickets waiting for it are no longer blocked by it. If the work is
+            abandoned, cancel the ticket instead.
           </p>
           <TextArea
             label="Why is it done? (required)"

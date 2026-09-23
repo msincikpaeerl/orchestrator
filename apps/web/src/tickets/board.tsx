@@ -10,7 +10,10 @@ import { buttonLinkClass, ErrorMessage, Loading, SelectField, TextField } from '
 import { useTickets } from '../queries';
 import { showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
 
-/** Columns shown open, in the order of 04, section 1; `proposed` only on request. */
+/**
+ * Columns shown open, in the order of 04, section 1. `proposed` is hidden (02, section 6.3): its
+ * toggle comes with plans (lot 5), no proposed ticket exists before.
+ */
 const OPEN_COLUMNS: readonly TicketStatus[] = [
   'todo',
   'in_progress',
@@ -94,14 +97,13 @@ function matches(ticket: TicketSummary, text: string): boolean {
 
 /**
  * Project board (02, section 6.3): columns by state, `done` and `cancelled` collapsed, `proposed`
- * hidden unless asked. Columns sit side by side on a wide screen and one below the other on a
+ * hidden. Columns sit side by side on a wide screen and one below the other on a
  * phone, so nothing scrolls sideways (owner's decision, lot 1 step F).
  */
 export function Board({ project }: { project: Project }) {
   const tickets = useTickets(project.key);
   const [type, setType] = useState<TicketType | ''>('');
   const [text, setText] = useState('');
-  const [showProposed, setShowProposed] = useState(false);
   const canCreate = project.status === 'active' && project.setup.status === 'ready';
 
   if (tickets.isPending) return <Loading />;
@@ -113,7 +115,6 @@ export function Board({ project }: { project: Project }) {
     (ticket) => (type === '' || ticket.type === type) && matches(ticket, text),
   );
   const inState = (status: TicketStatus) => shown.filter((ticket) => ticket.status === status);
-  const hasProposed = all.some((ticket) => ticket.status === 'proposed');
 
   return (
     <div className="space-y-4">
@@ -152,19 +153,6 @@ export function Board({ project }: { project: Project }) {
                 }}
               />
             </div>
-            {hasProposed && (
-              <label className="flex items-center gap-2 pb-2">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5"
-                  checked={showProposed}
-                  onChange={(event) => {
-                    setShowProposed(event.target.checked);
-                  }}
-                />
-                Show proposed tickets
-              </label>
-            )}
           </>
         )}
       </div>
@@ -181,11 +169,9 @@ export function Board({ project }: { project: Project }) {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {(showProposed ? ['proposed' as const, ...OPEN_COLUMNS] : OPEN_COLUMNS).map(
-              (status) => (
-                <Column key={status} status={status} tickets={inState(status)} />
-              ),
-            )}
+            {OPEN_COLUMNS.map((status) => (
+              <Column key={status} status={status} tickets={inState(status)} />
+            ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {COLLAPSED_COLUMNS.map((status) => (
