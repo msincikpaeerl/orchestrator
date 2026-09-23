@@ -37,7 +37,7 @@ docs/adr/    Architecture Decision Records
 - Commits follow Conventional Commits with the ticket number: `feat(WEB-12): add contact form`.
 - Every significant technical choice gets an ADR: copy `docs/adr/0000-template.md`, next number.
 - A user-visible change updates `docs/user/` and `CHANGELOG.md` in the same pull request.
-- Keep the `docs-links` CI job: branch protection requires it.
+- CI: every job in `.github/workflows/ci.yml` is listed in the `needs` of the final `ci` job. Never rename or remove `ci`: branch protection requires it, and no pull request can be merged without it.
 - All text in English.
 
 ## Never

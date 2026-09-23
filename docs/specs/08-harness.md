@@ -74,7 +74,7 @@ For a new repository, the server:
 
 1. creates the GitHub repository on the owner's personal account: **private** by default, public when the owner chose it;
 2. commits the **common skeleton** in one commit on the default branch: the layout above with placeholder content (project name and description filled in), ADR 0001 and the ADR template, a minimal CI that runs a documentation link check. The repository is created with GitHub's first commit (a README), because GitHub's API cannot build commits in an empty repository; the skeleton commit follows it and the default branch moves forward to it, never with a forced update. The history therefore has two commits;
-3. applies branch protection on the default branch (pull request required, CI required) when the GitHub plan allows it. GitHub Free does not offer it on private repositories: GitHub answers that the account must be upgraded or the repository made public. The project then shows "Branch protection: not available on your GitHub plan", which is information, not an error: the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches. Any other refusal is a failure of the setup.
+3. applies branch protection on the default branch (pull request required, the final CI job `ci` required, section 4) when the GitHub plan allows it. GitHub Free does not offer it on private repositories: GitHub answers that the account must be upgraded or the repository made public. The project then shows "Branch protection: not available on your GitHub plan", which is information, not an error: the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches. Any other refusal is a failure of the setup.
 
 Each step is recorded as an event. If a step fails, the project's setup is `failed` with the reason and the owner can try again; trying again resumes from the failed step.
 
@@ -130,6 +130,8 @@ The project page lists the missing ones, with a link to the Help page explaining
 | End-to-end tests | ✓ | ✓ | — |
 | Build | ✓ | ✓ | ✓ (debug APK uploaded as artefact) |
 | Documentation link check | ✓ | ✓ | ✓ |
+
+CI ends with a job named `ci` that depends on every other job and fails if any of them failed, was cancelled or was skipped. Branch protection requires only `ci` (section 3.1), so jobs can be added, renamed or removed without blocking pull requests: every job must be listed in the needs of `ci`, and `ci` is never renamed or removed. The skeleton's CLAUDE.md states this rule.
 
 CI must stay under 10 minutes; the Architect splits or optimises it when it grows. CI results are fed back to agents through `ci.status` and the submission flow (05, section 4.9), so failures must print a readable reason.
 

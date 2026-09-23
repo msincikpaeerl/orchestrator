@@ -254,8 +254,11 @@ export async function applySkeleton(
 
 /** Name of the ruleset the Orchestrator creates; also how a retry finds it. */
 export const RULESET_NAME = 'Orchestrator: protect the default branch';
-/** The skeleton's CI job that the ruleset requires (`templates/project-skeleton`). */
-export const REQUIRED_CHECK = 'docs-links';
+/**
+ * The only check the ruleset requires: the final job of the skeleton's CI, which depends on every
+ * other job, so the project's jobs can change without making pull requests unmergeable.
+ */
+export const REQUIRED_CHECK = 'ci';
 
 export type BranchProtectionResult =
   { status: 'applied' } | { status: 'not_available' } | { status: 'failed'; reason: string };

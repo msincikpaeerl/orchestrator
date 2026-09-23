@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
+import { REQUIRED_CHECK } from './repositories.js';
 import { renderSkeleton, renderSkeletonFile, skeletonDirectory } from './skeleton.js';
 
 const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -51,6 +52,7 @@ describe('renderSkeleton', () => {
     const files = await renderSkeleton(values);
     const ci = files.find((file) => file.path === '.github/workflows/ci.yml')?.content;
     expect(ci).toContain("branches: ['it''s-main']");
+    expect(ci).toContain("contains(needs.*.result, 'failure')");
   });
 
   it('refuses a template with an unknown placeholder', () => {
@@ -69,6 +71,37 @@ describe('renderSkeleton', () => {
       expect(ci).toContain(`${name}@${rootPackage.devDependencies[name] ?? 'missing'}`);
     }
     expect(ci).toContain(`node-version: ${nodeVersion}`);
+  });
+});
+
+/** Jobs of a workflow, by id, with their lines (indented by 4). Enough for the skeleton's CI. */
+function workflowJobs(workflow: string): Map<string, string[]> {
+  const jobs = new Map<string, string[]>();
+  let current: string[] | undefined;
+  for (const line of workflow.slice(workflow.indexOf('\njobs:\n')).split('\n').slice(2)) {
+    const job = /^ {2}([\w-]+):$/.exec(line);
+    if (job?.[1]) jobs.set(job[1], (current = []));
+    else if (line.startsWith('    ')) current?.push(line.trim());
+  }
+  return jobs;
+}
+
+describe('the check required by branch protection', () => {
+  it("is the skeleton CI's final job, which needs every other job", async () => {
+    const ci = await readFile(join(skeletonDirectory(), '.github/workflows/ci.yml'), 'utf8');
+    const jobs = workflowJobs(ci);
+    const required = jobs.get(REQUIRED_CHECK);
+    expect(required, `job ${REQUIRED_CHECK}`).toBeDefined();
+    // GitHub names the check after the job id unless the job has a name.
+    expect(required?.some((line) => line.startsWith('name:'))).toBe(false);
+    // It runs when a job it needs failed, and fails for failed, cancelled or skipped jobs.
+    expect(required).toContain('if: always()');
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+      expect(required?.join('\n')).toContain(`contains(needs.*.result, '${result}')`);
+    }
+    const others = [...jobs.keys()].filter((job) => job !== REQUIRED_CHECK);
+    expect(others.length).toBeGreaterThan(0);
+    expect(required).toContain(`needs: [${others.join(', ')}]`);
   });
 });
 
