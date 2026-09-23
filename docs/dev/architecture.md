@@ -6,8 +6,8 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 
 | Folder | Package | Role | State |
 |---|---|---|---|
-| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, `orchestrator reset-password`, serves the UI |
-| `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you (GitHub problems), Settings > GitHub connection, Help |
+| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, settings (Settings > Limits and project overrides), `orchestrator reset-password`, serves the UI |
+| `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you, projects, tickets, Settings > GitHub connection and Limits, project overrides, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
 | `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, projects, tickets and comments, "Needs you" items |
 | `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events`, `projects`, `tickets`, `ticket_dependencies`, `comments` |
@@ -42,7 +42,7 @@ The daemon's dependency is added with the code that needs it.
 | `src/needs-you.ts` | "Needs you" items other than GitHub problems: failed setups of active projects. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
 | `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction; ticket events take the time of the change so the timeline keeps its order. |
-| `src/settings.ts` | Settings with their defaults (04, section 8). Not editable yet. |
+| `src/settings/` | Settings (04, section 8). `resolveSettings` in `store.ts` is the only way code reads a setting: the project's override, then the global value, then the default of `SETTINGS` (`packages/protocol/src/api/settings.ts`, which describes each setting once: label, description, unit, range, default, per project, version that first uses it). Values are read when needed, so a change applies without a restart. Stored in `setting_values` (null `project_id` for the global value); a setting without a row uses its default. `routes.ts`: Settings > Limits and project overrides; every change and reset writes `setting.changed` or `setting.reset`. |
 | `src/http.ts` | Input validation with the protocol schemas and the error format (`ApiError`). |
 | `src/cli.ts` | The `orchestrator` command of the image: `reset-password` (`src/reset-password.ts`). |
 | `src/web.ts` | Serves the built UI, and its `index.html` for screen addresses; unknown API addresses answer `not_found` (ADR 0018). |
@@ -73,6 +73,8 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/projects/:key/tickets/:number/cancel`, `.../mark-done`, `.../reopen` | yes | Owner status changes (04, section 2); `mark-done` needs `{ comment }`. |
 | `GET /api/needs-you` | yes | "Needs you" items besides GitHub problems, oldest first. |
 | `GET /api/ui-settings` | yes | Settings the screens use: `projectSetupPollSeconds`. |
+| `GET /api/settings`, `PUT /api/settings/:name`, `DELETE /api/settings/:name` | yes | Settings > Limits: every setting's global value; change one (`{ value }`, checked against its range); **Reset to default**. |
+| `GET /api/projects/:key/settings`, `PUT .../settings/:name`, `DELETE .../settings/:name` | yes | The settings a project can override, with the global values; override one; remove the override. Changes refused on an archived project and for global-only settings. |
 
 Request and response schemas are in `packages/protocol/src/api/`. Any other `GET` address outside `/api`, `/health`, `/version` and `/assets` returns the UI.
 
@@ -81,12 +83,13 @@ Request and response schemas are in `packages/protocol/src/api/`. Any other `GET
 | Path in `apps/web/src` | Role |
 |---|---|
 | `main.tsx`, `app.tsx` | Entry point; routes (ADR 0019), and the redirections to the wizard or the login page. |
-| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings, projects and tickets. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
-| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), tickets (page, new and edit form), Settings, Help, "Coming in a later version". |
+| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings, settings, projects and tickets. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
+| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), tickets (page, new and edit form), Settings and Settings > Limits, Help, "Coming in a later version". |
 | `components/` | Shell (navigation, "Menu" on a phone), shared form elements with field errors, confirmation dialog, `UntrustedMarkdown` for every text written by the owner or agents (ADR 0024). |
 | `refusals.ts` | Plain-words text of every API refusal code (a unit test enumerates `ApiErrorCode`), with the fields over their limit and the tickets of a dependency cycle. |
 | `projects/` | Project wording: labels, the form field of each refusal, key suggestion, archive and unarchive with confirmation. |
 | `tickets/` | Board (columns side by side, stacked on a phone), ticket wording, blocked explanation. |
+| `settings/` | One setting with **Save** and **Reset to default** (a section named after the setting), project overrides, range check and wording. A unit test checks `docs/user/settings.md` lists every setting with its default and range. |
 | `github/` | Token instructions and form, permission results, wording of GitHub problems. |
 | `help/` | `docs/user/` bundled at build time, page order, links and search (ADR 0020). |
 
