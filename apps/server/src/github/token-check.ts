@@ -15,7 +15,7 @@ import {
   GitHubUnreachableError,
 } from './client.js';
 
-// The token check of 02, section 3.2 and ADR 0017. It never creates or changes anything on
+// The token check of 02, section 3.2 and ADR 0022. It never creates or changes anything on
 // GitHub: write permissions are probed with requests GitHub must refuse as invalid.
 
 export type TokenIdentity =
@@ -65,7 +65,7 @@ const MAX_TOKEN_LIFETIME_DAYS = 366;
 /**
  * The date of GitHub's `GitHub-Authentication-Token-Expiration` header (for example
  * `2027-09-23 10:00:00 +0200` or `... UTC`), only when it is in the future and at most 366 days
- * ahead: the header has been seen returning the request time (ADR 0017).
+ * ahead: the header has been seen returning the request time (ADR 0022).
  */
 export function plausibleExpiry(header: string | null, now: Date): string | null {
   const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) (UTC|[+-]\d{2}:?\d{2})$/.exec(
@@ -88,6 +88,15 @@ interface Outcome {
 }
 
 const ok: Outcome = { result: 'ok' };
+
+/**
+ * Permissions whose probe GitHub refuses when another permission is missing, before looking at
+ * the probed one: writing a workflow file needs Contents write first (confirmed with the real
+ * GitHub, ADR 0022). Such a refusal, header included, says nothing about the probed permission.
+ */
+const PROBE_REQUIRES: Partial<Record<GitHubPermission, GitHubPermission>> = {
+  workflows: 'contents',
+};
 const unverified = (reason: string): Outcome => ({ result: 'could_not_verify', reason });
 
 /** Validity, then each permission of 02, section 3.1 as OK, Missing or Could not verify. */
@@ -165,16 +174,12 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
     );
     outcomes.set(
       'workflows',
-      await probe(
-        client,
-        'workflows',
-        'write',
-        {
+      await probeAfter(outcomes, 'workflows', () =>
+        probe(client, 'workflows', 'write', {
           method: 'PUT',
           path: `${base}/contents/.github/workflows/orchestrator-token-check.yml`,
           body: {},
-        },
-        outcomes.get('contents')?.result === 'ok',
+        }),
       ),
     );
   }
@@ -228,15 +233,34 @@ function repoPath(repo: Repository): string {
 }
 
 /**
- * Sends one probe and classifies GitHub's answer. `prerequisiteOk` is false when a refusal could
- * come from another permission (Workflows needs Contents): only the header can then say Missing.
+ * Runs a probe only when the permission it requires first is OK; otherwise the probe could not
+ * tell anything and the result is Could not verify, naming that permission.
  */
+async function probeAfter(
+  outcomes: Map<GitHubPermission, Outcome>,
+  permission: GitHubPermission,
+  run: () => Promise<Outcome>,
+): Promise<Outcome> {
+  const required = PROBE_REQUIRES[permission];
+  const requiredResult = required && outcomes.get(required)?.result;
+  if (!required || requiredResult === 'ok') return run();
+  const name = REQUIRED_GITHUB_PERMISSIONS.find((entry) => entry.permission === required);
+  const label = name
+    ? `${name.label} (${name.access === 'write' ? 'Read and write' : 'Read-only'})`
+    : required;
+  return unverified(
+    requiredResult === 'missing'
+      ? `Requires ${label} first`
+      : `Requires ${label} first, which could not be verified`,
+  );
+}
+
+/** Sends one probe and classifies GitHub's answer. */
 async function probe(
   client: GitHubClient,
   permission: GitHubPermission,
   access: 'read' | 'write',
   request: GitHubRequest,
-  prerequisiteOk = true,
 ): Promise<Outcome> {
   let response: GitHubResponse;
   try {
@@ -245,14 +269,13 @@ async function probe(
     if (error instanceof GitHubUnreachableError) return unverified('GitHub could not be reached');
     throw error;
   }
-  return classify(response, permission, access, prerequisiteOk);
+  return classify(response, permission, access);
 }
 
 export function classify(
   response: GitHubResponse,
   permission: GitHubPermission,
   access: 'read' | 'write',
-  prerequisiteOk = true,
 ): Outcome {
   // A read that succeeds, or a write refused only because the request is invalid.
   if (access === 'read' ? response.status === 200 : response.status === 422) return ok;
@@ -263,10 +286,6 @@ export function classify(
       ? { result: 'missing' }
       : unverified(`GitHub asked for other permissions: ${accepted.join(', ')}`);
   }
-  if (isNotAccessible(response)) {
-    return prerequisiteOk
-      ? { result: 'missing' }
-      : unverified('Contents must be OK before Workflows can be checked');
-  }
+  if (isNotAccessible(response)) return { result: 'missing' };
   return unverified(`Unexpected answer from GitHub (HTTP ${String(response.status)})`);
 }
