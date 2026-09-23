@@ -9,6 +9,8 @@ export class HttpError extends Error {
     readonly statusCode: number,
     readonly code: ApiErrorCode,
     message: string,
+    /** Details the UI uses to explain the refusal (`limits`, `cycle`). */
+    readonly details: Pick<ApiError['error'], 'limits' | 'cycle'> = {},
   ) {
     super(message);
   }
@@ -33,9 +35,9 @@ export function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
  */
 export function handleError(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
   if (error instanceof HttpError) {
-    return reply
-      .code(error.statusCode)
-      .send({ error: { code: error.code, message: error.message } } satisfies ApiError);
+    return reply.code(error.statusCode).send({
+      error: { code: error.code, message: error.message, ...error.details },
+    } satisfies ApiError);
   }
   const status = error.statusCode ?? 500;
   if (status < 500) {

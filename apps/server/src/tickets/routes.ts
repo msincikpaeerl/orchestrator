@@ -3,11 +3,13 @@ import {
   AddCommentRequest,
   AddDependencyRequest,
   CreateTicketRequest,
+  EDITABLE_STATUSES,
   MarkDoneRequest,
   ProjectKey,
   TicketNumber,
   TicketStatus,
   UpdateTicketRequest,
+  type LimitExceeded,
   type OwnerTicketAction,
   type TicketDetail,
   type TicketListResponse,
@@ -33,7 +35,7 @@ import {
   toTicketSummary,
   type TicketRow,
 } from './model.js';
-import { EDITABLE_STATUSES, applyOwnerAction, insertOwnerTicket } from './transitions.js';
+import { applyOwnerAction, insertOwnerTicket } from './transitions.js';
 
 export interface TicketRoutesOptions {
   db: Database;
@@ -138,44 +140,56 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     }
   }
 
-  /** Length and count limits of 04, section 8: settings, so the message gives the value. */
+  /**
+   * Length and count limits of 04, section 8: settings, so the refusal gives each field over its
+   * limit and the limit's value.
+   */
   function checkLimits(fields: {
     title?: string;
     description?: string;
     acceptanceCriteria?: string[];
   }) {
-    const problems: string[] = [];
+    const exceeded: LimitExceeded[] = [];
     if (fields.title !== undefined && fields.title.length > settings.ticketTitleMaxLength) {
-      problems.push(`title: at most ${String(settings.ticketTitleMaxLength)} characters`);
+      exceeded.push({ field: 'title', max: settings.ticketTitleMaxLength, unit: 'characters' });
     }
     if (
       fields.description !== undefined &&
       fields.description.length > settings.ticketDescriptionMaxLength
     ) {
-      problems.push(
-        `description: at most ${String(settings.ticketDescriptionMaxLength)} characters`,
-      );
+      exceeded.push({
+        field: 'description',
+        max: settings.ticketDescriptionMaxLength,
+        unit: 'characters',
+      });
     }
     const criteria = fields.acceptanceCriteria ?? [];
     if (criteria.length > settings.ticketMaxAcceptanceCriteria) {
-      problems.push(`acceptanceCriteria: at most ${String(settings.ticketMaxAcceptanceCriteria)}`);
+      exceeded.push({
+        field: 'acceptance_criteria',
+        max: settings.ticketMaxAcceptanceCriteria,
+        unit: 'items',
+      });
     }
     criteria.forEach((criterion, index) => {
       if (criterion.length > settings.acceptanceCriterionMaxLength) {
-        problems.push(
-          `acceptanceCriteria.${String(index)}: at most ${String(settings.acceptanceCriterionMaxLength)} characters`,
-        );
+        exceeded.push({
+          field: 'acceptance_criterion',
+          index,
+          max: settings.acceptanceCriterionMaxLength,
+          unit: 'characters',
+        });
       }
     });
-    if (problems.length > 0) throw new HttpError(400, 'invalid_request', problems.join('; '));
+    if (exceeded.length > 0) throw limitRefusal(exceeded);
   }
 
-  function checkCommentLength(body: string, field: string) {
-    if (body.length > settings.commentMaxLength) {
-      throw new HttpError(
-        400,
-        'invalid_request',
-        `${field}: at most ${String(settings.commentMaxLength)} characters`,
+  /** `apiField`: the comment's field in the request, `body` for a note, `comment` otherwise. */
+  function checkCommentLength(text: string, apiField: 'body' | 'comment') {
+    if (text.length > settings.commentMaxLength) {
+      throw limitRefusal(
+        [{ field: 'comment', max: settings.commentMaxLength, unit: 'characters' }],
+        apiField,
       );
     }
   }
@@ -452,11 +466,12 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           .where(inArray(schema.tickets.id, cycle));
         const name = (id: string) =>
           ticketReference(project.key, numbers.find((row) => row.id === id)?.number ?? 0);
-        const loop = [ticket.id, ...cycle].map(name).join(' → ');
+        const loop = [ticket.id, ...cycle].map(name);
         throw new HttpError(
           409,
           'dependency_cycle',
-          `This dependency would make ${name(ticket.id)} wait for itself: ${loop} (each waits for the next)`,
+          `This dependency would make ${name(ticket.id)} wait for itself: ${loop.join(' → ')} (each waits for the next)`,
+          { cycle: loop },
         );
       }
 
@@ -599,6 +614,24 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   ownerAction('cancel', 'cancel', () => undefined);
   ownerAction('mark-done', 'mark_done', (body) => parseInput(MarkDoneRequest, body).comment);
   ownerAction('reopen', 'reopen', () => undefined);
+}
+
+/** `invalid_request` naming each field over its limit; the message keeps the API's field names. */
+function limitRefusal(exceeded: LimitExceeded[], commentField = 'comment'): HttpError {
+  const apiField: Record<LimitExceeded['field'], string> = {
+    title: 'title',
+    description: 'description',
+    acceptance_criteria: 'acceptanceCriteria',
+    acceptance_criterion: 'acceptanceCriteria',
+    comment: commentField,
+  };
+  const message = exceeded
+    .map(({ field, index, max, unit }) => {
+      const path = index === undefined ? apiField[field] : `${apiField[field]}.${String(index)}`;
+      return `${path}: at most ${String(max)}${unit === 'characters' ? ' characters' : ''}`;
+    })
+    .join('; ');
+  return new HttpError(400, 'invalid_request', message, { limits: exceeded });
 }
 
 /**
