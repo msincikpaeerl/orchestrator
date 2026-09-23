@@ -107,7 +107,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 **Done when** Playwright covers creating a private project, linking a repository with missing elements, a failed setup tried again, and archiving, on both viewports.
 
-*Done 2026-09-23.* Screens in `apps/web/src/pages/projects.tsx`, `new-project.tsx`, `project.tsx` (page and settings), texts in `apps/web/src/projects/`, `docs/user/projects.md`, tests in `apps/web/e2e/projects.e2e.ts`. Owner's decision written into 02, section 1: screens refresh after each action and on window focus, and the project page polls while its setup is `in_progress` only, at the new setting `projectSetupPollSeconds` (default 2 seconds, `GET /api/ui-settings`). Choices within the step: archive and unarchive are offered both in the list (02, section 6.1) and in project settings; the list shows "Last change" (the project's update time) in place of ticket counts and last activity, which come with tickets; the e2e server gains test-only controls (the fake GitHub is reset with the database, and `POST /github/fail-next` fails one GitHub request) and the fake account has repositories to link; every API refusal has its own plain-words text (unit test over every error code), and the Help anchors the screens link to are checked by a unit test.
+*Done 2026-09-23.* Screens in `apps/web/src/pages/projects.tsx`, `new-project.tsx`, `project.tsx` (page and settings), texts in `apps/web/src/projects/`, `docs/user/projects.md`, tests in `apps/web/e2e/projects.e2e.ts`. Owner's decision written into 02, section 1: screens refresh after each action and on window focus, and the project page polls while its setup is `in_progress` only, at the new setting `projectSetupPollSeconds` (default 2 seconds, `GET /api/ui-settings`). Choices within the step: archive and unarchive are offered both in the list (02, section 6.1) and in project settings; the list shows "Last change" (the project's update time) in place of the ticket counts and last activity of 02, section 6.1: this is temporary, step F adds the ticket counts and step H replaces "Last change" with the last activity; the e2e server gains test-only controls (the fake GitHub is reset with the database, and `POST /github/fail-next` fails one GitHub request) and the fake account has repositories to link; every API refusal has its own plain-words text (unit test over every error code), and the Help anchors the screens link to are checked by a unit test.
 
 ### [ ] E. Tickets: database and API
 
@@ -122,6 +122,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 ### [ ] F. Tickets: screens, sanitized Markdown and user documentation
 
 - Board (02, section 6.3): columns by state, `done` and `cancelled` collapsed, filters by type and text, a "Blocked" badge.
+- Project list (02, section 6.1): counts of tickets per state for each project.
 - Create and edit form (type, title, description, ordered acceptance criteria, priority, dependencies); ticket detail (02, section 6.4) with timeline, comment box, "Blocked by" and "Blocks" lists with the dependency editor, and the actions of the ticket's state, with confirmations.
 - One Markdown component for untrusted content: react-markdown as in Help, raw HTML not rendered, links limited to `http`, `https`, `mailto`, images shown as links (09, section 5). ADR for this rule (Help keeps ADR 0020).
 - `docs/user/`: a Tickets page (create, edit, dependencies, comments, cancel, mark as done manually, reopen, what "blocked" means).
@@ -141,6 +142,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 ### [ ] H. Event log
 
 - Events gain a project reference so they can be filtered by project; API listing events with filters (project, ticket, kind of entity, event type, date) and paging.
+- Project list (02, section 6.1): "Last change" (added in step D) is replaced by the last activity, the time of the project's latest event.
 - Activity > Event log (02, section 7): each event in plain words ("WEB-12 marked as done manually: ..."), with links to the project or ticket. The rest of Activity stays "Coming in a later version".
 - `docs/user/`: an Activity page (event log section).
 
