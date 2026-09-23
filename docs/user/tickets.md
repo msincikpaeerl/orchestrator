@@ -10,6 +10,7 @@ Open **Projects**, then a project: its tickets are on the project page, under **
 
 - Tickets are grouped by state: **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**. See [Ticket states](#ticket-states).
 - **Done** and **Cancelled** are closed at the bottom. Click one to open it.
+- **Proposed** tickets are not shown on the board. They come with plans, in a later version.
 - Each card shows the ticket's number, title and type, and **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)).
 - **Type** shows only tickets of one type. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
 
@@ -32,6 +33,8 @@ On a computer the states sit side by side. On a phone they are one below the oth
 Open the ticket and click **Edit**. You can change the type, title, description, acceptance criteria and priority, then click **Save**.
 
 A ticket can be edited only while it is **To do** (or **Proposed**). Once work has started, it cannot be edited: add a comment instead.
+
+The tickets it waits for are not in this form: change them on the ticket's page (see [Dependencies](#dependencies)).
 
 ## Formatting descriptions and comments
 
@@ -71,11 +74,13 @@ A cancelled ticket is not done, so **a ticket waiting for a cancelled ticket sta
 
 ## Comments
 
-At the bottom of a ticket's page, **Timeline** lists the comments and the changes of state, oldest first. To add a note, write it in **Add a comment** and click **Add comment**. You can comment on any ticket, even a done or cancelled one.
+At the bottom of a ticket's page, **Timeline** lists the comments and the changes of state, oldest first. To add a note, write it in **Add a comment** and click **Add comment**. You can comment on any ticket, even a done or cancelled one, except in an archived project.
 
 ## Cancel a ticket
 
-Tickets are never deleted: a ticket created by mistake, or no longer wanted, is cancelled.
+Tickets are never deleted: a ticket created by mistake, or whose work is abandoned, is cancelled.
+
+**Cancel or mark as done?** Cancel when the work is abandoned: nobody will do it. Tickets waiting for a cancelled ticket stay blocked. If the result exists because the work was done another way, use [Mark as done manually](#mark-as-done-manually) instead: it unblocks the tickets waiting for it.
 
 1. Open the ticket and click **Cancel the ticket**.
 2. Confirm with **Cancel the ticket**, or click **Keep it** to change your mind.
@@ -84,7 +89,7 @@ The ticket moves to **Cancelled** with its history. Tickets waiting for it stay 
 
 ## Mark as done manually
 
-Use **Mark as done manually** when the work was done another way (for example, you fixed it yourself), or when the ticket no longer needs work as described.
+Use **Mark as done manually** when the result exists but was done another way, for example you fixed it yourself. Tickets waiting for it are then unblocked. If the work is abandoned instead, [cancel the ticket](#cancel-a-ticket): tickets waiting for it stay blocked.
 
 1. Open the ticket and click **Mark as done manually**.
 2. Write **why it is done**. This comment is required: without it, the ticket is not marked as done. It is added to the timeline.
@@ -100,7 +105,7 @@ Open the cancelled ticket and click **Reopen**. It goes back to **To do** with i
 
 | State | Meaning |
 |---|---|
-| **Proposed** | Part of a plan not approved yet. Hidden from the board unless you tick **Show proposed tickets**. Plans come in a later version. |
+| **Proposed** | Part of a plan not approved yet. Not shown on the board. Plans come in a later version. |
 | **To do** | Waiting for work. |
 | **In progress** | An agent is working on it. |
 | **Waiting for you** | An agent asked you a question. |
