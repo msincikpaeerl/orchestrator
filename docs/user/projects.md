@@ -2,7 +2,7 @@
 
 A project is one product the Orchestrator builds for you: a web app, a website or an Android app. Every project has its own GitHub repository, on your personal GitHub account, where its code and documentation live.
 
-You find your projects under **Projects** in the menu.
+You find your projects under **Projects** in the menu. The list shows, for each project, how many tickets it has in each state (see [Tickets](tickets.md)).
 
 ## Create a project with a new repository
 
@@ -25,7 +25,7 @@ The project page opens and shows the setup while it runs. The page updates by it
 2. **Add the starting files**: a README, a CLAUDE.md with the instructions for the agents, folders for the documentation and the decisions, and a CI workflow on GitHub that checks the documentation links. On GitHub, the repository then has two commits: GitHub's own first README, then the starting files.
 3. **Protect the default branch** (see [Branch protection](#branch-protection)).
 
-When all the steps are done, the setup says **Ready**.
+When all the steps are done, the setup says **Ready**, and you can create the project's tickets on its page (see [Tickets](tickets.md)).
 
 ## Link an existing repository
 

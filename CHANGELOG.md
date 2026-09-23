@@ -4,6 +4,9 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Tickets: each project page has a board of its tickets, by state (on a phone, the states are one below the other), with filters by type and text and a "Blocked" badge. Create and edit tickets (type, title, description, ordered acceptance criteria, priority, dependencies), comment on them, cancel, mark as done manually (with a required comment) and reopen them. The ticket page lists the tickets it waits for and the ones waiting for it, and says what to do when it waits for a cancelled ticket. The project list shows the number of tickets in each state. Descriptions and comments use Markdown, shown safely: no HTML, only web and e-mail links, images as links. Help: "Tickets".
+- Every refusal is explained in plain words, and a text that is too long names the field and its limit.
+
 - Projects: create a project with a new GitHub repository (private by default) or link one of your repositories, follow its setup on the project page, try a failed setup again, change its name and description, archive and unarchive it (the GitHub repository is never changed). A linked repository shows the harness elements it is missing, with **Check again**. "Needs you" lists projects whose setup failed. Help: "Projects".
 
 ## 0.1.0 — 2026-09-23
