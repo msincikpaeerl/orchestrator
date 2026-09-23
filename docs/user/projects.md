@@ -13,7 +13,7 @@ Use this to start something new. The Orchestrator creates the repository on GitH
 3. Fill in the form:
    - **Name**: the name of the project, for example "Family recipes".
    - **Key**: 2 to 6 capital letters, suggested from the name (for example `FR`). Every ticket number of the project starts with it (`FR-12`). It cannot be changed later, and two projects can never have the same key, even when one of them is archived.
-   - **Kind**: web app, website or Android app. It chooses the default tools and agents of the project.
+   - **Kind**: web app, website or Android app. It has no effect yet: from a later version, it will choose the default tools and agents of the project.
    - **Description**: optional, one or two sentences.
    - **Repository name**: the name of the new repository on GitHub, made from the project name. You can change it. The form tells you if a repository with this name already exists on your account.
    - **Visibility**: **Private** (only you can see it, the default) or **Public** (anyone on the internet can see it).
@@ -49,7 +49,7 @@ The project page shows one of:
 | **Applied** | GitHub protects the default branch. |
 | **Not available on your GitHub plan** | GitHub's free plan offers branch protection only on **public** repositories. Your private repository works normally without it. |
 | **Not applied: a linked repository is never changed** | For a linked repository, the Orchestrator does not change its settings. You can set up branch protection yourself on GitHub. |
-| **Failed** | GitHub refused the request: see [If the setup fails](#if-the-setup-fails). |
+| **Failed** | GitHub refused the request for another reason than your plan, for example because the GitHub token is missing the Administration permission. The whole setup then stops at this step and is not Ready: see [If the setup fails](#if-the-setup-fails). |
 
 **"Not available on your GitHub plan" is not a problem.** Agents never write to the default branch anyway: only the Orchestrator sends their work to GitHub, always on a separate branch, and you merge it with a pull request. Branch protection is an extra safety net. If you want it on a private repository, GitHub asks for a paid plan (GitHub Pro).
 
@@ -81,24 +81,24 @@ At least one `.yml` or `.yaml` file in the `.github/workflows/` folder: the chec
 
 ## If the setup fails
 
-If GitHub refuses a request or cannot be reached, the setup stops and the project page shows the step that failed and why, with a **Try again** button. "Needs you" lists the project until its setup is ready.
+If GitHub refuses a request or cannot be reached, the setup stops and the project page shows the step that failed and why, with a **Try again** button. This includes branch protection refused for another reason than your GitHub plan: the project is not Ready until that step succeeds. "Needs you" lists the project until its setup is ready.
 
-1. Read the reason and fix its cause if needed. For example, if the GitHub token is missing a permission, replace it in **Settings > GitHub connection** (see [Connect GitHub](github-token.md)). If GitHub could not be reached, just wait a moment.
+1. Read the reason and fix its cause if needed. For example, if the GitHub token is missing a permission (Administration, for branch protection), replace it in **Settings > GitHub connection** (see [Connect GitHub](github-token.md)). If GitHub could not be reached, just wait a moment.
 2. Click **Try again**. The setup continues from the failed step: the steps already done are not done twice.
 
 If the Orchestrator restarted during a setup, the reason is "The setup was interrupted by a restart of the server": click **Try again**.
 
 ### "Repository name already taken"
 
-This reason means that when the Orchestrator tried again, a repository with the project's name already existed on your GitHub account, and the Orchestrator could not be sure it had created it itself. It never takes over a repository it did not create, so it wrote nothing to it and stopped.
+This reason means that when the setup came to create the repository, a repository with the project's name already existed on your GitHub account, and the Orchestrator could not be sure it had created it itself. It never takes over a repository it did not create, so it wrote nothing to it and stopped.
 
-Most often, someone created a repository with this name on GitHub after the project was saved. Rarely, the Orchestrator did create it, but GitHub's answer was lost (for example in a restart) and the clock of your computer and GitHub's clock differ by more than the allowed difference (2 minutes by default), so the Orchestrator cannot prove the repository is its own.
+It can happen on the first attempt: someone created a repository with this name on GitHub between the moment you filled in the form and the moment the setup started. It can also happen when you click **Try again**: most often because a repository with this name was created on GitHub since the first attempt. Rarely, the Orchestrator did create it, but GitHub's answer was lost (for example in a restart) and the clock of the computer running the Orchestrator server (not the one of your browser, if you open the Orchestrator from another device) differs from GitHub's clock by more than the allowed difference (2 minutes by default), so the Orchestrator cannot prove the repository is its own.
 
 What you can do:
 
-- Open the repository on GitHub. If it is not yours to keep (for example it contains only a README), delete it on GitHub (the repository's **Settings**, then **Delete this repository** at the bottom), then click **Try again**: the Orchestrator creates it again.
-- If the Orchestrator created it and the clock difference is the cause, raise the **GitHub clock tolerance** setting (**Settings > Limits**), then click **Try again**. Check also that your computer sets its clock automatically.
-- If you want to keep that repository and use it, archive this project and create a new project that links the repository instead (with another key, since keys are never reused).
+- Open the repository on GitHub. Delete it only if both are true: it contains only GitHub's README (or only the starting files listed in [Create a project with a new repository](#create-a-project-with-a-new-repository)), and you did not create it yourself. **Deleting a repository on GitHub is permanent**: it cannot be undone. If in doubt, do not delete it. To delete it: the repository's **Settings**, then **Delete this repository** at the bottom. Then click **Try again**: the Orchestrator creates it again.
+- If the Orchestrator created it and the clock difference is the cause, raise the **GitHub clock tolerance** setting (**Settings > Limits**), then click **Try again**. Check also that the computer running the Orchestrator server sets its clock automatically.
+- If you want to keep that repository and use it, archive this project and create a new project that links the repository instead (with another key, since keys are never reused). A linked repository gets no starting files and no branch protection. So for a repository the Orchestrator created (only a README or the starting files), deleting it and trying again is the better choice.
 
 ## Change a project's name or description
 
