@@ -1,6 +1,8 @@
 import { schema } from '@orchestrator/db';
 import {
   ApiError,
+  OWNER_TRANSITIONS,
+  ProjectListResponse,
   TicketDetail,
   TicketListResponse,
   TicketStatus,
@@ -8,7 +10,6 @@ import {
 } from '@orchestrator/protocol';
 import { and, asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { OWNER_TRANSITIONS } from '../src/tickets/transitions.js';
 import type { Settings } from '../src/settings.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
 
@@ -65,6 +66,11 @@ function errorCode(response: { json: () => unknown }) {
 
 function errorMessage(response: { json: () => unknown }) {
   return ApiError.parse(response.json()).error.message;
+}
+
+function errorDetails(response: { json: () => unknown }) {
+  const { limits, cycle } = ApiError.parse(response.json()).error;
+  return { limits, cycle };
 }
 
 async function create(body: object = {}, key = 'WEB'): Promise<TicketDetail> {
@@ -206,6 +212,17 @@ describe('creating tickets', () => {
       expect(response.statusCode).toBe(400);
       expect(errorMessage(response)).toBe(problem);
     }
+    // The refusal names each field and its limit, for the UI.
+    const all = await call('POST', 'WEB/tickets', {
+      type: 'feature',
+      title: 'x'.repeat(11),
+      acceptanceCriteria: ['a', 'bbbbbb', 'c'],
+    });
+    expect(errorDetails(all).limits).toEqual([
+      { field: 'title', max: 10, unit: 'characters' },
+      { field: 'acceptance_criteria', max: 2, unit: 'items' },
+      { field: 'acceptance_criterion', index: 1, max: 5, unit: 'characters' },
+    ]);
     await create({ title: 'x'.repeat(10), acceptanceCriteria: ['a', 'bbbbb'] });
 
     const edit = await call('PATCH', 'WEB/tickets/1', { title: 'x'.repeat(11) });
@@ -282,6 +299,28 @@ describe('the board', () => {
       [1, 'todo', false],
       [3, 'cancelled', false],
     ]);
+  });
+
+  it('counts the tickets of each project per state in the project list', async () => {
+    await seedProject('APP');
+    await create();
+    await create();
+    await create();
+    await act(3, 'cancel');
+    await create({}, 'APP');
+    const response = await t.app.inject({
+      method: 'GET',
+      url: '/api/projects',
+      headers: { cookie },
+    });
+    const counts = Object.fromEntries(
+      ProjectListResponse.parse(response.json()).projects.map((p) => [p.key, p.ticketCounts]),
+    );
+    const none = Object.fromEntries(TicketStatus.options.map((status) => [status, 0]));
+    expect(counts).toEqual({
+      WEB: { ...none, todo: 2, cancelled: 1 },
+      APP: { ...none, todo: 1 },
+    });
   });
 });
 
@@ -564,6 +603,7 @@ describe('dependencies', () => {
     expect(errorMessage(response)).toBe(
       'This dependency would make WEB-1 wait for itself: WEB-1 → WEB-2 → WEB-1 (each waits for the next)',
     );
+    expect(errorDetails(response).cycle).toEqual(['WEB-1', 'WEB-2', 'WEB-1']);
   });
 
   it('refuses a longer cycle, naming every ticket in it', async () => {
@@ -576,6 +616,7 @@ describe('dependencies', () => {
     const response = await depend(1, 4);
     expect(errorCode(response)).toBe('dependency_cycle');
     expect(errorMessage(response)).toContain('WEB-1 → WEB-4 → WEB-3 → WEB-2 → WEB-1');
+    expect(errorDetails(response).cycle).toEqual(['WEB-1', 'WEB-4', 'WEB-3', 'WEB-2', 'WEB-1']);
     expect((await ticket(1)).blockedBy).toEqual([]);
     // Ticket 1 may still wait for ticket 5: no cycle.
     expect((await depend(1, 5)).statusCode).toBe(200);
@@ -663,9 +704,11 @@ describe('comments', () => {
     await create();
     expect((await comment(1, '  ')).statusCode).toBe(400);
     expect(errorMessage(await comment(1, 'x'.repeat(6)))).toBe('body: at most 5 characters');
-    expect(errorMessage(await act(1, 'mark_done', 'x'.repeat(6)))).toBe(
-      'comment: at most 5 characters',
-    );
+    const markDone = await act(1, 'mark_done', 'x'.repeat(6));
+    expect(errorMessage(markDone)).toBe('comment: at most 5 characters');
+    expect(errorDetails(markDone).limits).toEqual([
+      { field: 'comment', max: 5, unit: 'characters' },
+    ]);
     await t.db.update(schema.projects).set({ status: 'archived' });
     expect(errorCode(await comment(1, 'Note'))).toBe('project_archived');
     expect(await t.db.select().from(schema.comments)).toEqual([]);

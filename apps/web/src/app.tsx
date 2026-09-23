@@ -8,12 +8,16 @@ import { NeedsYouPage } from './pages/needs-you';
 import { NewProjectPage } from './pages/new-project';
 import { ProjectPage, ProjectSettingsPage } from './pages/project';
 import { ProjectsPage } from './pages/projects';
+import { EditTicketPage, NewTicketPage } from './pages/ticket-form';
 import { GitHubSettingsPage, SettingsPage } from './pages/settings';
 import { SetupDonePage, SetupPage } from './pages/setup';
 import { useSession, useSetupState } from './queries';
 
 // Loaded on first use: Markdown rendering and the pages are most of the UI's size.
 const HelpPage = lazy(() => import('./pages/help'));
+const TicketPage = lazy(() =>
+  import('./pages/ticket').then((module) => ({ default: module.TicketPage })),
+);
 
 /** Sections of later lots, with their purpose from 02, section 2. */
 const later: Record<string, string> = {
@@ -78,6 +82,9 @@ export function App() {
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/projects/:key" element={<ProjectPage />} />
           <Route path="/projects/:key/settings" element={<ProjectSettingsPage />} />
+          <Route path="/projects/:key/tickets/new" element={<NewTicketPage />} />
+          <Route path="/projects/:key/tickets/:number" element={<TicketPage />} />
+          <Route path="/projects/:key/tickets/:number/edit" element={<EditTicketPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/github" element={<GitHubSettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />

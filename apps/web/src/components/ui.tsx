@@ -209,6 +209,7 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel,
+  dismissLabel = 'Cancel',
   busy,
   error,
   onConfirm,
@@ -217,6 +218,8 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel: string;
+  /** The button that closes without acting; not "Cancel" when the action is to cancel. */
+  dismissLabel?: string;
   busy: boolean;
   error?: ReactNode;
   onConfirm: () => void;
@@ -248,7 +251,7 @@ export function ConfirmDialog({
       {error && <div className="mt-3">{error}</div>}
       <div className="mt-6 flex flex-wrap justify-end gap-2">
         <Button variant="secondary" onClick={onCancel} disabled={busy}>
-          Cancel
+          {dismissLabel}
         </Button>
         <Button onClick={onConfirm} disabled={busy}>
           {confirmLabel}

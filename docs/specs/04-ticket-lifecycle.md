@@ -18,7 +18,7 @@ This document defines the ticket states, who may move a ticket between them, and
 | `done` | Pull request merged, or marked as done manually by the owner. Terminal. |
 | `cancelled` | Abandoned. Terminal, except that the owner can reopen it. |
 
-Blocked and eligible are derived conditions of `todo` (see 01, section 3.4). They are shown in the UI but are not states.
+Blocked and eligible are derived conditions of `todo` (see 01, section 3.4). They are shown in the UI but are not states. The UI shows "Blocked" for `proposed` and `todo` tickets only, the states in which dependencies can still change; the API's `blocked` flag is computed for every ticket (owner's decision, lot 1 step F).
 
 ```mermaid
 stateDiagram-v2

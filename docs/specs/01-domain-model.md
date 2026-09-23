@@ -122,7 +122,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 
 **Derived states** (computed, not stored):
 
-- **Blocked**: at least one ticket in `blocked_by` is not `done`.
+- **Blocked**: at least one ticket in `blocked_by` is not `done`. It matters, and the UI shows it, only while the ticket is `proposed` or `todo`: work has not started and its dependencies can still change (owner's decision, lot 1 step F; 04, section 1).
 - **Eligible**: status is `todo`, an assignee is set, not blocked, and a compatible machine exists.
 
 `blocked_by` only names tickets of the same project, never the ticket itself, and never forms a cycle. Tickets are never deleted: a ticket created by mistake is cancelled (04, section 2).

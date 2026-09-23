@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TicketStatus } from './tickets.js';
 
 /**
  * Branch protection of a project's default branch (01, section 3.1; 08, section 3.1).
@@ -93,7 +94,15 @@ export const Project = z.object({
 });
 export type Project = z.infer<typeof Project>;
 
-export const ProjectListResponse = z.object({ projects: z.array(Project) });
+/** Number of tickets in each state; every state is present, 0 when it has none. */
+export const TicketCounts = z.record(TicketStatus, z.int().min(0));
+export type TicketCounts = z.infer<typeof TicketCounts>;
+
+/** A project as the project list shows it (02, section 6.1). */
+export const ProjectListItem = Project.extend({ ticketCounts: TicketCounts });
+export type ProjectListItem = z.infer<typeof ProjectListItem>;
+
+export const ProjectListResponse = z.object({ projects: z.array(ProjectListItem) });
 export type ProjectListResponse = z.infer<typeof ProjectListResponse>;
 
 /** `GET /api/projects?archived=true` also lists archived projects. */

@@ -1,4 +1,4 @@
-import { ApiErrorCode } from '@orchestrator/protocol';
+import type { ApiErrorCode } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from '../api';
 import { refusalText, suggestKey } from './text';
@@ -23,14 +23,6 @@ describe('suggestKey', () => {
 });
 
 describe('refusalText', () => {
-  it('never shows an error code', () => {
-    for (const code of [...ApiErrorCode.options, 'unexpected' as const]) {
-      const { text } = refusalText(new ApiRequestError(409, code, 'message'));
-      expect(text).not.toContain(code);
-      expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
-    }
-  });
-
   it('puts each refusal next to its field', () => {
     const field = (code: ApiErrorCode) => refusalText(new ApiRequestError(409, code, 'x')).field;
     expect(field('project_key_taken')).toBe('key');

@@ -1,5 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
+  OWNER_TRANSITIONS,
   TicketStatus,
   type OwnerTicketAction,
   type TicketPriority,
@@ -24,26 +25,6 @@ import {
 
 /** A ticket created by the owner starts in `todo` (04, section 2). */
 export const OWNER_CREATION_STATUS = 'todo' satisfies TicketStatus;
-
-const NON_TERMINAL = TicketStatus.options.filter(
-  (status) => status !== 'done' && status !== 'cancelled',
-);
-
-/** The owner's transitions of 04, section 2. Every other one is refused with an explanation. */
-export const OWNER_TRANSITIONS: Readonly<
-  Record<OwnerTicketAction, { label: string; from: readonly TicketStatus[]; to: TicketStatus }>
-> = {
-  cancel: { label: 'Cancel', from: NON_TERMINAL, to: 'cancelled' },
-  mark_done: {
-    label: 'Mark as done manually',
-    from: ['todo', 'in_progress', 'waiting_human', 'in_review', 'awaiting_merge'],
-    to: 'done',
-  },
-  reopen: { label: 'Reopen', from: ['cancelled'], to: 'todo' },
-};
-
-/** States in which a ticket's fields and dependencies can change (02, section 6.4). */
-export const EDITABLE_STATUSES: readonly TicketStatus[] = ['proposed', 'todo'];
 
 export interface NewOwnerTicket {
   projectId: string;

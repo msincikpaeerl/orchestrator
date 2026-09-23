@@ -47,12 +47,37 @@ export const ApiErrorCode = z.enum([
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
+/** Fields with a length or count limit set by a setting (04, section 8). */
+export const LimitedField = z.enum([
+  'title',
+  'description',
+  /** The number of acceptance criteria. */
+  'acceptance_criteria',
+  /** One acceptance criterion, at `index` (from 0). */
+  'acceptance_criterion',
+  'comment',
+]);
+export type LimitedField = z.infer<typeof LimitedField>;
+
+/** A value over its limit: `max` characters, or `max` items for a list. */
+export const LimitExceeded = z.object({
+  field: LimitedField,
+  index: z.int().min(0).optional(),
+  max: z.int().positive(),
+  unit: z.enum(['characters', 'items']),
+});
+export type LimitExceeded = z.infer<typeof LimitExceeded>;
+
 /** Body of every 4xx and 5xx answer of the API. The message is English, for logs and developers. */
 export const ApiError = z.object({
   error: z.object({
     code: ApiErrorCode,
     message: z.string(),
     retryAfterSeconds: z.int().positive().optional(),
+    /** `invalid_request` over a limit: each field over its limit, so the UI can name them. */
+    limits: z.array(LimitExceeded).optional(),
+    /** `dependency_cycle`: the tickets of the cycle, each waiting for the next (`WEB-1`, ...). */
+    cycle: z.array(z.string()).optional(),
   }),
 });
 export type ApiError = z.infer<typeof ApiError>;

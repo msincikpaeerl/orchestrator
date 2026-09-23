@@ -5,14 +5,16 @@ import {
   ProjectKey,
   ProjectListQuery,
   RepositoryName,
+  TicketStatus,
   UpdateProjectRequest,
   slugify,
   type AvailabilityResponse,
   type LinkableRepositoriesResponse,
   type Project,
   type ProjectListResponse,
+  type TicketCounts,
 } from '@orchestrator/protocol';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
@@ -141,7 +143,25 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       .from(schema.projects)
       .where(archived === 'true' ? undefined : eq(schema.projects.status, 'active'))
       .orderBy(asc(schema.projects.name), asc(schema.projects.key));
-    return { projects: rows.map(toProject) } satisfies ProjectListResponse;
+    const counts = await db
+      .select({
+        projectId: schema.tickets.projectId,
+        status: schema.tickets.status,
+        count: count(),
+      })
+      .from(schema.tickets)
+      .groupBy(schema.tickets.projectId, schema.tickets.status);
+    return {
+      projects: rows.map((row) => {
+        const ticketCounts = Object.fromEntries(
+          TicketStatus.options.map((status) => [status, 0]),
+        ) as TicketCounts;
+        for (const each of counts) {
+          if (each.projectId === row.id) ticketCounts[TicketStatus.parse(each.status)] = each.count;
+        }
+        return { ...toProject(row), ticketCounts };
+      }),
+    } satisfies ProjectListResponse;
   });
 
   app.get('/api/projects/availability', async (request) => {

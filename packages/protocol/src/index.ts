@@ -1,6 +1,6 @@
 export { PROTOCOL_VERSION } from './version.js';
 export { HealthResponse, VersionResponse } from './api/system.js';
-export { ApiError, ApiErrorCode } from './api/errors.js';
+export { ApiError, ApiErrorCode, LimitExceeded, LimitedField } from './api/errors.js';
 export {
   CreateOwnerRequest,
   LoginRequest,
@@ -41,6 +41,7 @@ export {
   ProjectDescription,
   ProjectKey,
   ProjectKind,
+  ProjectListItem,
   ProjectListQuery,
   ProjectListResponse,
   ProjectName,
@@ -50,17 +51,21 @@ export {
   SETUP_STEPS,
   SetupStatus,
   SetupStep,
+  TicketCounts,
   UpdateProjectRequest,
   slugify,
 } from './api/projects.js';
 export {
   AddCommentRequest,
   AddDependencyRequest,
+  BLOCKABLE_STATUSES,
   Comment,
   CommentAuthor,
   CommentKind,
   CreateTicketRequest,
+  EDITABLE_STATUSES,
   MarkDoneRequest,
+  OWNER_TRANSITIONS,
   OwnerTicketAction,
   TicketCreator,
   TicketDetail,

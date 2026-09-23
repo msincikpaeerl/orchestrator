@@ -38,6 +38,35 @@ export type CommentAuthor = z.infer<typeof CommentAuthor>;
 export const OwnerTicketAction = z.enum(['cancel', 'mark_done', 'reopen']);
 export type OwnerTicketAction = z.infer<typeof OwnerTicketAction>;
 
+const NON_TERMINAL = TicketStatus.options.filter(
+  (status) => status !== 'done' && status !== 'cancelled',
+);
+
+/**
+ * The owner's transitions of 04, section 2: the server applies them, the UI offers each one only
+ * from its states.
+ */
+export const OWNER_TRANSITIONS: Readonly<
+  Record<OwnerTicketAction, { label: string; from: readonly TicketStatus[]; to: TicketStatus }>
+> = {
+  cancel: { label: 'Cancel', from: NON_TERMINAL, to: 'cancelled' },
+  mark_done: {
+    label: 'Mark as done manually',
+    from: ['todo', 'in_progress', 'waiting_human', 'in_review', 'awaiting_merge'],
+    to: 'done',
+  },
+  reopen: { label: 'Reopen', from: ['cancelled'], to: 'todo' },
+};
+
+/** States in which a ticket's fields and dependencies can change (02, section 6.4). */
+export const EDITABLE_STATUSES: readonly TicketStatus[] = ['proposed', 'todo'];
+
+/**
+ * States in which "blocked" is shown to the owner (04, section 1): the ticket has not started,
+ * and its dependencies can still be changed (owner's decision, lot 1 step F).
+ */
+export const BLOCKABLE_STATUSES: readonly TicketStatus[] = EDITABLE_STATUSES;
+
 /** A ticket's number within its project: `12` in `WEB-12`. */
 export const TicketNumber = z.int().min(1).max(2_147_483_647);
 

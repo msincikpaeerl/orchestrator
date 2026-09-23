@@ -1,9 +1,10 @@
-import type { Project } from '@orchestrator/protocol';
+import { TicketStatus, type Project, type TicketCounts } from '@orchestrator/protocol';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { formatDateTime } from '../github/text';
 import { ArchiveAction } from '../projects/archive-action';
 import { kindLabel, repositoryUrl } from '../projects/text';
+import { statusLabel } from '../tickets/text';
 import { useProjects } from '../queries';
 import { buttonLinkClass, Card, ErrorMessage, Loading, PageHeader } from '../components/ui';
 
@@ -23,6 +24,18 @@ export function ProjectBadges({ project }: { project: Project }) {
       {badge.text}
     </span>
   ));
+}
+
+/** Tickets per state (02, section 6.1), the states without tickets left out. */
+function TicketCountsLine({ counts }: { counts: TicketCounts }) {
+  const states = TicketStatus.options.filter((status) => counts[status] > 0);
+  return (
+    <p className="text-slate-700">
+      {states.length === 0
+        ? 'No tickets yet'
+        : `Tickets: ${states.map((status) => `${String(counts[status])} ${statusLabel[status]}`).join(' · ')}`}
+    </p>
+  );
 }
 
 /** Projects (02, section 6.1). Archived projects appear with "Show archived". */
@@ -87,6 +100,7 @@ export function ProjectsPage() {
                     </a>{' '}
                     ({project.repository.private ? 'private' : 'public'})
                   </p>
+                  <TicketCountsLine counts={project.ticketCounts} />
                   <p className="text-sm text-slate-600">
                     Last change {formatDateTime(project.updatedAt)}
                   </p>

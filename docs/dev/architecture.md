@@ -81,10 +81,12 @@ Request and response schemas are in `packages/protocol/src/api/`. Any other `GET
 | Path in `apps/web/src` | Role |
 |---|---|
 | `main.tsx`, `app.tsx` | Entry point; routes (ADR 0019), and the redirections to the wizard or the login page. |
-| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings and projects. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
-| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), Settings, Help, "Coming in a later version". |
-| `components/` | Shell (navigation, "Menu" on a phone), shared form elements with field errors, confirmation dialog. |
-| `projects/` | Project wording: labels, plain-words text and field of every API refusal, key suggestion, archive and unarchive with confirmation. |
+| `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings, projects and tickets. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
+| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), tickets (page, new and edit form), Settings, Help, "Coming in a later version". |
+| `components/` | Shell (navigation, "Menu" on a phone), shared form elements with field errors, confirmation dialog, `UntrustedMarkdown` for every text written by the owner or agents (ADR 0024). |
+| `refusals.ts` | Plain-words text of every API refusal code (a unit test enumerates `ApiErrorCode`), with the fields over their limit and the tickets of a dependency cycle. |
+| `projects/` | Project wording: labels, the form field of each refusal, key suggestion, archive and unarchive with confirmation. |
+| `tickets/` | Board (columns side by side, stacked on a phone), ticket wording, blocked explanation. |
 | `github/` | Token instructions and form, permission results, wording of GitHub problems. |
 | `help/` | `docs/user/` bundled at build time, page order, links and search (ADR 0020). |
 

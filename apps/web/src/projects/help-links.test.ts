@@ -7,8 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { findPage } from '../help/content';
 import { harnessElement } from './text';
 
-/** The help sections the project screens link to, as `page#section`. */
+/** The help sections the project and ticket screens link to, as `page#section`. */
 const linked = [
+  'tickets#blocked-tickets',
+  'tickets#create-a-ticket',
+  'tickets#edit-a-ticket',
   'projects#branch-protection',
   'projects#if-the-setup-fails',
   ...Object.values(harnessElement).map((element) => element.help),
@@ -28,7 +31,7 @@ function anchors(slug: string): string[] {
   return [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1] ?? '');
 }
 
-describe('help links of the project screens', () => {
+describe('help links of the project and ticket screens', () => {
   it.each(linked)('%s exists', (link) => {
     const [slug = '', section = ''] = link.split('#');
     expect(anchors(slug)).toContain(section);

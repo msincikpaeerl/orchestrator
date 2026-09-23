@@ -1,10 +1,14 @@
 import type {
+  ApiErrorCode,
   BranchProtection,
   HarnessElement,
   ProjectKind,
   SetupStep,
 } from '@orchestrator/protocol';
 import { ApiRequestError } from '../api';
+import { refusalText as plainRefusal } from '../refusals';
+
+export { sentence } from '../refusals';
 
 export const kindLabel: Record<ProjectKind, string> = {
   web_app: 'Web app',
@@ -54,11 +58,6 @@ export function suggestKey(name: string): string {
   return key.length >= 2 ? key.slice(0, words.length >= 2 ? 6 : 4) : '';
 }
 
-/** The text ending with a full stop, whether or not it already had one. */
-export function sentence(text: string): string {
-  return /[.!?]$/.test(text) ? text : `${text}.`;
-}
-
 export function repositoryUrl(repository: { owner: string; name: string }): string {
   return `https://github.com/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}`;
 }
@@ -66,87 +65,19 @@ export function repositoryUrl(repository: { owner: string; name: string }): stri
 /** The form field a refusal is about, so it is shown next to that field. */
 export type ErrorField = 'key' | 'repository' | 'form';
 
-/**
- * A refusal of the API in plain words, and the field it is about. Never shows the code: every
- * refusal a project screen can receive has its own text.
- */
+const fieldOf: Partial<Record<ApiErrorCode, ErrorField>> = {
+  project_key_taken: 'key',
+  repository_name_taken: 'repository',
+  repository_not_found: 'repository',
+  repository_archived: 'repository',
+  repository_already_linked: 'repository',
+};
+
+/** A refusal of a project screen in plain words (see `refusals.ts`), and the field it is about. */
 export function refusalText(error: unknown): { field: ErrorField; text: string } {
-  if (!(error instanceof ApiRequestError)) {
-    return { field: 'form', text: 'Something went wrong. Try again.' };
-  }
-  switch (error.code) {
-    case 'invalid_request':
-      return { field: 'form', text: 'Some fields are not valid. Check them and try again.' };
-    case 'project_key_taken':
-      return {
-        field: 'key',
-        text: 'Another project already uses this key (archived projects count too). Choose another key.',
-      };
-    case 'repository_name_taken':
-      return {
-        field: 'repository',
-        text: 'A repository with this name already exists on your GitHub account. Choose another name, or link that repository instead.',
-      };
-    case 'repository_not_found':
-      return {
-        field: 'repository',
-        text: 'This repository is no longer on your GitHub account. Choose another one.',
-      };
-    case 'repository_archived':
-      return {
-        field: 'repository',
-        text: 'This repository is archived on GitHub. Unarchive it on GitHub first, or choose another one.',
-      };
-    case 'repository_already_linked':
-      return {
-        field: 'repository',
-        text: 'This repository is already linked to another project. Choose another one.',
-      };
-    case 'github_request_failed':
-      return { field: 'form', text: `GitHub refused the request. ${sentence(error.message)}` };
-    case 'github_unreachable':
-      return {
-        field: 'form',
-        text: 'GitHub could not be reached. Check the internet connection and try again.',
-      };
-    case 'github_not_connected':
-      return {
-        field: 'form',
-        text: 'GitHub is not connected. Connect it in Settings > GitHub connection first.',
-      };
-    case 'github_token_unreadable':
-      return {
-        field: 'form',
-        text: 'The saved GitHub token cannot be read any more (the secret key changed). Enter it again in Settings > GitHub connection.',
-      };
-    case 'project_not_found':
-      return { field: 'form', text: 'This project does not exist.' };
-    case 'project_archived':
-      return { field: 'form', text: 'This project is archived. Unarchive it first.' };
-    case 'project_not_archived':
-      return { field: 'form', text: 'This project is not archived any more.' };
-    case 'project_setup_in_progress':
-      return {
-        field: 'form',
-        text: 'The repository setup is running. Wait until it is finished, then try again.',
-      };
-    case 'project_setup_not_failed':
-      return { field: 'form', text: 'The setup has not failed any more: nothing to try again.' };
-    case 'project_not_linked':
-      return {
-        field: 'form',
-        text: 'Harness elements are only checked for linked repositories.',
-      };
-    case 'project_not_ready':
-      return {
-        field: 'form',
-        text: 'The repository setup is not finished. Use Try again first.',
-      };
-    case 'unexpected':
-      return error.status === 0
-        ? { field: 'form', text: 'The Orchestrator could not be reached. Try again.' }
-        : { field: 'form', text: 'Something went wrong. Try again.' };
-    default:
-      return { field: 'form', text: 'Something went wrong. Try again.' };
-  }
+  const field =
+    error instanceof ApiRequestError && error.code !== 'unexpected'
+      ? fieldOf[error.code]
+      : undefined;
+  return { field: field ?? 'form', text: plainRefusal(error) };
 }
