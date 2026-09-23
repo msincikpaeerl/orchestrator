@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | Unit | Vitest | next to the code, `*.test.ts` | `pnpm test` | in place |
 | Integration | Vitest, real PostgreSQL (dev compose database) | `apps/*/test/`, `packages/*/test/` | `pnpm test` | in place |
-| End-to-end | Playwright | `apps/web/e2e/` | `pnpm test:e2e` | from lot 0 step D |
+| End-to-end | Playwright, in the pinned Playwright Docker image | `apps/web/e2e/*.e2e.ts` | `pnpm test:e2e` | in place |
 | Documentation links | remark-validate-links | all `*.md` | `pnpm docs:links` | in place |
 
 Rules (also in CLAUDE.md):
@@ -38,6 +38,31 @@ pnpm exec vitest                   # watch mode
 
 The root `vitest.config.ts` declares one project per folder in `apps/` and `packages/` (ADR 0006). A new package is picked up automatically.
 
+## End-to-end tests
+
+Playwright drives Chromium through the UI, on a desktop screen and on a phone (Pixel 7): every test runs on both, and checks that no screen scrolls sideways (02, section 1). They run in the Playwright Docker image pinned in `tools/e2e-docker.sh` and `.github/workflows/ci.yml`, locally and in CI alike (ADR 0021): nothing is installed on the host.
+
+### Run them locally with Docker
+
+```sh
+docker compose -f docker/compose.dev.yml up -d --wait postgres
+pnpm test:e2e                         # all tests, desktop and phone
+pnpm test:e2e --project=phone         # phone only
+pnpm test:e2e setup.e2e.ts            # one file
+```
+
+`pnpm test:e2e` builds the UI, then runs `playwright test` in the image with the repository mounted at the same path, the host network (the tests use the development PostgreSQL on `localhost:5432`) and your user, so the files it writes are yours. The first run pulls the image. Results are in `apps/web/test-results/` (a trace for each failed test: `apps/web/node_modules/.bin/playwright show-trace <file>`) and, with `CI` set, a report in `apps/web/playwright-report/`.
+
+Playwright starts `apps/server/test/e2e-server.ts` on port 8095 (`E2E_PORT`), with the built UI, a throw-away database and the fake GitHub, whose tokens are in `apps/web/e2e/fixtures.ts`. Before each test, the `fresh` fixture empties the database through a control address on the next port, so every test starts from the first launch. Tests run one at a time.
+
+### Run them on the host
+
+Only when Chromium's system libraries are installed (`apps/web/node_modules/.bin/playwright install-deps --dry-run chromium` lists the missing ones; installing them needs root, which is the owner's decision). Then `pnpm test:e2e:host` downloads Chromium into `.playwright-browsers/` at the repository root (ignored by Git), never into the home folder, and runs the tests.
+
+### Upgrading Playwright
+
+Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools/e2e-docker.sh` and `.github/workflows/ci.yml` together; `apps/web/e2e/image-version.test.ts` fails otherwise.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0008):
@@ -46,7 +71,8 @@ The root `vitest.config.ts` declares one project per folder in `apps/` and `pack
   1. `pnpm install --frozen-lockfile`
   2. `pnpm verify` (lint, format check, type check, tests, build, link check)
   3. `pnpm audit --audit-level critical`
-- Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health` and `/version`.
+- Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
+- Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.
 
 To check the workflow file locally:
 

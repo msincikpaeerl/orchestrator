@@ -1,2 +1,5 @@
 dist
 coverage
+
+# Browsers of `pnpm test:e2e:host` (ADR 0021).
+.playwright-browsers
