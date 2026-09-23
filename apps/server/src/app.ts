@@ -11,6 +11,8 @@ import { createDatabase } from './database.js';
 import { GITHUB_API_URL } from './github/client.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
+import { registerNeedsYouRoutes } from './needs-you.js';
+import { registerProjectRoutes } from './projects/routes.js';
 import { deriveSecretKey } from './secrets.js';
 import { defaultSettings, type Settings } from './settings.js';
 import { SERVER_VERSION } from './version.js';
@@ -25,7 +27,7 @@ export interface AppDependencies {
   settings?: Settings;
   /** GitHub's REST API; tests use a local fake. */
   githubApiUrl?: string;
-  /** Clock for time-based rules (login throttling); tests replace it. */
+  /** Clock for time-based rules (login throttling) and timestamps; tests replace it. */
   now?: () => Date;
   /** Folder of the built UI; `null` or absent serves the API only. */
   webRoot?: string | null;
@@ -62,12 +64,15 @@ export function buildApp(dependencies: AppDependencies) {
       secureCookies: new URL(dependencies.publicUrl).protocol === 'https:',
       now: dependencies.now,
     });
-    registerGitHubRoutes(scope, {
+    const github = {
       db,
       key: deriveSecretKey(dependencies.secretKey),
       settings,
       apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
-    });
+    };
+    registerGitHubRoutes(scope, github);
+    registerProjectRoutes(scope, { ...github, now: dependencies.now });
+    registerNeedsYouRoutes(scope, { db });
     done();
   });
 

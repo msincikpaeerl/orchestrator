@@ -5,6 +5,7 @@ import { buildApp, type App, type AppDependencies } from './app.js';
 import type { Config } from './config.js';
 import { createDatabase } from './database.js';
 import { detectUnreadableToken } from './github/connection.js';
+import { failInterruptedSetups } from './projects/setup.js';
 import { deriveSecretKey } from './secrets.js';
 import { defaultWebRoot } from './web.js';
 
@@ -28,7 +29,10 @@ export async function startServer(
   try {
     await runMigrations(pool);
     logger.info('database migrations applied');
-    await detectUnreadableToken(createDatabase(pool), deriveSecretKey(config.secretKey), logger);
+    const db = createDatabase(pool);
+    await detectUnreadableToken(db, deriveSecretKey(config.secretKey), logger);
+    const interrupted = await failInterruptedSetups(db);
+    if (interrupted > 0) logger.warn({ interrupted }, 'project setups interrupted by a restart');
     const app = buildApp({
       pool,
       logger,
