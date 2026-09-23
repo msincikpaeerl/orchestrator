@@ -33,7 +33,7 @@ export interface GitHubClientOptions {
   /** Sent in the Authorization header only; never logged or included in errors. */
   token: string;
   timeoutSeconds: number;
-  /** Called with every answer, for example to record refusals (ADR 0017). */
+  /** Called with every answer, for example to record refusals (ADR 0022). */
   onResponse?: (request: GitHubRequest, response: GitHubResponse) => Promise<void>;
 }
 

@@ -1,6 +1,6 @@
 # 0017 — GitHub token verification by probing
 
-- Status: accepted
+- Status: superseded by 0022
 - Date: 2026-09-23
 
 ## Context

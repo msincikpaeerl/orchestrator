@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { GitHubAccess, GitHubPermission } from '@orchestrator/protocol';
 
-// A local stand-in for GitHub's REST API, answering the way ADR 0017 expects GitHub to: a
+// A local stand-in for GitHub's REST API, answering the way ADR 0022 expects GitHub to: a
 // missing permission gives 403 "Resource not accessible by personal access token" with the
 // X-Accepted-GitHub-Permissions header, an invalid write request gives 422. Nothing is stored.
 

@@ -49,7 +49,7 @@ describe('server started on a new database', () => {
     const response = await fetch(`${baseUrl}/version`);
     expect(response.status).toBe(200);
     expect(VersionResponse.parse(await response.json())).toEqual({
-      server: '0.0.0',
+      server: '0.1.0',
       protocol: PROTOCOL_VERSION,
     });
   });

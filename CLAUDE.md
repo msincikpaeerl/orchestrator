@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lot 0 of `docs/specs/10-delivery-plan.md`, following `docs/dev/lot-0-plan.md` (read it; do only the next unchecked step). Commands marked *(later)* print which step adds them. Update this file when the setup changes.
+Lot 0 of `docs/specs/10-delivery-plan.md` is done (version 0.1.0, `docs/dev/lot-0-plan.md`). Lot 1 has no plan yet: wait for the owner's instructions. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
@@ -96,6 +96,7 @@ docker/          Dockerfile and compose files
 - Conventional Commits: `feat(scheduler): resume paused runs first`. Reference the ticket number when there is one.
 - Small commits with one purpose each.
 - Work on a branch (`lot0/<step letter>-<short-name>` during lot 0) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
+- At the end of every step, give the owner a pull request title and description ready to paste, in one code block (`docs/dev/lot-0-plan.md`, working rule 10).
 - Never commit secrets. Environment variables are listed in `.env.example`.
 
 ## Never

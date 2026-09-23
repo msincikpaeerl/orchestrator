@@ -31,7 +31,7 @@ The daemon's dependency is added with the code that needs it.
 | Path | Role |
 |---|---|
 | `src/auth/` | Owner creation, login with throttling, logout, sessions (ADR 0015). `requireSession` guards every API route except `/api/setup` and login. |
-| `src/github/` | GitHub client, token check by probing (ADR 0017), connection state and "Needs you" problems, routes. Every request made with the saved token must use `storedTokenClient`, which records refusals. |
+| `src/github/` | GitHub client, token check by probing (ADR 0022), connection state and "Needs you" problems, routes. Every request made with the saved token must use `storedTokenClient`, which records refusals. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
 | `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction. |
 | `src/settings.ts` | Settings with their defaults (04, section 8). Not editable yet. |

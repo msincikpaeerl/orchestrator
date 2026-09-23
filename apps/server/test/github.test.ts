@@ -192,7 +192,26 @@ describe('PUT /api/github/token', () => {
     );
   });
 
-  it('cannot tell Workflows apart when Contents is missing and GitHub sends no header', async () => {
+  // Found with the real GitHub in lot 0 step E: writing a workflow file needs Contents write
+  // first, so GitHub refuses the Workflows probe naming both permissions.
+  it('says Could not verify for Workflows, not Missing, when Contents is read-only', async () => {
+    const status = await saveToken(
+      fullAccount({ permissions: { ...fullAccount().permissions, contents: 'read' } }),
+    );
+    const workflows = connected(status).permissions.find((c) => c.permission === 'workflows');
+    expect(workflows).toEqual<PermissionCheck>({
+      permission: 'workflows',
+      access: 'write',
+      result: 'could_not_verify',
+      reason: 'Requires Contents (Read and write) first',
+    });
+    expect(results(status).contents).toBe('missing');
+    expect(connected(status).problems).toEqual([
+      { type: 'permission_missing', permission: 'contents', access: 'write' },
+    ]);
+  });
+
+  it('does not probe Workflows when Contents is missing, even without a refusal header', async () => {
     const status = await saveToken(
       fullAccount({
         permissions: { metadata: 'read', workflows: 'write' },
@@ -204,9 +223,12 @@ describe('PUT /api/github/token', () => {
       permission: 'workflows',
       access: 'write',
       result: 'could_not_verify',
-      reason: 'Contents must be OK before Workflows can be checked',
+      reason: 'Requires Contents (Read and write) first',
     });
     expect(results(status).contents).toBe('missing');
+    expect(github.requests.some((request) => request.path.includes('.github/workflows'))).toBe(
+      false,
+    );
   });
 
   it('says Could not verify for repository permissions when there is no repository', async () => {
