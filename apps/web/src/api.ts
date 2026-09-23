@@ -1,4 +1,4 @@
-import { ApiError, type ApiErrorCode } from '@orchestrator/protocol';
+import { ApiError, type ApiErrorCode, type LimitExceeded } from '@orchestrator/protocol';
 
 /** A refusal of the API, with the code the UI chooses its message from. */
 export class ApiRequestError extends Error {
@@ -8,6 +8,10 @@ export class ApiRequestError extends Error {
     readonly code: ApiErrorCode | 'unexpected',
     message: string,
     readonly retryAfterSeconds?: number,
+    /** Fields over their limit, for `invalid_request`. */
+    readonly limits?: LimitExceeded[],
+    /** Tickets of the cycle, for `dependency_cycle`. */
+    readonly cycle?: string[],
   ) {
     super(message);
   }
@@ -24,7 +28,7 @@ export function setUnauthenticatedHandler(handler: () => void) {
  * answers without a body.
  */
 export async function api<T>(
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   schema: { parse(value: unknown): T } | null,
   body?: unknown,
@@ -45,9 +49,9 @@ export async function api<T>(
     if (!parsed.success) {
       throw new ApiRequestError(response.status, 'unexpected', `Error ${String(response.status)}`);
     }
-    const { code, message, retryAfterSeconds } = parsed.data.error;
+    const { code, message, retryAfterSeconds, limits, cycle } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
-    throw new ApiRequestError(response.status, code, message, retryAfterSeconds);
+    throw new ApiRequestError(response.status, code, message, retryAfterSeconds, limits, cycle);
   }
   if (schema === null) return undefined as T;
   return schema.parse(await response.json());
