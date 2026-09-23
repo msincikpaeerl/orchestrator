@@ -114,6 +114,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Harness check tickets (08, section 7).
 - Browser notifications.
 - Secret masking in transcripts, audit of permissions, dependency audit in CI.
+- Trust the forwarded client address from a configured reverse proxy, for login throttling (see ADR 0015).
 
 **Done when** the Orchestrator runs on its final host with backups, and the user documentation covers installation to daily use.
 
