@@ -29,4 +29,28 @@ export {
   type RequiredGitHubPermission,
 } from './api/github.js';
 export { EventActor, EventEntityType, EventType } from './events.js';
-export { BranchProtection, HarnessElement } from './api/projects.js';
+export {
+  Availability,
+  AvailabilityQuery,
+  AvailabilityResponse,
+  BranchProtection,
+  CreateProjectRequest,
+  HarnessElement,
+  LinkableRepositoriesResponse,
+  Project,
+  ProjectDescription,
+  ProjectKey,
+  ProjectKind,
+  ProjectListQuery,
+  ProjectListResponse,
+  ProjectName,
+  ProjectStatus,
+  RepositoryName,
+  RepositoryOrigin,
+  SETUP_STEPS,
+  SetupStatus,
+  SetupStep,
+  UpdateProjectRequest,
+  slugify,
+} from './api/projects.js';
+export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
