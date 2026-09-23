@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   check,
   customType,
   date,
@@ -10,6 +11,7 @@ import {
   smallint,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -105,3 +107,55 @@ export const events = pgTable('events', {
   type: text('type').notNull(),
   payload: jsonb('payload').notNull().default({}),
 });
+
+/**
+ * Projects (01, section 3.1). Never deleted: archived. Allowed values of the text columns are the
+ * enums of `@orchestrator/protocol` (`ProjectKind`, `SetupStatus`, `SetupStep`, ...).
+ */
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Unique among all projects, archived ones included, and immutable. */
+    key: text('key').notNull().unique(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    description: text('description').notNull(),
+    kind: text('kind').notNull(),
+    repoOwner: text('repo_owner').notNull(),
+    repoName: text('repo_name').notNull(),
+    repoOrigin: text('repo_origin').notNull(),
+    repoPrivate: boolean('repo_private').notNull(),
+    /** Read from GitHub; null until the new repository is created. */
+    defaultBranch: text('default_branch'),
+    /**
+     * When the creation of the new repository was first requested from GitHub. If the answer
+     * was lost (restart), trying again uses the repository found under that name.
+     */
+    repoRequestedAt: timestamp('repo_requested_at', { withTimezone: true }),
+    setupStatus: text('setup_status').notNull(),
+    /** The step running or failed; null once ready. */
+    setupStep: text('setup_step'),
+    setupFailure: text('setup_failure'),
+    setupFailedAt: timestamp('setup_failed_at', { withTimezone: true }),
+    branchProtection: text('branch_protection'),
+    /** Linked repositories: `HarnessElement[]` missing at the last check. */
+    missingHarness: jsonb('missing_harness'),
+    harnessCheckedAt: timestamp('harness_checked_at', { withTimezone: true }),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('projects_key_format', sql`${table.key} ~ '^[A-Z]{2,6}$'`),
+    check('projects_kind', sql`${table.kind} IN ('web_app', 'website', 'android_app')`),
+    check('projects_repo_origin', sql`${table.repoOrigin} IN ('created', 'linked')`),
+    check('projects_setup_status', sql`${table.setupStatus} IN ('in_progress', 'ready', 'failed')`),
+    check('projects_status', sql`${table.status} IN ('active', 'archived')`),
+    // GitHub names are case-insensitive: one project per repository.
+    uniqueIndex('projects_repository').on(
+      sql`lower(${table.repoOwner})`,
+      sql`lower(${table.repoName})`,
+    ),
+  ],
+);

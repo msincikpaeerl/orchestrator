@@ -1,0 +1,32 @@
+CREATE TABLE "projects" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"key" text NOT NULL,
+	"name" text NOT NULL,
+	"slug" text NOT NULL,
+	"description" text NOT NULL,
+	"kind" text NOT NULL,
+	"repo_owner" text NOT NULL,
+	"repo_name" text NOT NULL,
+	"repo_origin" text NOT NULL,
+	"repo_private" boolean NOT NULL,
+	"default_branch" text,
+	"repo_requested_at" timestamp with time zone,
+	"setup_status" text NOT NULL,
+	"setup_step" text,
+	"setup_failure" text,
+	"setup_failed_at" timestamp with time zone,
+	"branch_protection" text,
+	"missing_harness" jsonb,
+	"harness_checked_at" timestamp with time zone,
+	"status" text DEFAULT 'active' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "projects_key_unique" UNIQUE("key"),
+	CONSTRAINT "projects_key_format" CHECK ("projects"."key" ~ '^[A-Z]{2,6}$'),
+	CONSTRAINT "projects_kind" CHECK ("projects"."kind" IN ('web_app', 'website', 'android_app')),
+	CONSTRAINT "projects_repo_origin" CHECK ("projects"."repo_origin" IN ('created', 'linked')),
+	CONSTRAINT "projects_setup_status" CHECK ("projects"."setup_status" IN ('in_progress', 'ready', 'failed')),
+	CONSTRAINT "projects_status" CHECK ("projects"."status" IN ('active', 'archived'))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "projects_repository" ON "projects" USING btree (lower("repo_owner"),lower("repo_name"));
