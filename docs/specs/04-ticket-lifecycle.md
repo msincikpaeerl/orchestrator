@@ -185,6 +185,6 @@ This table lists the settings of this document and the settings added in lots 0 
 
 The maximum concurrent runs of a Claude account (1 by default) is set on the account (01, section 3.9).
 
-The ranges keep the owner from locking themselves out: a login wait is at most 24 hours, and `orchestrator reset-password` (09, section 7.4) also lifts an active wait. Settings added in lots 0 and 1 are global only (owner's decision, lot 1 step G). A setting used only from a later version is shown with "Used from version ..." and can be set before it has any effect.
+The first login delay is never above the longest login delay: a change or a **Reset to default** that would make it so is refused, naming both settings (the same rule as the quota fallback delays, 07 section 8). The ranges keep the owner from locking themselves out: a login wait is at most 24 hours, and `orchestrator reset-password` (09, section 7.4) also lifts an active wait. Settings added in lots 0 and 1 are global only (owner's decision, lot 1 step G). A setting used only from a later version is shown with "Used from version ..." and can be set before it has any effect.
 
 Changing a limit applies to future actions only; runs and plans already in progress keep the values they started with, and an open login session keeps its expiry date. Every change of a global value or a project override, and every **Reset to default**, writes an event.

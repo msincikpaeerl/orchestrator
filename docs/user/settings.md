@@ -8,7 +8,7 @@
 2. Each limit shows what it does, its value and its default. Type a new value in **Value** and click **Save**. The value must be a whole number within the allowed range listed in the [reference](#settings-reference) below; if it is not, the field says which numbers are allowed.
 3. To go back to the default, click **Reset to default**. The button is available only when you have saved a value of your own.
 
-Two limits must stay in order: **Longest quota wait** cannot be less than **Quota wait when the reset time is unknown**. A value or a **Reset to default** that would break this is refused, naming both: change the other one first.
+Some limits come in pairs that must stay in order: **Longest login delay** cannot be less than **First login delay**, and **Longest quota wait** cannot be less than **Quota wait when the reset time is unknown**. A value or a **Reset to default** that would break this is refused, naming both: change the other one first.
 
 What a change affects:
 

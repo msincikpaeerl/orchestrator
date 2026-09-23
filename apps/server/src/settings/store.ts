@@ -148,7 +148,7 @@ async function resetSetting(tx: Executor, name: SettingName, target: SettingScop
 
 /**
  * After a change or reset of `name`, in its transaction: refuses it (rolling it back with its
- * event) when a pair of `SETTING_ORDER` is no longer in order (07, section 8).
+ * event) when a pair of `SETTING_ORDER` is no longer in order (04, section 8; 07, section 8).
  */
 async function checkOrder(tx: Executor, name: SettingName, projectId: string | null) {
   for (const { smaller, larger } of SETTING_ORDER) {

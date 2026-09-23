@@ -89,8 +89,9 @@ describe('orchestrator reset-password', () => {
     // The strictest values the allowed ranges accept (04, section 8).
     for (const [name, value] of [
       ['loginFailuresBeforeDelay', 1],
-      ['loginFirstDelaySeconds', 3600],
+      // The longest delay first: the first delay can never be above it.
       ['loginMaxDelaySeconds', 86_400],
+      ['loginFirstDelaySeconds', 3600],
       ['loginFailureMemoryMinutes', 10_080],
     ] as const) {
       const changed = await t.app.inject({

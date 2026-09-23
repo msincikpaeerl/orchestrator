@@ -313,6 +313,37 @@ describe('settings that must stay in order', () => {
     ]);
   });
 
+  it('keeps the first login delay at most the longest one, on change and on reset', async () => {
+    const firstDelay = 'settings/loginFirstDelaySeconds';
+    const longestDelay = 'settings/loginMaxDelaySeconds';
+    const above = await call('PUT', firstDelay, { value: 901 });
+    expect(above.statusCode).toBe(409);
+    expect(error(above)).toMatchObject({
+      code: 'setting_order_invalid',
+      settingOrder: {
+        smaller: 'loginFirstDelaySeconds',
+        larger: 'loginMaxDelaySeconds',
+        smallerValue: 901,
+        largerValue: 900,
+      },
+    });
+    expect(error(await call('PUT', longestDelay, { value: 9 })).settingOrder).toMatchObject({
+      smallerValue: 10,
+      largerValue: 9,
+    });
+    // Equal values are in order.
+    expect((await call('PUT', longestDelay, { value: 10 })).statusCode).toBe(200);
+    // With a first delay of 5, resetting the longest (900) is allowed, but not then resetting
+    // the first delay after lowering the longest below its default (10).
+    await call('PUT', firstDelay, { value: 5 });
+    await call('PUT', longestDelay, { value: 8 });
+    const reset = await call('DELETE', firstDelay);
+    expect(reset.statusCode).toBe(409);
+    expect(error(reset).settingOrder).toMatchObject({ smallerValue: 10, largerValue: 8 });
+    expect((await call('DELETE', longestDelay)).statusCode).toBe(200);
+    expect((await call('DELETE', firstDelay)).statusCode).toBe(200);
+  });
+
   it('cannot be broken by a project, since both are global only', async () => {
     await seedProject('WEB');
     for (const response of [

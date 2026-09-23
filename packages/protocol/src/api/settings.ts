@@ -326,11 +326,12 @@ export const SETTINGS: Readonly<Record<SettingName, Readonly<SettingDefinition>>
 export const SettingName = z.enum(Object.keys(SETTINGS) as [SettingName, ...SettingName[]]);
 
 /**
- * Pairs of settings whose values must stay in order: `smaller` never above `larger` (07,
- * section 8). A change or reset breaking the order is refused with `setting_order_invalid`.
+ * Pairs of settings whose values must stay in order: `smaller` never above `larger` (04,
+ * section 8; 07, section 8). A change or reset breaking the order is refused with `setting_order_invalid`.
  * Both settings of a pair are global only, so no project override can break the order.
  */
 export const SETTING_ORDER: readonly { smaller: SettingName; larger: SettingName }[] = [
+  { smaller: 'loginFirstDelaySeconds', larger: 'loginMaxDelaySeconds' },
   { smaller: 'quotaFallbackDelayMinutes', larger: 'quotaFallbackMaxDelayMinutes' },
 ];
 
