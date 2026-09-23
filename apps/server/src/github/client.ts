@@ -17,7 +17,7 @@ export interface GitHubResponse {
 }
 
 export interface GitHubRequest {
-  method: 'GET' | 'POST' | 'PUT';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH';
   /** Path and query, for example `/user/repos?per_page=1`. */
   path: string;
   body?: unknown;

@@ -54,6 +54,7 @@ apps/daemon/     Daemon, tmux runner, hooks endpoint, MCP relay
 packages/protocol/  Zod schemas shared by all apps: daemon messages, MCP tools, API types
 packages/db/     Drizzle schema and SQL migrations
 agents/          Default agent instructions and run message templates
+templates/       Files written to GitHub: project-skeleton/ for new repositories (ADR 0023)
 docs/specs/      Specifications (00 to 10)
 docs/user/       User documentation, shown in the app's Help section
 docs/dev/        Developer documentation (architecture, setup, testing)

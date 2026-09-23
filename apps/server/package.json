@@ -19,6 +19,7 @@
     "@node-rs/argon2": "2.2.1",
     "@orchestrator/db": "workspace:*",
     "@orchestrator/protocol": "workspace:*",
+    "@orchestrator/templates": "workspace:*",
     "@orchestrator/web": "workspace:*",
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",

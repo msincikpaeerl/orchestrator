@@ -1,0 +1,56 @@
+# CLAUDE.md — {{name}}
+
+Instructions for Claude Code working on this repository. Keep this file under 150 lines.
+Details belong in `docs/`; this file only points to them.
+
+## What this project is
+
+{{description}}
+
+## Current state
+
+New project: the stack is not chosen yet. The first ticket records it in ADRs and completes this file (commands, folder map, conventions).
+
+## Read before working
+
+1. The ticket you were given.
+2. The documentation of the area you touch in `docs/dev/`.
+3. The decisions in `docs/adr/` related to that area.
+
+## Commands
+
+| Task | Command |
+|---|---|
+| Documentation link check (the same command as CI) | `npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout` |
+
+## Repository map
+
+```
+docs/user/   User documentation, organised by tasks
+docs/dev/    Developer documentation (architecture, setup, testing)
+docs/adr/    Architecture Decision Records
+.github/     CI and the pull request template
+```
+
+## Conventions
+
+- Commits follow Conventional Commits with the ticket number: `feat(WEB-12): add contact form`.
+- Every significant technical choice gets an ADR: copy `docs/adr/0000-template.md`, next number.
+- A user-visible change updates `docs/user/` and `CHANGELOG.md` in the same pull request.
+- CI: every job in `.github/workflows/ci.yml` is listed in the `needs` of the final `ci` job. Never rename or remove `ci`: branch protection requires it, and no pull request can be merged without it.
+- All text in English.
+
+## Tests
+
+- New behaviour needs tests.
+- A bug fix starts with a regression test that fails before the fix.
+- Never weaken or delete a test to make CI pass: fix the code, or explain in the pull request why the test was wrong.
+
+## Before finishing
+
+Every command in the Commands table must pass.
+
+## Never
+
+- Never commit secrets. Environment variables are listed in `.env.example` once the project has any.
+- Never commit to the default branch: work on the ticket branch.

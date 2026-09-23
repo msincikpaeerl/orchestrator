@@ -76,7 +76,7 @@ Token permissions used by lot 1, from GitHub's "Permissions required for fine-gr
 
 Compared with 02, section 3.1: every permission used is already required, with the same level; Pull requests, Commit statuses and Actions are not used before lot 3. Only the "why" column changed (Contents also reads linked repositories; Metadata also lists repositories to link). No change for the owner's existing token.
 
-### [ ] B. GitHub repository operations (server, no screens)
+### [x] B. GitHub repository operations (server, no screens)
 
 - Skeleton files in `templates/project-skeleton/` (layout of 08, section 2, placeholders for the project name and description), bundled into the server image. Its CI runs the documentation link check with pinned versions and needs no `package.json`.
 - `apps/server/src/github/`: list the owner's repositories, check a name is free, create the repository (private or public), apply the skeleton as one commit after GitHub's first commit (both paths above, fast-forward only), apply the ruleset (`applied`, `not_available`, `failed`), read the harness elements of a repository (08, section 3.4). All through the stored-token client, so refusals reach "Needs you".
@@ -85,6 +85,8 @@ Compared with 02, section 3.1: every permission used is already required, with t
 - `docs/dev/architecture.md` updated.
 
 **Done when** integration tests against the fake GitHub show: a private and a public repository created with two commits (GitHub's README, then the skeleton) and the branch moved without force; the empty-repository path; a setup tried again after a failed skeleton step; the ruleset applied, not available and refused; harness elements found, missing, and all missing on an empty repository; and a test runs the skeleton's own link check on the rendered skeleton successfully.
+
+*Done 2026-09-23.* `apps/server/src/github/repositories.ts` and `skeleton.ts`, ADR 0023; the fake GitHub now keeps commits, trees, branches and rulesets. Choices within the step: `templates/` is a workspace package the server depends on (bundled like the UI); the skeleton also fills in the default branch (for its CI) and the date (ADR 0001), and has a `.remarkrc.json` for its link check and a `.gitignore` for the `node_modules/` that check installs; its CLAUDE.md (reviewed by the owner) has Tests and Before finishing sections and the link check as one runnable command, identical to the CI's; the ruleset requires only the final CI job `ci`, which needs every other job (owner's review; 08, section 4), and no approving review (GitHub never lets the owner approve their own pull request); applying the skeleton or the ruleset again is safe (no duplicate commit or ruleset). The skeleton's CI command was also run in the pinned `node` image: it passes on the skeleton and fails on a broken link. Requests added to the step A table, needing no new permission: `GET .../git/ref/heads/{branch}` and `GET .../git/commits/{sha}` (Contents read) to find the head, `GET .../rulesets` (Metadata read) to find a ruleset left by an earlier attempt.
 
 ### [ ] C. Projects: database and API
 
