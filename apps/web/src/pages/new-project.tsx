@@ -284,7 +284,7 @@ export function NewProjectPage() {
           />
           <SelectField
             label="Kind"
-            hint="Chooses the default tools and agents of the project."
+            hint="No effect yet: in a later version, it will choose the default tools and agents of the project."
             value={kind}
             onChange={(event) => {
               setKind(ProjectKind.parse(event.target.value));
