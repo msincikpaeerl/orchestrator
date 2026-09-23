@@ -76,6 +76,7 @@ The wizard ends on the **Setup done** page. From there:
 
 - **Help** (in the menu) contains this guide and every other page.
 - **Needs you** is the home page: it lists what needs your attention, such as a GitHub token about to expire. See [Needs you](needs-you.md).
+- **Projects** is where you create your first project, with a new GitHub repository or one you already have. See [Projects](projects.md).
 
 On a phone or a small window, the menu is behind the **Menu** button at the top.
 

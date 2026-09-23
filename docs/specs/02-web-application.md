@@ -8,7 +8,7 @@ This document describes the screens of the web application and what the owner ca
 ## 1. General rules
 
 - **Responsive.** Every screen works on a phone, so the owner can answer questions and approve plans away from the computer. Complex editing (agent instructions) may be more comfortable on desktop but must remain possible on mobile.
-- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading.
+- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading. Until the realtime stream arrives (lot 2), screens refresh after each action and when the window regains focus; in addition, the project page refreshes on its own while its repository setup is `in_progress`, at the interval of the `projectSetupPollSeconds` setting (2 seconds by default), and stops as soon as the setup is `ready` or `failed` (owner's decision, lot 1 step D).
 - **Help everywhere.** Each screen has a help link to the matching page of the user documentation.
 - **English only** for all text.
 - **Confirmation** for destructive actions (cancel ticket, mark as done manually, archive project, revoke machine, delete agent).
@@ -125,7 +125,7 @@ The owner chooses one of two ways:
 
 The key (2 to 6 uppercase letters) is suggested from the name and can be edited; the form explains that it prefixes ticket numbers and cannot be changed later.
 
-The project page shows the repository setup while it runs and its result. If it fails (for example GitHub refused a request), the reason is shown with a **Try again** action, and "Needs you" lists the project until it is ready.
+The project page shows the repository setup while it runs (refreshing on its own, section 1) and its result. If it fails (for example GitHub refused a request), the reason is shown with a **Try again** action, and "Needs you" lists the project until it is ready.
 
 ### 6.3 Project board
 

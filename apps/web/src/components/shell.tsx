@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
 import { api } from '../api';
-import { keys, queryClient, useGitHubStatus } from '../queries';
+import { keys, queryClient, useGitHubStatus, useNeedsYou } from '../queries';
 
 /** The sections of 02, section 2, in its order. */
 export const sections = [
@@ -19,7 +19,10 @@ export const sections = [
 /** Number of items in "Needs you", for the badge (02, section 1). */
 function useNeedsYouCount(): number {
   const github = useGitHubStatus();
-  return github.data?.connected ? github.data.problems.length : 0;
+  const needsYou = useNeedsYou();
+  return (
+    (github.data?.connected ? github.data.problems.length : 0) + (needsYou.data?.items.length ?? 0)
+  );
 }
 
 function Navigation({ onNavigate }: { onNavigate: () => void }) {
@@ -67,6 +70,8 @@ export function Shell({ children }: { children: ReactNode }) {
     onSuccess: async () => {
       queryClient.setQueryData(keys.session, null);
       queryClient.removeQueries({ queryKey: keys.github });
+      queryClient.removeQueries({ queryKey: keys.needsYou });
+      queryClient.removeQueries({ queryKey: keys.projects });
       await navigate('/login');
     },
   });

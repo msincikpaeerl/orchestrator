@@ -2,7 +2,7 @@
 
 **Needs you** is the home page of the Orchestrator. It lists everything waiting for you; when it is empty, nothing needs you. The number next to "Needs you" in the menu counts the items.
 
-In this version, it shows problems with the GitHub connection. Later versions add questions from agents, plans to approve and pull requests to merge.
+In this version, it shows problems with the GitHub connection and projects whose setup failed. Later versions add questions from agents, plans to approve and pull requests to merge.
 
 ## GitHub items
 
@@ -18,3 +18,11 @@ Each item has a link to **Settings > GitHub connection**, where you fix it by en
 | Enter your GitHub token again | The secret key in `.env` changed, so the saved token cannot be read. | Enter the token again; see [Back up your secret key](secret-key.md). |
 
 An item disappears once the problem is fixed: after entering a new token, or after **Check again** succeeds.
+
+## Project items
+
+| Item | Why it appears | What to do |
+|---|---|---|
+| Project setup failed | The Orchestrator could not finish creating or reading the project's GitHub repository. The item names the step that failed and why. | Click **Open the project**, fix the cause if needed, then click **Try again**. See [If the setup fails](projects.md#if-the-setup-fails). |
+
+The item disappears once the setup is ready. An archived project is not listed, even if its setup failed: unarchive it first.

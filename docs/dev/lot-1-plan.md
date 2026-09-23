@@ -99,13 +99,15 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 *Done 2026-09-23.* `apps/server/src/projects/` (routes, setup runner), `src/needs-you.ts`, migration `0003_projects`, tests in `apps/server/test/projects.test.ts`. Spec 08, section 3.2 gained a bootstrap ticket criterion (owner's request): the link check moves into the stack's own tooling. Choices within the step: the setup steps are `repository`, `skeleton`, `branch_protection` for a new repository and `harness` for a linked one, whose setup is its first harness check; a refused branch protection fails the setup at that step (08, section 3.1); if the answer to the repository creation was lost, trying again reuses the repository found under that name only when GitHub created it after the creation request (with a clock tolerance setting, 2 minutes by default) and its default branch holds at most GitHub's first commit, otherwise the setup fails with "Repository name already taken" and nothing is written (owner's review; 08, section 3.1 and ADR 0023); API addresses use the project key; the slug of a linked project comes from its name; archiving is refused while a setup runs, and **Check again** needs a linked project whose setup is done; `GET /api/needs-you` lists failed setups of active projects (GitHub problems stay in `GET /api/github`); name at most 100 characters, description at most 1,000. `required_capabilities` (01, section 3.1) is not added yet: it comes with machines, like the ticket columns of later lots.
 
-### [ ] D. Projects: screens and user documentation
+### [x] D. Projects: screens and user documentation
 
 - Projects list with "Show archived", new project form with its two ways (02, section 6.2), project page header (setup progress and result, branch protection, missing harness elements with **Check again**, **Try again**), project settings (name, description), archive and unarchive with confirmation. "Needs you" shows failed setups.
 - `docs/user/`: a Projects page (create with a new repository, link a repository, what "branch protection not available" means, missing harness elements, archive) and index, getting started and needs-you updated. Every new screen links to its Help page.
 - Playwright tests on desktop and phone against the fake GitHub.
 
 **Done when** Playwright covers creating a private project, linking a repository with missing elements, a failed setup tried again, and archiving, on both viewports.
+
+*Done 2026-09-23.* Screens in `apps/web/src/pages/projects.tsx`, `new-project.tsx`, `project.tsx` (page and settings), texts in `apps/web/src/projects/`, `docs/user/projects.md`, tests in `apps/web/e2e/projects.e2e.ts`. Owner's decision written into 02, section 1: screens refresh after each action and on window focus, and the project page polls while its setup is `in_progress` only, at the new setting `projectSetupPollSeconds` (default 2 seconds, `GET /api/ui-settings`). Choices within the step: archive and unarchive are offered both in the list (02, section 6.1) and in project settings; the list shows "Last change" (the project's update time) in place of the ticket counts and last activity of 02, section 6.1: this is temporary, step F adds the ticket counts and step H replaces "Last change" with the last activity; the e2e server gains test-only controls (the fake GitHub is reset with the database, and `POST /github/fail-next` fails one GitHub request) and the fake account has repositories to link; every API refusal has its own plain-words text (unit test over every error code), and the Help anchors the screens link to are checked by a unit test.
 
 ### [ ] E. Tickets: database and API
 
@@ -120,6 +122,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 ### [ ] F. Tickets: screens, sanitized Markdown and user documentation
 
 - Board (02, section 6.3): columns by state, `done` and `cancelled` collapsed, filters by type and text, a "Blocked" badge.
+- Project list (02, section 6.1): counts of tickets per state for each project.
 - Create and edit form (type, title, description, ordered acceptance criteria, priority, dependencies); ticket detail (02, section 6.4) with timeline, comment box, "Blocked by" and "Blocks" lists with the dependency editor, and the actions of the ticket's state, with confirmations.
 - One Markdown component for untrusted content: react-markdown as in Help, raw HTML not rendered, links limited to `http`, `https`, `mailto`, images shown as links (09, section 5). ADR for this rule (Help keeps ADR 0020).
 - `docs/user/`: a Tickets page (create, edit, dependencies, comments, cancel, mark as done manually, reopen, what "blocked" means).
@@ -129,7 +132,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 ### [ ] G. Settings screen with limits
 
-- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout, and the GitHub clock tolerance added in step C, `githubClockToleranceSeconds`, default 120 seconds) move to it and to Settings > Limits.
+- Table for setting values: global values and per-project overrides for the settings marked so in 04, section 8; one function resolving project override, then global value, then default. Existing settings (sessions, login throttling, GitHub token warning and timeout, the GitHub clock tolerance added in step C, `githubClockToleranceSeconds`, default 120 seconds, and the project page's setup polling interval added in step D, `projectSetupPollSeconds`, default 2 seconds, today sent to the UI by `GET /api/ui-settings`) move to it and to Settings > Limits. The Projects help page already tells the owner to raise "GitHub clock tolerance" in Settings > Limits: keep that name.
 - Each setting described once in `packages/protocol` (name, description, unit, allowed range, default, overridable per project).
 - Settings > Limits (02, section 10): value, default, description, **Reset to default**; project settings show the overridable ones. Settings used only by later lots say "Used from version ...". Changes apply to future actions only, and write an event.
 - `docs/user/`: a Settings reference page listing every setting with its effect (04, section 8).
@@ -139,6 +142,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 ### [ ] H. Event log
 
 - Events gain a project reference so they can be filtered by project; API listing events with filters (project, ticket, kind of entity, event type, date) and paging.
+- Project list (02, section 6.1): "Last change" (added in step D) is replaced by the last activity, the time of the project's latest event.
 - Activity > Event log (02, section 7): each event in plain words ("WEB-12 marked as done manually: ..."), with links to the project or ticket. The rest of Activity stays "Coming in a later version".
 - `docs/user/`: an Activity page (event log section).
 

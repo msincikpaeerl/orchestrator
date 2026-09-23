@@ -1,7 +1,16 @@
-import { GitHubStatusResponse, SessionResponse, SetupStateResponse } from '@orchestrator/protocol';
+import {
+  GitHubStatusResponse,
+  NeedsYouResponse,
+  Project,
+  ProjectListResponse,
+  SessionResponse,
+  SetupStateResponse,
+  UiSettingsResponse,
+} from '@orchestrator/protocol';
 import { QueryClient, useQuery } from '@tanstack/react-query';
 import { api, ApiRequestError, setUnauthenticatedHandler } from './api';
 
+// Screens refresh after each action and when the window regains focus (02, section 1).
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });
@@ -10,6 +19,11 @@ export const keys = {
   setup: ['setup'],
   session: ['session'],
   github: ['github'],
+  needsYou: ['needs-you'],
+  uiSettings: ['ui-settings'],
+  projects: ['projects'],
+  projectList: (archived: boolean) => ['projects', 'list', archived] as const,
+  project: (key: string) => ['projects', 'detail', key] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -44,4 +58,52 @@ export function useGitHubStatus(enabled = true) {
     queryFn: () => api('GET', '/api/github', GitHubStatusResponse),
     enabled,
   });
+}
+
+/** "Needs you" items besides the GitHub problems (02, section 4). */
+export function useNeedsYou() {
+  return useQuery({
+    queryKey: keys.needsYou,
+    queryFn: () => api('GET', '/api/needs-you', NeedsYouResponse),
+  });
+}
+
+export function useUiSettings() {
+  return useQuery({
+    queryKey: keys.uiSettings,
+    queryFn: () => api('GET', '/api/ui-settings', UiSettingsResponse),
+    staleTime: Infinity,
+  });
+}
+
+export function useProjects(archived: boolean) {
+  return useQuery({
+    queryKey: keys.projectList(archived),
+    queryFn: () =>
+      api('GET', `/api/projects${archived ? '?archived=true' : ''}`, ProjectListResponse),
+  });
+}
+
+/**
+ * One project. While its repository setup runs, it is asked for again at the interval of the
+ * `projectSetupPollSeconds` setting, and no longer once the setup is ready or failed.
+ */
+export function useProject(key: string) {
+  const settings = useUiSettings();
+  const interval = (settings.data?.projectSetupPollSeconds ?? 0) * 1000;
+  return useQuery({
+    queryKey: keys.project(key),
+    queryFn: () => api('GET', `/api/projects/${encodeURIComponent(key)}`, Project),
+    refetchInterval: (query) =>
+      interval > 0 && query.state.data?.setup.status === 'in_progress' ? interval : false,
+  });
+}
+
+/** After an action on projects: every project screen and "Needs you" are read again. */
+export async function projectsChanged(project?: Project) {
+  if (project) queryClient.setQueryData(keys.project(project.key), project);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: keys.projects }),
+    queryClient.invalidateQueries({ queryKey: keys.needsYou }),
+  ]);
 }
