@@ -1,0 +1,18 @@
+# Orchestrator Help
+
+The Orchestrator turns what you describe in plain words into web apps, websites and Android apps, by coordinating AI agents that work on your own computers. You describe what you want, approve the plan and merge the results on GitHub.
+
+This version sets up the Orchestrator: your account and the connection to GitHub. Projects, agents and machines arrive in the next versions.
+
+## Pages
+
+- [Getting started](getting-started.md): install the Orchestrator on Windows (WSL), create your account and connect GitHub.
+- [Connect GitHub](github-token.md): create the GitHub token, what each permission is for, replace the token.
+- [Needs you](needs-you.md): the home page, and what to do for each item it shows.
+- [Reset a forgotten password](reset-password.md)
+- [Back up your secret key](secret-key.md)
+- [Open the Orchestrator from another device](network-access.md)
+
+## Search
+
+Type words in "Search Help" to list the pages containing all of them.
