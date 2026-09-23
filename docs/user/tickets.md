@@ -120,6 +120,6 @@ Agents move tickets through **In progress**, **Waiting for you**, **In review** 
 
 The page says why in plain words. The most common reasons:
 
-- **A text is too long**: the message names the field and its limit, for example "The title can have at most 200 characters." Shorten it and try again.
+- **A text is too long**: the message names the field and its limit, for example "The title can have at most 200 characters." Shorten it and try again. These limits can be changed in **Settings > Limits** (see [Change a limit](settings.md#change-a-limit)).
 - **The ticket changed state**: for example it was already cancelled. The page shows its current state and the actions it allows.
 - **The project is archived**: its tickets are read-only. Unarchive the project first (see [Archive a project](projects.md#archive-a-project)).

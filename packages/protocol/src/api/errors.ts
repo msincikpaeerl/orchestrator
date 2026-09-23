@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SettingName } from './settings.js';
 
 /** Machine-readable reason of an API refusal; the UI chooses its message from it. */
 export const ApiErrorCode = z.enum([
@@ -44,6 +45,12 @@ export const ApiErrorCode = z.enum([
   /** The dependency would close a cycle; the message names it (`WEB-1 → WEB-2 → WEB-1`). */
   'dependency_cycle',
   'dependency_not_found',
+  /** No setting with this name. */
+  'setting_not_found',
+  /** This setting has only a global value (04, section 8). */
+  'setting_not_per_project',
+  /** The value would put two settings of `SETTING_ORDER` in the wrong order; see `settingOrder`. */
+  'setting_order_invalid',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
@@ -78,6 +85,15 @@ export const ApiError = z.object({
     limits: z.array(LimitExceeded).optional(),
     /** `dependency_cycle`: the tickets of the cycle, each waiting for the next (`WEB-1`, ...). */
     cycle: z.array(z.string()).optional(),
+    /** `setting_order_invalid`: the two settings and the values they would have. */
+    settingOrder: z
+      .object({
+        smaller: SettingName,
+        larger: SettingName,
+        smallerValue: z.int(),
+        largerValue: z.int(),
+      })
+      .optional(),
   }),
 });
 export type ApiError = z.infer<typeof ApiError>;

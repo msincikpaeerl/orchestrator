@@ -58,7 +58,7 @@ In **Settings > GitHub connection** you see the GitHub account, the expiry date,
 
 ## When the token expires
 
-"Needs you" warns you 14 days before the expiry date you entered, and again once it has passed. Create a new token and enter it with **Replace the token**. If GitHub refuses the token at any time (deleted, revoked, expired earlier than the date you entered), "Needs you" tells you too.
+"Needs you" warns you 14 days before the expiry date you entered (the **GitHub token expiry warning** setting, see [Settings](settings.md#settings-reference)), and again once it has passed. Create a new token and enter it with **Replace the token**. If GitHub refuses the token at any time (deleted, revoked, expired earlier than the date you entered), "Needs you" tells you too.
 
 ## If something goes wrong
 

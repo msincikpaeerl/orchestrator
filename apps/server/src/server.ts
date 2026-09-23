@@ -19,7 +19,7 @@ export interface RunningServer {
 export async function startServer(
   config: Pick<Config, 'databaseUrl' | 'port' | 'secretKey' | 'publicUrl'>,
   logger: FastifyBaseLogger,
-  options: Pick<AppDependencies, 'settings' | 'githubApiUrl' | 'webRoot'> = {},
+  options: Pick<AppDependencies, 'githubApiUrl' | 'webRoot'> = {},
 ): Promise<RunningServer> {
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
   pool.on('error', (error) => {

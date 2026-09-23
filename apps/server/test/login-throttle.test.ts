@@ -105,6 +105,26 @@ describe('login throttling', () => {
     expect((await login(OWNER.password)).statusCode).toBe(200);
   });
 
+  it('applies a changed setting to the next attempt, without a restart', async () => {
+    const cookie = (await login(OWNER.password)).headers['set-cookie'];
+    const session = String(Array.isArray(cookie) ? cookie[0] : cookie).split(';')[0] ?? '';
+    for (const [name, value] of [
+      ['loginFailuresBeforeDelay', 1],
+      ['loginFirstDelaySeconds', 30],
+    ] as const) {
+      const changed = await t.app.inject({
+        method: 'PUT',
+        url: `/api/settings/${name}`,
+        headers: { cookie: session },
+        payload: { value },
+      });
+      expect(changed.statusCode, changed.body).toBe(200);
+    }
+    // One failure is now enough, and the wait is the new first delay.
+    await fail(1);
+    expectWait(await login(OWNER.password), 30);
+  });
+
   it('records an event when a delay starts, without the typed username', async () => {
     await fail(3, { username: 'my secret password' });
     const events = await t.db

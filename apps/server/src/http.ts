@@ -9,8 +9,8 @@ export class HttpError extends Error {
     readonly statusCode: number,
     readonly code: ApiErrorCode,
     message: string,
-    /** Details the UI uses to explain the refusal (`limits`, `cycle`). */
-    readonly details: Pick<ApiError['error'], 'limits' | 'cycle'> = {},
+    /** Details the UI uses to explain the refusal (`limits`, `cycle`, `settingOrder`). */
+    readonly details: Pick<ApiError['error'], 'limits' | 'cycle' | 'settingOrder'> = {},
   ) {
     super(message);
   }

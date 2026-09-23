@@ -76,3 +76,29 @@ export async function expectFitsScreen(page: Page) {
   );
   expect(overflow, 'horizontal scrolling').toBeLessThanOrEqual(0);
 }
+
+/** Creates a project with a new private repository through the API, and waits until it is ready. */
+export async function createReadyProject(
+  page: Page,
+  project: { key: string; name: string; repository: string },
+) {
+  const created = await page.request.post('/api/projects', {
+    data: {
+      name: project.name,
+      key: project.key,
+      kind: 'web_app',
+      repository: { origin: 'created', name: project.repository, private: true },
+    },
+  });
+  expect(created.status()).toBe(201);
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (await page.request.get(`/api/projects/${project.key}`)).json()) as {
+            setup: { status: string };
+          }
+        ).setup.status,
+    )
+    .toBe('ready');
+}

@@ -18,7 +18,7 @@ import {
 } from '../github/repositories.js';
 import { renderSkeleton } from '../github/skeleton.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
-import type { Settings } from '../settings.js';
+import { resolveSettings } from '../settings/store.js';
 import { findProjectById, projectEntity, type ProjectRow } from './model.js';
 
 // Repository setup of a project (08, sections 3.1 and 3.4), run in the background after the
@@ -78,7 +78,6 @@ export interface ProjectSetupOptions {
   db: Database;
   key: SecretKey;
   apiUrl: string;
-  settings: Settings;
   log: FastifyBaseLogger;
   now?: () => Date;
 }
@@ -210,7 +209,10 @@ export class ProjectSetupRunner {
     repo: GitHubRepository,
   ): Promise<boolean> {
     if (project.repoRequestedAt === null) return false;
-    const tolerance = this.options.settings.githubClockToleranceSeconds * 1000;
+    const { githubClockToleranceSeconds } = await resolveSettings(this.options.db, [
+      'githubClockToleranceSeconds',
+    ]);
+    const tolerance = githubClockToleranceSeconds * 1000;
     const createdAt = Date.parse(repo.createdAt);
     if (Number.isNaN(createdAt) || createdAt < project.repoRequestedAt.getTime() - tolerance) {
       return false;

@@ -3,6 +3,7 @@ import { schema } from '@orchestrator/db';
 import { and, eq, gt, lte } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
+import { resolveSettings } from '../settings/store.js';
 
 /** Name of the HTTP-only session cookie (09, section 5; ADR 0015). */
 export const SESSION_COOKIE = 'orchestrator_session';
@@ -22,10 +23,14 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/** Creates a login session, deleting the expired ones on the way. */
-export async function createSession(db: Executor, lifetimeDays: number): Promise<NewSession> {
+/**
+ * Creates a login session lasting `sessionLifetimeDays`, deleting the expired ones on the way.
+ * Sessions already open keep their expiry date when the setting changes.
+ */
+export async function createSession(db: Executor): Promise<NewSession> {
+  const { sessionLifetimeDays } = await resolveSettings(db, ['sessionLifetimeDays']);
   const token = randomBytes(32).toString('base64url');
-  const expiresAt = new Date(Date.now() + lifetimeDays * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + sessionLifetimeDays * 24 * 60 * 60 * 1000);
   await db.delete(schema.sessions).where(lte(schema.sessions.expiresAt, new Date()));
   const [session] = await db
     .insert(schema.sessions)

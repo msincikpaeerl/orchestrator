@@ -145,7 +145,7 @@ A run fails when it crashes, times out, the machine goes offline, or the agent d
 ## 6. Questions to the owner
 
 - Agents ask questions with the `ticket.ask` MCP tool. The question is posted as a `question` comment and the ticket moves to `waiting_human`.
-- The run stays alive for a configurable time (default 30 minutes) so an answer can resume it without losing context. After that, the tmux session is closed but the Claude session id is kept; the answer then starts a run that resumes the session.
+- The run stays alive for the waiting run lifetime (a setting, default 30 minutes, section 8) so an answer can resume it without losing context. After that, the tmux session is closed but the Claude session id is kept; the answer then starts a run that resumes the session.
 - A waiting run does not count as active for the Claude account, so other tickets can run meanwhile.
 - The UI shows pending questions prominently. They are the owner's main task list.
 
@@ -157,15 +157,34 @@ A run fails when it crashes, times out, the machine goes offline, or the agent d
 
 ## 8. Configurable limits
 
-Every limit in this document is a setting, editable from the UI without touching the code. Settings have a global default, and some can be overridden per project. The user documentation lists them with their effect.
+Every limit and timeout of the Orchestrator is a setting, editable from the UI (Settings > Limits, 02 section 10) without touching the code. Each setting is a whole number with a default and an allowed range; a value outside the range is refused. Some can also be overridden per project (project settings, 02 section 6.5). The value used is the project's override, then the global value, then the default. The user documentation lists every setting with its effect.
 
-| Setting | Default | Override per project | Used in |
-|---|---|---|---|
-| Max tickets per plan | 15 | Yes | 01, section 3.3 |
-| Max tickets an agent may create per run (outside a plan) | 3 | Yes | Section 2 |
-| Max failed attempts before asking the owner | 2 | Yes | Section 5 |
-| CI wait timeout at submission | 20 minutes | Yes | Section 3.1 |
-| Time a waiting run stays alive after a question | 30 minutes | No | Section 6 |
-| Max concurrent runs per Claude account | 1 | No (set on the account) | 01, section 3.9 |
+This table lists the settings of this document and the settings added in lots 0 and 1. The daemon's timeouts (05, section 5) and the global scheduler settings (07, section 8) follow the same rules and are shown on the same screen. Settings of a Claude account (schedule windows, daily budget, behaviour at window end, maximum concurrent runs) are set on the account (02, section 9.1), not here.
 
-Changing a limit applies to future actions only; runs and plans already in progress keep the values they started with.
+| Setting | Default | Allowed range | Override per project | Used in |
+|---|---|---|---|---|
+| Max tickets per plan | 15 | 1 to 100 | Yes | 01, section 3.3 |
+| Max tickets an agent may create per run (outside a plan) | 3 | 0 to 20 | Yes | Section 2 |
+| Max failed attempts before asking the owner | 2 | 1 to 10 | Yes | Section 5 |
+| CI wait timeout at submission | 20 minutes | 1 to 240 minutes | Yes | Section 3.1 |
+| Waiting run lifetime: how long a waiting run stays alive after a question | 30 minutes | 1 to 1,440 minutes | No | Section 6; 05, section 5 |
+| Session lifetime | 30 days | 1 to 365 days | No | 09, section 5 (ADR 0015) |
+| Failed logins before a delay | 5 | 1 to 100 | No | 09, section 5 (ADR 0015) |
+| First login delay (doubles with each further failure) | 10 seconds | 1 to 3,600 seconds | No | 09, section 5 (ADR 0015) |
+| Longest login delay | 900 seconds (15 minutes) | 1 to 86,400 seconds (24 hours) | No | 09, section 5 (ADR 0015) |
+| Failed login memory | 60 minutes | 1 to 10,080 minutes (7 days) | No | 09, section 5 (ADR 0015) |
+| GitHub token expiry warning | 14 days | 1 to 90 days | No | 02, section 4 |
+| GitHub request timeout | 15 seconds | 1 to 300 seconds | No | 09, section 4 |
+| GitHub clock tolerance | 120 seconds (2 minutes) | 0 to 3,600 seconds | No | 08, section 3.1 |
+| Project setup polling interval | 2 seconds | 1 to 60 seconds | No | 02, section 1 |
+| Longest ticket title | 200 characters | 1 to 1,000 characters | No | 01, section 3.4 |
+| Longest ticket description | 20,000 characters | 1 to 100,000 characters | No | 01, section 3.4 |
+| Max acceptance criteria per ticket | 20 | 1 to 100 | No | 01, section 3.4 |
+| Longest acceptance criterion | 500 characters | 1 to 5,000 characters | No | 01, section 3.4 |
+| Longest comment | 20,000 characters | 1 to 100,000 characters | No | 01, section 3.5 |
+
+The maximum concurrent runs of a Claude account (1 by default) is set on the account (01, section 3.9).
+
+The first login delay is never above the longest login delay: a change or a **Reset to default** that would make it so is refused, naming both settings (the same rule as the quota fallback delays, 07 section 8). The ranges keep the owner from locking themselves out: a login wait is at most 24 hours, and `orchestrator reset-password` (09, section 7.4) also lifts an active wait. Settings added in lots 0 and 1 are global only (owner's decision, lot 1 step G). A setting used only from a later version is shown with "Used from version ..." and can be set before it has any effect.
+
+Changing a limit applies to future actions only; runs and plans already in progress keep the values they started with, and an open login session keeps its expiry date. Every change of a global value or a project override, and every **Reset to default**, writes an event.

@@ -34,6 +34,26 @@ describe('refusalText', () => {
     );
   });
 
+  it('names both settings and their values when two limits would be out of order', () => {
+    const error = new ApiRequestError(
+      409,
+      'setting_order_invalid',
+      'x',
+      undefined,
+      undefined,
+      undefined,
+      {
+        smaller: 'quotaFallbackDelayMinutes',
+        larger: 'quotaFallbackMaxDelayMinutes',
+        smallerValue: 300,
+        largerValue: 240,
+      },
+    );
+    expect(refusalText(error)).toBe(
+      'Quota wait when the reset time is unknown (300 minutes) cannot be more than Longest quota wait (240 minutes). Change the other one first, or choose another value.',
+    );
+  });
+
   it('shows a dependency cycle with the ticket numbers', () => {
     const error = new ApiRequestError(409, 'dependency_cycle', 'x', undefined, undefined, [
       'WEB-3',

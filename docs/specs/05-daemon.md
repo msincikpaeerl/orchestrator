@@ -224,14 +224,13 @@ The exact signal is not known yet (section 9). Until it is, the daemon also trea
 
 ## 5. Timeouts
 
-| Setting | Default | Effect |
-|---|---|---|
-| Maximum run duration | 90 minutes of working time | Run stopped with reason `timeout`. Time spent waiting for CI, the owner or the quota does not count. |
-| Idle timeout | 10 minutes | A session that is neither working nor waiting for something receives a nudge, then is stopped. |
-| Waiting run lifetime | 30 minutes | See 04, section 6. |
-| Maximum nudges per run | 2 | See section 4.8. |
+| Setting | Default | Allowed range | Effect |
+|---|---|---|---|
+| Maximum run duration | 90 minutes of working time | 1 to 1,440 minutes | Run stopped with reason `timeout`. Time spent waiting for CI, the owner or the quota does not count. |
+| Idle timeout | 10 minutes | 1 to 120 minutes | A session that is neither working nor waiting for something receives a nudge, then is stopped. |
+| Maximum nudges per run | 2 | 0 to 10 | See section 4.8. |
 
-All are configurable, following the rules in 04, section 8.
+All are configurable, following the rules in 04, section 8. The waiting run lifetime is also a daemon timeout; it is defined once, in 04, section 8.
 
 ## 6. Disconnection and reconciliation
 

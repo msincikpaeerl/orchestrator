@@ -33,6 +33,24 @@ describe('GET /api/ui-settings', () => {
     expect(response.json()).toEqual({ projectSetupPollSeconds: 2 });
   });
 
+  it('follows a change made in Settings > Limits', async () => {
+    t = await startTestApp();
+    const cookie = await createOwner(t.app);
+    const changed = await t.app.inject({
+      method: 'PUT',
+      url: '/api/settings/projectSetupPollSeconds',
+      headers: { cookie },
+      payload: { value: 5 },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
+    const response = await t.app.inject({
+      method: 'GET',
+      url: '/api/ui-settings',
+      headers: { cookie },
+    });
+    expect(response.json()).toEqual({ projectSetupPollSeconds: 5 });
+  });
+
   it('needs a session', async () => {
     t = await startTestApp();
     const response = await t.app.inject({ method: 'GET', url: '/api/ui-settings' });

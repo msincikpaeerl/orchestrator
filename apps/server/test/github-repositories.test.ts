@@ -15,7 +15,6 @@ import {
 } from '../src/github/repositories.js';
 import { renderSkeleton, type SkeletonFile } from '../src/github/skeleton.js';
 import { deriveSecretKey } from '../src/secrets.js';
-import { defaultSettings } from '../src/settings.js';
 import {
   fullAccount,
   repositoryFiles,
@@ -58,7 +57,6 @@ async function connect(overrides: Partial<FakeAccount> = {}) {
     db: t.db,
     key: deriveSecretKey(TEST_SECRET_KEY),
     apiUrl: github.url,
-    settings: defaultSettings,
   });
   if (!stored) throw new Error('no token');
   client = stored;

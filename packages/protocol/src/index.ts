@@ -81,3 +81,18 @@ export {
 } from './api/tickets.js';
 export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
 export { UiSettingsResponse } from './api/ui-settings.js';
+export {
+  GlobalSetting,
+  GlobalSettingsResponse,
+  PROJECT_SETTINGS,
+  ProjectSetting,
+  ProjectSettingsResponse,
+  SETTINGS,
+  SETTING_ORDER,
+  SetSettingRequest,
+  SettingGroup,
+  SettingName,
+  settingValue,
+  type SettingDefinition,
+  type SettingValues,
+} from './api/settings.js';

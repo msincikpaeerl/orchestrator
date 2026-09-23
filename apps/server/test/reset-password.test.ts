@@ -84,6 +84,35 @@ describe('orchestrator reset-password', () => {
     expect((await login(NEW_PASSWORD)).statusCode).toBe(200);
   });
 
+  it('lifts the longest wait the throttling settings allow', async () => {
+    const cookie = await createOwner(t.app);
+    // The strictest values the allowed ranges accept (04, section 8).
+    for (const [name, value] of [
+      ['loginFailuresBeforeDelay', 1],
+      // The longest delay first: the first delay can never be above it.
+      ['loginMaxDelaySeconds', 86_400],
+      ['loginFirstDelaySeconds', 3600],
+      ['loginFailureMemoryMinutes', 10_080],
+    ] as const) {
+      const changed = await t.app.inject({
+        method: 'PUT',
+        url: `/api/settings/${name}`,
+        headers: { cookie },
+        payload: { value },
+      });
+      expect(changed.statusCode, changed.body).toBe(200);
+    }
+    await login('wrong password!');
+    const locked = await login(OWNER.password);
+    expect(locked.statusCode).toBe(429);
+    expect(locked.headers['retry-after']).toBe('3600');
+
+    const result = await orchestrator(['reset-password'], `${NEW_PASSWORD}\n${NEW_PASSWORD}\n`);
+
+    expect(result.code).toBe(0);
+    expect((await login(NEW_PASSWORD)).statusCode).toBe(200);
+  });
+
   it('refuses a password shorter than 12 characters and keeps the old one', async () => {
     await createOwner(t.app);
     const result = await orchestrator(['reset-password'], 'elevenchars\nelevenchars\n');

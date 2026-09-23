@@ -28,7 +28,7 @@ The Orchestrator has no email address, so a forgotten password cannot be reset f
 
 ## Too many failed logins
 
-After several wrong passwords, the login page asks you to wait before trying again, and the wait grows with each new mistake (up to 15 minutes). This protects your account against someone guessing the password. Resetting the password with the command above also lifts the wait.
+After several wrong passwords, the login page asks you to wait before trying again, and the wait grows with each new mistake (up to 15 minutes; these values are settings, see [Settings](settings.md#settings-reference)). This protects your account against someone guessing the password. Resetting the password with the command above also lifts the wait.
 
 ## If something goes wrong
 

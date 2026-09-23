@@ -263,3 +263,22 @@ export const comments = pgTable(
     index('comments_ticket_id').on(table.ticketId, table.createdAt),
   ],
 );
+
+/**
+ * Values of settings changed by the owner (04, section 8): a global value when `project_id` is
+ * null, otherwise a project's override. A setting without a row uses its default, described with
+ * its allowed range in `SETTINGS` of `@orchestrator/protocol`; **Reset to default** deletes the row.
+ */
+export const settingValues = pgTable(
+  'setting_values',
+  {
+    name: text('name').notNull(),
+    projectId: uuid('project_id').references(() => projects.id),
+    value: integer('value').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One global value per setting: the null project counts as one value.
+    unique('setting_values_name_project').on(table.name, table.projectId).nullsNotDistinct(),
+  ],
+);

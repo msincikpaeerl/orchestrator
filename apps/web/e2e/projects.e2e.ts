@@ -211,9 +211,11 @@ test('archiving and unarchiving a project, with confirmation', async ({ page }) 
   // Settings: name and description, then archive.
   await page.getByRole('link', { name: 'Project settings' }).click();
   await expect(page.getByRole('heading', { name: 'Project settings', level: 1 })).toBeVisible();
-  await page.getByLabel('Description').fill('The shop we closed.');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Saved.')).toBeVisible();
+  // The page has other Save buttons, one per limit: this one saves the name and description.
+  const form = page.getByRole('form', { name: 'Name and description' });
+  await form.getByLabel('Description').fill('The shop we closed.');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form.getByText('Saved.')).toBeVisible();
   await expectFitsScreen(page);
 
   await page.getByRole('button', { name: 'Archive' }).click();

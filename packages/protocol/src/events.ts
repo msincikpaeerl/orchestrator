@@ -10,6 +10,7 @@ export const EventEntityType = z.enum([
   'github_connection',
   'project',
   'ticket',
+  'setting',
 ]);
 export type EventEntityType = z.infer<typeof EventEntityType>;
 
@@ -40,5 +41,7 @@ export const EventType = z.enum([
   'ticket.dependency_added',
   'ticket.dependency_removed',
   'ticket.commented',
+  'setting.changed',
+  'setting.reset',
 ]);
 export type EventType = z.infer<typeof EventType>;

@@ -29,14 +29,12 @@ import {
 } from '../github/repositories.js';
 import { HttpError, parseInput } from '../http.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
-import type { Settings } from '../settings.js';
 import { projectEntity, toProject, type ProjectRow } from './model.js';
 import { ProjectSetupRunner } from './setup.js';
 
 export interface ProjectRoutesOptions {
   db: Database;
   key: SecretKey;
-  settings: Settings;
   apiUrl: string;
   now?: () => Date;
 }

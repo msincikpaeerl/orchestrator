@@ -97,7 +97,7 @@ It can happen on the first attempt: someone created a repository with this name 
 What you can do:
 
 - Open the repository on GitHub. Delete it only if both are true: it contains only GitHub's README (or only the starting files listed in [Create a project with a new repository](#create-a-project-with-a-new-repository)), and you did not create it yourself. **Deleting a repository on GitHub is permanent**: it cannot be undone. If in doubt, do not delete it. To delete it: the repository's **Settings**, then **Delete this repository** at the bottom. Then click **Try again**: the Orchestrator creates it again.
-- If the Orchestrator created it and the clock difference is the cause, raise the **GitHub clock tolerance** setting (**Settings > Limits**), then click **Try again**. Check also that the computer running the Orchestrator server sets its clock automatically.
+- If the Orchestrator created it and the clock difference is the cause, raise the **GitHub clock tolerance** setting (**Settings > Limits**, see [Change a limit](settings.md#change-a-limit)), then click **Try again**. Check also that the computer running the Orchestrator server sets its clock automatically.
 - If you want to keep that repository and use it, archive this project and create a new project that links the repository instead (with another key, since keys are never reused). A linked repository gets no starting files and no branch protection. So for a repository the Orchestrator created (only a README or the starting files), deleting it and trying again is the better choice.
 
 ## Change a project's name or description

@@ -31,6 +31,7 @@ import {
   stepLabel,
 } from '../projects/text';
 import { projectsChanged, useProject } from '../queries';
+import { ProjectOverrides } from '../settings/project-overrides';
 import { Board } from '../tickets/board';
 import { ProjectBadges } from './projects';
 
@@ -315,7 +316,7 @@ function SettingsForm({ project }: { project: ProjectData }) {
   }
 
   return (
-    <form className="space-y-4" onSubmit={submit} noValidate>
+    <form className="space-y-4" onSubmit={submit} aria-label="Name and description" noValidate>
       <TextField
         label="Name"
         value={name}
@@ -354,7 +355,10 @@ function SettingsForm({ project }: { project: ProjectData }) {
   );
 }
 
-/** Project settings (02, section 6.5): name and description; archive and unarchive. */
+/**
+ * Project settings (02, section 6.5): name and description, overrides of settings, archive and
+ * unarchive.
+ */
 export function ProjectSettingsPage() {
   return (
     <WithProject>
@@ -382,6 +386,7 @@ export function ProjectSettingsPage() {
                 <dd>{kindLabel[project.kind]}</dd>
               </dl>
             </Card>
+            <ProjectOverrides project={project} />
             {project.status === 'active' && (
               <Card className="space-y-3">
                 <h2 className="text-lg font-semibold text-slate-900">Archive the project</h2>
