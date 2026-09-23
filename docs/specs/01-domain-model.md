@@ -50,16 +50,24 @@ erDiagram
 | Field | Description |
 |---|---|
 | id | Identifier. |
-| name, slug | Display name and URL-safe name. The slug is used for the repository name. |
+| key | 2 to 6 uppercase letters (`WEB`), chosen by the owner at creation. Unique among all projects, archived ones included. Immutable. Prefix of ticket numbers (`WEB-12`). |
+| name, slug | Display name and URL-safe name. For a new repository, the slug is the repository name. |
 | description | Short description. |
-| kind | `web_app`, `website`, `android_app`. Drives the template and the default agents involved. |
-| repo_owner, repo_name | GitHub repository. Created automatically from the project template. |
-| default_branch | Usually `main`. |
+| kind | `web_app`, `website`, `android_app`. Drives the default stack and the default agents involved. |
+| repo_owner, repo_name | GitHub repository, on the owner's personal account. |
+| repo_origin | `created`: the Orchestrator created the repository and applied the skeleton (08, section 3.1). `linked`: an existing repository of the owner's account; the skeleton is not applied (08, section 3.4). |
+| repo_private | Whether the repository is private. A new repository is private unless the owner chooses public at creation. For a linked repository, as read from GitHub. |
+| default_branch | Read from GitHub; usually `main`. |
+| setup_status | `in_progress`, `ready`, `failed` (with the reason). Only `ready` projects accept tickets. See 08, section 3. |
+| branch_protection | `applied`, `not_available` (GitHub plan does not allow it), `failed`, `not_applied` (linked repositories). |
+| missing_harness | For a linked repository: the harness elements not found at the last check (08, section 3.4), with the check time. |
 | status | `active`, `archived`. |
 | required_capabilities | Capabilities every run on this project needs (for example `android-sdk` for Android projects). |
 | created_at, updated_at | Timestamps. |
 
 A project is always linked to a repository. A project cannot exist without one.
+
+Projects are never deleted. Archiving a project hides it from the default lists and stops new work on it (no new tickets, no runs); its tickets and history are kept. Archiving never changes the GitHub repository.
 
 ### 3.2 Request
 
@@ -93,7 +101,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 
 | Field | Description |
 |---|---|
-| id, number | Identifier and human number per project (`WEB-12`). |
+| id, number | Identifier and human number per project: the project key and a sequence starting at 1 (`WEB-12`). Numbers are never reused. |
 | project_id | Owning project. |
 | plan_id | Plan that created it, if any. |
 | parent_id | Optional parent ticket, used to group work (epic). A parent ticket has no run of its own. |
@@ -117,6 +125,8 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 - **Blocked**: at least one ticket in `blocked_by` is not `done`.
 - **Eligible**: status is `todo`, an assignee is set, not blocked, and a compatible machine exists.
 
+`blocked_by` only names tickets of the same project, never the ticket itself, and never forms a cycle. Tickets are never deleted: a ticket created by mistake is cancelled (04, section 2).
+
 ### 3.5 Comment
 
 | Field | Description |
@@ -125,11 +135,13 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | target | Ticket or request. |
 | author | `owner`, `system`, or an agent profile (with the run id). |
 | kind | `note`, `question`, `answer`, `review`, `status_change`. |
-| body | Markdown text. |
+| body | Markdown text (see below). |
 | answers_comment_id | For `answer`, the question it answers. |
 | created_at | Timestamp. |
 
 A `question` from an agent puts the ticket in `waiting_human` until the owner posts an `answer`.
+
+**Markdown from the owner or agents** (ticket descriptions and acceptance criteria, comments, requests, plans) is untrusted: it is rendered sanitized. Raw HTML is not rendered, links can only use `http`, `https` and `mailto`, and nothing in it can run a script (09, section 5).
 
 ### 3.6 Agent profile
 
@@ -220,9 +232,10 @@ There is no email address. A forgotten password is reset with a command run insi
 
 ## 5. Invariants
 
-1. A project always has a repository.
+1. A project always has a repository, on the owner's personal GitHub account.
 2. A ticket has at most one active run (`queued` to `waiting_human`) at any time.
 3. A Claude account never has more active runs than `max_concurrent_runs`.
 4. A run's machine must have every capability required by the project and by the agent profile.
 5. Ticket status changes happen only through the transitions defined in 04.
 6. Every change of state is recorded as an event.
+7. Projects and tickets are never deleted: projects are archived, tickets cancelled.

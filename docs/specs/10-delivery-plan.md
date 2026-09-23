@@ -37,8 +37,8 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 **Scope**
 
-- Projects: create (with GitHub repository and skeleton, 08, section 3.1), list, archive, settings.
-- Tickets: create, edit, board, detail, comments, dependencies, manual status changes restricted to owner transitions.
+- Projects: create with a new GitHub repository and the skeleton (08, section 3.1) or by linking an existing repository (08, section 3.4), list, archive, settings.
+- Tickets: create, edit, board, detail, comments, dependencies, manual status changes restricted to owner transitions (cancel, mark as done manually, reopen; 04, section 2).
 - Settings screen with limits (04, section 8).
 - Event log.
 

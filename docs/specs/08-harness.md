@@ -66,15 +66,17 @@ The most important file for agents. Rules:
 
 ## 3. Project creation
 
+A project is created either with a **new repository**, which receives the skeleton (section 3.1), or by **linking an existing repository** of the owner's personal account, which is left as it is (section 3.4). The owner creates projects from the Projects screen (02, section 6.2); from lot 5, approving a plan that creates a project does the same.
+
 ### 3.1 Skeleton
 
-When the owner approves a plan that creates a project, the server:
+For a new repository, the server:
 
-1. creates the private GitHub repository;
-2. commits the **common skeleton**: the layout above with placeholder content, ADR 0001 and the ADR template, a minimal CI that runs a documentation link check;
-3. applies branch protection on the default branch when the GitHub plan allows it (pull request required, CI required). When it is not available (for example private repositories on a free plan), the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches.
+1. creates the GitHub repository on the owner's personal account: **private** by default, public when the owner chose it;
+2. commits the **common skeleton** as the repository's **only initial commit** on the default branch: the layout above with placeholder content (project name and description filled in), ADR 0001 and the ADR template, a minimal CI that runs a documentation link check;
+3. applies branch protection on the default branch (pull request required, CI required) when the GitHub plan allows it. GitHub Free does not offer it on private repositories: GitHub answers that the account must be upgraded or the repository made public. The project then shows "Branch protection: not available on your GitHub plan", which is information, not an error: the Orchestrator's own flow still prevents agents from pushing to the default branch, since only the daemon pushes and only ticket branches. Any other refusal is a failure of the setup.
 
-The skeleton contains no stack-specific code. Stack choices are made by the Architect and recorded, not hidden in a template.
+Each step is recorded as an event. If a step fails, the project's setup is `failed` with the reason and the owner can try again; trying again resumes from the failed step and never replaces a commit it did not make.
 
 ### 3.2 Bootstrap ticket
 
@@ -101,6 +103,20 @@ Defaults keep projects consistent so agents and the owner do not relearn everyth
 | `android_app` | Kotlin, Jetpack Compose, Gradle Kotlin DSL | JUnit unit tests, Compose UI tests written but not run in v1 (no emulator) |
 
 Common to all: ESLint and Prettier for TypeScript, ktlint for Kotlin, a lock file committed, Node.js LTS.
+
+### 3.4 Linked repositories
+
+A linked repository is never changed by the project creation: no skeleton, no branch protection, no settings. The Orchestrator reads its default branch and looks for these harness elements:
+
+| Element | Found when |
+|---|---|
+| CLAUDE.md | `CLAUDE.md` exists at the root. |
+| User documentation | `docs/user/` contains at least one file. |
+| Developer documentation | `docs/dev/` contains at least one file. |
+| ADRs | `docs/adr/` contains at least one file. |
+| CI workflow | `.github/workflows/` contains at least one `.yml` or `.yaml` file. |
+
+The project page lists the missing ones, with a link to the Help page explaining each, and **Check again**. An empty repository has all of them missing. Missing elements do not prevent creating tickets.
 
 ## 4. Continuous integration
 
