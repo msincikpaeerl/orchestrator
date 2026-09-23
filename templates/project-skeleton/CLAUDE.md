@@ -21,7 +21,7 @@ New project: the stack is not chosen yet. The first ticket records it in ADRs an
 
 | Task | Command |
 |---|---|
-| Documentation link check | `npx remark . --frail --quiet --no-stdout` (after the CI's install step, see `.github/workflows/ci.yml`) |
+| Documentation link check (the same command as CI) | `npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout` |
 
 ## Repository map
 
@@ -40,8 +40,17 @@ docs/adr/    Architecture Decision Records
 - CI: every job in `.github/workflows/ci.yml` is listed in the `needs` of the final `ci` job. Never rename or remove `ci`: branch protection requires it, and no pull request can be merged without it.
 - All text in English.
 
+## Tests
+
+- New behaviour needs tests.
+- A bug fix starts with a regression test that fails before the fix.
+- Never weaken or delete a test to make CI pass: fix the code, or explain in the pull request why the test was wrong.
+
+## Before finishing
+
+Every command in the Commands table must pass.
+
 ## Never
 
 - Never commit secrets. Environment variables are listed in `.env.example` once the project has any.
-- Never weaken or delete a test to make CI pass.
-- Never push to the default branch: work on the ticket branch.
+- Never commit to the default branch: work on the ticket branch.

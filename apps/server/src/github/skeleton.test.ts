@@ -22,6 +22,7 @@ describe('renderSkeleton', () => {
     expect(files.map((file) => file.path)).toEqual([
       '.github/pull_request_template.md',
       '.github/workflows/ci.yml',
+      '.gitignore',
       '.remarkrc.json',
       'CHANGELOG.md',
       'CLAUDE.md',
@@ -61,16 +62,34 @@ describe('renderSkeleton', () => {
     );
   });
 
-  it("pins the CI's link checker to the versions and Node.js used by this repository", async () => {
-    const ci = await readFile(join(skeletonDirectory(), '.github/workflows/ci.yml'), 'utf8');
+  it('pins the link checker of CI and CLAUDE.md to the versions and Node.js of this repository', async () => {
     const rootPackage = JSON.parse(
       await readFile(join(repositoryRoot, 'package.json'), 'utf8'),
     ) as { devDependencies: Record<string, string> };
     const nodeVersion = (await readFile(join(repositoryRoot, '.nvmrc'), 'utf8')).trim();
-    for (const name of ['remark-cli', 'remark-validate-links']) {
-      expect(ci).toContain(`${name}@${rootPackage.devDependencies[name] ?? 'missing'}`);
+    for (const file of ['.github/workflows/ci.yml', 'CLAUDE.md']) {
+      const content = await readFile(join(skeletonDirectory(), file), 'utf8');
+      for (const name of ['remark-cli', 'remark-validate-links']) {
+        expect(content, file).toContain(
+          `${name}@${rootPackage.devDependencies[name] ?? 'missing'}`,
+        );
+      }
     }
+    const ci = await readFile(join(skeletonDirectory(), '.github/workflows/ci.yml'), 'utf8');
     expect(ci).toContain(`node-version: ${nodeVersion}`);
+  });
+
+  it("documents in CLAUDE.md the CI's link check command, word for word", async () => {
+    const claude = await readFile(join(skeletonDirectory(), 'CLAUDE.md'), 'utf8');
+    const ci = await readFile(join(skeletonDirectory(), '.github/workflows/ci.yml'), 'utf8');
+    const command = /^\| Documentation link check[^|]*\| `([^`]+)` \|$/m.exec(claude)?.[1];
+    expect(command).toBeDefined();
+    expect(ci).toContain(`run: ${command ?? 'missing'}\n`);
+    // It installs into node_modules, which Git must ignore.
+    expect(command).toContain('npm install --no-save --no-package-lock');
+    expect(await readFile(join(skeletonDirectory(), '.gitignore'), 'utf8')).toMatch(
+      /^node_modules\/$/m,
+    );
   });
 });
 

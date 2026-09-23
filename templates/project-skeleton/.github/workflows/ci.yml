@@ -19,12 +19,10 @@ jobs:
         with:
           node-version: 24.21.0
 
-      # Pinned versions, installed without a package.json. The check runs offline.
-      - name: Install the link checker
-        run: npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0
-
+      # Same command as in CLAUDE.md: pinned versions, installed without a package.json into
+      # node_modules (ignored by Git). The check itself runs offline.
       - name: Check documentation links
-        run: npx remark . --frail --quiet --no-stdout
+        run: npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout
 
   # Branch protection requires this job only, by its name: never rename or remove it. List every
   # other job in its needs; it fails when any of them failed, was cancelled or was skipped.
