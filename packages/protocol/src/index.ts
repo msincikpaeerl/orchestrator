@@ -54,3 +54,4 @@ export {
   slugify,
 } from './api/projects.js';
 export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export { UiSettingsResponse } from './api/ui-settings.js';

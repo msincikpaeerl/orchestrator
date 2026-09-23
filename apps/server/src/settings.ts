@@ -14,6 +14,11 @@ export interface Settings {
    * repository was created by an interrupted setup attempt (08, section 3.1).
    */
   githubClockToleranceSeconds: number;
+  /**
+   * How often the project page asks for news while a repository setup runs (02, section 6.2).
+   * Sent to the UI by `GET /api/ui-settings`.
+   */
+  projectSetupPollSeconds: number;
   /** Failed logins allowed for one username or one client address before a delay applies. */
   loginFailuresBeforeDelay: number;
   /** Delay after the first failure over the limit; it doubles with each further failure. */
@@ -29,6 +34,7 @@ export const defaultSettings: Readonly<Settings> = {
   githubTokenExpiryWarningDays: 14,
   githubRequestTimeoutSeconds: 15,
   githubClockToleranceSeconds: 120,
+  projectSetupPollSeconds: 2,
   loginFailuresBeforeDelay: 5,
   loginFirstDelaySeconds: 10,
   loginMaxDelaySeconds: 15 * 60,
