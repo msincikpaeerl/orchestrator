@@ -2,6 +2,7 @@ import { schema } from '@orchestrator/db';
 import {
   ApiError,
   AvailabilityResponse,
+  GitHubStatusResponse,
   LinkableRepositoriesResponse,
   NeedsYouResponse,
   Project,
@@ -316,6 +317,58 @@ describe('creating a project with a new repository', () => {
     const failed = await settled('SHOP');
     expect(failed.branchProtection).toBe('failed');
     expect(failed.setup).toMatchObject({ status: 'failed', step: 'branch_protection' });
+  });
+
+  it('fails the setup when the token cannot apply branch protection, until tried again', async () => {
+    let refuse = true;
+    github.override = (request) =>
+      refuse && request.method === 'POST' && request.path.endsWith('/rulesets')
+        ? {
+            status: 403,
+            body: { message: 'Resource not accessible by personal access token' },
+            headers: { 'x-accepted-github-permissions': 'administration=write' },
+          }
+        : undefined;
+    await create({
+      ...newRepository,
+      repository: { origin: 'created', name: 'online-shop', private: false },
+    });
+    const failed = await settled('SHOP');
+    expect(failed.branchProtection).toBe('failed');
+    expect(failed.setup).toMatchObject({ status: 'failed', step: 'branch_protection' });
+    expect(failed.setup.failure).toBe(
+      'Could not protect the default branch: the GitHub token is missing a permission (administration=write)',
+    );
+
+    // Recorded as in lot 0 (ADR 0022), and both problems are in "Needs you".
+    const status = GitHubStatusResponse.parse((await call('GET', '/api/github')).json());
+    expect(status.connected && status.problems).toEqual([
+      {
+        type: 'permission_refused',
+        permissions: ['administration=write'],
+        request: 'POST /repos/octo-owner/online-shop/rulesets',
+        at: expect.any(String) as string,
+      },
+    ]);
+    expect(await needsYou()).toMatchObject([
+      { type: 'project_setup_failed', project: { key: 'SHOP' }, step: 'branch_protection' },
+    ]);
+    expect(await events('project.ready')).toEqual([]);
+
+    refuse = false;
+    github.requests.length = 0;
+    const retried = await call('POST', '/api/projects/SHOP/setup/retry');
+    expect(retried.statusCode, retried.body).toBe(202);
+    expect(Project.parse(retried.json()).setup.step).toBe('branch_protection');
+    const ready = await settled('SHOP');
+    expect(ready).toMatchObject({ setup: { status: 'ready' }, branchProtection: 'applied' });
+    expect(repository('online-shop').rulesets).toHaveLength(1);
+    // Resumed from the failed step: no repository created and no commit made again.
+    expect(writes().map((request) => `${request.method} ${request.path}`)).toEqual([
+      'POST /repos/octo-owner/online-shop/rulesets',
+    ]);
+    expect(await needsYou()).toEqual([]);
+    expect(await events('project.ready')).toHaveLength(1);
   });
 });
 
