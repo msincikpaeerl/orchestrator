@@ -14,11 +14,11 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lot 0 of `docs/specs/10-delivery-plan.md` is done (version 0.1.0, `docs/dev/lot-0-plan.md`). Lot 1 has no plan yet: wait for the owner's instructions. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lot 0 of `docs/specs/10-delivery-plan.md` is done (version 0.1.0, `docs/dev/lot-0-plan.md`). Lot 1 is planned in `docs/dev/lot-1-plan.md`: implement only its next unchecked step, following `docs/dev/working-rules.md`. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
-1. The ticket or task you were given.
+1. The ticket or task you were given, and `docs/dev/working-rules.md`.
 2. The spec sections it refers to, in `docs/specs/` (start with `README.md` there).
 3. The ADRs in `docs/adr/` related to the area you touch.
 
@@ -95,8 +95,8 @@ docker/          Dockerfile and compose files
 
 - Conventional Commits: `feat(scheduler): resume paused runs first`. Reference the ticket number when there is one.
 - Small commits with one purpose each.
-- Work on a branch (`lot0/<step letter>-<short-name>` during lot 0) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
-- At the end of every step, give the owner a pull request title and description ready to paste, in one code block (`docs/dev/lot-0-plan.md`, working rule 10).
+- Work on a branch (`lot<N>/<step letter>-<short-name>` during lot N) created from `main`. Never commit to `main` directly and never push: the owner pushes, opens the pull request and merges.
+- At the end of every step, give the owner a pull request title and description ready to paste, in one code block (`docs/dev/working-rules.md`, rule 11).
 - Never commit secrets. Environment variables are listed in `.env.example`.
 
 ## Never
