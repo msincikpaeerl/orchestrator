@@ -86,6 +86,7 @@ Every plan for a new project starts with a bootstrap ticket assigned to the Arch
 - the project builds, and a sample test runs at each test level used by the project;
 - lint, format check and type check (when applicable) are configured;
 - CI runs all of the above on every pull request, plus the build artefact for Android;
+- the documentation link check is moved into the stack's own tooling (for example a pinned dev dependency and a script), replacing the skeleton's npm install command in CLAUDE.md and CI; both stay identical;
 - CLAUDE.md is complete (commands, folder map, conventions);
 - `docs/dev/setup.md` and `docs/dev/testing.md` are written;
 - `docs/user/getting-started.md` explains how to run the product.
