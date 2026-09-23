@@ -9,13 +9,14 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 | `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, `orchestrator reset-password`, serves the UI |
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you (GitHub problems), Settings > GitHub connection, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
-| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list |
+| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, branch protection and harness element values |
 | `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events` |
+| `templates` | `@orchestrator/templates` | Files the server writes to GitHub, bundled in the image through the server's dependency (ADR 0023). | `project-skeleton/`: the common skeleton of a new repository (08, section 3.1) |
 
 ## Dependencies between packages
 
 ```
-apps/server  ──► packages/protocol, packages/db, apps/web (its built dist/)
+apps/server  ──► packages/protocol, packages/db, apps/web (its built dist/), templates
 apps/daemon  ──► packages/protocol
 apps/web     ──► packages/protocol
 ```
@@ -32,6 +33,8 @@ The daemon's dependency is added with the code that needs it.
 |---|---|
 | `src/auth/` | Owner creation, login with throttling, logout, sessions (ADR 0015). `requireSession` guards every API route except `/api/setup` and login. |
 | `src/github/` | GitHub client, token check by probing (ADR 0022), connection state and "Needs you" problems, routes. Every request made with the saved token must use `storedTokenClient`, which records refusals. |
+| `src/github/repositories.ts` | Repository operations of project creation (ADR 0023): list the owner's repositories, find one by name, create one, apply the skeleton commit, apply the branch protection ruleset (`applied`, `not_available`, `failed`), find missing harness elements. No route uses them yet (lot 1 step C). |
+| `src/github/skeleton.ts` | Reads `templates/project-skeleton` and fills in its placeholders. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
 | `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction. |
 | `src/settings.ts` | Settings with their defaults (04, section 8). Not editable yet. |
