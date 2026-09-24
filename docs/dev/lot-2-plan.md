@@ -4,7 +4,7 @@
 > Scope: "Lot 2 — Machines and manual runs" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 2 is done when** the owner starts a run on a ticket, watches it live, answers a question, and finds the agent's commits on a local branch.
 
-Every session follows the [working rules](working-rules.md). Branches: `lot2/<step letter>-<short-name>`. Steps are done one after the other, in the order below. No session starts a real Claude Code session (rule 10): the daemon is tested with real tmux and a fake `claude` executable, and the real Claude Code is used only by the owner, in step M.
+Every session follows the [working rules](working-rules.md). Branches: `lot2/<step letter>-<short-name>`. Steps are done one after the other, in the order below. No session starts a real Claude Code session (rule 10): the daemon is tested with real tmux and a fake `claude` executable, and the real Claude Code is used only by the owner, in steps H and N.
 
 ## Decisions taken for this lot (2026-09-24)
 
@@ -68,7 +68,7 @@ Confirmed by the owner in step A and written into the specs:
   - Cross-setting rules, refused with a message naming both settings: "Machine offline after" is at least twice the heartbeat interval; the MCP call timeout is below the Claude Code MCP tool timeout, which the daemon writes into `mcp.json`.
   - The reconnection backoff (1 to 60 s) is a daemon constant, with the reason given in 05 section 3.2.
   - Checked in the code: `maxAgentTicketsPerRun`, `waitingRunLifetimeMinutes`, `maxRunDurationMinutes`, `idleTimeoutMinutes`, `maxNudgesPerRun` and `dispatchAckTimeoutSeconds` are already marked "used from 0.3.0" in `packages/protocol/src/api/settings.ts`.
-  - `quotaFallbackDelayMinutes` moves from 0.5.0 to 0.3.0 in step I (its longest-delay partner stays 0.5.0).
+  - `quotaFallbackDelayMinutes` moves from 0.5.0 to 0.3.0 in step J (its longest-delay partner stays 0.5.0).
   - Display constants in `packages/protocol`: log entries per page, progress line length on cards.
 - **Working rules**: rule 10 added (no real Claude Code session; tests use the fake `claude`). Summary and pull request text become rules 11 and 12, and CLAUDE.md's reference is updated.
 - **Small corrections**: Claude Code's native installer needs no Node.js, so Node.js is a daemon prerequisite (05 section 2). The daemon states map to run statuses (05 section 4.7). `ci.status` is lot 3 and `request.get` lot 5 (06 section 4.1).
@@ -100,13 +100,13 @@ Hooks (05 section 4.5):
 
 Usage limits (05 section 4.10, **changes Q2**):
 
-- Documented messages: `You've hit your session limit · resets 3:45pm`, and the same with `weekly limit · resets Mon 12:00am`, `Opus limit` and `Sonnet limit`. The reset is a local wall-clock time, sometimes with a weekday, so parsing it needs the machine's time zone. The status line is the better source.
+- Documented messages: `You've hit your session limit · resets 3:45pm`, and the same with `weekly limit · resets Mon 12:00am`, `Opus limit` and `Sonnet limit`. The reset is a local wall-clock time, sometimes with a weekday, so parsing it needs the machine's time zone.
 - The **status line command** receives JSON with `rate_limits.five_hour` and `rate_limits.seven_day` (`used_percentage`, `resets_at` in Unix seconds, for Pro and Max, after the first API response) and `cost.total_cost_usd`. It is declared in settings like a hook and needs workspace trust like hooks. It runs on events (debounced 300 ms), plus `refreshInterval` if set.
-  - Decision taken here (no owner question needed, as it only adds a documented input): the daemon registers a status line command. `resets_at` gives the reset time, and `cost.total_cost_usd` gives the run's estimated usage, with the transcript's `cost-state` as fallback.
+  - The daemon registers a status line command as a **supplementary** source: `resets_at` gives the reset time, and `cost.total_cost_usd` the run's estimated usage, with the transcript's `cost-state` as fallback. It runs only when the interface refreshes, so detection never depends on it alone (owner's review).
 - Claude Code has its own **automatic continue** after a usage limit (`autoContinueAtUsageLimit`, default `true`, read from `--settings`). Runs set it to `false` so only the Orchestrator resumes work. With it off, Claude Code may show its usage-limit options menu in the terminal. That doesn't matter, because the daemon closes the session on a limit.
 - `Notification` types `quota_auto_resume_*` exist (only with automatic continue, so not used).
-- A `rate_limit` error can also be a server throttle ("Server is temporarily limiting requests"), unrelated to the plan quota. So `rate_limit` alone is only **suspected**. It is **detected** only with a known usage-limit message or a status line window at 100 %.
-- `--scan-limit` only reads `~/.claude/projects`. Step L extends it to `~/.orchestrator/claude-config/projects` and prints whole lines. `--probe-limit` logs every hook and the status line input of one session run while limited, which uses no quota.
+- A `rate_limit` error can also be a server throttle ("Server is temporarily limiting requests"), unrelated to the plan quota. So `rate_limit` alone is only **suspected**. It is **detected** with a known usage-limit message, or a `rate_limit` failure while a status line window shows 100 %.
+- `--scan-limit` only reads `~/.claude/projects`. Step M extends it to `~/.orchestrator/claude-config/projects` and prints whole lines. `--probe-limit` logs every hook and the status line input of one session run while limited, which uses no quota.
 
 Transcript (05 section 4.5): the location `<config>/projects/<path with non-alphanumerics replaced by ->/<session id>.jsonl` is documented. The format is documented as **internal and changing between versions**. The daemon reads it tolerantly and only for the live log.
 
@@ -115,9 +115,9 @@ Permissions and settings (05 sections 4.3 and 4.6, **changes Q14**):
 - `dontAsk` automatically refuses anything that would prompt. File reads outside the working directories prompt, so they are refused.
 - Rules are evaluated deny, then ask, then allow; the first match wins. `Bash(cmd *)` is the documented form, and `Bash(cmd:*)` is equivalent at the end of a pattern. Compound commands must match rule by rule for each subcommand (`&&`, `||`, `;`, `|`, `&`, newlines), and redirections are checked against the file rules.
 - Read and Edit deny rules with `//absolute/path/**` apply to the file tools, to file commands Claude Code recognises in Bash (`cat`, `head`, `tail`, `sed`, `tee`) and to redirect targets. They don't apply to programs that open files indirectly. So the deny rules for `~/.orchestrator/` and the configuration folders go both in the run's `settings.json` and in the `PreToolUse` hook.
-- **Settings precedence**: managed, then command line (`--settings`), local, project, user, with **lists merged across sources** (`permissions.allow`, hooks). The repository's `.claude/settings.json` could therefore widen a run's allowlist or add hooks once the workspace is trusted. Decision written into 05 section 4.3: runs pass `--setting-sources user`. Its consequence: project `CLAUDE.md` and `.claude/rules/` are not loaded either (documented for the SDK's `settingSources`, where `project` is what loads CLAUDE.md). So the common rules tell the agent to read `CLAUDE.md` first (03 section 3, 06 section 6). This is **to confirm by the owner** (see "Open points" below).
+- **Settings precedence**: managed, then command line (`--settings`), local, project, user, with **lists merged across sources** (`permissions.allow`, hooks). The repository's `.claude/settings.json` could therefore widen a run's allowlist or add hooks once the workspace is trusted. Decision written into 05 section 4.3: runs pass `--setting-sources user`. Its consequence: project `CLAUDE.md` and `.claude/rules/` are not loaded either (documented for the SDK's `settingSources`, where `project` is what loads CLAUDE.md). So the common rules tell the agent to read `CLAUDE.md` first (03 section 3, 06 section 6). Confirmed by the owner (see "Owner's answers" below).
 - `--strict-mcp-config` makes Claude Code use only `--mcp-config` servers (the repository's `.mcp.json` is ignored); it's documented since v2.1.246 not to wait for project server approvals.
-- `CLAUDE_CONFIG_DIR` is documented (settings, history, plugins). `DISABLE_AUTOUPDATER=1` exists but is not used (owner's decision on versions).
+- `CLAUDE_CONFIG_DIR` is documented (settings, history, plugins); the permissions page says user settings are `$CLAUDE_CONFIG_DIR/settings.json` when it is set. So with `--setting-sources user` the only settings file a run reads is the daemon's own `~/.orchestrator/claude-config/settings.json`, never the owner's `~/.claude/` (05 section 4.3). Managed settings (`/etc/claude-code/`, and on WSL optionally the Windows policy) always load, whatever the sources; `doctor` reports any. `DISABLE_AUTOUPDATER=1` exists but is not used (owner's decision on versions).
 - Workspace trust: in a repository, trust is keyed on the repository root; in a worktree, on the main checkout's root. This matches ADR 0002.
 
 MCP (06 sections 1 and 3, **confirms Q18**):
@@ -128,17 +128,19 @@ MCP (06 sections 1 and 3, **confirms Q18**):
 
 CLI (05 section 4.3):
 
-- `--append-system-prompt-file` is documented and said to work in interactive mode. **This contradicts ADR 0002** (see "Open points").
+- `--append-system-prompt-file` is documented and said to work in interactive mode. **This contradicts ADR 0002**; the owner chose to keep the text form.
 - `--session-id <uuid>` exists. It could give the daemon the session id before `SessionStart`, but it isn't adopted, since the spike's `SessionStart` path works.
 - `--resume` accepts an id or a transcript path.
 
-WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.conf` (WSL 0.67.6 or later), then `wsl.exe --shutdown`. Microsoft states that **systemd services do not keep a WSL instance alive**. `.wslconfig` `[general] instanceIdleTimeout` (default 15,000 ms, `-1` disables the automatic shutdown of a distribution) keeps it running. The user documentation (step D) gives both, with `loginctl enable-linger` for the user service.
+WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.conf` (WSL 0.67.6 or later), then `wsl.exe --shutdown`. Microsoft states that **systemd services do not keep a WSL instance alive**. `.wslconfig` `[general] instanceIdleTimeout` (default 15,000 ms, `-1` disables the automatic shutdown of a distribution) keeps it running. The user documentation (step D, Add machine help) gives both, with `loginctl enable-linger` for the user service. The daemon cannot read the Windows `.wslconfig`, so `doctor` prints `instanceIdleTimeout` as "check this yourself" with the documentation link.
 
-**Open points for the owner** (the specs carry the recommendation; say if you disagree):
+**Owner's answers on the open points** (review of step A, 2026-09-25):
 
-1. `--setting-sources user` loses Claude Code's automatic loading of `CLAUDE.md`. The alternative is to keep project settings and rely on the `PreToolUse` hook to refuse anything outside the profile's allowlist, which would mean re-implementing Claude Code's rule matching. Recommendation: `--setting-sources user`, with the agent told to read `CLAUDE.md` first. It costs one file read per run.
-2. `--append-system-prompt-file`: keep the validated `--append-system-prompt <text>`. The smoke test in step M checks the file variant.
-3. All documented-only behaviour (`StopFailure`, status line `rate_limits`, `--setting-sources`, `--strict-mcp-config`, settings deny rules on Bash `cat`) is checked by the owner's smoke-test script in step M.
+1. `--setting-sources user`, with the agent reading `CLAUDE.md` itself: accepted. 05 section 4.3 states that the "user" source is the daemon's own `settings.json` in its `CLAUDE_CONFIG_DIR`, written only by the daemon, covered by the deny rules; the owner's `~/.claude` settings never reach a run.
+2. System prompt passed as text: accepted.
+3. The documentation-only behaviour is checked early, by the owner, in step H (right after the permission step G, before any run code depends on it), with `tools/smoke/claude-code-probe.sh`. `StopFailure` and the usage-limit data stay with the capture (`--probe-limit`), since they cannot be triggered on demand. Step N keeps the full allowlist smoke test.
+4. The status line is a supplementary source of the reset time and the usage estimate; detection never depends on it alone (05 section 4.10).
+5. `instanceIdleTimeout=-1` is in the Add machine help page, and `doctor` prints it as "check this yourself" with the documentation link (05 sections 2 and 8).
 
 ## Steps
 
@@ -176,8 +178,8 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
   - the Claude Code version check (below minimum refused, above validated warned).
 - Settings: the three new ones, and the cross-setting rule extended from "never above" to "at least twice" (heartbeat and offline) and "strictly below" (for step G's MCP pair), with messages naming both settings.
 - API with protocol schemas: accounts (create, edit, list), machines (create with enrollment code, list, detail, disable, revoke, edit capabilities).
-- Events for every change (`machine.enrolled`, `machine.online`, `machine.offline`, `machine.revoked`, `account.created`, …), each with a plain-words text in the event log (as in lot 1 step H).
-- "Needs you" API: no account, no machine, machine offline with active work (active work comes in step I), daemon incompatible, Claude Code unsupported.
+- Events for every change (`machine.enrolled`, `machine.online`, `machine.offline`, `machine.revoked`, `account.created`, …), each with a plain-words text in the event log (as in lot 1 step I).
+- "Needs you" API: no account, no machine, machine offline with active work (active work comes in step J), daemon incompatible, Claude Code unsupported.
 - ADR: WebSocket library for the server and the daemon.
 
 **Done when** integration tests with a scripted WebSocket client cover:
@@ -197,11 +199,11 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 - Machines section (02 section 9):
   - accounts: list and form (label, plan, maximum concurrent runs), state;
   - machine list and detail: status, versions (with the "above validated" warning), capabilities editor, `doctor` results, disable, revoke with confirmation;
-  - **Add machine**: the two commands, then `login` and `install-service`, then waits for the connection (without the stream yet, it refreshes on focus and after actions; step K makes it live).
+  - **Add machine**: the two commands, then `login` and `install-service`, then waits for the connection (without the stream yet, it refreshes on focus and after actions; step L makes it live).
 - "Needs you" items from step C.
 - `docs/user/`: a Machines page covering:
   - prerequisites with version checks;
-  - WSL systemd and keeping WSL running;
+  - WSL systemd and keeping WSL running (`instanceIdleTimeout=-1` in the Windows `.wslconfig`, explained on the Add machine help page);
   - installing the daemon;
   - enrolment, `login`, the service;
   - `doctor`;
@@ -218,7 +220,7 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
   - CLI with `enroll`, `start`, `status`, `doctor`, `install-service`, `login` (starts Claude Code with the dedicated `CLAUDE_CONFIG_DIR` for the owner; never started by tests with the real `claude`), `attach`;
   - `~/.orchestrator/config.json` with mode `600` (the home folder is configurable for tests: tests never touch the real home);
   - connection with backoff constants, heartbeat, `hello` with the detected capabilities and the `doctor` results.
-- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, WSL detection with its notes.
+- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, managed Claude Code settings found, WSL detection. What it cannot read (the Windows `.wslconfig` `instanceIdleTimeout`) it prints as "check this yourself" with the documentation link.
 - Packaging: the daemon bundled into one file. The server builds the `.tgz` and serves it at `/downloads/orchestrator-daemon-<version>.tgz`. ADR: daemon packaging and bundler.
 - `docs/dev/architecture.md` updated.
 
@@ -237,7 +239,7 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 
   ADR: testing the daemon with real tmux and a fake `claude`.
 - **Workspace**:
-  - bare clone and fetch with the per-command credential helper (the daemon side of `git.credential`; the token is taken from a test source here, and the server side comes in step I);
+  - bare clone and fetch with the per-command credential helper (the daemon side of `git.credential`; the token is taken from a test source here, and the server side comes in step J);
   - atomic trust entry;
   - worktree on the existing or a new branch, commit author per worktree;
   - run files, `state.json`.
@@ -289,7 +291,28 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - no nudge in any of these cases;
 - the estimated usage read from the status line.
 
-### [ ] H. Agent profiles and assignee
+### [ ] H. Owner check of documented Claude Code behaviour
+
+The lot's security and quota design relies on behaviour read in the documentation but never run (notes above). The owner checks it now, before any run code depends on it (owner's review of step A).
+
+- `tools/smoke/claude-code-probe.sh`, for the owner only (working rule 10). It creates a scratch folder outside the repository (under the owner's temporary folder, printed at the start), with:
+  - a dedicated `CLAUDE_CONFIG_DIR`, logged in the same way as `orchestrator-daemon login`;
+  - a test repository whose `.claude/settings.json` allows a marker command and declares a hook writing a marker file, and whose `.mcp.json` declares a marker MCP server;
+  - a denied folder holding a marker file.
+
+  It starts **one** session with the daemon's argument list and settings generation from step G (`--setting-sources user`, `--strict-mcp-config`, deny rules, status line command, `autoContinueAtUsageLimit: false`), and sends **one** short prompt asking the agent to run the marker command, `cat` the denied file, and call the marker MCP tool.
+- It prints one `PASS` or `FAIL` line per check:
+  1. the repository's allow rule did not apply (the marker command was refused) and its hook did not run (no marker file): `--setting-sources user` ignores the repository's settings;
+  2. the repository's MCP server was not started or offered: `--strict-mcp-config` ignores `.mcp.json`;
+  3. `cat` on the denied folder was refused by a deny rule;
+  4. the status line input contains `rate_limits` (Pro or Max) and `cost` fields;
+  5. `autoContinueAtUsageLimit` is accepted under its documented name: Claude Code reports no invalid or unknown setting for it at startup (debug log).
+- It records the hook payloads, the status line input and the transcript as fixtures under `apps/daemon/test/fixtures/claude-code-<version>/`. They are committed on the step's branch after the owner's run.
+- The script is checked in CI with `bash -n`, and here with a dry run against the fake `claude`.
+
+**Done when** the owner has run the probe once with the real Claude Code, every check prints `PASS`, and the fixtures are committed. If a check fails, the next step starts by adjusting the specs with the owner.
+
+### [ ] I. Agent profiles and assignee
 
 - `agents/`:
   - common rules (06 section 6, including "read `CLAUDE.md` first" and the lot 2 ending with `ticket_submit`);
@@ -298,7 +321,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - Table `agent_profiles` seeded from `agents/` at server start, version increased when a shipped file changed; role permissions of 06 section 5.
 - `tickets.assignee_profile_id`: assignee in the create and edit forms (in `proposed` and `todo`), shown on cards and the ticket page, and an assignee filter on the board (02 section 6.3). Events.
 - `docs/user/`: the Tickets page gains assignee; a short Agents section describing the two profiles.
-- Allowlist smoke-test script `tools/smoke/allowlist-smoke.sh` for the owner (03 section 6): a scripted session per profile, in a scratch repository, reporting what was refused. It also checks the documented-only behaviour listed in the open points. Checked here with `bash -n` and with the fake `claude` only.
+- Allowlist smoke-test script `tools/smoke/allowlist-smoke.sh` for the owner (03 section 6): a scripted session per profile, in a scratch repository, reporting what was refused. Checked here with `bash -n` and with the fake `claude` only.
 
 **Done when**:
 
@@ -307,7 +330,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - Playwright assigns a ticket and filters by assignee on both viewports;
 - the smoke script passes a dry run with the fake `claude`.
 
-### [ ] I. Runs (server) and Run now
+### [ ] J. Runs (server) and Run now
 
 - Migration: table `runs` (01 section 3.7, with `pause_reason`, `branch_head`, `commits`, `estimated_usage`) and `run_log_entries`; `tickets.branch_name`, `attempt_count`.
 - **Run now** (07 section 3, lot 2):
@@ -339,7 +362,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - a suspected limit leaving the account available and resumable at once;
 - log masking and truncation.
 
-### [ ] J. MCP backend and questions
+### [ ] K. MCP backend and questions
 
 - Run tokens (random, scoped to one run, expired at run end; 06 section 2).
 - MCP backend for the lot 2 tools, with permissions by role and every refusal of 06 section 3:
@@ -364,7 +387,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - `ticket.ask` answered live and after the lifetime, and the offline case;
 - an expired run token refused.
 
-### [ ] K. Realtime, live screens and user documentation
+### [ ] L. Realtime, live screens and user documentation
 
 - **SSE**:
   - `GET /api/stream` (authenticated): "changed" messages and log lines;
@@ -391,7 +414,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - a run finishing with the branch and commits shown;
 - a paused run resumed.
 
-### [ ] L. End-to-end daemon test and limit capture tooling
+### [ ] M. End-to-end daemon test and limit capture tooling
 
 - One integration test running the real server, the real daemon, tmux and the fake `claude` through the whole acceptance scenario:
   1. enrol;
@@ -407,12 +430,12 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 
 **Done when** both scenarios pass in `pnpm test`, and the spike script passes `bash -n` and its `--probe-limit` mode passes a dry run with the fake `claude`.
 
-### [ ] M. Lot 2 check by the owner
+### [ ] N. Lot 2 check by the owner
 
 - Version 0.3.0 prepared (CHANGELOG section, version numbers).
 - The owner:
   1. checks the host prerequisites;
-  2. runs the allowlist smoke-test script with the real Claude Code, which also checks the open points of the documentation check;
+  2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
   3. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
