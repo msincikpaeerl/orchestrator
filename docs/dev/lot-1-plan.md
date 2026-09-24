@@ -1,6 +1,6 @@
 # Lot 1 — Implementation plan
 
-> Status: approved by the owner 2026-09-23
+> Status: done 2026-09-24 (version 0.2.0)
 > Scope: "Lot 1 — Projects and tickets" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 1 is done when** the owner can manage a project's tickets entirely from the UI and the repository is created with the skeleton.
 
@@ -156,7 +156,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 *Done 2026-09-24.* Migration `0006_event_project` (`events.project_id`, filled for the events of lots 0 and 1 from the project, ticket or setting override they concern), `apps/server/src/event-log.ts` (`GET /api/events`), payload schema of each event type in `packages/protocol/src/events.ts` (`EventPayloads`), screen `apps/web/src/pages/activity.tsx` with texts in `apps/web/src/activity/`, `docs/user/activity.md`, tests in `apps/server/test/event-log.test.ts` (with `every-event.ts`, which writes every lot 0 and lot 1 event type through the real code), `apps/web/src/activity/text.test.ts` and `apps/web/e2e/activity.e2e.ts`. Owner's decisions written into the specs: a value that only changes how much the screens show at once is a display constant in `packages/protocol`, not a setting (04, section 8): 50 events a page, quotes cut at 120 characters; each shortened quote links to the page with its full text (02, section 7). Also written: the event's project (01, section 3.10) and the event log's behaviour (02, section 7). Choices within the step: the migration test copies the events written by the current code into a database at `0005_settings` and checks the migration gives each the project the current code gives it; the cursor carries microseconds (as stored), since a JavaScript date would skip or repeat events of the same millisecond; the API returns only the payload fields of its type's schema, with GitHub and Anthropic credentials masked (also in quoted comments); the ticket filter needs a project and is the ticket's own events; dates are days in the owner's time zone, both included; three indexes: `events_project_time` (`project_id`, `created_at`, `id`) for the project filter and last activity, `events_entity_time` (`entity_type`, `entity_id`, `created_at`, `id`) for the ticket and kind filters, `events_time` (`created_at`, `id`) for the unfiltered log and the type and date filters; the project list's last activity links to the project's event log; `StatusChangedPayload` of the server is now the protocol's schema.
 
-### [ ] I. Lot 1 check by the owner
+### [x] I. Lot 1 check by the owner
 
 - Version 0.2.0 prepared (CHANGELOG section, version numbers).
 - The owner follows `docs/user/` alone on a clean checkout with the real GitHub:
@@ -169,6 +169,8 @@ Compared with 02, section 3.1: every permission used is already required, with t
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 1 is closed as version 0.2.0.
 
-*Results (in progress).* Version 0.2.0 prepared 2026-09-24. Gaps found by the owner and fixed:
+*Done 2026-09-24.* Version 0.2.0 prepared. The owner ran the scenario from `docs/user/` alone with the real GitHub and confirmed it on 2026-09-24: everything worked as documented except the gap below, now fixed. Lot 1 is closed as version 0.2.0.
+
+Gaps found by the owner and fixed:
 
 1. A blocked ticket could be marked as done manually without any warning. Still allowed (04, section 2), but the confirmation now names each ticket it waits for that is not done, with its state, and the button becomes **Mark as done anyway**; the API is unchanged. Written into 02 section 6.4 and 04 section 2, Help "Tickets" updated; e2e test in `apps/web/e2e/tickets.e2e.ts` (both viewports), failing before the fix.
