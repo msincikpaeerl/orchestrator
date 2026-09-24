@@ -47,7 +47,7 @@ An agent can read anything in its own project. It can only change **its own tick
 - Tickets are referenced by their human number (`WEB-12`).
 - Tool descriptions are written for the agent: what the tool does, when to use it, when not to, and what happens next. They are part of the harness, versioned with the application, and reviewed like code.
 - Every successful write returns the new state of the object, so the agent does not need to read it again.
-- Errors return a code, a message written for the agent, and details when useful:
+- Errors return a code, a message written for the agent, and details when useful. A refusal tied to a setting (`LIMIT_REACHED`, a text too long, and similar) states the setting's current value in its message, for example "limit of 3 tickets per run reached"; the tests of the step that implements each refusal check it (owner's review, lot 2 step B):
 
 | Code | Meaning |
 |---|---|
@@ -77,7 +77,7 @@ An agent can read anything in its own project. It can only change **its own tick
 
 | Tool | Description |
 |---|---|
-| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Rate-limited by the progress update interval (a setting, one call per minute by default, 04 section 8); a call sooner is refused with `LIMIT_REACHED`. |
+| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Never refused for frequency: the server accepts every call, keeps the latest line and publishes it at most once per progress update interval (a setting, one minute by default, 04 section 8). The description tells the agent that calling more often is harmless but useless (owner's review, lot 2 step B). |
 | `ticket.comment` | Adds a `note` comment: findings, decisions, anything the owner or the next agent should know. |
 | `ticket.ask` | Asks the owner a question. The ticket moves to `waiting_human`. The agent should end its turn after calling it; the answer arrives as the next message. |
 | `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |

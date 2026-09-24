@@ -175,6 +175,12 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 - for `ticket_submit`, the daemon sends the worktree facts (clean, branch head, commits ahead) collected when it forwards the call, and the server runs every check;
 - `ack` answers the server's commands and the daemon's reports (`run.events` per batch). Unacknowledged reports are kept in the run files and resent in order after reconnection, and duplicates are handled idempotently by message id; that behaviour is tested in the steps that implement it (E, F, J).
 
+Owner's review of the tool descriptions (same day), written into 04 section 8 and 06 sections 3 and 4:
+
+- `ticket_progress` is never refused for frequency: the server keeps the latest line and publishes it at most once per "Progress update interval";
+- the `ticket_submit`, `ticket_create` and `ticket_give_up` descriptions say what to do instead (report every criterion, paths relative to the worktree root, never push or switch branches, `ticket_ask` or `ticket_give_up` rather than submitting an unmet criterion, search before creating, never give up over a refused command or an unanswered question);
+- every refusal tied to a setting states the setting's current value in its message; the steps implementing refusals (C, J, K) test it.
+
 ### [ ] C. Claude accounts, machines and the daemon gateway (server)
 
 - Migration: tables `claude_accounts` (label, plan, `max_concurrent_runs`, `state`, `limited_until`) and `machines` (01 section 3.8: name, account, OS, capabilities detected and edited, versions, status, last heartbeat, token hash, `doctor` results).
@@ -375,7 +381,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 
 - Run tokens (random, scoped to one run, expired at run end; 06 section 2).
 - MCP backend for the lot 2 tools, with permissions by role and every refusal of 06 section 3:
-  - `ticket.progress`, with the "Progress update interval" setting;
+  - `ticket.progress`, never refused for frequency: the latest line is kept and published at most once per "Progress update interval";
   - `ticket.comment`, `ticket.give_up`;
   - `ticket.create` (`proposed`, per-run limit, input limits, archived or not-ready project);
   - the reduced `ticket.submit` (04 section 3.1): the daemon's clean-worktree and commits check, then the server's criteria check, `in_review`;
