@@ -28,7 +28,22 @@ export {
   githubTokenCreationUrl,
   type RequiredGitHubPermission,
 } from './api/github.js';
-export { EventActor, EventEntityType, EventType } from './events.js';
+export {
+  EventActor,
+  EventEntityType,
+  EventPayloads,
+  EventType,
+  type EventPayload,
+} from './events.js';
+export {
+  EVENT_LOG_PAGE_SIZE,
+  EVENT_QUOTE_MAX_LENGTH,
+  EventCursor,
+  EventListQuery,
+  EventListResponse,
+  EventLogEntry,
+  shorten,
+} from './api/events.js';
 export {
   Availability,
   AvailabilityQuery,
