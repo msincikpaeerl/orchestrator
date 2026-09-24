@@ -37,7 +37,7 @@ A single monorepo with pnpm workspaces.
 apps/
   server/      Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration
   web/         React UI (built and served by the server)
-  daemon/      Daemon and its MCP relay (published as an npm package)
+  daemon/      Daemon and its MCP relay (an npm package served by the server, 05 section 2)
 packages/
   protocol/    Shared schemas: daemon messages, MCP tool inputs and outputs, API types
   db/          Database schema and migrations
@@ -70,7 +70,8 @@ docker/        Dockerfile and compose files
 | Component | Responsibility |
 |---|---|
 | **API** | REST endpoints used by the UI. All inputs validated by schema. |
-| **Realtime** | SSE stream pushing ticket changes, run logs, questions and quota state to the UI. |
+| **Realtime** | SSE stream pushing ticket changes, run logs, questions and quota state to the UI: one stream per logged-in browser, carrying "changed" messages (kind of entity, id, project) and log lines; the UI reloads what changed (02, section 1). |
+| **Downloads** | Serves the daemon package of the server's own version (`/downloads/orchestrator-daemon-<version>.tgz`, 05 section 2). |
 | **Daemon gateway** | WebSocket endpoint for daemons: authentication, heartbeats, message routing, reconciliation (05, section 6). |
 | **MCP backend** | Executes MCP tool calls relayed by daemons: permission checks, transitions, DoD checks (06). |
 | **Scheduler** | Section 07. |
@@ -96,7 +97,7 @@ The server is a single process. Components are modules inside it, not separate s
 ## 6. Versioning and compatibility
 
 - The server, UI and daemon share one version number, released together.
-- The daemon protocol has its own version, sent in `hello`. The server accepts the current and the previous protocol version and marks older daemons incompatible, with an update instruction in the UI.
+- The daemon protocol has its own version, sent in `hello`; lot 2 introduces version 1, also returned by `/version`. The server accepts the current and the previous protocol version and marks older daemons incompatible, with an update instruction in the UI.
 - Supported Claude Code versions are declared by the daemon (05, section 2). Unsupported versions make the machine unusable with a clear message.
 
 ## 7. Deployment

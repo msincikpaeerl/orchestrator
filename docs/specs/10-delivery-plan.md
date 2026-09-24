@@ -52,10 +52,13 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 - Claude accounts and machines screens; enrollment (05, section 3).
 - Daemon: connection, heartbeat, `login` (dedicated Claude configuration), workspace trust per repository, `doctor`, `status`, `attach`, systemd service.
-- Run execution (05, section 4) for purpose `implement`, started manually with **Run now**; the run is cancelled if the daemon does not acknowledge it within the dispatch acknowledgement timeout (07, section 8).
+- Run execution (05, section 4) for purpose `implement`, started manually with **Run now**; the run is cancelled if the daemon does not acknowledge it within the dispatch acknowledgement timeout (07, section 8). **Stop run** by the owner.
+- A reduced `ticket.submit`: the report is stored and the ticket goes to `in_review`, meaning "work finished, the owner checks it", with no push, pull request, CI or Quality (04, sections 1 and 3.1).
+- Usage limits: detection in one daemon module, runs paused for a detected or suspected limit, account `limited` only for a detected one, **Resume** by the owner (05 section 4.10, 07 section 5.2). The real signal is captured by the owner if the limit happens before the lot check; otherwise the capture moves to lot 4.
 - Permission enforcement through hooks.
-- MCP relay and tools: reading tools, `ticket.progress`, `ticket.comment`, `ticket.ask`, `ticket.give_up`, `ticket.create` (limited per run, 04 section 8).
-- Live logs and questions in the UI; "Needs you" with questions.
+- MCP relay and tools: reading tools (except `ci.status`, lot 3, and `request.get`, lot 5), `ticket.progress`, `ticket.comment`, `ticket.ask`, `ticket.give_up`, `ticket.create` (limited per run, 04 section 8; the ticket is `proposed` until the owner accepts or rejects it).
+- Live logs and questions in the UI through the Server-Sent Events stream; "Needs you" with questions, tickets proposed by agents, finished work to check, paused runs, missing account or machine.
+- Ticket assignee, branch (on the machine) and commits, attempt count, runs on the ticket page; Activity > Live runs and History.
 - Default profiles for Architect and Web Developer, with their allowlist smoke tests.
 
 **Done when** the owner starts a run on a ticket, watches it live, answers a question, and finds the agent's commits on a local branch.
@@ -77,7 +80,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 **Scope**
 
 - Scheduling loop, priority order, machine selection (07, sections 2 to 4).
-- Quota detection, `paused_quota`, account `limited` state, resume (07, section 5.2).
+- Automatic resume of paused runs and the doubling fallback delay (07, section 5.2); detection, `paused_quota` and `limited` exist since lot 2. The usage-limit signal capture, if lot 2 could not do it.
 - Schedule windows, daily budget, manual pause.
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).

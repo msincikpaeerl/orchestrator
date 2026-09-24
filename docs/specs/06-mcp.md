@@ -26,6 +26,7 @@ sequenceDiagram
 - It is a thin relay. **All validation happens on the server**: permissions, state transitions, Definition of Done, limits.
 - Some calls also trigger daemon actions (for example `ticket.submit` makes the daemon push the branch first, see 05, section 4.9).
 - Nothing is exposed on the network by the daemon; the server is reached through the daemon's existing connection.
+- The daemon waits for the server's answer at most the MCP call timeout, then answers `UNAVAILABLE`. It writes Claude Code's own tool timeout for this server into `mcp.json` (the Claude Code MCP tool timeout), which is always longer (04, section 8).
 
 ## 2. Identity and scope
 
@@ -40,7 +41,7 @@ An agent can read anything in its own project. It can only change **its own tick
 
 ## 3. Conventions
 
-- Tool names use `<object>.<verb>`.
+- Tool names use `<object>.<verb>` in the specifications and screens. On the wire the MCP server names them `<object>_<verb>` (`ticket_create`), because Claude Code and the Claude API accept only letters, digits, `_` and `-` in tool names; the agent sees them as `mcp__orchestrator__ticket_create`, and allowlists use that name (owner's decision, lot 2 step A).
 - Inputs and outputs are JSON objects with documented schemas. Texts are Markdown.
 - Tickets are referenced by their human number (`WEB-12`).
 - Tool descriptions are written for the agent: what the tool does, when to use it, when not to, and what happens next. They are part of the harness, versioned with the application, and reviewed like code.
@@ -67,18 +68,18 @@ An agent can read anything in its own project. It can only change **its own tick
 | `ticket.get` | One ticket with description, acceptance criteria, status, dependencies, DoD report and pull request link. Defaults to the run's ticket. |
 | `ticket.list` | Tickets of the project, filtered by status, type, assignee or text. Returns summaries. |
 | `ticket.comments` | Comments of a ticket, oldest first, including questions and answers. |
-| `request.get` | The request being planned, with its comments (planning runs). |
+| `request.get` | The request being planned, with its comments (planning runs). *(Lot 5.)* |
 | `agent.list` | Available agent profiles with their role and description, so tickets can be assigned. |
-| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). |
+| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). *(Lot 3.)* |
 
 ### 4.2 Working on the run's ticket
 
 | Tool | Description |
 |---|---|
-| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Rate-limited to one call per minute. |
+| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Rate-limited by the progress update interval (a setting, one call per minute by default, 04 section 8); a call sooner is refused with `LIMIT_REACHED`. |
 | `ticket.comment` | Adds a `note` comment: findings, decisions, anything the owner or the next agent should know. |
 | `ticket.ask` | Asks the owner a question. The ticket moves to `waiting_human`. The agent should end its turn after calling it; the answer arrives as the next message. |
-| `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |
+| `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |
 | `ticket.give_up` | Declares that the ticket cannot be completed, with the reason and what was tried. The run ends as failed and the retry policy applies (04, section 5). |
 
 `ticket.submit` input:
@@ -99,7 +100,7 @@ An agent can read anything in its own project. It can only change **its own tick
 
 | Tool | Description |
 |---|---|
-| `ticket.create` | Creates a ticket in `todo`, outside any plan. Used when an agent finds work that is out of its ticket's scope (a bug, missing documentation). Limited per run (04, section 8) and flagged "created by agent". |
+| `ticket.create` | Creates a ticket in `proposed`, outside any plan, that the owner accepts or rejects (04, section 2). Used when an agent finds work that is out of its ticket's scope (a bug, missing documentation). Input: type, title, description, acceptance criteria, priority, optional `blocked_by` (tickets of the same project) and optional assignee (a key from `agent.list`); the same length and count limits as the owner's form. Limited per run (04, section 8, `LIMIT_REACHED` beyond it), flagged "created by agent" with the profile and the run. Refused with `INVALID_TRANSITION` when the project is archived or not `ready`. |
 | `ticket.update` | Changes title, description, acceptance criteria, type, priority, assignee or dependencies of a ticket that is `proposed` or `todo`. |
 
 ### 4.4 Planning
@@ -155,7 +156,7 @@ The server builds the first message of each run. It always states:
 - that the MCP tools are the only way to communicate with the owner and the system;
 - that a run must end with exactly one of `ticket.submit`, `ticket.ask` (then wait), or `ticket.give_up` (or `plan.propose` / review tools for planning and review runs);
 - that pushing to GitHub is done by the system, and the agent only commits;
-- where to find the project conventions (CLAUDE.md, docs, ADRs);
+- where to find the project conventions (CLAUDE.md, docs, ADRs), and that the agent reads `CLAUDE.md` first: Claude Code does not load it on its own in a run (05, section 4.3);
 - that when a tool or command is refused, the agent must not look for a workaround: it uses `ticket.ask` to explain what it needs and why, or `ticket.give_up` if the ticket cannot be done without it.
 
 The template for each purpose is versioned with the application and documented in [03 — Agents](03-agents.md).

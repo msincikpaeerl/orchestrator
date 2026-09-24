@@ -93,7 +93,7 @@ The owner and the Project Manager can exchange messages on a request before a pl
 | owner_feedback | Text given by the owner when rejecting. |
 | decided_at | Timestamp of approval or rejection. |
 
-Tickets proposed by a plan exist in the `proposed` state. Approving the plan creates the project (if any) and moves its tickets to `todo`. Rejecting it with feedback sends the request back to the Project Manager, who produces a new plan; the old one becomes `superseded`.
+Tickets proposed by a plan exist in the `proposed` state. Tickets an agent creates with `ticket.create` outside a plan are also `proposed`, with no plan: the owner accepts or rejects each one (04, section 2; owner's decision, lot 2 step A). Approving the plan creates the project (if any) and moves its tickets to `todo`. Rejecting it with feedback sends the request back to the Project Manager, who produces a new plan; the old one becomes `superseded`.
 
 Limit: a plan contains at most 15 tickets by default (configurable, see 04 section 8). Larger work is split into several plans.
 
@@ -103,21 +103,21 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 |---|---|
 | id, number | Identifier and human number per project: the project key and a sequence starting at 1 (`WEB-12`). Numbers are never reused. |
 | project_id | Owning project. |
-| plan_id | Plan that created it, if any. |
+| plan_id | Plan that created it, if any. Empty for a ticket created by the owner or by an agent with `ticket.create`. |
 | parent_id | Optional parent ticket, used to group work (epic). A parent ticket has no run of its own. |
 | type | `feature`, `bug`, `chore`, `docs`, `spike`. See 04 for DoD per type. |
 | title | Short title. |
 | description | What must be done and why. |
 | acceptance_criteria | Ordered list of verifiable statements. |
-| assignee_profile_id | Agent profile expected to do the work. |
+| assignee_profile_id | Agent profile expected to do the work. Optional; set by the owner or by the agent that created the ticket. Any existing profile can be assigned until the assignment rules of 03, section 4 arrive (lot 6). |
 | status | See 04. |
 | priority | `low`, `normal`, `high`. |
 | blocked_by | List of tickets that must be `done` before this one can start. |
-| branch_name | Set at first run: `t/<number>-<slug>`. |
+| branch_name | Set at first run: `t/<number>-<slug>`. Until pushing exists (lot 3), the branch lives only in the machine's bare clone; the daemon reports its head and the commits ahead of the base branch (hash and subject) at the end of each run, and the ticket page shows them with the machine's name. |
 | pr_number | Pull request on GitHub, once opened. |
-| attempt_count | Number of failed runs, used by the retry policy. |
+| attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline` and a run cancelled because the machine did not acknowledge it are never counted (owner's decision, lot 2 step A). |
 | dod_report | Latest Definition of Done report submitted by the agent (see 04). |
-| created_by | `owner` or the agent profile that created it. |
+| created_by | `owner`, or the agent profile and the run that created it (shown as "created by agent"). |
 | created_at, updated_at | Timestamps. |
 
 **Derived states** (computed, not stored):
@@ -150,13 +150,13 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | id, key | Identifier and stable key (`pm`, `architect`, `web_dev`, `android_dev`, `quality`, `writer`, or custom). |
 | name, description | Display information. |
 | role | `planner`, `builder`, `reviewer`, `writer`. Drives the default MCP permissions. |
-| instructions | Role instructions injected into Claude Code at the start of a run. |
+| instructions | Role instructions injected into Claude Code at the start of a run. Default profiles are shipped as files in `agents/` (03, section 6). |
 | model | Claude model to use. Default: Sonnet. |
 | allowed_tools | Claude Code tool allowlist applied to the run. |
 | mcp_permissions | Set of MCP tools this agent may call (see 06). |
 | required_capabilities | Capabilities needed on the machine. |
 | is_default | True for the six built-in profiles. Defaults can be edited and reset. |
-| version | Incremented on each change. Each run records the version it used. |
+| version | Incremented on each change. Each run records the version it used. Until profiles can be edited (lot 6), the version of a default profile goes up when the server starts with a changed shipped file. |
 
 ### 3.7 Run
 
@@ -169,13 +169,16 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | purpose | `implement`, `review`, `plan`, `document`, `fix_review`. |
 | machine_id | Machine executing it. |
 | account_id | Claude account whose quota it consumes. |
-| status | `queued`, `dispatched`, `starting`, `running`, `waiting_human`, `paused_quota`, `succeeded`, `failed`, `cancelled`. |
+| status | `queued`, `dispatched`, `starting`, `running`, `waiting_human`, `paused_quota`, `succeeded`, `failed`, `cancelled`. How the daemon's states map to these is in 05, section 4.7. |
+| pause_reason | For `paused_quota`: `usage_limit` (a limit detected with certainty, the account becomes `limited`) or `suspected_usage_limit` (an API error the daemon cannot identify; the account is not changed and the run can be resumed at once). See 05, section 4.10. |
 | tmux_session | Name of the tmux session on the machine. |
 | claude_session_id | Claude Code session, used to resume after a pause. |
 | worktree_path | Git worktree used by the run. |
 | started_at, ended_at | Timestamps. |
 | outcome | Summary written by the agent at the end. |
-| failure_reason | `quota`, `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `cancelled`. |
+| branch_head, commits | Reported by the daemon at the end of the run: the ticket branch's head and the commits ahead of the base branch (hash, subject). |
+| estimated_usage | Equivalent cost of the run in US dollars, as estimated by Claude Code (05, section 4.5). Informational. |
+| failure_reason | `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `cancelled`. A usage limit is never a failure (`paused_quota`). `cancelled` covers a run stopped by the owner, a cancelled ticket and a dispatch not acknowledged in time; like `machine_offline`, it never counts as a failed attempt. |
 
 A run in `paused_quota` keeps its session and worktree. It resumes on the same machine when the account becomes available again.
 
@@ -186,8 +189,8 @@ A run in `paused_quota` keeps its session and worktree. It resumes on the same m
 | id, name | Identifier and display name. |
 | os | `linux` or `wsl`. |
 | account_id | Claude account the machine's Claude Code is logged into. |
-| capabilities | Declared tags (`node`, `android-sdk`, `docker`, …). |
-| daemon_version, claude_code_version | Reported at connection. |
+| capabilities | Tags (`node`, `android-sdk`, `docker`, …). The daemon reports those it detects (`git`, `node`, `docker`); the owner can add or remove tags. |
+| daemon_version, claude_code_version | Reported at connection. A Claude Code version below the supported minimum makes the machine unusable; a version above the highest validated one is accepted with a warning (05, section 2). |
 | status | `online`, `offline`, `disabled`. |
 | last_heartbeat_at | Timestamp. |
 | enrollment_token_hash | Hash of the token used by the daemon. Revocable. |
@@ -200,7 +203,7 @@ A run in `paused_quota` keeps its session and worktree. It resumes on the same m
 | plan | `pro`, `max_5x`, `max_20x`. Informational in v1. |
 | max_concurrent_runs | Default 1. |
 | schedule | Time windows during which runs may start (for example weekdays 00:00–08:00). Empty means always. |
-| state | `available`, `paused_manual`, `limited`. |
+| state | `available`, `paused_manual`, `limited`. Only a usage limit detected with certainty makes an account `limited`, never a suspected one (05, section 4.10). `paused_manual` comes with lot 4. |
 | limited_until | When `limited`, the expected reset time, if known. |
 
 ### 3.10 Event
@@ -228,7 +231,7 @@ There is no email address. A forgotten password is reset with a command run insi
 | Code, tests, ADRs, project documentation | The project's GitHub repository. |
 | Run transcripts | On the machine; streamed to the web application and kept there in summarised form. |
 | Claude credentials | On the machine only. Never sent to the web application. |
-| GitHub token | Web application only. Machines receive short-lived, repository-scoped credentials per run (see 05). |
+| GitHub token | Web application. For one Git command (fetch, and from lot 3 push), the daemon receives it, keeps it in memory only for that command and passes it through a credential helper given on that command's line; it is never written to disk, to a Git configuration or to a remote URL, and never reaches the agent (05, section 7). A fine-grained token cannot be limited to one repository per run. |
 
 ## 5. Invariants
 

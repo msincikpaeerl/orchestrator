@@ -128,18 +128,18 @@ The text given to Claude Code at the start of a run has three layers, from most 
 | 2. Role instructions | Agent profile | Sections 2.1 to 2.6, written as direct instructions. |
 | 3. Run context | Built by the server | The ticket (or request), its comments, previous review points, the purpose of the run. |
 
-Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first message of the session. Project conventions are not copied into the prompt: Claude Code reads the repository's CLAUDE.md itself.
+Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first message of the session. Project conventions are not copied into the prompt. Runs exclude the repository's own Claude Code settings (05, section 4.3), which also stops Claude Code from loading the repository's CLAUDE.md on its own, so the common rules tell the agent to read `CLAUDE.md` (and the files it points to) before anything else.
 
 ### 3.1 Run purposes and their first message
 
 | Purpose | Agent | First message asks the agent to |
 |---|---|---|
 | `plan` | pm | Read the request and the project, ask questions if needed, then propose a plan. |
-| `implement` | builder or writer | Implement the ticket, then submit. |
+| `implement` | builder or writer | Implement the ticket, then submit. In lot 2, submitting records the report and ends the run, with no push or pull request (04, section 3.1). |
 | `fix_review` | same builder | Address each review point listed, then submit again. |
 | `review` | quality | Review the submitted work, then approve or request changes. |
 
-The templates for these messages are stored with the application and versioned like the common rules.
+The templates for these messages are stored with the application and versioned like the common rules. Lot 2 ships the common rules, the `implement` template and the Architect and Web Developer profiles; each later lot adds the profiles and templates it uses.
 
 ## 4. Assignment rules
 
@@ -168,5 +168,6 @@ Agent instructions are part of the harness:
 - they live in the Orchestrator's repository, under `agents/`, one file per default profile;
 - changes go through a pull request like code;
 - each default profile has a small set of reference tickets used to check its behaviour after a change (a manual evaluation checklist in v1);
-- each default profile's tool allowlist has an automated **smoke test**: a scripted session asks the agent to run the commands its role needs (install, build, test, lint, commit) and checks that none is refused and that forbidden ones are. Allowlist rules are strict (05, section 4.6), so this test runs whenever an allowlist changes;
+- each default profile's tool allowlist has an automated **smoke test**: a scripted session asks the agent to run the commands its role needs (install, build, test, lint, commit) and checks that none is refused and that forbidden ones are. Allowlist rules are strict (05, section 4.6), so this test runs whenever an allowlist changes. It needs the real Claude Code, so it is a script the owner runs (working rule 10), not part of CI; CI checks the generated settings and the `PreToolUse` rules with the fake `claude`;
+- allowlist rules use Claude Code's documented syntax: `Bash(pnpm test *)` (the older `Bash(pnpm test:*)` is equivalent), MCP tools as `mcp__orchestrator__<tool name>` (06, section 3);
 - every allowlist includes `ToolSearch`, which Claude Code needs to load MCP tools.

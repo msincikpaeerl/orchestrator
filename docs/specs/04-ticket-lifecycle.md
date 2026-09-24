@@ -9,11 +9,11 @@ This document defines the ticket states, who may move a ticket between them, and
 
 | State | Meaning |
 |---|---|
-| `proposed` | Part of a plan not yet approved. Not visible on the board by default. |
+| `proposed` | Part of a plan not yet approved, or created by an agent with `ticket.create` and not yet accepted by the owner. Plan tickets are not visible on the board by default; tickets proposed by agents are (02, section 6.3). |
 | `todo` | Approved and waiting for work. May be blocked or not assigned yet. |
 | `in_progress` | A run is working on it. |
 | `waiting_human` | An agent asked the owner a question. Work is paused until it is answered. |
-| `in_review` | A pull request is open, CI is green, and the Quality agent is reviewing it. |
+| `in_review` | A pull request is open, CI is green, and the Quality agent is reviewing it. **In lot 2**, before pull requests and Quality exist, it means "work finished, the owner checks it": the agent submitted its report, no Quality run exists, and the ticket waits for the owner to mark it as done manually, cancel it, or leave it (owner's decision, lot 2 step A). |
 | `awaiting_merge` | Review approved. The owner must merge the pull request on GitHub. |
 | `done` | Pull request merged, or marked as done manually by the owner. Terminal. |
 | `cancelled` | Abandoned. Terminal, except that the owner can reopen it. |
@@ -22,15 +22,16 @@ Blocked and eligible are derived conditions of `todo` (see 01, section 3.4). The
 
 ```mermaid
 stateDiagram-v2
-    [*] --> proposed: PM creates in a plan
-    [*] --> todo: owner or agent creates directly
-    proposed --> todo: owner approves plan
-    proposed --> cancelled: plan rejected or superseded
-    todo --> in_progress: scheduler starts a run
+    [*] --> proposed: PM creates in a plan, or agent creates with ticket.create
+    [*] --> todo: owner creates
+    proposed --> todo: owner approves plan, or accepts an agent's ticket
+    proposed --> cancelled: plan rejected or superseded, or owner rejects an agent's ticket
+    todo --> in_progress: scheduler or Run now starts a run
     in_progress --> waiting_human: agent asks a question
     waiting_human --> in_progress: owner answers
     in_progress --> in_review: agent submits, DoD passes, CI green
-    in_progress --> todo: run fails (retry)
+    in_progress --> todo: run fails (retry), or owner stops the run
+    waiting_human --> todo: owner stops the run, or its machine is lost
     in_review --> awaiting_merge: Quality approves
     in_review --> todo: Quality requests changes
     awaiting_merge --> done: PR merged on GitHub
@@ -55,14 +56,19 @@ stateDiagram-v2
 | From → To | Performed by | Guard |
 |---|---|---|
 | (new) → `proposed` | Project Manager | Created inside a plan. |
-| (new) → `todo` | Owner; any agent with `ticket.create` permission | Agent-created tickets outside a plan are limited per run (see section 8) and are flagged "created by agent" for the owner. |
+| (new) → `proposed` | Any agent with `ticket.create` permission | Outside a plan. Limited per run (see section 8), flagged "created by agent", listed in "Needs you". The project is `ready` and not archived. |
+| (new) → `todo` | Owner | — |
 | `proposed` → `todo` | System, when the owner approves the plan | — |
+| `proposed` → `todo` | Owner, with **Accept** | The ticket was created by an agent (no plan). |
 | `proposed` → `cancelled` | System, when the plan is rejected or superseded | — |
-| `todo` → `in_progress` | Scheduler only | Ticket is eligible; a run is created. |
+| `proposed` → `cancelled` | Owner, with **Reject** | The ticket was created by an agent (no plan). An optional comment is posted as a `status_change` comment. |
+| `todo` → `in_progress` | Scheduler, or the owner with **Run now** | Ticket is eligible (01, section 3.4) and its account can start a run (07, section 2, step 1, without the schedule windows); a run is created. Until the scheduler exists (lot 4), Run now is the only way a run starts (owner's decision, lot 2 step A). |
 | `in_progress` → `waiting_human` | Assigned agent, by posting a `question` | Question body is not empty. |
-| `waiting_human` → `in_progress` | System, when the owner posts an `answer` | The paused run resumes; if it no longer exists, the ticket returns to `todo` and a new run resumes the work. |
-| `in_progress` → `in_review` | Assigned agent, by calling `ticket.submit` | Submission checks pass (section 3.1). |
-| `in_progress` → `todo` | System | Run failed; retry policy applies (section 5). |
+| `waiting_human` → `in_progress` | System, when the owner posts an `answer` | The waiting run continues: its live session receives the answer, or, after the waiting run lifetime, the same run is resumed on the same machine at once (section 6). |
+| `in_progress` or `waiting_human` → `todo` | Owner, with **Stop run** | The run is stopped and `cancelled`; the attempt is not counted; the branch is kept; a `status_change` comment records it. |
+| `waiting_human` → `todo` | System | The waiting run's machine is offline when the answer arrives, or the owner stops a run whose machine is offline: the run fails with `machine_offline`, which is not counted as an attempt. |
+| `in_progress` → `in_review` | Assigned agent, by calling `ticket.submit` | Submission checks pass (section 3.1; the reduced checks of lot 2 until lot 3). |
+| `in_progress` → `todo` | System | Run failed; retry policy applies (section 5). A dispatch the machine did not acknowledge in time (07, section 8) returns the ticket to `todo` too, without counting an attempt. |
 | `in_review` → `awaiting_merge` | Quality agent, by approving | Review checks pass (section 3.2). |
 | `in_review` → `todo` | Quality agent, by requesting changes | At least one `review` comment explaining what to change. Next run has purpose `fix_review`. |
 | `awaiting_merge` → `done` | System | GitHub reports the pull request merged into the default branch. |
@@ -101,6 +107,8 @@ The system then checks mechanically:
 
 If CI is still running, the ticket stays `in_progress` and the run waits, up to a configurable timeout. If a check fails, the call is rejected with the list of failures and the agent continues working in the same run.
 
+**Lot 2 (reduced submission).** Until pushing, pull requests and CI exist (lot 3), `ticket.submit` takes the same input, but only checks that every acceptance criterion is reported `met`, that the worktree has no uncommitted changes, and that the ticket branch has commits ahead of the base branch. When they pass, the report is stored, the run ends `succeeded` and the ticket moves to `in_review` with the lot 2 meaning (section 1); nothing is pushed. When they fail, the call is rejected with the failures, as above (owner's decision, lot 2 step A).
+
 ### 3.2 Review checks (`in_review` → `awaiting_merge`)
 
 The Quality agent reviews the pull request and the DoD report. It verifies that:
@@ -133,19 +141,21 @@ It either approves, posting a `review` comment summarising the verdict, or reque
 - Pull request title: `<number>: <title>`. The description is built from the DoD report summary and links back to the ticket.
 - If the default branch moved and the branch conflicts, the next run starts by rebasing. Unresolvable conflicts are raised as a `question`.
 - Merge is done by the owner on GitHub. The web application detects merges by polling GitHub.
+- Agent commits are authored as "<profile name> (Orchestrator)" with the owner's GitHub noreply address (`<id>+<login>@users.noreply.github.com`, from the id and login stored with the token, 02 section 3.2), so pushes pass GitHub's "block pushes that expose my email" option and GitHub links the commits to the owner's account. The daemon sets them per worktree.
 
 ## 5. Failures and retries
 
 A run fails when it crashes, times out, the machine goes offline, or the agent declares it cannot finish.
 
-- A run stopped because the Claude account reached its usage limit is **not** a failure. The run goes to `paused_quota` and resumes later (see 07).
+- A run stopped because the Claude account reached its usage limit, or because the daemon suspects it did, is **not** a failure. The run goes to `paused_quota` and resumes later (see 07 and 05, section 4.10).
+- A run stopped by the owner, a run failed with `machine_offline` and a dispatch not acknowledged in time are not failed attempts: the ticket returns to `todo` without changing `attempt_count` (owner's decision, lot 2 step A).
 - Otherwise, the ticket returns to `todo`, `attempt_count` is incremented and the failure reason is posted as a `system` comment.
 - After **2 failed attempts** (configurable), the ticket is not scheduled again. The system posts a `question` asking the owner how to proceed and moves the ticket to `waiting_human`.
 
 ## 6. Questions to the owner
 
 - Agents ask questions with the `ticket.ask` MCP tool. The question is posted as a `question` comment and the ticket moves to `waiting_human`.
-- The run stays alive for the waiting run lifetime (a setting, default 30 minutes, section 8) so an answer can resume it without losing context. After that, the tmux session is closed but the Claude session id is kept; the answer then starts a run that resumes the session.
+- The run stays alive for the waiting run lifetime (a setting, default 30 minutes, section 8) so an answer can resume it without losing context. After that, the tmux session is closed but the run stays `waiting_human`, with its worktree and Claude session id kept on its machine; the answer then resumes **the same run** on that machine at once (`run.resume`, 05 section 3.3), without waiting for the scheduler. If the machine is offline, the run fails with `machine_offline` and the ticket returns to `todo` (owner's decision, lot 2 step A).
 - A waiting run does not count as active for the Claude account, so other tickets can run meanwhile.
 - The UI shows pending questions prominently. They are the owner's main task list.
 
@@ -159,7 +169,7 @@ A run fails when it crashes, times out, the machine goes offline, or the agent d
 
 Every limit and timeout of the Orchestrator is a setting, editable from the UI (Settings > Limits, 02 section 10) without touching the code. A setting is a value that changes what the Orchestrator does or accepts (refuse, wait, stop, retry). A value that only changes how much the screens show at once (for example the events per page of the event log, or the length of a quote in it) is not a setting but a named display constant in `packages/protocol` (owner's decision, lot 1 step H). Each setting is a whole number with a default and an allowed range; a value outside the range is refused. Some can also be overridden per project (project settings, 02 section 6.5). The value used is the project's override, then the global value, then the default. The user documentation lists every setting with its effect.
 
-This table lists the settings of this document and the settings added in lots 0 and 1. The daemon's timeouts (05, section 5) and the global scheduler settings (07, section 8) follow the same rules and are shown on the same screen. Settings of a Claude account (schedule windows, daily budget, behaviour at window end, maximum concurrent runs) are set on the account (02, section 9.1), not here.
+This table lists the settings of this document and the settings added in lots 0, 1 and 2. The daemon's timeouts (05, section 5) and the global scheduler settings (07, section 8) follow the same rules and are shown on the same screen. Settings of a Claude account (schedule windows, daily budget, behaviour at window end, maximum concurrent runs) are set on the account (02, section 9.1), not here.
 
 | Setting | Default | Allowed range | Override per project | Used in |
 |---|---|---|---|---|
@@ -176,15 +186,22 @@ This table lists the settings of this document and the settings added in lots 0 
 | GitHub token expiry warning | 14 days | 1 to 90 days | No | 02, section 4 |
 | GitHub request timeout | 15 seconds | 1 to 300 seconds | No | 09, section 4 |
 | GitHub clock tolerance | 120 seconds (2 minutes) | 0 to 3,600 seconds | No | 08, section 3.1 |
-| Project setup polling interval | 2 seconds | 1 to 60 seconds | No | 02, section 1 |
 | Longest ticket title | 200 characters | 1 to 1,000 characters | No | 01, section 3.4 |
 | Longest ticket description | 20,000 characters | 1 to 100,000 characters | No | 01, section 3.4 |
 | Max acceptance criteria per ticket | 20 | 1 to 100 | No | 01, section 3.4 |
 | Longest acceptance criterion | 500 characters | 1 to 5,000 characters | No | 01, section 3.4 |
 | Longest comment | 20,000 characters | 1 to 100,000 characters | No | 01, section 3.5 |
+| Enrollment code lifetime | 15 minutes | 1 to 1,440 minutes | No | 05, section 3.1 |
+| Heartbeat interval (sent to the daemon when it connects) | 15 seconds | 5 to 120 seconds | No | 05, section 3.2 |
+| Machine offline after (no heartbeat for this long) | 60 seconds | 15 to 600 seconds | No | 05, section 3.2 |
+| Session start timeout (no `SessionStart` hook after the launch) | 30 seconds | 5 to 600 seconds | No | 05, section 4.2.1 |
+| Progress update interval (shortest time between two `ticket.progress` calls of a run) | 60 seconds | 0 to 3,600 seconds | No | 06, section 4.2 |
+| MCP call timeout (how long the daemon waits for the server's answer to a tool call) | 30 seconds | 5 to 300 seconds | No | 05, section 3.3 |
+| Claude Code MCP tool timeout (written by the daemon into each run's `mcp.json`) | 120 seconds | 10 to 1,800 seconds | No | 05, section 4.2 |
+| Longest stored log entry | 2,000 characters | 100 to 100,000 characters | No | 02, section 7 |
 
-The maximum concurrent runs of a Claude account (1 by default) is set on the account (01, section 3.9).
+The maximum concurrent runs of a Claude account (1 by default) is set on the account (01, section 3.9). The project setup polling interval added in lot 1 (`projectSetupPollSeconds`) is removed in lot 2, when the realtime stream replaces the polling (02, section 1); a stored value is dropped with it.
 
-The first login delay is never above the longest login delay: a change or a **Reset to default** that would make it so is refused, naming both settings (the same rule as the quota fallback delays, 07 section 8). The ranges keep the owner from locking themselves out: a login wait is at most 24 hours, and `orchestrator reset-password` (09, section 7.4) also lifts an active wait. Settings added in lots 0 and 1 are global only (owner's decision, lot 1 step G). A setting used only from a later version is shown with "Used from version ..." and can be set before it has any effect.
+The first login delay is never above the longest login delay: a change or a **Reset to default** that would make it so is refused, naming both settings (the same rule as the quota fallback delays, 07 section 8). Two more pairs follow the same rule with a clear message naming both settings (owner's decision, lot 2 step A): "Machine offline after" is at least twice the heartbeat interval, so one lost heartbeat never marks a machine offline; and the MCP call timeout is below the Claude Code MCP tool timeout, so the daemon always answers Claude Code (with `UNAVAILABLE`) before Claude Code gives up on the call. The ranges keep the owner from locking themselves out: a login wait is at most 24 hours, and `orchestrator reset-password` (09, section 7.4) also lifts an active wait. Settings added in lots 0 and 1 are global only (owner's decision, lot 1 step G), and so are those added in lot 2. Lot 2 (version 0.3.0) starts using: max tickets an agent may create per run, the waiting run lifetime, the daemon timeouts of 05 section 5 (maximum run duration, idle timeout, maximum nudges), the dispatch acknowledgement timeout and the quota fallback delay (07, section 8), and every setting added by lot 2 above. Every value is read through the one settings resolver (project override, then global value, then default). A setting used only from a later version is shown with "Used from version ..." and can be set before it has any effect.
 
 Changing a limit applies to future actions only; runs and plans already in progress keep the values they started with, and an open login session keeps its expiry date. Every change of a global value or a project override, and every **Reset to default**, writes an event.
