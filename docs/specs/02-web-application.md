@@ -145,6 +145,7 @@ The project page shows the repository setup while it runs (refreshing on its own
 - Timeline: comments, questions and answers, status changes, reviews, runs.
 - Runs: list with purpose, machine, duration (working and waiting), outcome; open a run to see its live or recorded log.
 - Actions depending on state (04, section 2): edit (in `proposed` or `todo`), change assignee, **Run now**, answer a question, add a comment, request changes (in `awaiting_merge`), cancel, **Mark as done manually** (with a mandatory comment), **Reopen** (in `cancelled`).
+- **Mark as done manually** on a ticket that still waits for tickets not `done` stays allowed (04, section 2), but its confirmation warns first: it names each of those tickets with its number and state and asks to confirm anyway (**Mark as done anyway**). The API is unchanged (owner's finding, lot 1 step I).
 
 ### 6.5 Project settings
 

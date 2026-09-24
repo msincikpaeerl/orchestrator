@@ -168,3 +168,7 @@ Compared with 02, section 3.1: every permission used is already required, with t
 - Gaps found are fixed, each with its test; results recorded in this plan.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 1 is closed as version 0.2.0.
+
+*Results (in progress).* Version 0.2.0 prepared 2026-09-24. Gaps found by the owner and fixed:
+
+1. A blocked ticket could be marked as done manually without any warning. Still allowed (04, section 2), but the confirmation now names each ticket it waits for that is not done, with its state, and the button becomes **Mark as done anyway**; the API is unchanged. Written into 02 section 6.4 and 04 section 2, Help "Tickets" updated; e2e test in `apps/web/e2e/tickets.e2e.ts` (both viewports), failing before the fix.

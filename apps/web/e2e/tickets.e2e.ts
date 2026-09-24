@@ -235,6 +235,43 @@ test('mark as done manually is refused without a comment', async ({ page }) => {
   await expect(page.getByRole('list', { name: 'Blocked by' })).toContainText('(Done)');
 });
 
+test('mark as done manually warns when the ticket still waits for tickets not done', async ({
+  page,
+}) => {
+  await readyProject(page);
+  await createTicket(page, { title: 'Buy the domain' });
+  await createTicket(page, { title: 'Write the texts' });
+  await createTicket(page, { title: 'Take the photos' });
+  await createTicket(page, { title: 'Publish the site', blockedBy: [1, 2, 3] });
+  const done = await page.request.post('/api/projects/WEB/tickets/1/mark-done', {
+    data: { comment: 'Bought.' },
+  });
+  expect(done.status()).toBe(200);
+  const cancelled = await page.request.post('/api/projects/WEB/tickets/2/cancel');
+  expect(cancelled.status()).toBe(200);
+
+  // A ticket waiting for nothing: no warning.
+  await page.goto('/projects/WEB/tickets/3');
+  await page.getByRole('button', { name: 'Mark as done manually' }).click();
+  const plain = page.getByRole('dialog', { name: 'Mark WEB-3 as done?' });
+  await expect(plain.getByText(/still waits for/)).toBeHidden();
+  await expect(plain.getByRole('button', { name: 'Mark as done', exact: true })).toBeVisible();
+  await plain.getByRole('button', { name: 'Cancel' }).click();
+
+  // A blocked ticket: the tickets not done are named with their states, done ones are not.
+  await page.goto('/projects/WEB/tickets/4');
+  await page.getByRole('button', { name: 'Mark as done manually' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Mark WEB-4 as done?' });
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'WEB-4 still waits for WEB-2 (Cancelled) and WEB-3 (To do), which are not done. Mark it as done anyway only if its work no longer needs them.',
+  );
+  await expectFitsScreen(page);
+  await dialog.getByLabel('Why is it done? (required)').fill('Published by hand.');
+  await dialog.getByRole('button', { name: 'Mark as done anyway' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Done', { exact: true })).toBeVisible();
+});
+
 test('editing a ticket, and a dependency cycle refused in plain words', async ({ page }) => {
   await readyProject(page);
   await createTicket(page, { title: 'Database' });

@@ -26,6 +26,7 @@ import {
   PageHeader,
   SelectField,
   TextArea,
+  WarningMessage,
   buttonLinkClass,
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
@@ -34,6 +35,7 @@ import { BlockedBadge } from '../tickets/board';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
+  markDoneWarning,
   priorityLabel,
   showsBlocked,
   statusChangeText,
@@ -125,6 +127,7 @@ function MarkDoneAction({ ticket }: { ticket: TicketDetail }) {
     api('POST', ticketApi(ticket, '/mark-done'), TicketDetail, body),
   );
   const ref = ticketRef(ticket.projectKey, ticket.number);
+  const warning = markDoneWarning(ticket.projectKey, ticket.number, ticket.blockedBy);
   return (
     <>
       <Button
@@ -140,7 +143,7 @@ function MarkDoneAction({ ticket }: { ticket: TicketDetail }) {
       {asking && (
         <ConfirmDialog
           title={`Mark ${ref} as done?`}
-          confirmLabel="Mark as done"
+          confirmLabel={warning ? 'Mark as done anyway' : 'Mark as done'}
           busy={markDone.isPending}
           error={markDone.error && <ErrorMessage>{refusalText(markDone.error)}</ErrorMessage>}
           onConfirm={() => {
@@ -167,6 +170,7 @@ function MarkDoneAction({ ticket }: { ticket: TicketDetail }) {
             to Done, and tickets waiting for it are no longer blocked by it. If the work is
             abandoned, cancel the ticket instead.
           </p>
+          {warning && <WarningMessage>{warning}</WarningMessage>}
           <TextArea
             label="Why is it done? (required)"
             hint="Added to the ticket's timeline."

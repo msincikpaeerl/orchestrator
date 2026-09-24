@@ -67,6 +67,25 @@ export function blockedExplanation(
   };
 }
 
+/**
+ * Warning of **Mark as done manually** when the ticket still waits for tickets that are not done
+ * (02, section 6.4), naming each with its state; `null` when it waits for nothing.
+ */
+export function markDoneWarning(
+  projectKey: string,
+  number: number,
+  blockedBy: readonly TicketLink[],
+): string | null {
+  const open = blockedBy.filter((link) => link.status !== 'done');
+  if (open.length === 0) return null;
+  const names = open.map(
+    (link) => `${ticketRef(projectKey, link.number)} (${statusLabel[link.status]})`,
+  );
+  const last = names.pop() ?? '';
+  const list = names.length === 0 ? last : `${names.join(', ')} and ${last}`;
+  return `${ticketRef(projectKey, number)} still waits for ${list}, which ${open.length === 1 ? 'is' : 'are'} not done. Mark it as done anyway only if its work no longer needs ${open.length === 1 ? 'it' : 'them'}.`;
+}
+
 /** A status change of the timeline, in words. */
 export function statusChangeText(entry: Extract<TimelineEntry, { type: 'status_change' }>): string {
   const who = entry.actor === 'owner' ? 'You' : 'The Orchestrator';
