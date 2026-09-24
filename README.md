@@ -2,7 +2,7 @@
 
 A self-hosted tool that turns plain-language requests into web apps, websites and Android apps by coordinating AI agents running in Claude Code. You describe what you want, approve the plan, and merge the pull requests; agents do the rest on your own machines.
 
-**Status:** version 0.1.0, lot 0 of the [delivery plan](docs/specs/10-delivery-plan.md): account, GitHub connection and Help only. Start with [Getting started](docs/user/getting-started.md).
+**Status:** version 0.2.0, lot 1 of the [delivery plan](docs/specs/10-delivery-plan.md): account, GitHub connection, projects with their GitHub repository, tickets, limits, event log and Help. Start with [Getting started](docs/user/getting-started.md).
 
 ## Documentation
 

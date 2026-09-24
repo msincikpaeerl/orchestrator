@@ -95,6 +95,8 @@ Use **Mark as done manually** when the result exists but was done another way, f
 2. Write **why it is done**. This comment is required: without it, the ticket is not marked as done. It is added to the timeline.
 3. Click **Mark as done**.
 
+If the ticket still waits for tickets that are not done, the dialog warns you and names them with their states, for example "WEB-4 still waits for WEB-2 (Cancelled) and WEB-3 (To do)". You can still mark it as done: the button becomes **Mark as done anyway**. Do it only if its work no longer needs them; the tickets it waits for do not change.
+
 The ticket moves to **Done**, and tickets waiting for it are no longer blocked by it. This is possible from **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**, but not from **Proposed**: a proposed ticket belongs to a plan that is not approved yet.
 
 ## Reopen a cancelled ticket
