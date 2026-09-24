@@ -70,6 +70,12 @@ export const BLOCKABLE_STATUSES: readonly TicketStatus[] = EDITABLE_STATUSES;
 /** A ticket's number within its project: `12` in `WEB-12`. */
 export const TicketNumber = z.int().min(1).max(2_147_483_647);
 
+/** A ticket's human number with its project key, as agents and logs name it: `WEB-12`. */
+export const TicketReference = z
+  .string()
+  .regex(/^[A-Z]{2,6}-[1-9][0-9]{0,9}$/, 'must be a ticket number such as WEB-12');
+export type TicketReference = z.infer<typeof TicketReference>;
+
 /**
  * Text fields are checked for structure here; their length limits are settings of the server
  * (04, section 8), checked there.
