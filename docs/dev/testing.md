@@ -28,7 +28,7 @@ GitHub is replaced by a local fake (`apps/server/test/fake-github.ts`) that answ
 
 Rules about concurrent requests (ticket numbers, dependency cycles, project keys) are tested by sending the requests at the same time with `Promise.all`; the dependency test was checked to fail without the project lock. Ticket states no lot 1 action reaches (`proposed`, `in_progress`, ...) are seeded directly in the database, never through an API.
 
-Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
+Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. `migrateUpTo(pool, tag)` applies the migrations up to one of them only, to write data as an older version did and then check a later migration (`apps/server/test/event-log.test.ts` does it with the events of `every-event.ts`, which writes every lot 0 and lot 1 event type through the real code). Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
 
 ## Running tests
 

@@ -11,6 +11,7 @@ This version sets up the Orchestrator (your account and the connection to GitHub
 - [Needs you](needs-you.md): the home page, and what to do for each item it shows.
 - [Projects](projects.md): create a project with a new repository or link one of yours, branch protection, missing harness elements, a setup that fails, archive a project.
 - [Tickets](tickets.md): the board, create and edit tickets, dependencies and blocked tickets, comments, cancel, mark as done manually, reopen.
+- [Activity](activity.md): the event log, everything that changed in plain words, and its filters.
 - [Settings](settings.md): change a limit, override a limit for one project, and the reference of every setting.
 - [Reset a forgotten password](reset-password.md)
 - [Back up your secret key](secret-key.md)
