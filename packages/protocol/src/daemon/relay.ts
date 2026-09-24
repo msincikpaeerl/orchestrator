@@ -1,0 +1,80 @@
+import { z } from 'zod';
+import { RepositoryName } from '../api/projects.js';
+import { McpError } from '../mcp/errors.js';
+import { McpToolName } from '../mcp/tools.js';
+import { requiredText } from '../text-limits.js';
+import { message } from './envelope.js';
+import { BranchReport, RepositoryOwner } from './git.js';
+import { RunId } from './runs.js';
+
+/** A JSON object: a tool's input or output, checked against the tool's own schema by the server. */
+const JsonObject = z.record(z.string(), z.unknown());
+
+/**
+ * Facts about the worktree, collected by the daemon when it forwards a `ticket_submit`, never
+ * from a cached state. The server runs every submission check on them (05, section 4.9).
+ */
+export const WorkspaceFacts = z.object({
+  /** No uncommitted changes, untracked files included. */
+  clean: z.boolean(),
+  branch: BranchReport,
+});
+export type WorkspaceFacts = z.infer<typeof WorkspaceFacts>;
+
+const RunToken = requiredText();
+
+/** `mcp.call`: a tool call from an agent, answered by `mcp.result` with the same id (06, section 1). */
+export const McpCall = message(
+  'mcp.call',
+  z.discriminatedUnion('tool', [
+    z.object({
+      tool: z.literal('ticket_submit'),
+      runToken: RunToken,
+      input: JsonObject,
+      workspace: WorkspaceFacts,
+    }),
+    z.object({
+      tool: McpToolName.exclude(['ticket_submit']),
+      runToken: RunToken,
+      input: JsonObject,
+    }),
+  ]),
+);
+export type McpCall = z.infer<typeof McpCall>;
+
+/** `mcp.result`: the tool's output, or its error, relayed to the agent as is. */
+export const McpResult = message(
+  'mcp.result',
+  z.discriminatedUnion('ok', [
+    z.object({ ok: z.literal(true), output: JsonObject }),
+    z.object({ ok: z.literal(false), error: McpError }),
+  ]),
+);
+export type McpResult = z.infer<typeof McpResult>;
+
+/**
+ * `git.credential_request`: the credential for one Git command on the repository of an active run
+ * (05, section 7). `push` comes with lot 3.
+ */
+export const GitCredentialRequest = message(
+  'git.credential_request',
+  z.object({
+    runId: RunId,
+    repository: z.object({ owner: RepositoryOwner, name: RepositoryName }),
+    command: z.enum(['fetch']),
+  }),
+);
+export type GitCredentialRequest = z.infer<typeof GitCredentialRequest>;
+
+/**
+ * `git.credential`: the answer, with the request's id. The daemon keeps the credential in memory
+ * for that one command only; it is never logged or written anywhere (05, section 7).
+ */
+export const GitCredential = message(
+  'git.credential',
+  z.discriminatedUnion('ok', [
+    z.object({ ok: z.literal(true), username: requiredText(), password: requiredText() }),
+    z.object({ ok: z.literal(false), message: requiredText() }),
+  ]),
+);
+export type GitCredential = z.infer<typeof GitCredential>;

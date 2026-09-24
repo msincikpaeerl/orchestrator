@@ -47,13 +47,14 @@ describe('server started on a new database', () => {
     expect(HealthResponse.parse(await response.json())).toEqual({ status: 'ok', database: 'ok' });
   });
 
-  it('returns the server and protocol versions', async () => {
+  it('returns the server version and daemon protocol 1', async () => {
     const response = await fetch(`${baseUrl}/version`);
     expect(response.status).toBe(200);
     expect(VersionResponse.parse(await response.json())).toEqual({
       server: '0.2.0',
-      protocol: PROTOCOL_VERSION,
+      protocol: 1,
     });
+    expect(PROTOCOL_VERSION).toBe(1);
   });
 });
 

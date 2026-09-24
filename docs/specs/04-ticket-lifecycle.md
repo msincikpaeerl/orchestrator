@@ -195,7 +195,7 @@ This table lists the settings of this document and the settings added in lots 0,
 | Heartbeat interval (sent to the daemon when it connects) | 15 seconds | 5 to 120 seconds | No | 05, section 3.2 |
 | Machine offline after (no heartbeat for this long) | 60 seconds | 15 to 600 seconds | No | 05, section 3.2 |
 | Session start timeout (no `SessionStart` hook after the launch) | 30 seconds | 5 to 600 seconds | No | 05, section 4.2.1 |
-| Progress update interval (shortest time between two `ticket.progress` calls of a run) | 60 seconds | 0 to 3,600 seconds | No | 06, section 4.2 |
+| Progress update interval (shortest time between two publications of a run's progress line; the agent's calls are never refused, the latest line is kept) | 60 seconds | 0 to 3,600 seconds | No | 06, section 4.2 |
 | MCP call timeout (how long the daemon waits for the server's answer to a tool call) | 30 seconds | 5 to 300 seconds | No | 05, section 3.3 |
 | Claude Code MCP tool timeout (written by the daemon into each run's `mcp.json`) | 120 seconds | 10 to 1,800 seconds | No | 05, section 4.2 |
 | Longest stored log entry | 2,000 characters | 100 to 100,000 characters | No | 02, section 7 |

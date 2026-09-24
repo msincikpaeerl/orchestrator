@@ -42,11 +42,12 @@ An agent can read anything in its own project. It can only change **its own tick
 ## 3. Conventions
 
 - Tool names use `<object>.<verb>` in the specifications and screens. On the wire the MCP server names them `<object>_<verb>` (`ticket_create`), because Claude Code and the Claude API accept only letters, digits, `_` and `-` in tool names; the agent sees them as `mcp__orchestrator__ticket_create`, and allowlists use that name (owner's decision, lot 2 step A).
-- Inputs and outputs are JSON objects with documented schemas. Texts are Markdown.
+- Inputs and outputs are JSON objects with documented schemas, defined once in `packages/protocol` (`src/mcp/`), with snake_case field names as in the examples below. Inputs are strict: an unknown field is refused with `VALIDATION_FAILED`. Texts are Markdown.
+- Text sizes follow the rule of 05, section 3.3: a text tied to a setting (a title, a comment) is capped at the highest value that setting allows, any other text at the largest such ceiling, and the server then checks the setting's current value (owner's decision, lot 2 step B).
 - Tickets are referenced by their human number (`WEB-12`).
 - Tool descriptions are written for the agent: what the tool does, when to use it, when not to, and what happens next. They are part of the harness, versioned with the application, and reviewed like code.
 - Every successful write returns the new state of the object, so the agent does not need to read it again.
-- Errors return a code, a message written for the agent, and details when useful:
+- Errors return a code, a message written for the agent, and details when useful. A refusal tied to a setting (`LIMIT_REACHED`, a text too long, and similar) states the setting's current value in its message, for example "limit of 3 tickets per run reached"; the tests of the step that implements each refusal check it (owner's review, lot 2 step B):
 
 | Code | Meaning |
 |---|---|
@@ -64,10 +65,10 @@ An agent can read anything in its own project. It can only change **its own tick
 
 | Tool | Description |
 |---|---|
-| `project.get` | Project information: name, kind, repository, default branch, pointers to CLAUDE.md, docs and ADR folders. |
+| `project.get` | Project information: name, kind, repository, default branch, pointers to CLAUDE.md, docs and ADR folders, and the harness elements missing from a linked repository (08, section 3.4). |
 | `ticket.get` | One ticket with description, acceptance criteria, status, dependencies, DoD report and pull request link. Defaults to the run's ticket. |
-| `ticket.list` | Tickets of the project, filtered by status, type, assignee or text. Returns summaries. |
-| `ticket.comments` | Comments of a ticket, oldest first, including questions and answers. |
+| `ticket.list` | Tickets of the project, filtered by status, type, assignee or text. Returns summaries, a page at a time (`cursor` and `next_cursor`) to stay under Claude Code's MCP output limit. |
+| `ticket.comments` | Comments of a ticket, oldest first, including questions and answers, a page at a time like `ticket.list`. Defaults to the run's ticket. |
 | `request.get` | The request being planned, with its comments (planning runs). *(Lot 5.)* |
 | `agent.list` | Available agent profiles with their role and description, so tickets can be assigned. |
 | `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). *(Lot 3.)* |
@@ -76,11 +77,11 @@ An agent can read anything in its own project. It can only change **its own tick
 
 | Tool | Description |
 |---|---|
-| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Rate-limited by the progress update interval (a setting, one call per minute by default, 04 section 8); a call sooner is refused with `LIMIT_REACHED`. |
+| `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Never refused for frequency: the server accepts every call, keeps the latest line and publishes it at most once per progress update interval (a setting, one minute by default, 04 section 8). The description tells the agent that calling more often is harmless but useless (owner's review, lot 2 step B). |
 | `ticket.comment` | Adds a `note` comment: findings, decisions, anything the owner or the next agent should know. |
 | `ticket.ask` | Asks the owner a question. The ticket moves to `waiting_human`. The agent should end its turn after calling it; the answer arrives as the next message. |
 | `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |
-| `ticket.give_up` | Declares that the ticket cannot be completed, with the reason and what was tried. The run ends as failed and the retry policy applies (04, section 5). |
+| `ticket.give_up` | Declares that the ticket cannot be completed, with the reason (`reason`) and what was tried (`tried`). The run ends as failed and the retry policy applies (04, section 5). |
 
 `ticket.submit` input:
 

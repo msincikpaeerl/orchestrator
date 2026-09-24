@@ -88,6 +88,7 @@ export {
   TicketListResponse,
   TicketNumber,
   TicketPriority,
+  TicketReference,
   TicketStatus,
   TicketSummary,
   TicketType,
@@ -111,3 +112,63 @@ export {
   type SettingDefinition,
   type SettingValues,
 } from './api/settings.js';
+export { TEXT_CEILING, boundedText, requiredText, settingCeiling } from './text-limits.js';
+export { AgentKey, AgentRole } from './api/agents.js';
+export { Ack, MessageId, message } from './daemon/envelope.js';
+export {
+  BranchReport,
+  CommitSummary,
+  GitBranchName,
+  GitHash,
+  RepositoryOwner,
+} from './daemon/git.js';
+export {
+  Capability,
+  DoctorCheck,
+  Hello,
+  Heartbeat,
+  MachineOs,
+  Welcome,
+} from './daemon/connection.js';
+export {
+  ClaudeSessionId,
+  CloneUrl,
+  DaemonRunState,
+  QuotaEvidence,
+  RunEndReason,
+  RunEvents,
+  RunId,
+  RunInput,
+  RunLimits,
+  RunLogEvent,
+  RunPurpose,
+  RunQuotaLimited,
+  RunResume,
+  RunStart,
+  RunState,
+  RunStop,
+  StopFailureError,
+} from './daemon/runs.js';
+export {
+  GitCredential,
+  GitCredentialRequest,
+  McpCall,
+  McpResult,
+  WorkspaceFacts,
+} from './daemon/relay.js';
+export { DaemonMessage, ServerMessage } from './daemon/messages.js';
+export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
+export {
+  DodReport,
+  MCP_TOOLS,
+  McpComment,
+  McpCommentAuthor,
+  McpTicket,
+  McpTicketCreator,
+  McpTicketLink,
+  McpTicketSummary,
+  McpToolName,
+  type McpToolDefinition,
+  type McpToolInput,
+  type McpToolOutput,
+} from './mcp/tools.js';

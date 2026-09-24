@@ -1,0 +1,272 @@
+import { z } from 'zod';
+import { AgentKey } from '../api/agents.js';
+import { RepositoryName } from '../api/projects.js';
+import { TicketReference } from '../api/tickets.js';
+import { boundedText, requiredText } from '../text-limits.js';
+import { message } from './envelope.js';
+import { BranchReport, GitBranchName, RepositoryOwner } from './git.js';
+
+export const RunId = z.uuid();
+export type RunId = z.infer<typeof RunId>;
+
+/** Claude Code's session id, used to resume a closed session (05, section 4.3). */
+export const ClaudeSessionId = z.uuid();
+export type ClaudeSessionId = z.infer<typeof ClaudeSessionId>;
+
+/** Why a run exists (01, section 3.7). */
+export const RunPurpose = z.enum(['implement', 'review', 'plan', 'document', 'fix_review']);
+export type RunPurpose = z.infer<typeof RunPurpose>;
+
+/** States of a run on the daemon (05, section 4.7); the server maps them to run statuses. */
+export const DaemonRunState = z.enum([
+  'preparing',
+  'starting',
+  'working',
+  'idle',
+  'waiting_ci',
+  'waiting_human',
+  'quota_paused',
+  'ended',
+]);
+export type DaemonRunState = z.infer<typeof DaemonRunState>;
+
+/**
+ * Why a run ended on the daemon: a fact, never a ticket decision. The server derives the run's
+ * status and failure reason from it (05, section 4.7; 01, section 3.7).
+ */
+export const RunEndReason = z.enum([
+  /** The agent's `ticket_submit` was accepted, then its turn ended. */
+  'submitted',
+  /** The agent called `ticket_give_up`. */
+  'gave_up',
+  /** The turn ended without a decision after the maximum number of nudges (05, section 4.8). */
+  'nudges_exhausted',
+  /** `run.stop` from the server. */
+  'stopped',
+  /** The maximum run duration was reached (05, section 5). */
+  'max_duration',
+  /** The idle timeout was reached after the nudges (05, section 5). */
+  'idle_timeout',
+  /** No `SessionStart` within the session start timeout (05, section 4.2.1). */
+  'session_start_timeout',
+  /** The workspace could not be prepared, or the session ended unexpectedly. */
+  'crashed',
+]);
+export type RunEndReason = z.infer<typeof RunEndReason>;
+
+/**
+ * Where the daemon clones from: `https`, or `http` and `file` for local test remotes. It never
+ * holds a credential (05, section 7): the token comes through `git.credential` only.
+ */
+export const CloneUrl = requiredText().refine((value) => {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  return ['https:', 'http:', 'file:'].includes(url.protocol) && !url.username && !url.password;
+}, 'must be an https, http or file URL without credentials');
+
+/** Resolved when the run starts (04, section 8; 05, section 5). */
+export const RunLimits = z.object({
+  maxRunDurationMinutes: z.int().positive(),
+  idleTimeoutMinutes: z.int().positive(),
+  maxNudgesPerRun: z.int().min(0),
+  waitingRunLifetimeMinutes: z.int().positive(),
+  sessionStartTimeoutSeconds: z.int().positive(),
+  mcpCallTimeoutSeconds: z.int().positive(),
+  claudeCodeMcpToolTimeoutSeconds: z.int().positive(),
+});
+export type RunLimits = z.infer<typeof RunLimits>;
+
+/** `run.start`, server to daemon (05, section 4.1). */
+export const RunStart = message(
+  'run.start',
+  z.object({
+    runId: RunId,
+    purpose: RunPurpose,
+    /** A ticket, or a request for planning runs. */
+    subject: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('ticket'), id: z.uuid(), number: TicketReference }),
+      z.object({ kind: z.literal('request'), id: z.uuid() }),
+    ]),
+    repository: z.object({
+      owner: RepositoryOwner,
+      name: RepositoryName,
+      cloneUrl: CloneUrl,
+      baseBranch: GitBranchName,
+      ticketBranch: GitBranchName,
+    }),
+    /** Set for the worktree (04, section 4). */
+    commitAuthor: z.object({ name: requiredText(), email: z.email() }),
+    profile: z.object({
+      key: AgentKey,
+      version: z.int().positive(),
+      instructions: requiredText(),
+      model: requiredText(),
+      /** Claude Code permission rules, such as `Bash(pnpm test *)`. */
+      allowedTools: z.array(requiredText()),
+    }),
+    /** Scoped to this run; carried by every `mcp.call` (06, section 2). */
+    runToken: requiredText(),
+    /** First message, built by the server (06, section 6). */
+    initialPrompt: requiredText(),
+    /**
+     * Sent by the daemon when a turn ends without a decision (05, section 4.8). Filled in by the
+     * server from its run message template: the daemon holds no agent-facing text (03, section 3.2).
+     */
+    nudgeMessage: requiredText(),
+    limits: RunLimits,
+    /** A Claude session to resume instead of starting a new one. */
+    resumeSessionId: ClaudeSessionId.nullable(),
+  }),
+);
+export type RunStart = z.infer<typeof RunStart>;
+
+/**
+ * `run.input`: text for a live session (owner answer, CI result), 05 section 4.4. Built from a run
+ * message template in `agents/` (03, section 3.2). Nudges come with `run.start`, not this way.
+ */
+export const RunInput = message('run.input', z.object({ runId: RunId, text: requiredText() }));
+export type RunInput = z.infer<typeof RunInput>;
+
+/**
+ * `run.resume`: start a closed session again, after a usage-limit pause or when the owner answers
+ * after the waiting run lifetime (04, section 6). `message` is the first message after
+ * `--resume`: the answer, or the message asking the agent to continue, both built from run message
+ * templates in `agents/` (03, section 3.2).
+ */
+export const RunResume = message(
+  'run.resume',
+  z.object({ runId: RunId, claudeSessionId: ClaudeSessionId, message: requiredText() }),
+);
+export type RunResume = z.infer<typeof RunResume>;
+
+/** `run.stop`: end a run (04, section 2; 05, section 6). */
+export const RunStop = message(
+  'run.stop',
+  z.object({
+    runId: RunId,
+    reason: z.enum([
+      /** The owner's **Stop run**. */
+      'owner_stopped',
+      'ticket_cancelled',
+      /** Reported alive by the daemon, but no longer active on the server. */
+      'not_active',
+    ]),
+  }),
+);
+export type RunStop = z.infer<typeof RunStop>;
+
+const RunStateBase = z.object({
+  runId: RunId,
+  at: z.iso.datetime(),
+  /** Known from `SessionStart`; null before. */
+  claudeSessionId: ClaudeSessionId.nullable(),
+  /** Whether the tmux session is running: false once a waiting or paused run's session is closed. */
+  sessionAlive: z.boolean(),
+});
+
+/** `run.state`: the run's daemon state changed (05, section 4.7). */
+export const RunState = message(
+  'run.state',
+  z.discriminatedUnion('state', [
+    RunStateBase.extend({ state: DaemonRunState.exclude(['ended']) }),
+    RunStateBase.extend({
+      state: z.literal('ended'),
+      reason: RunEndReason,
+      /** Plain-words detail for the event log ("workspace trust or startup dialog suspected"). */
+      detail: boundedText().nullable(),
+      /** The ticket branch at the end; null when no worktree was created. */
+      branch: BranchReport.nullable(),
+    }),
+  ]),
+);
+export type RunState = z.infer<typeof RunState>;
+
+/** One live log entry from the transcript (02, section 7), with credentials already masked. */
+export const RunLogEvent = z.object({
+  /** Position in the run's log, from 0: the server stores each position once. */
+  seq: z.int().min(0),
+  at: z.iso.datetime(),
+  kind: z.enum([
+    /** The agent's text. */
+    'agent_text',
+    /** A tool call, with its name and a short input. */
+    'tool_call',
+    'tool_result',
+    /** A message sent to the agent: first message, answer, nudge. */
+    'input',
+  ]),
+  /** Tool name for `tool_call` and `tool_result`. */
+  tool: boundedText().nullable(),
+  text: boundedText(),
+});
+export type RunLogEvent = z.infer<typeof RunLogEvent>;
+
+/** `run.events`: a batch of log entries, acknowledged as a whole. */
+export const RunEvents = message(
+  'run.events',
+  z.object({
+    runId: RunId,
+    events: z.array(RunLogEvent).min(1),
+    /** Latest estimated usage in US dollars (05, section 4.5); null when unknown. */
+    estimatedUsageUsd: z.number().min(0).nullable(),
+  }),
+);
+export type RunEvents = z.infer<typeof RunEvents>;
+
+/** `error` of Claude Code's `StopFailure` hook; `unknown` also stands for any undocumented value. */
+export const StopFailureError = z.enum([
+  'rate_limit',
+  'overloaded',
+  'authentication_failed',
+  'oauth_org_not_allowed',
+  'account_on_hold',
+  'billing_error',
+  'invalid_request',
+  'model_not_found',
+  'server_error',
+  'max_output_tokens',
+  'cloud_credential_error',
+  'unknown',
+]);
+export type StopFailureError = z.infer<typeof StopFailureError>;
+
+/** What made the daemon detect or suspect a usage limit (05, section 4.10). */
+export const QuotaEvidence = z.object({
+  signal: z.enum([
+    /** A `StopFailure` hook. */
+    'stop_failure',
+    /** A turn ending on an API error text, with no tool use. */
+    'api_error_turn',
+    /** The idle timeout right after such a turn. */
+    'idle_after_api_error',
+  ]),
+  /** The `StopFailure` error type, for `stop_failure`. */
+  error: StopFailureError.nullable(),
+  /** The error text shown by Claude Code (`last_assistant_message`). */
+  message: boundedText().nullable(),
+  /** The latest status line window, when one was received (supplementary, 05 section 4.10). */
+  statusLine: z
+    .object({
+      window: z.enum(['five_hour', 'seven_day']),
+      usedPercentage: z.number().min(0),
+      resetsAt: z.iso.datetime().nullable(),
+    })
+    .nullable(),
+});
+export type QuotaEvidence = z.infer<typeof QuotaEvidence>;
+
+/** `run.quota_limited`: the session was closed on a usage limit, detected or suspected. */
+export const RunQuotaLimited = message(
+  'run.quota_limited',
+  z.discriminatedUnion('kind', [
+    z.object({
+      runId: RunId,
+      kind: z.literal('detected'),
+      /** From the status line, else from the message; null when neither gives it. */
+      resetsAt: z.iso.datetime().nullable(),
+      evidence: QuotaEvidence,
+    }),
+    z.object({ runId: RunId, kind: z.literal('suspected'), evidence: QuotaEvidence }),
+  ]),
+);
+export type RunQuotaLimited = z.infer<typeof RunQuotaLimited>;

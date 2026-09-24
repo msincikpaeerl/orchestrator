@@ -53,21 +53,29 @@ The daemon runs as a normal process on the host, **not in Docker**, because it n
 
 ### 3.3 Messages
 
-All messages are JSON: `{ "type": "...", "id": "...", "payload": { ... } }`. Messages that need an answer are acknowledged with the same `id`.
+All messages are JSON: `{ "type": "...", "id": "...", "payload": { ... } }`, defined once as Zod schemas in `packages/protocol` (`src/daemon/`). Messages that need an answer are acknowledged with the same `id` (owner's decision, lot 2 step B):
+
+- three pairs answer each other: `hello` and `welcome`, `mcp.call` and `mcp.result`, `git.credential_request` and `git.credential`;
+- the server's commands (`run.start`, `run.input`, `run.resume`, `run.stop`) and the daemon's reports (`run.state`, `run.events`, `run.quota_limited`) are each answered by an `ack` (`ok`, or not with the reason); `run.events` are acknowledged per batch, not per line; heartbeats get no answer;
+- the daemon keeps every unacknowledged report in its run files, so it survives a daemon restart, and resends them in order after reconnection;
+- the server handles every report and command idempotently by message id: a duplicate is acknowledged again and changes nothing.
+
+Sizes (owner's decision, lot 2 step B): every text of a message has a ceiling derived in code from the settings' declared ranges in `packages/protocol`, never copied as a number. A text tied to a setting is capped at the highest value that setting allows (a ticket title at the top of "Longest ticket title"'s range); any other text at the largest such ceiling. The server still checks the setting's current value. The same rule applies to MCP tool inputs (06, section 3).
 
 | Direction | Type | Purpose |
 |---|---|---|
 | D → S | `hello` | Protocol version, daemon version, Claude Code version, OS, detected capabilities, `doctor` results, runs currently alive on the machine. |
-| S → D | `welcome` | Answer to `hello`: accepted or refused (incompatible protocol, revoked token), the heartbeat interval and the timeouts the daemon applies. |
-| D → S | `heartbeat` | Liveness and resource summary. |
+| S → D | `welcome` | Answer to `hello`: accepted or refused (incompatible protocol, revoked token), and the heartbeat interval. The run timeouts come with each `run.start`. |
+| D → S | `heartbeat` | Liveness. In lot 2 it carries nothing else; lot 4 adds the resource summary as an optional field, so protocol version 1 stays compatible (owner's decision, lot 2 step B). |
+| both | `ack` | Acknowledges a command or a report (above). |
 | S → D | `run.start` | Start a run (payload in section 4.1). |
-| S → D | `run.input` | Send text to a live session (owner answer, CI result, nudge). |
-| S → D | `run.resume` | Resume a session that was closed (after a quota pause or a long wait). |
+| S → D | `run.input` | Send text to a live session (owner answer, CI result). Nudges are not sent this way: the daemon sends the nudge it received in `run.start` (section 4.8). The server builds the text from a run message template in `agents/` (03, section 3.2), such as the wrapping of the owner's answer. |
+| S → D | `run.resume` | Resume a session that was closed (after a quota pause or a long wait), with the first message to send: the owner's answer, or the "please continue" message after a usage-limit pause, detected or suspected. Both come from run message templates in `agents/` (03, section 3.2), filled in by the server. |
 | S → D | `run.stop` | Stop a run (cancel, timeout). |
-| D → S | `run.state` | Run state change (`starting`, `running`, `idle`, `ended`, …) with details; at the end of a run, the ticket branch's head and the commits ahead of the base branch. |
+| D → S | `run.state` | Run state change (section 4.7) with the Claude session id and whether the tmux session is alive (false once a waiting or paused run's session is closed); at the end of a run, the reason as a fact (`submitted`, `gave_up`, `nudges_exhausted`, `stopped`, `max_duration`, `idle_timeout`, `session_start_timeout`, `crashed`), from which the server derives the run's status and failure reason, and the ticket branch's head and the commits ahead of the base branch. |
 | D → S | `run.events` | Batch of transcript events for live logs. |
 | D → S | `run.quota_limited` | The account reached its usage limit (`detected`, with the reset time when known) or may have (`suspected`), with the evidence (section 4.10). |
-| D → S | `mcp.call` | An MCP tool call from an agent, with the run token. |
+| D → S | `mcp.call` | An MCP tool call from an agent, with the run token; for `ticket_submit`, also the worktree facts of section 4.9. |
 | S → D | `mcp.result` | Result or error of the call. |
 | D → S | `git.credential_request` | Ask for the credential for one Git command on one repository of an active run: `fetch`, or from lot 3 `push`. |
 | S → D | `git.credential` | The credential for that one command (section 7). |
@@ -82,6 +90,7 @@ All messages are JSON: `{ "type": "...", "id": "...", "payload": { ... } }`. Mes
 - agent profile snapshot: instructions, model, tool allowlist, profile version;
 - run token for MCP calls (scoped to this run);
 - initial prompt, built by the server from the ticket, its comments and the purpose;
+- nudge message, filled in by the server from its run message template (03, section 3.2; section 4.8);
 - limits: maximum run duration, idle timeout, maximum nudges, waiting run lifetime, session start timeout, MCP call timeout, Claude Code MCP tool timeout (values resolved by the server when the run starts, 04 section 8);
 - optional Claude session id to resume.
 
@@ -204,7 +213,7 @@ The server's run status (01, section 3.7) follows the daemon's state: `preparing
 
 ### 4.8 End of turn without a decision
 
-When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge** (never after a `StopFailure`, section 4.10): a short message reminding the agent that it must continue working or use one of these three tools. After the maximum number of nudges (default 2, configurable), the run ends with reason `agent_gave_up`.
+When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge** (never after a `StopFailure`, section 4.10): a short message reminding the agent that it must continue working or use one of these three tools. The daemon decides when to nudge, but the text is the nudge message of `run.start`, filled in by the server from a run message template (03, section 3.2): the daemon holds no agent-facing text (owner's decision, lot 2 step B). After the maximum number of nudges (default 2, configurable), the run ends with reason `agent_gave_up`.
 
 Nudges are expensive: every turn reloads the whole session context (about 70,000 tokens from cache in the spike, even for a one-line answer). The instructions are designed so that agents rarely need one.
 
@@ -214,8 +223,9 @@ When the agent calls `ticket.submit` (see 06):
 
 **Lot 2.** Only step 1 applies, plus a check that the ticket branch has commits ahead of the base branch; the server then applies the reduced checks of 04, section 3.1 and the run ends. Nothing is pushed. Lot 3 adds the steps below.
 
+The daemon reports facts and the server decides (owner's decision, lot 2 step B): when it forwards the call, the daemon collects whether the worktree is clean, the branch head and the commits ahead of the base branch at that moment, never from a cached state, and sends them with the call (`mcp.call`, section 3.3). The server runs every check on them and refuses with `DOD_FAILED`, listing each failed check.
 
-1. The daemon checks that the worktree has no uncommitted changes. If it has, the call is rejected and the agent is asked to commit.
+1. The worktree must have no uncommitted changes. If it has, the server rejects the call and the agent is asked to commit.
 2. The daemon requests push credentials, pushes the branch, and discards the credentials.
 3. The server opens or updates the pull request and starts its checks (see 04, section 3.1).
 4. The run moves to `waiting_ci`. The Claude session is idle and consumes no quota.
