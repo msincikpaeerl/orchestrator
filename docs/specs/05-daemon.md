@@ -69,8 +69,8 @@ Sizes (owner's decision, lot 2 step B): every text of a message has a ceiling de
 | D → S | `heartbeat` | Liveness. In lot 2 it carries nothing else; lot 4 adds the resource summary as an optional field, so protocol version 1 stays compatible (owner's decision, lot 2 step B). |
 | both | `ack` | Acknowledges a command or a report (above). |
 | S → D | `run.start` | Start a run (payload in section 4.1). |
-| S → D | `run.input` | Send text to a live session (owner answer, CI result, nudge). |
-| S → D | `run.resume` | Resume a session that was closed (after a quota pause or a long wait), with the first message to send: the owner's answer, or the server's text asking the agent to continue. |
+| S → D | `run.input` | Send text to a live session (owner answer, CI result, nudge). The server builds the text from a run message template in `agents/` (03, section 3.2), such as the wrapping of the owner's answer. |
+| S → D | `run.resume` | Resume a session that was closed (after a quota pause or a long wait), with the first message to send: the owner's answer, or the "please continue" message after a usage-limit pause, detected or suspected. Both come from run message templates in `agents/` (03, section 3.2), filled in by the server. |
 | S → D | `run.stop` | Stop a run (cancel, timeout). |
 | D → S | `run.state` | Run state change (section 4.7) with the Claude session id and whether the tmux session is alive (false once a waiting or paused run's session is closed); at the end of a run, the reason as a fact (`submitted`, `gave_up`, `nudges_exhausted`, `stopped`, `max_duration`, `idle_timeout`, `session_start_timeout`, `crashed`), from which the server derives the run's status and failure reason, and the ticket branch's head and the commits ahead of the base branch. |
 | D → S | `run.events` | Batch of transcript events for live logs. |

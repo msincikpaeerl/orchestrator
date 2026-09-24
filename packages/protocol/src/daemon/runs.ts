@@ -115,14 +115,18 @@ export const RunStart = message(
 );
 export type RunStart = z.infer<typeof RunStart>;
 
-/** `run.input`: text for a live session (owner answer, CI result), 05 section 4.4. */
+/**
+ * `run.input`: text for a live session (owner answer, CI result), 05 section 4.4. Built from a run
+ * message template in `agents/` (03, section 3.2).
+ */
 export const RunInput = message('run.input', z.object({ runId: RunId, text: requiredText() }));
 export type RunInput = z.infer<typeof RunInput>;
 
 /**
  * `run.resume`: start a closed session again, after a usage-limit pause or when the owner answers
  * after the waiting run lifetime (04, section 6). `message` is the first message after
- * `--resume`: the answer, or the server's text asking the agent to continue.
+ * `--resume`: the answer, or the message asking the agent to continue, both built from run message
+ * templates in `agents/` (03, section 3.2).
  */
 export const RunResume = message(
   'run.resume',

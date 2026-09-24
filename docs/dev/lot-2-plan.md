@@ -179,7 +179,8 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
 
 - `ticket_progress` is never refused for frequency: the server keeps the latest line and publishes it at most once per "Progress update interval";
 - the `ticket_submit`, `ticket_create` and `ticket_give_up` descriptions say what to do instead (report every criterion, paths relative to the worktree root, never push or switch branches, `ticket_ask` or `ticket_give_up` rather than submitting an unmet criterion, search before creating, never give up over a refused command or an unanswered question);
-- every refusal tied to a setting states the setting's current value in its message; the steps implementing refusals (C, J, K) test it.
+- every refusal tied to a setting states the setting's current value in its message; the steps implementing refusals (C, J, K) test it;
+- every text the server sends to an agent comes from a run message template in `agents/` (03 section 3.2, 05 section 3.3): the first message, the "please continue" message after a pause, and the wrapping of the owner's answer. Step I ships them.
 
 ### [ ] C. Claude accounts, machines and the daemon gateway (server)
 
@@ -331,7 +332,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 
 - `agents/`:
   - common rules (06 section 6, including "read `CLAUDE.md` first" and the lot 2 ending with `ticket_submit`);
-  - the `implement` first-message template;
+  - the run message templates (03 section 3.2): the `implement` first message, the "please continue" message sent with `run.resume` after a usage-limit pause (detected or suspected), and the wrapping of the owner's answer (live with `run.input`, or after the waiting run lifetime with `run.resume`); the server holds no hard-coded agent-facing text;
   - `architect.md` and `web_dev.md` with their allowlists (03 sections 2.2 and 2.3).
 - Table `agent_profiles` seeded from `agents/` at server start, version increased when a shipped file changed; role permissions of 06 section 5.
 - `tickets.assignee_profile_id`: assignee in the create and edit forms (in `proposed` and `todo`), shown on cards and the ticket page, and an assignee filter on the board (02 section 6.3). Events.

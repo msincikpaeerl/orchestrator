@@ -141,6 +141,16 @@ Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first
 
 The templates for these messages are stored with the application and versioned like the common rules. Lot 2 ships the common rules, the `implement` template and the Architect and Web Developer profiles; each later lot adds the profiles and templates it uses.
 
+### 3.2 Run message templates
+
+Every text the server sends to an agent comes from a **run message template** in `agents/`, versioned with the application and filled in by the server. The server holds no hard-coded agent-facing text (owner's decision, lot 2 step B). The templates cover:
+
+- the first message of each purpose (section 3.1);
+- the "please continue" message sent with `run.resume` after a pause on a usage limit, detected or suspected (05, section 4.10);
+- the wrapping of the owner's answer to a question, whether delivered live (`run.input`) or after the waiting run lifetime (`run.resume`, 04 section 6).
+
+Lot 2 ships these three: `implement`, continue after a pause, and the owner's answer.
+
 ## 4. Assignment rules
 
 The Project Manager assigns tickets. The server validates the assignment:
