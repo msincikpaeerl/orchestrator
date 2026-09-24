@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
+import { migrationsFolder } from './migrate.js';
 
 /** The PostgreSQL of `docker/compose.dev.yml`; `TEST_DATABASE_URL` overrides it. */
 export const defaultTestDatabaseUrl =
@@ -44,5 +50,27 @@ async function runOnServer(serverUrl: string, statement: string): Promise<void> 
     await client.query(statement);
   } finally {
     await client.end();
+  }
+}
+
+/**
+ * Applies the migrations up to `tag` included (`0005_settings`), as an older version would, so a
+ * test can write data in the old shape and then check a later migration with `runMigrations`.
+ */
+export async function migrateUpTo(pool: pg.Pool, tag: string): Promise<void> {
+  const journalPath = join(migrationsFolder, 'meta', '_journal.json');
+  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
+    entries: { tag: string }[];
+  };
+  const last = journal.entries.findIndex((entry) => entry.tag === tag);
+  if (last === -1) throw new Error(`no migration ${tag}`);
+  const folder = await mkdtemp(join(tmpdir(), 'orchestrator-migrations-'));
+  try {
+    await cp(migrationsFolder, folder, { recursive: true });
+    const entries = journal.entries.slice(0, last + 1);
+    await writeFile(join(folder, 'meta', '_journal.json'), JSON.stringify({ ...journal, entries }));
+    await migrate(drizzle(pool), { migrationsFolder: folder });
+  } finally {
+    await rm(folder, { recursive: true, force: true });
   }
 }
