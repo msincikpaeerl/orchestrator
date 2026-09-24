@@ -153,6 +153,8 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 
 **Done when** the owner has approved this plan and the spec changes.
 
+*Done 2026-09-25.* Approved by the owner with the review changes: step H probe, status line as a supplementary source, daemon-owned user settings, WSL idle timeout in help and doctor.
+
 ### [ ] B. Daemon protocol and MCP schemas
 
 - `packages/protocol/src/daemon/`: Zod schemas for every message of 05 section 3.3:
