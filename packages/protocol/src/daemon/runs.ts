@@ -108,6 +108,11 @@ export const RunStart = message(
     runToken: requiredText(),
     /** First message, built by the server (06, section 6). */
     initialPrompt: requiredText(),
+    /**
+     * Sent by the daemon when a turn ends without a decision (05, section 4.8). Filled in by the
+     * server from its run message template: the daemon holds no agent-facing text (03, section 3.2).
+     */
+    nudgeMessage: requiredText(),
     limits: RunLimits,
     /** A Claude session to resume instead of starting a new one. */
     resumeSessionId: ClaudeSessionId.nullable(),
@@ -117,7 +122,7 @@ export type RunStart = z.infer<typeof RunStart>;
 
 /**
  * `run.input`: text for a live session (owner answer, CI result), 05 section 4.4. Built from a run
- * message template in `agents/` (03, section 3.2).
+ * message template in `agents/` (03, section 3.2). Nudges come with `run.start`, not this way.
  */
 export const RunInput = message('run.input', z.object({ runId: RunId, text: requiredText() }));
 export type RunInput = z.infer<typeof RunInput>;

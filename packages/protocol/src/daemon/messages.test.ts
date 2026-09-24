@@ -132,6 +132,7 @@ const serverExamples = {
       },
       runToken: 'run-token',
       initialPrompt: 'Implement WEB-12.',
+      nudgeMessage: 'Continue, or end the run with ticket_submit, ticket_ask or ticket_give_up.',
       limits: {
         maxRunDurationMinutes: 90,
         idleTimeoutMinutes: 10,
@@ -293,6 +294,21 @@ describe('payload checks', () => {
       'run.start with a negative nudge count',
       serverExamples['run.start'],
       (p) => ((p.limits as Json).maxNudgesPerRun = -1),
+    ],
+    [
+      'run.start without its nudge message',
+      serverExamples['run.start'],
+      (p) => delete p.nudgeMessage,
+    ],
+    [
+      'run.start with an empty nudge message',
+      serverExamples['run.start'],
+      (p) => (p.nudgeMessage = ' '),
+    ],
+    [
+      'run.start with an oversized nudge message',
+      serverExamples['run.start'],
+      (p) => (p.nudgeMessage = 'x'.repeat(TEXT_CEILING + 1)),
     ],
     [
       'run.start with an empty first message',

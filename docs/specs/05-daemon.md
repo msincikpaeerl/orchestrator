@@ -69,7 +69,7 @@ Sizes (owner's decision, lot 2 step B): every text of a message has a ceiling de
 | D → S | `heartbeat` | Liveness. In lot 2 it carries nothing else; lot 4 adds the resource summary as an optional field, so protocol version 1 stays compatible (owner's decision, lot 2 step B). |
 | both | `ack` | Acknowledges a command or a report (above). |
 | S → D | `run.start` | Start a run (payload in section 4.1). |
-| S → D | `run.input` | Send text to a live session (owner answer, CI result, nudge). The server builds the text from a run message template in `agents/` (03, section 3.2), such as the wrapping of the owner's answer. |
+| S → D | `run.input` | Send text to a live session (owner answer, CI result). Nudges are not sent this way: the daemon sends the nudge it received in `run.start` (section 4.8). The server builds the text from a run message template in `agents/` (03, section 3.2), such as the wrapping of the owner's answer. |
 | S → D | `run.resume` | Resume a session that was closed (after a quota pause or a long wait), with the first message to send: the owner's answer, or the "please continue" message after a usage-limit pause, detected or suspected. Both come from run message templates in `agents/` (03, section 3.2), filled in by the server. |
 | S → D | `run.stop` | Stop a run (cancel, timeout). |
 | D → S | `run.state` | Run state change (section 4.7) with the Claude session id and whether the tmux session is alive (false once a waiting or paused run's session is closed); at the end of a run, the reason as a fact (`submitted`, `gave_up`, `nudges_exhausted`, `stopped`, `max_duration`, `idle_timeout`, `session_start_timeout`, `crashed`), from which the server derives the run's status and failure reason, and the ticket branch's head and the commits ahead of the base branch. |
@@ -90,6 +90,7 @@ Sizes (owner's decision, lot 2 step B): every text of a message has a ceiling de
 - agent profile snapshot: instructions, model, tool allowlist, profile version;
 - run token for MCP calls (scoped to this run);
 - initial prompt, built by the server from the ticket, its comments and the purpose;
+- nudge message, filled in by the server from its run message template (03, section 3.2; section 4.8);
 - limits: maximum run duration, idle timeout, maximum nudges, waiting run lifetime, session start timeout, MCP call timeout, Claude Code MCP tool timeout (values resolved by the server when the run starts, 04 section 8);
 - optional Claude session id to resume.
 
@@ -212,7 +213,7 @@ The server's run status (01, section 3.7) follows the daemon's state: `preparing
 
 ### 4.8 End of turn without a decision
 
-When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge** (never after a `StopFailure`, section 4.10): a short message reminding the agent that it must continue working or use one of these three tools. After the maximum number of nudges (default 2, configurable), the run ends with reason `agent_gave_up`.
+When a turn ends (`Stop` hook) and the agent has not called `ticket.submit`, `ticket.ask` or `ticket.give_up` during it, the daemon sends a **nudge** (never after a `StopFailure`, section 4.10): a short message reminding the agent that it must continue working or use one of these three tools. The daemon decides when to nudge, but the text is the nudge message of `run.start`, filled in by the server from a run message template (03, section 3.2): the daemon holds no agent-facing text (owner's decision, lot 2 step B). After the maximum number of nudges (default 2, configurable), the run ends with reason `agent_gave_up`.
 
 Nudges are expensive: every turn reloads the whole session context (about 70,000 tokens from cache in the spike, even for a one-line answer). The instructions are designed so that agents rarely need one.
 

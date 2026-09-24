@@ -143,13 +143,14 @@ The templates for these messages are stored with the application and versioned l
 
 ### 3.2 Run message templates
 
-Every text the server sends to an agent comes from a **run message template** in `agents/`, versioned with the application and filled in by the server. The server holds no hard-coded agent-facing text (owner's decision, lot 2 step B). The templates cover:
+Every text sent to an agent comes from a **run message template** in `agents/`, versioned with the application and filled in by the server. No agent-facing text is hard-coded in the server or the daemon (owner's decision, lot 2 step B). The templates cover:
 
 - the first message of each purpose (section 3.1);
 - the "please continue" message sent with `run.resume` after a pause on a usage limit, detected or suspected (05, section 4.10);
-- the wrapping of the owner's answer to a question, whether delivered live (`run.input`) or after the waiting run lifetime (`run.resume`, 04 section 6).
+- the wrapping of the owner's answer to a question, whether delivered live (`run.input`) or after the waiting run lifetime (`run.resume`, 04 section 6);
+- the nudge sent when a turn ends without a decision (05, section 4.8). The server fills it in when it builds `run.start` and sends it in that payload; the daemon decides when to nudge but never holds agent-facing text of its own.
 
-Lot 2 ships these three: `implement`, continue after a pause, and the owner's answer.
+Lot 2 ships these four: `implement`, continue after a pause, the owner's answer, and the nudge.
 
 ## 4. Assignment rules
 
