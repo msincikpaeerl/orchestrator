@@ -80,7 +80,7 @@ This only works if Claude Code can be started, observed, controlled and restrict
 
 ## Update 2026-09-24 (lot 2 step A, documentation check)
 
-Read in Claude Code's documentation for version 2.1.282, not yet run on the real tool (the owner's smoke test in the lot 2 check does it). Spec 05 is updated accordingly.
+Read in Claude Code's documentation for version 2.1.282, not yet run on the real tool: the owner checks them with `tools/smoke/claude-code-probe.sh` right after lot 2 step G, and `StopFailure` and the usage-limit data with the usage-limit capture. Spec 05 is updated accordingly.
 
 - `--append-system-prompt-file` is documented, and said to work in interactive mode. This contradicts the finding above; the daemon keeps the validated `--append-system-prompt <text>` until the smoke test says otherwise.
 - Claude Code merges `permissions.allow` lists and hooks from the repository's `.claude/settings.json` with those given by `--settings`. Runs therefore add `--setting-sources user` (the repository's settings, and its `CLAUDE.md`, are not loaded; the common rules tell the agent to read `CLAUDE.md`) and `--strict-mcp-config` (the repository's `.mcp.json` is ignored).

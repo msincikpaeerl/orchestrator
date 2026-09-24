@@ -26,7 +26,7 @@ Non-responsibilities: deciding what runs next (scheduler), validating ticket tra
 | Supported OS | Linux, and Windows through WSL 2 (Linux distribution). No native Windows. |
 | Runtime | Node.js 24 LTS, TypeScript. Claude Code's native installer does not need Node.js, so Node.js is a prerequisite of the daemon itself. |
 | Distribution | npm package exposing an `orchestrator-daemon` command, bundled into a single file and served by the server of the same version at `/downloads/orchestrator-daemon-<version>.tgz`. The owner installs it with `npm install -g <server URL>/downloads/orchestrator-daemon-<version>.tgz`; nothing is published to the npm registry (owner's decision, lot 2 step A). |
-| Service | systemd user service, installed by `orchestrator-daemon install-service`, with lingering enabled (`loginctl enable-linger`) so it runs without an open login. On WSL, systemd must be enabled (`[boot] systemd=true` in `/etc/wsl.conf`), and systemd services do not keep WSL running: the user documentation explains how to keep it running (`instanceIdleTimeout=-1` in the `[general]` section of `%UserProfile%\.wslconfig`, or an open WSL window). |
+| Service | systemd user service, installed by `orchestrator-daemon install-service`, with lingering enabled (`loginctl enable-linger`) so it runs without an open login. On WSL, systemd must be enabled (`[boot] systemd=true` in `/etc/wsl.conf`), and systemd services do not keep WSL running: the user documentation explains how to keep it running (`instanceIdleTimeout=-1` in the `[general]` section of `%UserProfile%\.wslconfig`, or an open WSL window). The daemon cannot read the Windows `.wslconfig`: the Add machine help page explains the setting, and `doctor` prints it as "check this yourself" with the documentation link (owner's decision, lot 2 step A). |
 | Dependencies checked at start | `git` (2.40 or later), `tmux` (3.2 or later, for `paste-buffer -p`), `claude` (2.1.280 or later). Missing dependencies or versions below these are reported to the server and the machine is marked unusable. A Claude Code version above the highest one validated with the spike scripts is accepted with a warning in `doctor` and on the machine page, because Claude Code updates itself often; the session start timeout (section 4.2.1) catches a real incompatibility (owner's decision, lot 2 step A). |
 | Recommended setup | A dedicated Linux user for the daemon, so agents cannot read the owner's personal files. In lot 2 the daemon runs under the owner's own user, and the user documentation says plainly that an agent is then less isolated and that the path checks on Bash commands are best effort (section 4.6); the guide for a dedicated user comes with lot 7 (owner's decision, lot 2 step A). |
 | Claude configuration | Agents run with a **dedicated Claude Code configuration folder** (`CLAUDE_CONFIG_DIR=~/.orchestrator/claude-config`), separate from the owner's personal one. It holds its own login (same subscription), trust entries and transcripts. See ADR 0002. |
@@ -136,11 +136,13 @@ The daemon creates a detached tmux session named `orch-<run-id>`, with the workt
 | `--settings <run settings.json>` | Hooks, status line command, allowlist, deny rules and `autoContinueAtUsageLimit: false` for the run. |
 | `--permission-mode dontAsk` | Refuse anything not allowed instead of prompting (section 4.6). |
 | `--model <profile model>` | Model from the agent profile. |
-| `--append-system-prompt <text>` | Common rules and role instructions, added to Claude Code's own system prompt. There is no file variant; the text is passed directly. |
+| `--append-system-prompt <text>` | Common rules and role instructions, added to Claude Code's own system prompt. The text is passed directly: the spike found no file variant, and although the documentation now lists `--append-system-prompt-file`, the validated text form is kept (owner's decision, lot 2 step A). |
 | `--resume <session id>` | Only for `run.resume`. The session keeps its id. |
 | `--` then the first message | Always after `--`, so the message can never be read as an option value. |
 
-These arguments were validated on Claude Code 2.1.280 (ADR 0002), except `--strict-mcp-config` and `--setting-sources`, taken from the documentation check of lot 2 step A and checked by the owner with the smoke-test script in the lot's final step. The daemon declares its supported minimum version and refuses older ones (section 2). Environment: `CLAUDE_CONFIG_DIR` as above; the automatic updater of Claude Code is left on.
+With `--setting-sources user`, the only settings file Claude Code reads besides `--settings` is the **user** settings file of the configuration folder in `CLAUDE_CONFIG_DIR`: `~/.orchestrator/claude-config/settings.json`, written and owned only by the daemon (Claude Code's documentation: user settings are `$CLAUDE_CONFIG_DIR/settings.json` when the variable is set). The owner's own `~/.claude/` settings never reach a run, and the agent cannot change the daemon's file: it is inside the Claude configuration folders covered by the deny rules (section 4.6). Managed settings (`/etc/claude-code/`, and on WSL possibly the Windows policy) always apply, as they do for any Claude Code session; the owner's machine normally has none, and `doctor` reports any it finds (owner's decision, lot 2 step A).
+
+These arguments were validated on Claude Code 2.1.280 (ADR 0002), except `--strict-mcp-config` and `--setting-sources`, taken from the documentation check of lot 2 step A and checked by the owner with a probe script right after the permission step of lot 2 (plan step H), before any run code depends on them. The daemon declares its supported minimum version and refuses older ones (section 2). Environment: `CLAUDE_CONFIG_DIR` as above; the automatic updater of Claude Code is left on.
 
 ### 4.4 Sending input
 
@@ -153,7 +155,7 @@ The daemon never reads the terminal display. It uses three sources.
 | Source | What it gives | Use |
 |---|---|---|
 | **Hooks** | `SessionStart` (session id, transcript path, `source`: `startup` or `resume`), `PreToolUse` and `PostToolUse`, `Notification` (`notification_type`, including `idle_prompt` when idle), `Stop` at the end of **each turn** with the agent's last message (`last_assistant_message`), `StopFailure` **instead of** `Stop` when a turn ends on an API error (`error`: `rate_limit`, `overloaded`, `server_error`, `authentication_failed`, … and the error text in `last_assistant_message`), `SessionEnd`. | Run state machine, permission enforcement, idle detection, turn outcome and usage-limit detection without reading the transcript. |
-| **Status line command** | A command declared in the run's `settings.json` (`statusLine`), run by Claude Code with a JSON input that includes `cost.total_cost_usd` and, for Pro and Max accounts, `rate_limits.five_hour` and `rate_limits.seven_day` (`used_percentage`, `resets_at` in Unix seconds). It forwards the input to the daemon and prints nothing useful. It is a documented input, like hooks, not the terminal display. | Usage estimate per run (07), reset time of a usage limit. |
+| **Status line command** | A command declared in the run's `settings.json` (`statusLine`), run by Claude Code with a JSON input that includes `cost.total_cost_usd` and, for Pro and Max accounts, `rate_limits.five_hour` and `rate_limits.seven_day` (`used_percentage`, `resets_at` in Unix seconds). It forwards the input to the daemon and prints nothing useful. It is a documented input, like hooks, not the terminal display. Claude Code runs it only when its interface refreshes, so it is a supplementary source (section 4.10). | Usage estimate per run (07), reset time of a usage limit. |
 | **Transcript file** | The session's JSONL transcript, under the dedicated configuration folder. Claude Code documents its format as internal and changing between versions, so the daemon reads it tolerantly (unknown entries are skipped) and uses it only for display. It includes `cost-state` entries, used for the usage estimate only if the status line gives none. | Live logs in the UI. |
 | **MCP calls** | Explicit declarations by the agent: progress, question, submission, giving up. | Ticket state, run outcome. |
 
@@ -228,17 +230,21 @@ Claude Code's documentation (lot 2 step A) gives these signals; they are not yet
 - a `StopFailure` hook with `error: "rate_limit"`, whose `last_assistant_message` holds the message shown, documented as `You've hit your session limit · resets 3:45pm` (also `weekly`, `Opus` and `Sonnet` limits);
 - the status line input, whose `rate_limits` windows give `used_percentage` and `resets_at` (Unix seconds).
 
-**Detected**: a `rate_limit` failure whose message is a known usage-limit message, or whose status line shows a window at 100 %. The reset time is `resets_at` of the full window, or else the time read from the message; without either, the fallback delay applies (07, section 5.2). The daemon:
+The status line is a **supplementary** source: Claude Code runs the command only when its interface refreshes, so its data can be late or missing. It can confirm a limit and give the reset time and the usage estimate, but detection never depends on it alone, and its absence never prevents detection (owner's decision, lot 2 step A).
+
+**Detected**: a known usage-limit message at the end of a turn (in a `StopFailure` of any type, or as the API error text of a turn), or a `StopFailure` with `error: "rate_limit"` while the latest status line input shows a window at 100 %. The reset time is `resets_at` of the full window, or else the time read from the message; without either, the fallback delay (`quotaFallbackDelayMinutes`) applies (07, section 5.2). The daemon sends no nudge, and:
 
 1. sends `run.quota_limited` (`detected`, reset time when known, evidence);
 2. closes the tmux session but keeps the worktree and the Claude session id;
 3. waits for `run.resume` (the owner's **Resume** in lot 2, the scheduler from lot 4, 07).
 
-The server moves the run to `paused_quota` with reason `usage_limit` and the account to `limited` until the reset time or now plus the fallback delay; **Resume** is refused until then.
+The server moves the run to `paused_quota` with reason `usage_limit` and the account to `limited` until the reset time or now plus the fallback delay (`quotaFallbackDelayMinutes`); **Resume** is refused until then.
 
-**Suspected**: a turn that ends on an API error that is not a detected limit (a `StopFailure` of another or unknown type, a `rate_limit` without a known message, or an API error text with no tool use in the turn), or an idle timeout right after such a turn. The daemon sends no nudge, sends `run.quota_limited` (`suspected`, evidence), and closes the session as above. The server moves the run to `paused_quota` with reason `suspected_usage_limit`, but **does not change the account**, and **Resume** is allowed at once: an overload or a network error must never lock the account (owner's decision, lot 2 step A). Neither case counts as a failed attempt.
+**Suspected**: a turn that ends on an API error that is not a detected limit (a `StopFailure` with `rate_limit` alone, `overloaded`, `server_error` or any other or unknown type, or an API error text with no tool use in the turn), or an idle timeout right after such a turn. The daemon sends no nudge, sends `run.quota_limited` (`suspected`, evidence), and closes the session as above. The server moves the run to `paused_quota` with reason `suspected_usage_limit`, but **does not change the account**, and **Resume** is allowed at once: an overload or a network error must never lock the account (owner's decision, lot 2 step A).
 
-Claude Code can itself wait in an open session and continue after the reset (`autoContinueAtUsageLimit`, on by default). The run's settings turn it off, so only the Orchestrator decides when a paused run continues.
+In **both cases** no nudge is sent and no failed attempt is counted (04, section 5).
+
+Claude Code can itself wait in an open session and continue after the reset (`autoContinueAtUsageLimit`, on by default). The run's settings (`--settings`) set `autoContinueAtUsageLimit: false`, so it is **off for every run** and only the Orchestrator decides when a paused run continues.
 
 The fake `claude` used in tests (09, section 8) can emit each signal: the documented message with and without a reset time, a `StopFailure` of each type, a status line at 100 %, an API error turn with no tool use, and nothing at all (a session that hangs until the idle timeout).
 
@@ -290,7 +296,7 @@ In v1 the GitHub credential is the owner's fine-grained personal token. A GitHub
 | `orchestrator-daemon install-service` | Install and enable the systemd user service. |
 | `orchestrator-daemon status` | Connection state, versions, capabilities, live runs. |
 | `orchestrator-daemon attach <run-id>` | Attach to a run's tmux session to watch it live (read-only by default). |
-| `orchestrator-daemon doctor` | Check dependencies, Claude Code login, WSL configuration. |
+| `orchestrator-daemon doctor` | Check dependencies, Claude Code login, managed Claude Code settings, WSL configuration. What it cannot read, such as `instanceIdleTimeout` in the Windows `.wslconfig`, it prints as "check this yourself" with the link to the documentation. |
 | `orchestrator-daemon mcp --run <id>` | MCP server started by Claude Code for a run (internal). |
 | `orchestrator-daemon hook <event>`, `orchestrator-daemon status-line` | Commands Claude Code runs for hooks and the status line (internal, section 4.5). |
 
@@ -310,6 +316,7 @@ The Claude Code behaviour this document relies on was verified on version 2.1.28
 | Workspace trust | Solved by a dedicated configuration folder and trust registered per repository |
 | `dontAsk` permission mode | Validated |
 | `--append-system-prompt-file` | ADR 0002 found no such option; the documentation checked in lot 2 step A lists it and says it works in interactive mode. The daemon keeps `--append-system-prompt <text>` (validated); the owner's smoke test in the lot 2 check tells whether the file variant can replace it |
-| `--strict-mcp-config`, `--setting-sources`, `StopFailure` hook, status line input | From the documentation (lot 2 step A); checked by the owner's smoke test in the lot 2 check |
+| `--strict-mcp-config`, `--setting-sources`, deny rules on Bash `cat`, status line input, `autoContinueAtUsageLimit` | From the documentation (lot 2 step A); checked by the owner with `tools/smoke/claude-code-probe.sh` in lot 2 plan step H |
+| `StopFailure` hook and usage-limit data | From the documentation; cannot be triggered on demand, so checked with the usage-limit capture (`--probe-limit`) |
 
 The spike scripts are kept as a compatibility check: they are run again before raising the supported Claude Code version.
