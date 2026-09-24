@@ -6,10 +6,11 @@
 |---|---|---|
 | Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. |
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
-| Git | any recent | |
+| Git | 2.40 or later | The daemon's tests use bare clones and worktrees (from lot 2). |
+| tmux | 3.2 or later (`tmux -V`) | The daemon's tests drive real tmux sessions with a fake `claude` (from lot 2 step F). Installed from the system's packages, so the version cannot be pinned; CI prints `tmux -V` in its log. |
 | Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, end-to-end tests, full stack. |
 
-Windows is supported through WSL 2 only.
+Windows is supported through WSL 2 only. The real Claude Code is never needed for development or tests (working rule 10); the owner's machines need it to run agents (`docs/user/`, from lot 2).
 
 ## First run
 

@@ -8,7 +8,7 @@ This document describes the screens of the web application and what the owner ca
 ## 1. General rules
 
 - **Responsive.** Every screen works on a phone, so the owner can answer questions and approve plans away from the computer. Complex editing (agent instructions) may be more comfortable on desktop but must remain possible on mobile.
-- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading. Until the realtime stream arrives (lot 2), screens refresh after each action and when the window regains focus; in addition, the project page refreshes on its own while its repository setup is `in_progress`, at the interval of the `projectSetupPollSeconds` setting (2 seconds by default), and stops as soon as the setup is `ready` or `failed` (owner's decision, lot 1 step D).
+- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading. The server keeps one Server-Sent Events stream per logged-in browser (09, section 4) carrying "changed" messages (kind of entity, id, project) and the log lines of the runs the screen shows; the screen then reloads what changed. Screens also reload everything after the stream reconnects, after each action and when the window regains focus. The project page's polling during a repository setup, and its `projectSetupPollSeconds` setting, are removed in favour of the stream (owner's decision, lot 2 step A).
 - **Help everywhere.** Each screen has a help link to the matching page of the user documentation.
 - **English only** for all text.
 - **Confirmation** for destructive actions (cancel ticket, mark as done manually, archive project, revoke machine, delete agent).
@@ -36,8 +36,10 @@ The wizard covers only the steps that exist in the current version and ends on a
 
 1. **Create the owner account**: username and password (at least 12 characters). See 01, section 3.11.
 2. **Connect GitHub**: a "Create the token on GitHub" button opens GitHub's token form with the name, expiry and permissions already filled in (section 3.1). The owner pastes the token and enters its expiry date, or chooses "No expiry date"; the application checks the token and shows the result of each permission (section 3.2).
-3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Lot 2.)*
-4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Lot 2.)*
+3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Version 0.6.0, lot 5.)*
+4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Version 0.6.0, lot 5.)*
+
+Before these wizard steps exist, accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine connected yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
 5. **Done**: links to Help; once requests exist, suggests submitting a first request.
 
 ### 3.1 GitHub token requirements
@@ -65,7 +67,7 @@ The "Create the token on GitHub" link pre-fills the token name, a one-year expir
 
 GitHub has no way to list the permissions of a fine-grained token, so the application tries requests with it ([ADR 0022](../adr/0022-github-token-verification-confirmed.md)). The check never creates or changes anything on GitHub:
 
-1. The token is valid: `GET /user` succeeds. This gives the account name shown to the owner. A classic token (not starting with `github_pat_`) is refused.
+1. The token is valid: `GET /user` succeeds. This gives the account name shown to the owner. The account's login and numeric id are stored with the token when it is saved (not read again at every run): they give the address of agent commits (04, section 4). A token saved before version 0.3.0 gets them at its next check or first use. A classic token (not starting with `github_pat_`) is refused.
 2. Read permissions (Metadata, Actions, Commit statuses), with read requests on one existing private repository of the owner, when there is one.
 3. Write permissions (Administration, Contents, Pull requests, Workflows), with deliberately invalid requests: GitHub answers "validation failed" when the permission is granted and "not accessible" when it is missing (confirmed with the real GitHub in lot 0 step E).
 4. A probe that depends on another permission is sent only when that permission is OK: GitHub refuses a workflow file without Contents write before looking at Workflows. Otherwise the result is **Could not verify** with the reason (for example "Requires Contents (Read and write) first"), never **Missing**.
@@ -80,10 +82,13 @@ The owner's task list, ordered by age:
 
 - plans to approve or reject;
 - questions from agents (tickets and requests), answerable inline;
+- tickets proposed by agents (`ticket.create`), each with **Accept** and **Reject**;
+- work finished by an agent and waiting for the owner's check (lot 2: tickets in `in_review`, see 04 section 1), with **Mark as done manually**;
+- runs paused by a usage limit ("Claude usage limit reached, resumes after <time>") or a suspected one ("Run paused: possible Claude usage limit"), with **Resume** (for a detected limit, only after the reset time) and **Stop run**;
 - pull requests awaiting merge, with a link to GitHub and the review summary;
 - tickets stopped after repeated failures;
-- system problems: machine offline with active work, account limited, daemon incompatible;
-- setup still to do: steps added after the owner went through the wizard (section 3), for example "No machine connected yet";
+- system problems: machine offline with active work, account limited, daemon incompatible, Claude Code version not supported;
+- setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet", "No machine connected yet";
 - GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).
@@ -130,21 +135,21 @@ The project page shows the repository setup while it runs (refreshing on its own
 ### 6.3 Project board
 
 - Header: key, name, repository link, setup status, branch protection status (applied, or not available on the owner's GitHub plan, with a help link), and for a linked repository the missing harness elements with **Check again**.
-- Columns by state (04, section 1); `proposed` hidden by default, `done` and `cancelled` collapsed.
+- Columns by state (04, section 1); `done` and `cancelled` collapsed. `proposed` is hidden by default, except that tickets proposed by agents (no plan) are shown in a "Proposed" column whenever there is at least one (owner's decision, lot 2 step A); the toggle for plan tickets comes with lot 5.
 - On a wide screen the columns sit side by side; on a phone they are stacked one below the other, each with its ticket count, so nothing scrolls sideways (owner's decision, lot 1 step F).
-- Cards show number, title, type, assignee, a "Blocked" badge (only for `proposed` and `todo` tickets, 04 section 1), active run indicator.
+- Cards show number, title, type, assignee, a "Blocked" badge (only for `proposed` and `todo` tickets, 04 section 1), "created by agent" when an agent created it, active run indicator with the last progress line.
 - Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph)*.
 - Actions: create a ticket manually, open project settings.
 
 ### 6.4 Ticket detail
 
-- Header: number, title, type, status, priority, assignee, links to branch and pull request.
+- Header: number, title, type, status, priority, assignee, links to branch and pull request. Until pushing exists (lot 3), the branch is shown as "on machine <name>, not on GitHub yet" with the commits the last run reported (01, section 3.4).
 - Description and acceptance criteria.
 - Dependencies: blocked by, blocks. Only tickets of the same project; a dependency that would create a cycle is refused with an explanation. Dependencies can be added or removed only while the waiting ticket is `proposed` or `todo`; the blocking ticket can be in any state (owner's decision, lot 1 step E).
-- DoD report of the latest submission, with each check's result.
+- DoD report of the latest submission, with each check's result. In lot 2 only the report's summary and criteria are shown; the checks' results come with lot 3.
 - Timeline: comments, questions and answers, status changes, reviews, runs.
 - Runs: list with purpose, machine, duration (working and waiting), outcome; open a run to see its live or recorded log.
-- Actions depending on state (04, section 2): edit (in `proposed` or `todo`), change assignee, **Run now**, answer a question, add a comment, request changes (in `awaiting_merge`), cancel, **Mark as done manually** (with a mandatory comment), **Reopen** (in `cancelled`).
+- Actions depending on state (04, section 2): edit (in `proposed` or `todo`), change assignee, **Accept** and **Reject** (a `proposed` ticket created by an agent), **Run now** (in `todo`; when it cannot start, the reason is shown: no assignee, blocked, no compatible machine online, account limited, account already running its maximum), **Stop run** (while a run is active), **Resume** (a paused run), answer a question, add a comment, request changes (in `awaiting_merge`), cancel, **Mark as done manually** (with a mandatory comment), **Reopen** (in `cancelled`).
 - **Mark as done manually** on a ticket that still waits for tickets not `done` stays allowed (04, section 2), but its confirmation warns first: it names each of those tickets with its number and state and asks to confirm anyway (**Mark as done anyway**). The API is unchanged (owner's finding, lot 1 step I).
 
 ### 6.5 Project settings
@@ -153,9 +158,10 @@ Name, description, required capabilities, per-project overrides of settings (04,
 
 ## 7. Activity
 
-- **Live runs**: what each agent is doing now: ticket, last progress line, live log from the transcript, elapsed time. Actions: stop run, attach command (for `orchestrator-daemon attach`).
-- **Queue**: next candidates and why they are not running (07, section 7).
+- **Live runs**: what each agent is doing now: ticket, last progress line, live log from the transcript, elapsed time, estimated usage. Actions: stop run, attach command (for `orchestrator-daemon attach`).
+- **Queue**: next candidates and why they are not running (07, section 7). *(Lot 4.)*
 - **History**: past runs with filters (project, agent, outcome, date).
+- **Run page**: purpose, ticket, agent and profile version, machine, status (with the pause reason), times working and waiting, estimated usage, outcome, branch and commits, and the log: one entry per transcript event (the agent's text, each tool with a short input, tool results cut to the "Longest stored log entry" setting), with credentials masked as in the event log. Logs are kept for as long as the run (owner's decision, lot 2 step A).
 - **Event log**: filterable list of events, newest first, each in plain words with links to its project or ticket ("WEB-12 marked as done manually: “…”"), its time and who caused it. Filters: project (events about no project are shown only without this filter), ticket, kind of entity, event type, and a range of days. A page shows a fixed number of events, with a button for the older ones; pages follow a cursor (time and id of the last event shown), so events written meanwhile never shift them. Titles, names and comments are quoted as plain text (never Markdown or HTML), on one line and shortened, each quote linking to the page with the full text. Credentials are never shown, even if a payload held one (lot 1 step H).
 
 ## 8. Agents
@@ -181,10 +187,13 @@ Choose a role or duplicate an existing profile, then edit (03, section 5).
 
 State, plan, schedule windows, daily budget, behaviour at window end, limit history. Actions: pause (stop new runs or pause now), resume, edit.
 
+In lot 2 an account has a label, a plan and its maximum concurrent runs, and shows its state (`available`, or `limited` until a time); schedule windows, the daily budget, the behaviour at window end and manual pause come with lot 4.
+
 ### 9.2 Machine list and detail
 
 - Name, OS, account, status, last heartbeat, daemon and Claude Code versions, capabilities, active runs.
 - Actions: add machine (shows install and enrollment commands), disable, revoke token, edit capabilities.
+- **Add machine** shows two commands: `npm install -g <server URL>/downloads/orchestrator-daemon-<version>.tgz`, which installs the daemon of the server's own version from the server itself, and `orchestrator-daemon enroll <server URL> <code>`. Then it tells the owner to run `orchestrator-daemon login` and `orchestrator-daemon install-service`, and waits until the machine connects (owner's decision, lot 2 step A; 05, section 2).
 - Diagnostic information reported by `doctor`.
 
 ## 10. Settings

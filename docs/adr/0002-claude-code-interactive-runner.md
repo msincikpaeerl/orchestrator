@@ -77,3 +77,14 @@ This only works if Claude Code can be started, observed, controlled and restrict
 ## Open point
 
 - **Usage-limit signal.** Not yet observed. To capture with `claude-code-spike.sh --scan-limit` right after the limit is reached, then add to this ADR and to 05, section 4.10.
+
+## Update 2026-09-24 (lot 2 step A, documentation check)
+
+Read in Claude Code's documentation for version 2.1.282, not yet run on the real tool: the owner checks them with `tools/smoke/claude-code-probe.sh` right after lot 2 step G, and `StopFailure` and the usage-limit data with the usage-limit capture. Spec 05 is updated accordingly.
+
+- `--append-system-prompt-file` is documented, and said to work in interactive mode. This contradicts the finding above; the daemon keeps the validated `--append-system-prompt <text>` until the smoke test says otherwise.
+- Claude Code merges `permissions.allow` lists and hooks from the repository's `.claude/settings.json` with those given by `--settings`. Runs therefore add `--setting-sources user` (the repository's settings, and its `CLAUDE.md`, are not loaded; the common rules tell the agent to read `CLAUDE.md`) and `--strict-mcp-config` (the repository's `.mcp.json` is ignored).
+- A `StopFailure` hook replaces `Stop` when a turn ends on an API error, with an `error` type (`rate_limit`, `overloaded`, …). The documented usage-limit message is `You've hit your session limit · resets 3:45pm`, and the status line command receives `rate_limits` windows with `resets_at`. These are the detection signals (05, section 4.10); the open point below remains until one is observed.
+- Claude Code waits and continues on its own after a usage limit resets (`autoContinueAtUsageLimit`, on by default). Runs turn it off.
+- The transcript's format is documented as internal and changing between versions: it is used for display only.
+- Trust, hooks payloads (`SessionStart.source`, `Stop.last_assistant_message`) and the `dontAsk` mode are described as the spike found them.

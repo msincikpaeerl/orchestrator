@@ -45,6 +45,8 @@ Within a category: ticket priority (`high` first), then tickets that block the m
 
 The owner can use **Run now** on a ticket to move it to the front. Run now ignores schedule windows but never ignores the quota state or the concurrency limit.
 
+**Lot 2, before the loop exists.** Run now is the only way a run starts. It checks the ticket is eligible and its account can start a run (section 2, step 1, without schedule windows and budget), picks a machine (section 4), creates and dispatches the run (section 2, steps 4 and 5). When it cannot start, the owner sees why: no assignee, blocked, no compatible machine online, account limited (until when), account already running its maximum. An owner's answer to a question whose session was closed resumes the same run through the same path (04, section 6), and so does **Resume** on a paused run (owner's decision, lot 2 step A).
+
 ## 4. Machine selection
 
 A machine can take a run when it is:
@@ -69,9 +71,9 @@ A Pro subscription does not expose its remaining usage. The Orchestrator cannot 
 ### 5.2 When the limit is reached
 
 1. The daemon sends `run.quota_limited`. The run moves to `paused_quota`. This is not a failure (04, section 5).
-2. The account moves to `limited`, with `limited_until` set to the reset time reported by Claude Code, or to **now + 1 hour** when no time is available.
+2. For a **detected** limit, the account moves to `limited`, with `limited_until` set to the reset time reported by Claude Code, or to **now + the fallback delay** (1 hour by default) when no time is available. A detected limit is a known usage-limit message, or a `rate_limit` failure while a window shows 100 % (05, section 4.10). A **suspected** limit (a `rate_limit` failure alone, `overloaded`, `server_error`, or an API error turn with no tool use; 05, section 4.10) leaves the account unchanged: only the run is paused, with reason "suspected usage limit", and **Resume** is allowed at once (owner's decision, lot 2 step A). In both cases no nudge is sent and no failed attempt is counted, and Claude Code's own automatic continuation after a limit (`autoContinueAtUsageLimit`) is off for every run.
 3. No run starts on this account while it is `limited`. Other accounts, if any, are unaffected.
-4. At `limited_until`, the account returns to `available` and the paused run is resumed first. It acts as the probe: if the limit is still reached, the account goes back to `limited` with the next estimate, doubling the fallback delay up to 4 hours.
+4. At `limited_until`, the account returns to `available` and the paused run is resumed first. In lot 2, before the loop exists, the owner resumes it with **Resume** ("Needs you" lists it), which is refused before `limited_until`; the doubling of the fallback delay comes with lot 4. It acts as the probe: if the limit is still reached, the account goes back to `limited` with the next estimate, doubling the fallback delay up to 4 hours.
 5. The UI shows the limit, the expected reset time, and a history of limits reached, so the owner can adjust windows and budget.
 
 ### 5.3 Schedule windows
@@ -119,4 +121,4 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 
 The longest fallback delay is never below the fallback delay: a change or a **Reset to default** that would make it so is refused, naming both settings.
 
-All follow the settings rules of 04, section 8. The global ones are shown on Settings > Limits (02, section 10); the others are set on the account (02, section 9.1).
+All follow the settings rules of 04, section 8. The dispatch acknowledgement timeout and the fallback delay are used from version 0.3.0 (lot 2); the longest fallback delay and the scheduler tick from version 0.5.0 (lot 4). The global ones are shown on Settings > Limits (02, section 10); the others are set on the account (02, section 9.1).
