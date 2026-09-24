@@ -152,6 +152,20 @@ describe('MCP_TOOLS', () => {
     expect(MCP_TOOLS[name].description.length).toBeGreaterThan(80);
   });
 
+  it('tells the agent what to do instead (owner review of step B)', () => {
+    const guidance: [McpToolName, string][] = [
+      ['ticket_progress', 'calling it more often is harmless but useless'],
+      ['ticket_submit', 'every acceptance criterion'],
+      ['ticket_submit', 'relative to the worktree root'],
+      ['ticket_submit', 'never push and never switch branches'],
+      ['ticket_submit', 'If a criterion cannot be met, do not submit'],
+      ['ticket_create', 'Search with ticket_list first'],
+      ['ticket_give_up', 'Never give up because a command was refused'],
+    ];
+    for (const [name, text] of guidance) expect(MCP_TOOLS[name].description).toContain(text);
+    expect(MCP_TOOLS.ticket_progress.description).not.toContain('LIMIT_REACHED');
+  });
+
   it.each(McpToolName.options)('%s accepts its valid input and output', (name) => {
     expect(MCP_TOOLS[name].input.safeParse(examples[name].input).success).toBe(true);
     expect(MCP_TOOLS[name].output.safeParse(examples[name].output).success).toBe(true);
@@ -251,8 +265,10 @@ describe('McpError', () => {
     expect(
       McpError.safeParse({
         code: 'LIMIT_REACHED',
-        message: 'This run cannot create more tickets.',
-        details: [{ message: 'At most 3 tickets per run.', setting: 'maxAgentTicketsPerRun' }],
+        message: 'Limit of 3 tickets per run reached.',
+        details: [
+          { message: 'Limit of 3 tickets per run reached.', setting: 'maxAgentTicketsPerRun' },
+        ],
       }).success,
     ).toBe(true);
     expect(McpError.safeParse({ code: 'TIMEOUT', message: 'x' }).success).toBe(false);

@@ -195,7 +195,7 @@ export const MCP_TOOLS = {
   },
   ticket_progress: {
     description:
-      'Sets the short status line the owner sees live for your run, such as "Writing tests for the contact form". It does not create a comment. Call it when you start a new part of the work, not after every step: a call sooner than the progress update interval after the previous one is refused with LIMIT_REACHED.',
+      'Sets the short status line the owner sees live for your run, such as "Writing tests for the contact form". It does not create a comment, and it is never refused for being called often: the owner sees the latest line. Call it when you start a new part of the work; calling it more often is harmless but useless.',
     input: z.strictObject({ text: requiredText() }),
     output: z.object({ progress: z.string(), at: z.iso.datetime() }),
   },
@@ -213,7 +213,7 @@ export const MCP_TOOLS = {
   },
   ticket_give_up: {
     description:
-      "Declares that your run's ticket cannot be completed, with the reason and what you tried. The run ends as failed and the ticket may be tried again later. Use it only when the work is impossible as specified; for a question or a missing permission, use ticket_ask instead. End your turn after calling it.",
+      "Declares that your run's ticket cannot be completed, with the reason and what you tried. The run ends as failed and the ticket may be tried again later. Use it only when the work is impossible as specified. Never give up because a command was refused or a question is unanswered; use ticket_ask. End your turn after calling it.",
     input: z.strictObject({
       reason: requiredText(COMMENT_CEILING),
       tried: requiredText(COMMENT_CEILING),
@@ -222,7 +222,7 @@ export const MCP_TOOLS = {
   },
   ticket_create: {
     description:
-      'Creates a new ticket in the project for work you found outside your ticket\'s scope (a bug, missing documentation). It is created as "proposed": the owner accepts or rejects it, and nothing starts before that. Do not use it to split or hand over your own ticket. A run can create only a few tickets (LIMIT_REACHED beyond); use agent_list to choose the assignee.',
+      'Creates a new ticket in the project for work you found outside your ticket\'s scope (a bug, missing documentation). It is created as "proposed": the owner accepts or rejects it, and nothing starts before that. Search with ticket_list first so you do not create a duplicate. Do not use it to split or hand over your own ticket. A run can create only a few tickets (LIMIT_REACHED beyond); use agent_list to choose the assignee.',
     input: z.strictObject({
       type: TicketType,
       title: requiredText(TITLE_CEILING),
@@ -238,7 +238,7 @@ export const MCP_TOOLS = {
   },
   ticket_submit: {
     description:
-      "Submits your run's ticket as finished, with the Definition of Done report: each acceptance criterion (by index, from 0) met or not with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. Commit all your work first. The submission is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, or the branch has no commits; fix them and submit again. When it is accepted, the ticket moves to in_review and the run ends: end your turn.",
+      "Submits your run's ticket as finished, with the Definition of Done report: every acceptance criterion (by index, from 0) reported met with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. File paths are relative to the worktree root. Commit all your work first, on the current branch; never push and never switch branches: the Orchestrator handles that. If a criterion cannot be met, do not submit: use ticket_ask to get a decision, or ticket_give_up if the work is impossible as specified. The submission is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, or the branch has no commits; fix them and submit again. When it is accepted, the ticket moves to in_review and the run ends: end your turn.",
     input: DodReport,
     output: z.object({ result: z.literal('accepted'), ticket: McpTicket }),
   },

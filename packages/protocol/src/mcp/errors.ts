@@ -37,7 +37,11 @@ export const McpErrorDetail = z.object({
 });
 export type McpErrorDetail = z.infer<typeof McpErrorDetail>;
 
-/** A refused tool call: a code, a message written for the agent, and details when useful. */
+/**
+ * A refused tool call: a code, a message written for the agent, and details when useful. A
+ * refusal tied to a setting states the setting's current value in its message ("limit of 3
+ * tickets per run reached"), 06 section 3.
+ */
 export const McpError = z.object({
   code: McpErrorCode,
   message: requiredText(),
