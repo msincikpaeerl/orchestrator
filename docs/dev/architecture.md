@@ -9,7 +9,7 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 | `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, settings (Settings > Limits and project overrides), `orchestrator reset-password`, serves the UI |
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you, projects, tickets, Settings > GitHub connection and Limits, project overrides, Help |
 | `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
-| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types, GitHub permission list, projects, tickets and comments, "Needs you" items |
+| `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types and the payload schema of each (`EventPayloads`), GitHub permission list, projects, tickets and comments, "Needs you" items |
 | `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events`, `projects`, `tickets`, `ticket_dependencies`, `comments` |
 | `templates` | `@orchestrator/templates` | Files the server writes to GitHub, bundled in the image through the server's dependency (ADR 0023). | `project-skeleton/`: the common skeleton of a new repository (08, section 3.1) |
 
@@ -41,7 +41,8 @@ The daemon's dependency is added with the code that needs it.
 | `src/tickets/transitions.ts` | The only code that writes `tickets.status` (04, section 2): owner creation in `todo`, **Cancel**, **Mark as done manually** (its mandatory comment written as a `status_change` comment) and **Reopen**; any other action from a state is refused with an explanation. The status, its `ticket.status_changed` event and the comment are written in the caller's transaction. Edits and dependency changes are allowed in `EDITABLE_STATUSES` (`proposed`, `todo`). |
 | `src/needs-you.ts` | "Needs you" items other than GitHub problems: failed setups of active projects. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
-| `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction; ticket events take the time of the change so the timeline keeps its order. |
+| `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction; ticket events take the time of the change so the timeline keeps its order. `projectId` is the project the event concerns (`projectEntity` and `ticketEntity` give it; a project's setting override too); events about the owner, sessions, the GitHub connection and global settings have none. |
+| `src/event-log.ts` | `GET /api/events` (Activity > Event log): newest first by (`created_at`, `id`), filters, and a cursor of the last event's time (in microseconds, as stored) and id, so events written between two pages shift nothing. The index `events_project_time` (`project_id`, `created_at`, `id`) serves the project filter and the project list's last activity, `events_entity_time` the ticket and kind filters, `events_time` the rest. Each payload is parsed with its type's schema (other fields are dropped) and GitHub or Anthropic credentials are masked, also in quoted comments. |
 | `src/settings/` | Settings (04, section 8). `resolveSettings` in `store.ts` is the only way code reads a setting: the project's override, then the global value, then the default of `SETTINGS` (`packages/protocol/src/api/settings.ts`, which describes each setting once: label, description, unit, range, default, per project, version that first uses it). Values are read when needed, so a change applies without a restart. Stored in `setting_values` (null `project_id` for the global value); a setting without a row uses its default. `changeSetting` is the only way to change one: it runs one change at a time (table lock, reads not blocked) and refuses a change or reset that breaks a pair of `SETTING_ORDER` (07, section 8). `routes.ts`: Settings > Limits and project overrides; every change and reset writes `setting.changed` or `setting.reset`. |
 | `src/http.ts` | Input validation with the protocol schemas and the error format (`ApiError`). |
 | `src/cli.ts` | The `orchestrator` command of the image: `reset-password` (`src/reset-password.ts`). |
@@ -58,7 +59,7 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/github/token/inspect` | yes | Validity, account and suggested expiry date of a pasted token. |
 | `PUT /api/github/token` | yes | Save (or replace) the token with its expiry date, then check it. |
 | `POST /api/github/token/check` | yes | Check the saved token again. |
-| `GET /api/projects` | yes | Projects; archived ones only with `?archived=true`. |
+| `GET /api/projects` | yes | Projects with their ticket counts and last activity (time of their latest event); archived ones only with `?archived=true`. |
 | `GET /api/projects/availability` | yes | `?key=` and `?repositoryName=`: `free`, `taken` or `invalid`. |
 | `GET /api/projects/linkable-repositories` | yes | The owner's repositories that are not archived and not linked yet. |
 | `POST /api/projects` | yes | Create with a new repository or by linking one; the setup then runs in the background. |
@@ -71,6 +72,7 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/projects/:key/tickets/:number/dependencies`, `DELETE .../dependencies/:blockedBy` | yes | Add (same project, not itself, no cycle: the refusal names it) or remove a dependency, while the waiting ticket is `proposed` or `todo`. |
 | `POST /api/projects/:key/tickets/:number/comments` | yes | Owner note, on any ticket of an active, ready project. |
 | `POST /api/projects/:key/tickets/:number/cancel`, `.../mark-done`, `.../reopen` | yes | Owner status changes (04, section 2); `mark-done` needs `{ comment }`. |
+| `GET /api/events` | yes | Event log, newest first, `EVENT_LOG_PAGE_SIZE` events a page: filters `project`, `ticket` (a number, with `project`), `entity`, `type`, `from` (included), `to` (excluded); `before` is the `next` cursor of the previous page. Each event comes with its project key, ticket number and, for comments, the comment shortened. |
 | `GET /api/needs-you` | yes | "Needs you" items besides GitHub problems, oldest first. |
 | `GET /api/ui-settings` | yes | Settings the screens use: `projectSetupPollSeconds`. |
 | `GET /api/settings`, `PUT /api/settings/:name`, `DELETE /api/settings/:name` | yes | Settings > Limits: every setting's global value; change one (`{ value }`, checked against its range); **Reset to default**. |
@@ -84,8 +86,9 @@ Request and response schemas are in `packages/protocol/src/api/`. Any other `GET
 |---|---|
 | `main.tsx`, `app.tsx` | Entry point; routes (ADR 0019), and the redirections to the wizard or the login page. |
 | `api.ts`, `queries.ts` | API calls validated with the protocol schemas; TanStack Query hooks for setup state, session, GitHub status, "Needs you", UI settings, settings, projects and tickets. Screens refresh after each action and on window focus; the project page polls while its setup is `in_progress` (02, section 1). |
-| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), tickets (page, new and edit form), Settings and Settings > Limits, Help, "Coming in a later version". |
+| `pages/` | One file per screen: setup wizard and Done page, login, Needs you, Projects (list, new project, project page and settings), tickets (page, new and edit form), Settings and Settings > Limits, Activity (event log), Help, "Coming in a later version". |
 | `components/` | Shell (navigation, "Menu" on a phone), shared form elements with field errors, confirmation dialog, `UntrustedMarkdown` for every text written by the owner or agents (ADR 0024). |
+| `activity/` | Event log wording: the plain-words text of every event type (a unit test enumerates `EventType`), built from pieces of text and links; quoted titles, names and comments are shortened plain text linking to the page with the full text. |
 | `refusals.ts` | Plain-words text of every API refusal code (a unit test enumerates `ApiErrorCode`), with the fields over their limit and the tickets of a dependency cycle. |
 | `projects/` | Project wording: labels, the form field of each refusal, key suggestion, archive and unarchive with confirmation. |
 | `tickets/` | Board (columns side by side, stacked on a phone), ticket wording, blocked explanation. |

@@ -6,6 +6,8 @@ export interface NewEvent {
   actor: EventActor;
   entityType: EventEntityType;
   entityId?: string;
+  /** The project the event concerns (for the event log's filter); none for owner, sessions... */
+  projectId?: string | null;
   type: EventType;
   /** Facts only; never a password, token or other secret. */
   payload?: Record<string, unknown>;
@@ -19,6 +21,7 @@ export async function recordEvent(db: Executor, event: NewEvent): Promise<void> 
     actor: event.actor,
     entityType: event.entityType,
     entityId: event.entityId ?? null,
+    projectId: event.projectId ?? null,
     type: event.type,
     payload: event.payload ?? {},
     ...(event.at ? { createdAt: event.at } : {}),

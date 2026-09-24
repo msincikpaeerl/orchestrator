@@ -14,7 +14,7 @@ What a change affects:
 
 - It applies to what happens next, without restarting anything. Work already started keeps the values it started with. For example, a new **Session lifetime** applies to your next login; the session you are using keeps its end date.
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
-- Every change is recorded in the event log.
+- Every change is recorded in the [event log](activity.md#event-log).
 
 Limits marked "Used from version ..." belong to features of later versions (agents, runs, the scheduler). You can already set them, but they change nothing yet.
 

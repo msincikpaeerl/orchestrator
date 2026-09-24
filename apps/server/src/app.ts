@@ -9,6 +9,7 @@ import type { Pool } from 'pg';
 import { registerAuthRoutes } from './auth/routes.js';
 import { createDatabase } from './database.js';
 import { GITHUB_API_URL } from './github/client.js';
+import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
@@ -74,6 +75,7 @@ export function buildApp(dependencies: AppDependencies) {
     registerNeedsYouRoutes(scope, { db });
     registerUiSettingsRoutes(scope, { db });
     registerSettingRoutes(scope, { db });
+    registerEventLogRoutes(scope, { db });
     done();
   });
 

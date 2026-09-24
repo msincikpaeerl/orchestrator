@@ -98,8 +98,14 @@ export type Project = z.infer<typeof Project>;
 export const TicketCounts = z.record(TicketStatus, z.int().min(0));
 export type TicketCounts = z.infer<typeof TicketCounts>;
 
-/** A project as the project list shows it (02, section 6.1). */
-export const ProjectListItem = Project.extend({ ticketCounts: TicketCounts });
+/**
+ * A project as the project list shows it (02, section 6.1). `lastActivity` is the time of its
+ * latest event.
+ */
+export const ProjectListItem = Project.extend({
+  ticketCounts: TicketCounts,
+  lastActivity: z.iso.datetime().nullable(),
+});
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
 
 export const ProjectListResponse = z.object({ projects: z.array(ProjectListItem) });

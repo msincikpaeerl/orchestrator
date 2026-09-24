@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -101,16 +102,31 @@ export const githubConnection = pgTable(
   (table) => [check('github_connection_single_row', sql`${table.id} = 1`)],
 );
 
-/** Append-only log of state changes (01, section 3.10). Payloads never contain secrets. */
-export const events = pgTable('events', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  actor: text('actor').notNull(),
-  entityType: text('entity_type').notNull(),
-  entityId: text('entity_id'),
-  type: text('type').notNull(),
-  payload: jsonb('payload').notNull().default({}),
-});
+/**
+ * Append-only log of state changes (01, section 3.10). Payloads never contain secrets.
+ * `project_id` is the project the event concerns, null for events about no project (owner,
+ * sessions, GitHub connection, global settings). Declared after `projects`, which it references.
+ */
+export const events = pgTable(
+  'events',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    actor: text('actor').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id'),
+    projectId: uuid('project_id').references((): AnyPgColumn => projects.id),
+    type: text('type').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+  },
+  (table) => [
+    // The event log is read newest first by (time, id), whole or filtered: by project (and the
+    // project list's last activity), by entity (a ticket, or a kind of entity).
+    index('events_time').on(table.createdAt, table.id),
+    index('events_project_time').on(table.projectId, table.createdAt, table.id),
+    index('events_entity_time').on(table.entityType, table.entityId, table.createdAt, table.id),
+  ],
+);
 
 /**
  * Projects (01, section 3.1). Never deleted: archived. Allowed values of the text columns are the

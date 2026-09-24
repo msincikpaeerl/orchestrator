@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { Shell, sections } from './components/shell';
+import { ActivityPage } from './pages/activity';
 import { CenteredPage, Loading } from './components/ui';
 import { ComingLaterPage } from './pages/coming-later';
 import { LoginPage } from './pages/login';
@@ -23,7 +24,6 @@ const TicketPage = lazy(() =>
 /** Sections of later lots, with their purpose from 02, section 2. */
 const later: Record<string, string> = {
   '/requests': 'Talk to the Project Manager.',
-  '/activity': 'Live and past runs, event log.',
   '/agents': 'Default and custom agent profiles.',
   '/machines': 'Machines and Claude accounts.',
 };
@@ -79,6 +79,7 @@ export function App() {
                 element={<ComingLaterPage title={label} purpose={later[path] ?? ''} />}
               />
             ))}
+          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/projects/:key" element={<ProjectPage />} />

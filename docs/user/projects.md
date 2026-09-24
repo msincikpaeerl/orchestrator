@@ -2,7 +2,7 @@
 
 A project is one product the Orchestrator builds for you: a web app, a website or an Android app. Every project has its own GitHub repository, on your personal GitHub account, where its code and documentation live.
 
-You find your projects under **Projects** in the menu. The list shows, for each project, how many tickets it has in each state (see [Tickets](tickets.md)).
+You find your projects under **Projects** in the menu. The list shows, for each project, how many tickets it has in each state (see [Tickets](tickets.md)) and its last activity: the time of its most recent event, which opens the project's [event log](activity.md#event-log).
 
 ## Create a project with a new repository
 

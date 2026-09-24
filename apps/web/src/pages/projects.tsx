@@ -101,9 +101,16 @@ export function ProjectsPage() {
                     ({project.repository.private ? 'private' : 'public'})
                   </p>
                   <TicketCountsLine counts={project.ticketCounts} />
-                  <p className="text-sm text-slate-600">
-                    Last change {formatDateTime(project.updatedAt)}
-                  </p>
+                  {project.lastActivity !== null && (
+                    <p className="text-sm text-slate-600">
+                      <Link
+                        to={`/activity?project=${project.key}`}
+                        className="text-blue-700 underline"
+                      >
+                        Last activity {formatDateTime(project.lastActivity)}
+                      </Link>
+                    </p>
+                  )}
                 </div>
                 <div className="shrink-0">
                   <ArchiveAction project={project} />

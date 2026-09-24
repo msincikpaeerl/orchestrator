@@ -155,7 +155,7 @@ Name, description, required capabilities, per-project overrides of settings (04,
 - **Live runs**: what each agent is doing now: ticket, last progress line, live log from the transcript, elapsed time. Actions: stop run, attach command (for `orchestrator-daemon attach`).
 - **Queue**: next candidates and why they are not running (07, section 7).
 - **History**: past runs with filters (project, agent, outcome, date).
-- **Event log**: filterable list of events.
+- **Event log**: filterable list of events, newest first, each in plain words with links to its project or ticket ("WEB-12 marked as done manually: “…”"), its time and who caused it. Filters: project (events about no project are shown only without this filter), ticket, kind of entity, event type, and a range of days. A page shows a fixed number of events, with a button for the older ones; pages follow a cursor (time and id of the last event shown), so events written meanwhile never shift them. Titles, names and comments are quoted as plain text (never Markdown or HTML), on one line and shortened, each quote linking to the page with the full text. Credentials are never shown, even if a payload held one (lot 1 step H).
 
 ## 8. Agents
 
