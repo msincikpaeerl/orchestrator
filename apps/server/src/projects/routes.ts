@@ -14,7 +14,7 @@ import {
   type ProjectListResponse,
   type TicketCounts,
 } from '@orchestrator/protocol';
-import { and, asc, count, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNotNull, max, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
@@ -149,6 +149,13 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       })
       .from(schema.tickets)
       .groupBy(schema.tickets.projectId, schema.tickets.status);
+    // Uses the index on (project_id, created_at, id).
+    const activity = await db
+      .select({ projectId: schema.events.projectId, at: max(schema.events.createdAt) })
+      .from(schema.events)
+      .where(isNotNull(schema.events.projectId))
+      .groupBy(schema.events.projectId);
+    const lastActivity = new Map(activity.map((each) => [each.projectId, each.at]));
     return {
       projects: rows.map((row) => {
         const ticketCounts = Object.fromEntries(
@@ -157,7 +164,8 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
         for (const each of counts) {
           if (each.projectId === row.id) ticketCounts[TicketStatus.parse(each.status)] = each.count;
         }
-        return { ...toProject(row), ticketCounts };
+        const at = lastActivity.get(row.id);
+        return { ...toProject(row), ticketCounts, lastActivity: at ? at.toISOString() : null };
       }),
     } satisfies ProjectListResponse;
   });

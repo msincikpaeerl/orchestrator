@@ -122,6 +122,7 @@ async function storeSetting(
     actor: 'owner',
     entityType: 'setting',
     entityId: name,
+    projectId: target.projectId,
     type: 'setting.changed',
     payload: { ...eventPayload(name, target), previous: previous?.value ?? null, value },
   });
@@ -141,6 +142,7 @@ async function resetSetting(tx: Executor, name: SettingName, target: SettingScop
     actor: 'owner',
     entityType: 'setting',
     entityId: name,
+    projectId: target.projectId,
     type: 'setting.reset',
     payload: { ...eventPayload(name, target), previous: previous.value },
   });

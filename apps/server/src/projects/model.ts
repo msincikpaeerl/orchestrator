@@ -56,7 +56,7 @@ export async function findProjectById(db: Executor, id: string): Promise<Project
   return row ?? null;
 }
 
-/** Entity of the events about a project; their payloads also give its key. */
+/** Entity and project of the events about a project; their payloads also give its key. */
 export function projectEntity(row: Pick<ProjectRow, 'id'>) {
-  return { entityType: 'project', entityId: row.id } as const;
+  return { entityType: 'project', entityId: row.id, projectId: row.id } as const;
 }

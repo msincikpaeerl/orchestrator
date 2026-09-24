@@ -2,11 +2,13 @@ import { schema } from '@orchestrator/db';
 import {
   CommentAuthor,
   CommentKind,
+  EventPayloads,
   TicketCreator,
   TicketPriority,
   TicketStatus,
   TicketType,
   type Comment,
+  type EventPayload,
   type TicketLink,
   type TicketSummary,
 } from '@orchestrator/protocol';
@@ -20,9 +22,12 @@ export function ticketReference(projectKey: string, number: number): string {
   return `${projectKey}-${String(number)}`;
 }
 
-/** Entity of the events about a ticket; their payloads also give its project and reference. */
-export function ticketEntity(row: Pick<TicketRow, 'id'>) {
-  return { entityType: 'ticket', entityId: row.id } as const;
+/**
+ * Entity and project of the events about a ticket; their payloads also give the project key and
+ * the ticket reference.
+ */
+export function ticketEntity(row: Pick<TicketRow, 'id' | 'projectId'>) {
+  return { entityType: 'ticket', entityId: row.id, projectId: row.projectId } as const;
 }
 
 /** The API's view of a ticket. Parsing the text columns catches a value no code should write. */
@@ -65,15 +70,8 @@ export function acceptanceCriteria(row: Pick<TicketRow, 'acceptanceCriteria'>): 
 }
 
 /** Payload of `ticket.status_changed` events, written by the transition module. */
-export const StatusChangedPayload = z.object({
-  project: z.string(),
-  ticket: z.string(),
-  from: TicketStatus,
-  to: TicketStatus,
-  action: z.string(),
-  commentId: z.uuid().nullable(),
-});
-export type StatusChangedPayload = z.infer<typeof StatusChangedPayload>;
+export const StatusChangedPayload = EventPayloads['ticket.status_changed'];
+export type StatusChangedPayload = EventPayload<'ticket.status_changed'>;
 
 const statusOrder = new Map(TicketStatus.options.map((status, index) => [status, index]));
 const priorityOrder: Record<TicketPriority, number> = { high: 0, normal: 1, low: 2 };
