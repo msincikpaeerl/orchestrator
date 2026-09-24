@@ -155,7 +155,7 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 
 *Done 2026-09-25.* Approved by the owner with the review changes: step H probe, status line as a supplementary source, daemon-owned user settings, WSL idle timeout in help and doctor.
 
-### [ ] B. Daemon protocol and MCP schemas
+### [x] B. Daemon protocol and MCP schemas
 
 - `packages/protocol/src/daemon/`: Zod schemas for every message of 05 section 3.3:
   - `hello`, `welcome`, `heartbeat`;
@@ -167,6 +167,13 @@ WSL (05 section 2): systemd is enabled with `[boot] systemd=true` in `/etc/wsl.c
 - Hook, status line and fake-`claude` scenario schemas go in step F, which uses them.
 
 **Done when** unit tests accept a valid example of every message and tool and reject invalid ones (missing field, wrong type, unknown type, oversized text), and `/version` reports protocol 1 (server test).
+
+*Done 2026-09-25.* Owner's decisions, written into 05 sections 3.3 and 4.9 and 06 section 3:
+
+- the heartbeat carries nothing else in lot 2; lot 4 adds the resource summary as an optional field;
+- text ceilings are derived from the settings' declared ranges (`text-limits.ts`), never copied numbers;
+- for `ticket_submit`, the daemon sends the worktree facts (clean, branch head, commits ahead) collected when it forwards the call, and the server runs every check;
+- `ack` answers the server's commands and the daemon's reports (`run.events` per batch). Unacknowledged reports are kept in the run files and resent in order after reconnection, and duplicates are handled idempotently by message id; that behaviour is tested in the steps that implement it (E, F, J).
 
 ### [ ] C. Claude accounts, machines and the daemon gateway (server)
 
