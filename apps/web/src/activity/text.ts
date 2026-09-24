@@ -1,0 +1,307 @@
+import {
+  EventPayloads,
+  SETTINGS,
+  shorten,
+  type EventActor,
+  type EventEntityType,
+  type EventLogEntry,
+  type EventPayload,
+  type EventType,
+} from '@orchestrator/protocol';
+import { formatDate, permissionLabel } from '../github/text';
+import { amount } from '../settings/text';
+import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
+import { priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
+
+/**
+ * A piece of an event's text: plain text, or a link to the project or ticket page. Owner or agent
+ * content (titles, names, comments) is always a shortened quote linking to the page with the full
+ * text; it is shown as plain text, never as Markdown or HTML.
+ */
+export type Piece = string | { text: string; to: string };
+
+/** The event types in plain words, for the filter and for events whose payload is unreadable. */
+export const eventTypeLabel: Record<EventType, string> = {
+  'owner.created': 'Owner account created',
+  'owner.login_throttled': 'Logins delayed after failures',
+  'owner.password_reset': 'Password reset with the server command',
+  'session.created': 'Logged in',
+  'session.revoked': 'Logged out',
+  'github.token_saved': 'GitHub token saved',
+  'github.token_checked': 'GitHub token checked',
+  'github.token_rejected': 'GitHub token refused by GitHub',
+  'github.token_unreadable': 'GitHub token can no longer be read',
+  'github.permission_refused': 'GitHub request refused for a missing permission',
+  'project.created': 'Project created',
+  'project.updated': 'Project renamed or described',
+  'project.setup_step': 'Repository setup step done',
+  'project.setup_failed': 'Repository setup failed',
+  'project.setup_retried': 'Repository setup tried again',
+  'project.ready': 'Project ready',
+  'project.harness_checked': 'Harness elements checked',
+  'project.archived': 'Project archived',
+  'project.unarchived': 'Project unarchived',
+  'ticket.created': 'Ticket created',
+  'ticket.updated': 'Ticket edited',
+  'ticket.status_changed': 'Ticket status changed',
+  'ticket.dependency_added': 'Dependency added',
+  'ticket.dependency_removed': 'Dependency removed',
+  'ticket.commented': 'Comment added',
+  'setting.changed': 'Setting changed',
+  'setting.reset': 'Setting reset to default',
+};
+
+/** Kinds of entity, for the filter. */
+export const entityLabel: Record<EventEntityType, string> = {
+  owner: 'Owner account',
+  session: 'Login sessions',
+  github_connection: 'GitHub connection',
+  project: 'Projects',
+  ticket: 'Tickets',
+  setting: 'Settings',
+};
+
+/** Who caused the event. */
+export const actorLabel: Record<EventActor, string> = {
+  owner: 'You',
+  system: 'Orchestrator',
+  cli: 'Server command',
+};
+
+const ticketFieldLabel: Record<string, string> = {
+  type: 'type',
+  title: 'title',
+  description: 'description',
+  acceptanceCriteria: 'acceptance criteria',
+  priority: 'priority',
+};
+
+function projectPath(key: string): string {
+  return `/projects/${encodeURIComponent(key)}`;
+}
+
+/** Owner or agent content: on one line, shortened, in quotes, linking to its full text. */
+function quote(text: string, to: string | null): Piece {
+  const quoted = `“${shorten(text)}”`;
+  return to === null ? quoted : { text: quoted, to };
+}
+
+/** `WEB-12` as a link to the ticket. */
+function ticketRefLink(reference: string): Piece {
+  const match = /^([A-Z]{2,6})-(\d+)$/.exec(reference);
+  return match?.[1] && match[2]
+    ? { text: reference, to: ticketPath(match[1], Number(match[2])) }
+    : reference;
+}
+
+function list(items: string[]): string {
+  return items.join(', ');
+}
+
+function duration(seconds: number): string {
+  if (seconds % 3600 === 0) return `${String(seconds / 3600)} hour${seconds === 3600 ? '' : 's'}`;
+  if (seconds % 60 === 0) return `${String(seconds / 60)} minute${seconds === 60 ? '' : 's'}`;
+  return `${String(seconds)} second${seconds === 1 ? '' : 's'}`;
+}
+
+interface Context {
+  /** The project's key, linked to its page; the key from the payload when the link is unknown. */
+  project: Piece;
+  projectTo: string | null;
+  /** The ticket's reference, linked to its page. */
+  ticket: Piece;
+  ticketTo: string | null;
+  comment: string | null;
+}
+
+type Describe<T extends EventType> = (payload: EventPayload<T>, context: Context) => Piece[];
+
+const describe: { [T in EventType]: Describe<T> } = {
+  'owner.created': (p) => ['Owner account created with the username ', quote(p.username, null)],
+  'owner.login_throttled': (p) => [
+    `After ${String(p.failures)} failed logins ${
+      p.scope === 'address' ? `from the address ${p.address ?? 'unknown'}` : 'for your username'
+    }, the next attempt must wait ${duration(p.delaySeconds)}`,
+  ],
+  'owner.password_reset': (p) => [
+    `Password reset with the server command; ${String(p.revokedSessions)} login session${p.revokedSessions === 1 ? '' : 's'} ended`,
+  ],
+  'session.created': () => ['Logged in'],
+  'session.revoked': (p) => [p.reason === 'logout' ? 'Logged out' : 'Login session ended'],
+  'github.token_saved': (p) => [
+    `GitHub token saved for the account ${p.account}, `,
+    p.expiresOn === null ? 'without expiry date' : `expires on ${formatDate(p.expiresOn)}`,
+  ],
+  'github.token_checked': (p) => {
+    const missing = Object.entries(p.permissions)
+      .filter(([, result]) => result !== 'ok')
+      .map(([permission]) => permissionLabel(permission));
+    return [
+      missing.length === 0
+        ? 'GitHub token checked: every permission is there'
+        : `GitHub token checked: not confirmed: ${list(missing)}`,
+    ];
+  },
+  'github.token_rejected': (p) => [
+    `GitHub refused the token (${p.request}): enter a new token in Settings > GitHub`,
+  ],
+  'github.token_unreadable': () => [
+    'The saved GitHub token can no longer be read (the secret key changed): enter it again in Settings > GitHub',
+  ],
+  'github.permission_refused': (p) => [
+    `GitHub refused a request (${p.request}): the token needs ${list(p.permissions.map((each) => permissionLabel(each.split('=')[0] ?? each)))}`,
+  ],
+  'project.created': (p, c) => [
+    c.project,
+    ' created: ',
+    quote(p.name, c.projectTo),
+    `, ${kindLabel[p.kind].toLowerCase()}, ${p.origin === 'created' ? 'new' : 'linked'} ${p.private ? 'private' : 'public'} repository ${p.repository}`,
+  ],
+  'project.updated': (p, c) => {
+    const pieces: Piece[] = [c.project];
+    if (p.name !== undefined) pieces.push(' renamed ', quote(p.name, c.projectTo));
+    if (p.description !== undefined) {
+      pieces.push(p.name === undefined ? ' description changed' : ', description changed');
+    }
+    return pieces;
+  },
+  'project.setup_step': (p, c) => {
+    const done: Record<typeof p.step, string> = {
+      repository: p.reused
+        ? `repository ${p.repository ?? ''} found, created by an earlier attempt`
+        : `repository ${p.repository ?? ''} created`,
+      skeleton: p.alreadyApplied ? 'starting files already there' : 'starting files added',
+      branch_protection: `branch protection: ${
+        p.branchProtection === undefined
+          ? 'done'
+          : branchProtectionLabel[p.branchProtection].toLowerCase()
+      }`,
+      harness:
+        p.missing === undefined || p.missing.length === 0
+          ? 'every harness element found'
+          : `harness elements missing: ${list(p.missing.map((each) => harnessElement[each].label))}`,
+    };
+    return [c.project, ` setup: ${done[p.step]}`];
+  },
+  'project.setup_failed': (p, c) => [
+    c.project,
+    ` setup failed at “${stepLabel[p.step]}”: ${shorten(p.reason)}`,
+  ],
+  'project.setup_retried': (p, c) => [c.project, ' setup tried again'],
+  'project.ready': (p, c) => [c.project, ' is ready'],
+  'project.harness_checked': (p, c) => [
+    c.project,
+    p.missing.length === 0
+      ? ' checked again: every harness element found'
+      : ` checked again: missing ${list(p.missing.map((each) => harnessElement[each].label))}`,
+  ],
+  'project.archived': (p, c) => [c.project, ' archived'],
+  'project.unarchived': (p, c) => [c.project, ' unarchived'],
+  'ticket.created': (p, c) => {
+    const pieces: Piece[] = [
+      c.ticket,
+      ' created: ',
+      quote(p.title, c.ticketTo),
+      `, ${typeLabel[p.type].toLowerCase()}, ${priorityLabel[p.priority].toLowerCase()} priority, ${statusLabel[p.status].toLowerCase()}`,
+    ];
+    p.blockedBy.forEach((reference, index) => {
+      pieces.push(index === 0 ? ', waits for ' : ', ', ticketRefLink(reference));
+    });
+    return pieces;
+  },
+  'ticket.updated': (p, c) => {
+    const pieces: Piece[] = [
+      c.ticket,
+      ` edited: ${list(p.fields.map((field) => ticketFieldLabel[field] ?? field))}`,
+    ];
+    if (p.title !== undefined) pieces.push('; new title ', quote(p.title, c.ticketTo));
+    return pieces;
+  },
+  'ticket.status_changed': (p, c) => {
+    const said: Piece[] = c.comment === null ? [] : [': ', quote(c.comment, c.ticketTo)];
+    switch (p.action) {
+      case 'mark_done':
+        return [c.ticket, ' marked as done manually', ...said];
+      case 'cancel':
+        return [c.ticket, ' cancelled'];
+      case 'reopen':
+        return [c.ticket, ` reopened: back to ${statusLabel[p.to].toLowerCase()}`];
+    }
+  },
+  'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
+  'ticket.dependency_removed': (p, c) => [
+    c.ticket,
+    ' no longer waits for ',
+    ticketRefLink(p.blockedBy),
+  ],
+  'ticket.commented': (p, c) => [
+    c.ticket,
+    c.comment === null ? ': comment added' : ': comment ',
+    ...(c.comment === null ? [] : [quote(c.comment, c.ticketTo)]),
+  ],
+  'setting.changed': (p, c) => {
+    const { label } = SETTINGS[p.name];
+    if (p.scope === 'project') {
+      return [
+        `${label} set to ${amount(p.name, p.value)} for `,
+        c.project,
+        p.previous === null ? ' (was the global value)' : ` (was ${amount(p.name, p.previous)})`,
+      ];
+    }
+    return [
+      `${label} set to ${amount(p.name, p.value)} (was ${
+        p.previous === null ? 'the default' : amount(p.name, p.previous)
+      })`,
+    ];
+  },
+  'setting.reset': (p, c) => {
+    const { label } = SETTINGS[p.name];
+    if (p.scope === 'project') {
+      return [`${label}: the override for `, c.project, ' was removed, the global value applies'];
+    }
+    return [`${label} reset to its default, ${amount(p.name, SETTINGS[p.name].default)}`];
+  },
+};
+
+function run(type: EventType, payload: unknown, context: Context): Piece[] | null {
+  const parsed = EventPayloads[type].safeParse(payload);
+  // The payload was parsed with this type's schema, so it is the one its text expects.
+  const text = describe[type] as Describe<EventType>;
+  return parsed.success ? text(parsed.data, context) : null;
+}
+
+/** The event in plain words (02, section 7), with links to its project or ticket. */
+export function eventText(entry: EventLogEntry): Piece[] {
+  const payload = entry.payload ?? {};
+  const key =
+    entry.project?.key ??
+    (typeof payload.key === 'string' ? payload.key : null) ??
+    (typeof payload.project === 'string' ? payload.project : null) ??
+    (typeof payload.projectKey === 'string' ? payload.projectKey : null);
+  const projectTo = entry.project ? projectPath(entry.project.key) : null;
+  const ticketTo =
+    entry.project && entry.ticket ? ticketPath(entry.project.key, entry.ticket.number) : null;
+  const reference =
+    entry.project && entry.ticket
+      ? `${entry.project.key}-${String(entry.ticket.number)}`
+      : typeof payload.ticket === 'string'
+        ? payload.ticket
+        : 'A ticket';
+  const context: Context = {
+    project: projectTo === null ? (key ?? 'A project') : { text: key ?? '', to: projectTo },
+    projectTo,
+    ticket: ticketTo === null ? reference : { text: reference, to: ticketTo },
+    ticketTo,
+    comment: entry.comment,
+  };
+  const described = entry.payload === null ? null : run(entry.type, entry.payload, context);
+  if (described !== null) return described;
+  // A payload that does not match its type: the type in plain words, and what it concerns.
+  const about = entry.entityType === 'ticket' ? context.ticket : key ? context.project : null;
+  return about === null ? [eventTypeLabel[entry.type]] : [eventTypeLabel[entry.type], ': ', about];
+}
+
+/** The text without links, for tests and accessible names. */
+export function plainText(pieces: Piece[]): string {
+  return pieces.map((piece) => (typeof piece === 'string' ? piece : piece.text)).join('');
+}

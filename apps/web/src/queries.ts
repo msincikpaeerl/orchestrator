@@ -1,4 +1,5 @@
 import {
+  EventListResponse,
   GitHubStatusResponse,
   GlobalSettingsResponse,
   NeedsYouResponse,
@@ -11,7 +12,7 @@ import {
   TicketListResponse,
   UiSettingsResponse,
 } from '@orchestrator/protocol';
-import { QueryClient, useQuery } from '@tanstack/react-query';
+import { QueryClient, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, ApiRequestError, setUnauthenticatedHandler } from './api';
 
 // Screens refresh after each action and when the window regains focus (02, section 1).
@@ -32,6 +33,7 @@ export const keys = {
   projectSettings: (key: string) => ['projects', 'settings', key] as const,
   tickets: (key: string) => ['projects', 'tickets', key] as const,
   ticket: (key: string, number: number) => ['projects', 'tickets', key, number] as const,
+  events: (query: string) => ['events', query] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -177,4 +179,22 @@ export function useTicket(projectKey: string, number: number) {
 export async function ticketsChanged(ticket?: TicketDetail) {
   if (ticket) queryClient.setQueryData(keys.ticket(ticket.projectKey, ticket.number), ticket);
   await queryClient.invalidateQueries({ queryKey: keys.projects });
+}
+
+/**
+ * Activity > Event log: the events matching `query` (the filters as URL parameters), newest
+ * first. Each further page starts at the cursor of the previous one.
+ */
+export function useEventLog(query: string) {
+  return useInfiniteQuery({
+    queryKey: keys.events(query),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams(query);
+      if (pageParam !== null) params.set('before', pageParam);
+      const search = params.toString();
+      return api('GET', `/api/events${search ? `?${search}` : ''}`, EventListResponse);
+    },
+    getNextPageParam: (last) => last.next,
+  });
 }
