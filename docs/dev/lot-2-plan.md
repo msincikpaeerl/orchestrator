@@ -191,7 +191,7 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
   - token authentication, `hello`/`welcome` with the protocol check (current and previous version accepted);
   - heartbeats and offline detection ("Heartbeat interval", "Machine offline after");
   - revocation disconnects the daemon;
-  - the Claude Code version check (below minimum refused, above validated warned).
+  - the Claude Code version check: below the minimum (or missing), or a `doctor` error, the machine is connected but unusable; above the highest validated version, a warning only (05 section 3.2).
 - Settings: the three new ones, and the cross-setting rule extended from "never above" to "at least twice" (heartbeat and offline) and "strictly below" (for step G's MCP pair), with messages naming both settings.
 - API with protocol schemas: accounts (create, edit, list), machines (create with enrollment code, list, detail, disable, revoke, edit capabilities).
 - Events for every change (`machine.enrolled`, `machine.online`, `machine.offline`, `machine.revoked`, `account.created`, …), each with a plain-words text in the event log (as in lot 1 step I).
@@ -361,6 +361,8 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - branch and commits at the end.
 - `git.credential_request`: the token is sent only for a fetch of the run's own repository while the run is active.
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
+- Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
+- Run now refuses an unusable, disabled, revoked or offline machine.
 - **Usage limits** on the server:
   - `paused_quota` with its reason;
   - account `limited` only for `detected`, until the reset time or `quotaFallbackDelayMinutes` (now used from 0.3.0);
@@ -372,7 +374,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - every Run now refusal;
 - the acknowledgement timeout without an attempt counted;
 - a run through to `succeeded` via `run.state`, and a failure raising `attempt_count` with its comment;
-- Stop run and a `machine_offline` failure, neither counted;
+- Stop run, a `machine_offline` failure and a `machine_revoked` failure, none counted;
 - the credential refused for another repository or an inactive run;
 - a detected limit (with and without a reset time) marking the account and gating Resume;
 - a suspected limit leaving the account available and resumable at once;
