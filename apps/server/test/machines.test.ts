@@ -576,6 +576,37 @@ describe('the daemon connection', () => {
     });
   });
 
+  it('finishes the status work already queued before the server stops', async () => {
+    await start();
+    const { id, daemon } = await connectedMachine();
+    // Hold the machine's row, so marking it offline waits inside the queued work.
+    const holder = await t.pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM machines WHERE id = $1 FOR UPDATE', [id]);
+      await daemon.close();
+      await eventually(async () => {
+        const { rows } = await t.pool.query<{ waiting: number }>(
+          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock'",
+        );
+        expect(rows[0]?.waiting).toBe(1);
+      });
+      let closed = false;
+      const closing = t.app.close().then(() => {
+        closed = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(closed).toBe(false);
+      await holder.query('COMMIT');
+      await closing;
+    } finally {
+      holder.release();
+    }
+    const [row] = await t.db.select().from(schema.machines).where(eq(schema.machines.id, id));
+    expect(row?.status).toBe('offline');
+    expect(t.logs.text).not.toContain('daemon gateway failed');
+  });
+
   it('replaces an older connection without going offline in between', async () => {
     await start();
     const { id, token, daemon: older } = await connectedMachine();

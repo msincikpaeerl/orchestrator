@@ -124,7 +124,10 @@ export class DaemonGateway {
         for (const connection of this.connections.values()) {
           this.end(connection, DaemonCloseCode.shutdown, 'server shutting down');
         }
-        done();
+        // Status work already queued finishes first: the database closes after the server.
+        void Promise.all(this.queues.values()).then(() => {
+          done();
+        });
       },
     });
     void app.register((scope, _options, done) => {
