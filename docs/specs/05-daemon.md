@@ -43,11 +43,27 @@ The daemon runs as a normal process on the host, **not in Docker**, because it n
 4. The daemon exchanges the code for a long-lived **machine token**, stored in `~/.orchestrator/config.json` with permissions `600`.
 5. The machine appears online in the UI. The owner can revoke the token at any time, which disconnects the daemon.
 
+The exchange (owner's decision, lot 2 step C):
+
+- The daemon sends `POST /daemon/enroll` with `{ code }`, without authentication; the answer is `{ machineId, machineName, machineToken }`. Both are Zod schemas in `packages/protocol`.
+- The **code** is 24 characters from Crockford's Base32 alphabet (`0-9`, `A-Z` without `I`, `L`, `O`, `U`; 120 random bits), so guessing one within its lifetime is impractical. The daemon accepts it in any case and ignores `-` and spaces. It is stored hashed, with its expiry.
+- The code is **single use**: it is marked used in the same transaction that sets the machine's token, so two requests with the same code cannot both succeed.
+- A refused code says why: unknown, already used, or expired (stating the current "Enrollment code lifetime"). Failed attempts are throttled per client address with the login throttling of ADR 0015 and its settings, under their own key so they never delay the owner's login; the address is resolved as for a login. A throttled attempt is refused with the time to wait.
+- The **machine token** is `omt_` followed by 43 characters (256 random bits, Base64 URL). It is returned once, stored as a hash, and never logged; the request body is never logged either. The event log masks it like other credentials.
+- Enrolling again (after **New enrollment code**, 01 section 3.8) issues a new token; earlier tokens are never valid again.
+
 ### 3.2 Connection
 
 - A single WebSocket from the daemon to the server (`wss://` when the server is remote, `ws://` accepted for `localhost` only).
-- The daemon authenticates with the machine token on connection.
-- Heartbeat at the heartbeat interval (15 seconds by default). The server marks the machine `offline` after the "machine offline after" delay without one (60 seconds by default, at least twice the interval). Both are settings (04, section 8); the server sends the interval to the daemon in its answer to `hello`.
+- The daemon authenticates with the machine token on connection (`Authorization: Bearer <token>` on the WebSocket request to `/daemon`). An unknown token is refused before the WebSocket opens (HTTP 401). A revoked token gets a `welcome` refused with `token_revoked`, then the connection is closed.
+- The first message is `hello`. The server accepts the current protocol version and the previous one (09, section 6); any other version gets a `welcome` refused with `protocol_incompatible` and the update instruction, the connection is closed, and the machine shows "daemon incompatible" in "Needs you" until a compatible `hello`. A connection that sends no `hello` within the "machine offline after" delay is closed.
+- A machine whose Claude Code is missing or below the minimum (section 2), or whose `doctor` reports an error, is still accepted: it shows online, is marked **unusable** with the reasons, and receives no runs. Warnings never block it. The next `hello` whose checks pass clears it (01 section 3.8, 02 section 4; owner's decision, lot 2 step C).
+- Heartbeat at the heartbeat interval (15 seconds by default). The server marks the machine `offline` after the "machine offline after" delay without a message of any kind (60 seconds by default, at least twice the interval), and closes the connection. Both are settings (04, section 8); the server sends the interval to the daemon in its answer to `hello`. Each connection keeps the interval it was given, and its silence limit is never below twice that interval, so changing the settings never marks a connected daemon offline by mistake (owner's decision, lot 2 step C).
+- The machine is also `offline` as soon as its connection closes. When the server starts, machines still recorded `online` become `offline`, each with its event.
+- If a machine opens a new connection while an older one is still open, the newer one replaces it: the server closes the older one without marking the machine offline in between.
+- Going offline only changes the machine's status and writes an event. In lot 2 it never ends or fails a run by itself: tmux sessions keep running on the host, and the daemon resends its unacknowledged reports when it reconnects. Only the owner's **Stop run** fails a run with `machine_offline`; lot 4 adds the automatic failure of section 6 (owner's decision, lot 2 step C).
+- Revoking a machine closes its connection at once.
+- Every connection the server closes has a WebSocket close code from `packages/protocol`, so the daemon can tell the reason (revoked, incompatible, replaced, silent).
 - Reconnection with exponential backoff (1 s to 60 s). These two values are constants of the daemon, not settings: the daemon needs them before it is connected and can read any setting (owner's decision, lot 2 step A).
 - When the server is not on the same network (VPS), the recommended setup is a private network such as a VPN; the web application is not exposed publicly in v1.
 

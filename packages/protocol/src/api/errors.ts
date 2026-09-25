@@ -51,6 +51,23 @@ export const ApiErrorCode = z.enum([
   'setting_not_per_project',
   /** The value would put two settings of `SETTING_ORDER` in the wrong order; see `settingOrder`. */
   'setting_order_invalid',
+  'account_not_found',
+  /** Another account has this label (without regard to case). */
+  'account_label_taken',
+  'machine_not_found',
+  /** Another machine has this name (without regard to case). */
+  'machine_name_taken',
+  /** The machine is revoked: only **New enrollment code** is possible. */
+  'machine_revoked',
+  /** A new code is only for a machine waiting for enrollment or revoked. */
+  'machine_already_enrolled',
+  /** Revoke is only for a machine that enrolled. */
+  'machine_not_enrolled',
+  /** `POST /daemon/enroll`: no machine has this code (mistyped, or replaced by a newer code). */
+  'enrollment_code_unknown',
+  'enrollment_code_used',
+  /** The code is older than its lifetime; `setting` holds the current lifetime. */
+  'enrollment_code_expired',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
@@ -92,8 +109,16 @@ export const ApiError = z.object({
         larger: SettingName,
         smallerValue: z.int(),
         largerValue: z.int(),
+        /** `larger` must be at least `factor` times `smaller`, strictly more when `strict`. */
+        factor: z.int().positive(),
+        strict: z.boolean(),
       })
       .optional(),
+    /**
+     * A refusal caused by a setting (06, section 3): the setting and its current value, so the
+     * message can state it. For example `enrollment_code_expired` and its lifetime.
+     */
+    setting: z.object({ name: SettingName, value: z.int() }).optional(),
   }),
 });
 export type ApiError = z.infer<typeof ApiError>;

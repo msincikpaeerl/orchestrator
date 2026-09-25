@@ -57,7 +57,7 @@ async function readAll(t: TestApp, cookie: string, query = ''): Promise<EventLog
   return all;
 }
 
-describe('events of lots 0 and 1', () => {
+describe('events of every type', () => {
   let t: TestApp;
   let cookie: string;
 

@@ -115,7 +115,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | blocked_by | List of tickets that must be `done` before this one can start. |
 | branch_name | Set at first run: `t/<number>-<slug>`. Until pushing exists (lot 3), the branch lives only in the machine's bare clone; the daemon reports its head and the commits ahead of the base branch (hash and subject) at the end of each run, and the ticket page shows them with the machine's name. |
 | pr_number | Pull request on GitHub, once opened. |
-| attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline` and a run cancelled because the machine did not acknowledge it are never counted (owner's decision, lot 2 step A). |
+| attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline` or `machine_revoked` and a run cancelled because the machine did not acknowledge it are never counted (owner's decisions, lot 2 steps A and C). |
 | dod_report | Latest Definition of Done report submitted by the agent (see 04). |
 | created_by | `owner`, or the agent profile and the run that created it (shown as "created by agent"). |
 | created_at, updated_at | Timestamps. |
@@ -178,7 +178,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | outcome | Summary written by the agent at the end. |
 | branch_head, commits | Reported by the daemon at the end of the run: the ticket branch's head and the commits ahead of the base branch (hash, subject). |
 | estimated_usage | Equivalent cost of the run in US dollars, as estimated by Claude Code (05, section 4.5). Informational. |
-| failure_reason | `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `cancelled`. A usage limit is never a failure (`paused_quota`). `cancelled` covers a run stopped by the owner, a cancelled ticket and a dispatch not acknowledged in time; like `machine_offline`, it never counts as a failed attempt. |
+| failure_reason | `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `machine_revoked`, `cancelled`. A usage limit is never a failure (`paused_quota`). `cancelled` covers a run stopped by the owner, a cancelled ticket and a dispatch not acknowledged in time. `machine_revoked` is a run still active when the owner revokes its machine (owner's decision, lot 2 step C). Like `machine_offline`, `machine_revoked` and `cancelled` never count as a failed attempt. |
 
 A run in `paused_quota` keeps its session and worktree. It resumes on the same machine when the account becomes available again.
 
@@ -186,22 +186,31 @@ A run in `paused_quota` keeps its session and worktree. It resumes on the same m
 
 | Field | Description |
 |---|---|
-| id, name | Identifier and display name. |
-| os | `linux` or `wsl`. |
+| id, name | Identifier and display name. The name is 1 to 80 characters, unique among machines without regard to case (a revoked machine keeps its name, so it can be enrolled again). |
+| os | `linux` or `wsl`, reported at connection. |
 | account_id | Claude account the machine's Claude Code is logged into. |
-| capabilities | Tags (`node`, `android-sdk`, `docker`, …). The daemon reports those it detects (`git`, `node`, `docker`); the owner can add or remove tags. |
-| daemon_version, claude_code_version | Reported at connection. A Claude Code version below the supported minimum makes the machine unusable; a version above the highest validated one is accepted with a warning (05, section 2). |
-| status | `online`, `offline`, `disabled`. |
-| last_heartbeat_at | Timestamp. |
-| enrollment_token_hash | Hash of the token used by the daemon. Revocable. |
+| capabilities | Tags (`node`, `android-sdk`, `docker`, …), from three lists: **detected** (reported by the daemon at each connection: `git`, `node`, `docker`, replaced each time), **added** and **removed** by the owner. The machine's capabilities are the detected and added tags, minus the removed ones: a tag the owner removed stays removed even when detected again, and a detected tag the owner never touched follows the machine (owner's decision, lot 2 step C). |
+| daemon_version, claude_code_version | Reported at connection. |
+| doctor | The daemon's `doctor` results, reported at connection (05, section 8). |
+| unusable | Why the machine cannot receive runs, from its last connection: its Claude Code is missing or below the supported minimum, or a `doctor` check reports an **error** (for example `git` or `tmux` missing or too old). Warnings (a Claude Code version above the highest validated one, managed Claude Code settings found, the WSL idle timeout to check yourself) are shown on the machine page and never make it unusable. Cleared by the next connection whose checks pass (owner's decision, lot 2 step C; 05, section 3.2). |
+| status | `online` or `offline`: whether the daemon is connected (05, section 3.2). |
+| last_heartbeat_at | Timestamp of the last message received from the daemon. |
+| enrolled_at | When the daemon last enrolled; empty while the machine is **waiting for enrollment**. |
+| disabled_at | Set by **Disable**: the machine stays connected and reporting but receives no new runs; runs already on it finish. **Enable** clears it. |
+| revoked_at | Set by **Revoke**: the token is invalid, the daemon is disconnected and refused. Runs still active on the machine fail with `machine_revoked` (section 3.7). |
+| token_hash | Hash of the machine token (05, section 3.1). A token is never valid again once replaced or revoked. |
+| enrollment code | Hash of the one-time code and its expiry. At most one code per machine: a new one replaces the earlier one. |
+
+A machine is created by the owner, with its account, and is waiting for enrollment until a daemon uses its code. When the code expires unused, the machine stays waiting and the owner generates a new code. **New enrollment code** is also offered on a revoked machine: it puts the machine back to waiting for enrollment (`revoked_at` cleared, the revocation kept in the event log), and only the token issued by the new enrollment works. Machines are never deleted (owner's decision, lot 2 step C).
 
 ### 3.9 Claude account
 
 | Field | Description |
 |---|---|
-| id, label | Identifier and display name. |
+| id | Identifier. |
+| label | 1 to 80 characters, unique among accounts without regard to case. |
 | plan | `pro`, `max_5x`, `max_20x`. Informational in v1. |
-| max_concurrent_runs | Default 1. |
+| max_concurrent_runs | Default 1, from 1 to 10. A field of the account, not a global setting (owner's decision, lot 2 step C). |
 | schedule | Time windows during which runs may start (for example weekdays 00:00–08:00). Empty means always. |
 | state | `available`, `paused_manual`, `limited`. Only a usage limit detected with certainty makes an account `limited`, never a suspected one (05, section 4.10). `paused_manual` comes with lot 4. |
 | limited_until | When `limited`, the expected reset time, if known. |

@@ -2,16 +2,24 @@ import { schema } from '@orchestrator/db';
 import type { SettingValues } from '@orchestrator/protocol';
 import { eq, inArray, lt } from 'drizzle-orm';
 import type { Database } from '../database.js';
-import { recordEvent } from '../events.js';
+import { recordEvent, type NewEvent } from '../events.js';
 import { resolveSettings } from '../settings/store.js';
 
 // Login throttling (ADR 0015): after `loginFailuresBeforeDelay` failures for a username or a
 // client address, the next attempt must wait a delay that doubles with each further failure,
-// up to `loginMaxDelaySeconds`. During the delay the password is not even checked.
+// up to `loginMaxDelaySeconds`. During the delay the password is not even checked. Failed
+// enrollment codes are throttled the same way, per client address under their own key, so a
+// daemon retrying a bad code never delays the owner's login (05, section 3.1).
 
 export interface LoginAttempt {
   username: string;
   address: string;
+}
+
+/** One counter of failures, and the event written when its delay starts. */
+export interface ThrottleKey {
+  key: string;
+  event: (failures: number, delaySeconds: number) => NewEvent;
 }
 
 const THROTTLE_SETTINGS = [
@@ -22,10 +30,36 @@ const THROTTLE_SETTINGS = [
 ] as const;
 type ThrottleSettings = Pick<SettingValues, (typeof THROTTLE_SETTINGS)[number]>;
 
-function keys({ username, address }: LoginAttempt) {
+/** The counters of a login: its username and its address. */
+export function loginKeys({ username, address }: LoginAttempt): ThrottleKey[] {
+  const event =
+    (scope: 'username' | 'address') =>
+    (failures: number, delaySeconds: number): NewEvent => ({
+      actor: 'system',
+      entityType: 'owner',
+      entityId: '1',
+      type: 'owner.login_throttled',
+      // The typed username is not recorded: it may be a password typed in the wrong field.
+      payload: { scope, ...(scope === 'address' ? { address } : {}), failures, delaySeconds },
+    });
   return [
-    { key: `username:${username.trim().toLowerCase()}`, scope: 'username' as const },
-    { key: `address:${address}`, scope: 'address' as const },
+    { key: `username:${username.trim().toLowerCase()}`, event: event('username') },
+    { key: `address:${address}`, event: event('address') },
+  ];
+}
+
+/** The counter of enrollment attempts from one client address. */
+export function enrollmentKeys(address: string): ThrottleKey[] {
+  return [
+    {
+      key: `enrollment:${address}`,
+      event: (failures, delaySeconds) => ({
+        actor: 'system',
+        entityType: 'machine',
+        type: 'machine.enrollment_throttled',
+        payload: { address, failures, delaySeconds },
+      }),
+    },
   ];
 }
 
@@ -36,7 +70,8 @@ export function delayAfter(failures: number, settings: ThrottleSettings): number
   return Math.min(settings.loginMaxDelaySeconds, settings.loginFirstDelaySeconds * 2 ** over);
 }
 
-export class LoginThrottle {
+/** Counts failures per key and says how long the next attempt must wait. */
+export class Throttle {
   constructor(
     private readonly db: Database,
     private readonly now: () => Date = () => new Date(),
@@ -52,7 +87,7 @@ export class LoginThrottle {
   }
 
   /** Seconds to wait before this attempt may be checked; 0 when it may be checked now. */
-  async waitSeconds(attempt: LoginAttempt): Promise<number> {
+  async waitSeconds(keys: ThrottleKey[]): Promise<number> {
     const forgottenBefore = this.forgottenBefore(await this.settings());
     const rows = await this.db
       .select()
@@ -60,7 +95,7 @@ export class LoginThrottle {
       .where(
         inArray(
           schema.loginFailures.key,
-          keys(attempt).map((entry) => entry.key),
+          keys.map((entry) => entry.key),
         ),
       );
     const now = this.now().getTime();
@@ -72,8 +107,8 @@ export class LoginThrottle {
     return wait;
   }
 
-  /** Counts a failure for the username and the address; writes an event when a delay starts. */
-  async recordFailure(attempt: LoginAttempt): Promise<void> {
+  /** Counts a failure for each key; writes the key's event when its delay starts. */
+  async recordFailure(keys: ThrottleKey[]): Promise<void> {
     const settings = await this.settings();
     const now = this.now();
     const forgottenBefore = this.forgottenBefore(settings);
@@ -81,7 +116,7 @@ export class LoginThrottle {
       await tx
         .delete(schema.loginFailures)
         .where(lt(schema.loginFailures.lastFailureAt, forgottenBefore));
-      for (const { key, scope } of keys(attempt)) {
+      for (const { key, event } of keys) {
         const [previous] = await tx
           .select()
           .from(schema.loginFailures)
@@ -96,31 +131,17 @@ export class LoginThrottle {
           .insert(schema.loginFailures)
           .values({ key, ...values })
           .onConflictDoUpdate({ target: schema.loginFailures.key, set: values });
-        if (delaySeconds > 0) {
-          // The typed username is not recorded: it may be a password typed in the wrong field.
-          await recordEvent(tx, {
-            actor: 'system',
-            entityType: 'owner',
-            entityId: '1',
-            type: 'owner.login_throttled',
-            payload: {
-              scope,
-              ...(scope === 'address' ? { address: attempt.address } : {}),
-              failures,
-              delaySeconds,
-            },
-          });
-        }
+        if (delaySeconds > 0) await recordEvent(tx, event(failures, delaySeconds));
       }
     });
   }
 
-  /** A successful login forgets the failures of its username and address. */
-  async clear(attempt: LoginAttempt): Promise<void> {
+  /** A success forgets the failures of its keys. */
+  async clear(keys: ThrottleKey[]): Promise<void> {
     await this.db.delete(schema.loginFailures).where(
       inArray(
         schema.loginFailures.key,
-        keys(attempt).map((entry) => entry.key),
+        keys.map((entry) => entry.key),
       ),
     );
   }

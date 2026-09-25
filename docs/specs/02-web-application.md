@@ -87,8 +87,8 @@ The owner's task list, ordered by age:
 - runs paused by a usage limit ("Claude usage limit reached, resumes after <time>") or a suspected one ("Run paused: possible Claude usage limit"), with **Resume** (for a detected limit, only after the reset time) and **Stop run**;
 - pull requests awaiting merge, with a link to GitHub and the review summary;
 - tickets stopped after repeated failures;
-- system problems: machine offline with active work, account limited, daemon incompatible, Claude Code version not supported;
-- setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet", "No machine connected yet";
+- system problems: machine offline with active work, account limited, daemon incompatible (its protocol version is refused, with the update instruction), Claude Code version not supported (missing or below the minimum), machine with a problem found by `doctor` (a check reporting an error). The last two make the machine unusable (01, section 3.8); warnings found by `doctor` are shown only on the machine page (owner's decision, lot 2 step C);
+- setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet" while no account exists, "No machine connected yet" while no machine is enrolled and not revoked (a machine that enrolled and is now offline does not bring it back; owner's decision, lot 2 step C);
 - GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).
@@ -192,7 +192,9 @@ In lot 2 an account has a label, a plan and its maximum concurrent runs, and sho
 ### 9.2 Machine list and detail
 
 - Name, OS, account, status, last heartbeat, daemon and Claude Code versions, capabilities, active runs.
-- Actions: add machine (shows install and enrollment commands), disable, revoke token, edit capabilities.
+- Status: one label derived from the machine's fields (01, section 3.8), the first that applies in this order: **Revoked**, **Waiting for enrollment**, **Disabled** (with online or offline shown next to it), **Online**, **Offline**. An unusable machine also shows why (owner's decision, lot 2 step C).
+- Capabilities: each tag shows where it comes from: detected, added by you (with a "not detected" note when the daemon does not report it), or removed by you (with a "detected" note when it does) (owner's decision, lot 2 step C).
+- Actions: add machine (shows install and enrollment commands), disable and enable, revoke token (with confirmation), new enrollment code (for a machine waiting for enrollment or revoked, 01 section 3.8), edit capabilities.
 - **Add machine** shows two commands: `npm install -g <server URL>/downloads/orchestrator-daemon-<version>.tgz`, which installs the daemon of the server's own version from the server itself, and `orchestrator-daemon enroll <server URL> <code>`. Then it tells the owner to run `orchestrator-daemon login` and `orchestrator-daemon install-service`, and waits until the machine connects (owner's decision, lot 2 step A; 05, section 2).
 - Diagnostic information reported by `doctor`.
 

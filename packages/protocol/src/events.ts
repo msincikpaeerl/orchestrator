@@ -6,6 +6,7 @@ import {
   RepositoryOrigin,
   SetupStep,
 } from './api/projects.js';
+import { AccountPlan } from './api/machines.js';
 import { SettingName } from './api/settings.js';
 import {
   CommentKind,
@@ -26,6 +27,8 @@ export const EventEntityType = z.enum([
   'project',
   'ticket',
   'setting',
+  'claude_account',
+  'machine',
 ]);
 export type EventEntityType = z.infer<typeof EventEntityType>;
 
@@ -58,12 +61,27 @@ export const EventType = z.enum([
   'ticket.commented',
   'setting.changed',
   'setting.reset',
+  'account.created',
+  'account.updated',
+  'machine.created',
+  'machine.enrollment_code_created',
+  'machine.enrolled',
+  'machine.enrollment_throttled',
+  'machine.online',
+  'machine.offline',
+  'machine.daemon_incompatible',
+  'machine.disabled',
+  'machine.enabled',
+  'machine.revoked',
+  'machine.capabilities_changed',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
 const ProjectFacts = { key: z.string() };
 /** `project` is the key, `ticket` the reference (`WEB-12`). */
 const TicketFacts = { project: z.string(), ticket: z.string() };
+/** The machine's name when the event happened. */
+const MachineFacts = { name: z.string() };
 const SettingFacts = {
   name: SettingName,
   scope: z.enum(['global', 'project']),
@@ -155,6 +173,52 @@ export const EventPayloads = {
     value: z.int(),
   }),
   'setting.reset': z.object({ ...SettingFacts, previous: z.int() }),
+  'account.created': z.object({
+    label: z.string(),
+    plan: AccountPlan,
+    maxConcurrentRuns: z.int(),
+  }),
+  /** `fields` names the fields changed; their new values are copied. */
+  'account.updated': z.object({
+    label: z.string(),
+    fields: z.array(z.string()),
+    previousLabel: z.string().optional(),
+    plan: AccountPlan.optional(),
+    maxConcurrentRuns: z.int().optional(),
+  }),
+  'machine.created': z.object({ ...MachineFacts, account: z.string() }),
+  'machine.enrollment_code_created': z.object({ ...MachineFacts, expiresAt: z.iso.datetime() }),
+  'machine.enrolled': z.object(MachineFacts),
+  /** Failed enrollment codes from one address (05, section 3.1). */
+  'machine.enrollment_throttled': z.object({
+    address: z.string(),
+    failures: z.int(),
+    delaySeconds: z.int(),
+  }),
+  /** A connection accepted, with what the daemon reported and why the machine is unusable. */
+  'machine.online': z.object({
+    ...MachineFacts,
+    daemonVersion: z.string(),
+    claudeCodeVersion: z.string().nullable(),
+    detected: z.array(z.string()),
+    unusable: z.array(z.enum(['claude_code_unsupported', 'doctor_error'])),
+  }),
+  'machine.offline': z.object({
+    ...MachineFacts,
+    reason: z.enum(['connection_closed', 'silent', 'server_restarted', 'revoked']),
+  }),
+  'machine.daemon_incompatible': z.object({
+    ...MachineFacts,
+    daemonVersion: z.string(),
+    protocolVersion: z.int(),
+  }),
+  'machine.disabled': z.object(MachineFacts),
+  'machine.enabled': z.object(MachineFacts),
+  'machine.revoked': z.object(MachineFacts),
+  'machine.capabilities_changed': z.object({
+    ...MachineFacts,
+    capabilities: z.array(z.string()),
+  }),
 } satisfies Record<EventType, z.ZodType>;
 
 export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;

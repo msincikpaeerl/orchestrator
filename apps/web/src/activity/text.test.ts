@@ -90,12 +90,40 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     value: 30,
   },
   'setting.reset': { name: 'sessionLifetimeDays', scope: 'global', previous: 7 },
+  'account.created': { label: 'Personal Max', plan: 'max_5x', maxConcurrentRuns: 1 },
+  'account.updated': {
+    label: 'Work Max',
+    fields: ['label', 'maxConcurrentRuns'],
+    previousLabel: 'Personal Max',
+    maxConcurrentRuns: 2,
+  },
+  'machine.created': { name: 'Laptop', account: 'Personal Max' },
+  'machine.enrollment_code_created': { name: 'Laptop', expiresAt: '2026-09-25T10:15:00.000Z' },
+  'machine.enrolled': { name: 'Laptop' },
+  'machine.enrollment_throttled': { address: '192.168.1.50', failures: 5, delaySeconds: 10 },
+  'machine.online': {
+    name: 'Laptop',
+    daemonVersion: '0.3.0',
+    claudeCodeVersion: '2.1.279',
+    detected: ['docker', 'git'],
+    unusable: ['claude_code_unsupported'],
+  },
+  'machine.offline': { name: 'Laptop', reason: 'silent' },
+  'machine.daemon_incompatible': { name: 'Laptop', daemonVersion: '0.9.0', protocolVersion: 3 },
+  'machine.disabled': { name: 'Laptop' },
+  'machine.enabled': { name: 'Laptop' },
+  'machine.revoked': { name: 'Laptop' },
+  'machine.capabilities_changed': { name: 'Laptop', capabilities: ['git', 'node'] },
 };
 
 function entry(type: EventType, overrides: Partial<EventLogEntry> = {}): EventLogEntry {
   const [kind] = type.split('.');
   const entityType =
-    kind === 'github' ? 'github_connection' : (kind as EventLogEntry['entityType']);
+    kind === 'github'
+      ? 'github_connection'
+      : kind === 'account'
+        ? 'claude_account'
+        : (kind as EventLogEntry['entityType']);
   const aboutProject =
     kind === 'project' || kind === 'ticket' || (kind === 'setting' && type === 'setting.changed');
   return {
@@ -165,6 +193,15 @@ describe('eventText', () => {
     );
     expect(plainText(eventText(entry('setting.reset')))).toBe(
       'Session lifetime reset to its default, 30 days',
+    );
+  });
+
+  it('says why a connected machine cannot receive runs', () => {
+    expect(plainText(eventText(entry('machine.online')))).toBe(
+      'Machine “Laptop” connected: daemon 0.3.0, Claude Code 2.1.279, detected docker, git. It cannot receive runs: its Claude Code version is not supported',
+    );
+    expect(plainText(eventText(entry('account.updated')))).toBe(
+      'Claude account “Work Max” edited: renamed from “Personal Max”, 2 runs at a time',
     );
   });
 

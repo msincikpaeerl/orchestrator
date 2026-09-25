@@ -130,10 +130,13 @@ async function events(type?: string) {
     .map((row) => ({ actor: row.actor, type: row.type, payload: row.payload }));
 }
 
+/** The project items of "Needs you"; machine and account items are tested in machines.test.ts. */
 async function needsYou() {
   const response = await call('GET', '/api/needs-you');
   expect(response.statusCode, response.body).toBe(200);
-  return NeedsYouResponse.parse(response.json()).items;
+  return NeedsYouResponse.parse(response.json()).items.filter(
+    (item) => item.type === 'project_setup_failed',
+  );
 }
 
 const writes = () => github.requests.filter((request) => request.method !== 'GET');

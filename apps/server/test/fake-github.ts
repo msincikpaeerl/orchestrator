@@ -43,6 +43,8 @@ export interface FakeGit {
 
 export interface FakeAccount {
   login: string;
+  /** GitHub's numeric id of the account. */
+  id: number;
   permissions: Partial<Record<GitHubPermission, GitHubAccess>>;
   repositories: FakeRepository[];
   /** Value of the GitHub-Authentication-Token-Expiration header, if any. */
@@ -92,6 +94,7 @@ const everyPermission: Record<GitHubPermission, GitHubAccess> = {
 export function fullAccount(overrides: Partial<FakeAccount> = {}): FakeAccount {
   return {
     login: 'octo-owner',
+    id: 5_550_123,
     permissions: { ...everyPermission },
     repositories: [{ name: 'notes', private: true }],
     ...overrides,
@@ -220,7 +223,7 @@ function answer(account: FakeAccount, request: RecordedRequest): FakeReply {
   if (method === 'GET' && path === '/user') {
     return {
       status: 200,
-      body: { login: account.login, id: 1 },
+      body: { login: account.login, id: account.id },
       headers: account.expirationHeader
         ? { 'github-authentication-token-expiration': account.expirationHeader }
         : {},

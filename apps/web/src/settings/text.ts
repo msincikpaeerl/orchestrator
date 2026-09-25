@@ -12,6 +12,7 @@ export const groupTitle: Record<SettingGroup, string> = {
   projects: 'Projects',
   tickets: 'Tickets',
   runs: 'Runs',
+  machines: 'Machines',
   scheduler: 'Scheduler',
 };
 

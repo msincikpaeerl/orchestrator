@@ -148,7 +148,7 @@ It either approves, posting a `review` comment summarising the verdict, or reque
 A run fails when it crashes, times out, the machine goes offline, or the agent declares it cannot finish.
 
 - A run stopped because the Claude account reached its usage limit, or because the daemon suspects it did, is **not** a failure. The run goes to `paused_quota` and resumes later (see 07 and 05, section 4.10).
-- A run stopped by the owner, a run failed with `machine_offline` and a dispatch not acknowledged in time are not failed attempts: the ticket returns to `todo` without changing `attempt_count` (owner's decision, lot 2 step A).
+- A run stopped by the owner, a run failed with `machine_offline`, a run failed with `machine_revoked` (its machine was revoked while the run was active) and a dispatch not acknowledged in time are not failed attempts: the ticket returns to `todo` without changing `attempt_count` (owner's decisions, lot 2 steps A and C).
 - Otherwise, the ticket returns to `todo`, `attempt_count` is incremented and the failure reason is posted as a `system` comment.
 - After **2 failed attempts** (configurable), the ticket is not scheduled again. The system posts a `question` asking the owner how to proceed and moves the ticket to `waiting_human`.
 

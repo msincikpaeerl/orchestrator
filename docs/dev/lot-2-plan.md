@@ -182,7 +182,7 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
 - every refusal tied to a setting states the setting's current value in its message; the steps implementing refusals (C, J, K) test it;
 - every text sent to an agent comes from a run message template in `agents/` (03 section 3.2, 05 sections 3.3, 4.1 and 4.8): the first message, the "please continue" message after a pause, the wrapping of the owner's answer, and the nudge, which the server fills in and sends in `run.start`; the daemon decides when to nudge but holds no agent-facing text. Step I ships the four templates.
 
-### [ ] C. Claude accounts, machines and the daemon gateway (server)
+### [x] C. Claude accounts, machines and the daemon gateway (server)
 
 - Migration: tables `claude_accounts` (label, plan, `max_concurrent_runs`, `state`, `limited_until`) and `machines` (01 section 3.8: name, account, OS, capabilities detected and edited, versions, status, last heartbeat, token hash, `doctor` results).
 - Enrollment codes (hashed, single use, "Enrollment code lifetime" setting) and machine tokens (hashed, revocable).
@@ -191,7 +191,7 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
   - token authentication, `hello`/`welcome` with the protocol check (current and previous version accepted);
   - heartbeats and offline detection ("Heartbeat interval", "Machine offline after");
   - revocation disconnects the daemon;
-  - the Claude Code version check (below minimum refused, above validated warned).
+  - the Claude Code version check: below the minimum (or missing), or a `doctor` error, the machine is connected but unusable; above the highest validated version, a warning only (05 section 3.2).
 - Settings: the three new ones, and the cross-setting rule extended from "never above" to "at least twice" (heartbeat and offline) and "strictly below" (for step G's MCP pair), with messages naming both settings.
 - API with protocol schemas: accounts (create, edit, list), machines (create with enrollment code, list, detail, disable, revoke, edit capabilities).
 - Events for every change (`machine.enrolled`, `machine.online`, `machine.offline`, `machine.revoked`, `account.created`, …), each with a plain-words text in the event log (as in lot 1 step I).
@@ -209,6 +209,19 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
 - each cross-setting refusal;
 - the stored GitHub id (fake GitHub);
 - every new event type having a plain-words text.
+
+*Done 2026-09-25.* Owner's decisions, written into 01 sections 3.7 to 3.9, 02 sections 4 and 9.2, 04 section 5, 05 sections 3.1 and 3.2, and 09 section 6:
+
+- enrollment is `POST /daemon/enroll` with `{ code }`, answered with the machine token once; the code is 24 characters of Crockford's Base32 (120 bits), single use (marked used in the transaction that sets the token), and wrong codes are throttled per address with the login throttling and its settings, under their own key;
+- a machine's `status` is only `online` or `offline`; enrolled, disabled and revoked are separate fields, and screens show one label in the order revoked, waiting for enrollment, disabled, online, offline; disabling lets active runs finish, revoking fails them with `machine_revoked` (not counted, step J);
+- **New enrollment code** is offered on a machine waiting for enrollment or revoked; on a revoked machine it goes back to waiting, and earlier tokens are never valid again;
+- capabilities are detected, added and removed lists; the machine page shows each tag's source;
+- a Claude Code missing or below the minimum, or a `doctor` error, leaves the machine connected but unusable ("Needs you"); warnings are shown only on the machine page; an incompatible protocol is still refused at `welcome`;
+- a machine is offline when its connection closes or after "Machine offline after" of silence (never below twice the heartbeat interval it was given); a newer connection replaces an older one without going offline; going offline never ends a run in lot 2;
+- `max_concurrent_runs` is 1 to 10; account labels and machine names are 1 to 80 characters, unique without regard to case;
+- "No machine connected yet" shows while no machine is enrolled and not revoked.
+
+Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum and highest validated version (2.1.280 and 2.1.282) are constants in `packages/protocol`, shared with the daemon; an unknown token is refused with HTTP 401 before the WebSocket opens, a revoked one gets `welcome` refused with `token_revoked` (its hash is kept until a new code); the server's close codes are in `DaemonCloseCode`; a connection without `hello` within "Machine offline after" is closed; machine tokens start with `omt_`; refusals tied to a setting carry `setting` (name and current value) in the error body; the "Needs you" page shows only project items until step D; the Claude Code and `doctor` checks run at each `hello`; daemon messages other than `hello` and `heartbeat` are logged and ignored until step J. The GitHub account id is read at the save and at each check; its "first use" (02, section 3.2) is the first run, in step J.
 
 ### [ ] D. Accounts and machines screens, user documentation
 
@@ -360,7 +373,10 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - log storage with the "Longest stored log entry" setting and credential masking;
   - branch and commits at the end.
 - `git.credential_request`: the token is sent only for a fetch of the run's own repository while the run is active.
+- Commit author (04 section 4): a GitHub token saved before 0.3.0 whose account id is still unknown gets it at the first run (02 section 3.2; step C stores it at the save and at each check).
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
+- Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
+- Run now refuses an unusable, disabled, revoked or offline machine.
 - **Usage limits** on the server:
   - `paused_quota` with its reason;
   - account `limited` only for `detected`, until the reset time or `quotaFallbackDelayMinutes` (now used from 0.3.0);
@@ -372,7 +388,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - every Run now refusal;
 - the acknowledgement timeout without an attempt counted;
 - a run through to `succeeded` via `run.state`, and a failure raising `attempt_count` with its comment;
-- Stop run and a `machine_offline` failure, neither counted;
+- Stop run, a `machine_offline` failure and a `machine_revoked` failure, none counted;
 - the credential refused for another repository or an inactive run;
 - a detected limit (with and without a reset time) marking the account and gating Resume;
 - a suspected limit leaving the account available and resumable at once;

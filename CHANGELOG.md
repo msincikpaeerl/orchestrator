@@ -2,6 +2,13 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
+## 0.3.0 — in progress
+
+Lot 2, Machines and manual runs.
+
+- Settings > Limits has a Machines group: **Enrollment code lifetime** (15 minutes), **Heartbeat interval** (15 seconds) and **Machine offline after** (60 seconds, at least twice the heartbeat interval: a value breaking this is refused, naming both limits and their values). Help: "Settings".
+- Activity: the event log shows what happens to Claude accounts and machines (added, enrolled, connected, offline, disabled, revoked, capabilities edited), in plain words, with a filter for each. The screens to add them come next.
+
 ## 0.2.0 — 2026-09-24
 
 Lot 1, Projects and tickets: create projects with a new or linked GitHub repository, manage their tickets, change the limits and read the event log. Agents, machines and runs come in the next versions.

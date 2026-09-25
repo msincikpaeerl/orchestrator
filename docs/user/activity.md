@@ -22,9 +22,9 @@ The first page shows the 50 most recent events. Click **Show older events** at t
 
 Use the fields above the list. The list updates as soon as you change one; each filter narrows the others.
 
-- **Project**: only the events of one project, its tickets and its settings. Archived projects are in the list too. With "All projects", the log also shows the events about no project: logins, the GitHub connection and global settings.
+- **Project**: only the events of one project, its tickets and its settings. Archived projects are in the list too. With "All projects", the log also shows the events about no project: logins, the GitHub connection, global settings, Claude accounts and machines.
 - **Ticket number**: after choosing a project, type a ticket's number (`12` for `WEB-12`) to see only that ticket's events.
-- **Kind**: only the events about projects, tickets, settings, the GitHub connection, login sessions or your owner account.
+- **Kind**: only the events about projects, tickets, settings, Claude accounts, machines, the GitHub connection, login sessions or your owner account.
 - **Event**: only one kind of event, for example "Ticket status changed" or "Setting changed".
 - **From** and **To**: only the events of these days, both days included.
 

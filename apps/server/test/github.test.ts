@@ -291,6 +291,27 @@ describe('PUT /api/github/token', () => {
   });
 });
 
+describe("the GitHub account's id (for the address of agent commits)", () => {
+  async function storedId() {
+    const [row] = await t.db.select().from(schema.githubConnection);
+    return row?.accountId;
+  }
+
+  it('is read from GET /user and stored when the token is saved', async () => {
+    await saveToken(fullAccount({ id: 4_242_424 }));
+    expect(await storedId()).toBe(4_242_424);
+  });
+
+  it('is stored at the next check for a token saved before 0.3.0', async () => {
+    await saveToken(fullAccount({ id: 4_242_424 }));
+    // As saved by 0.2.0: no id.
+    await t.db.update(schema.githubConnection).set({ accountId: null });
+    const check = await call('POST', '/api/github/token/check');
+    expect(check.statusCode, check.body).toBe(200);
+    expect(await storedId()).toBe(4_242_424);
+  });
+});
+
 describe('the token never leaves the server', () => {
   it('is not in any answer, log line, event or database column in clear', async () => {
     github.accounts.set(TOKEN, fullAccount());

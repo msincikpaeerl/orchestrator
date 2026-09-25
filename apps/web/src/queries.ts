@@ -70,11 +70,18 @@ export function useGitHubStatus(enabled = true) {
   });
 }
 
-/** "Needs you" items besides the GitHub problems (02, section 4). */
+/**
+ * "Needs you" items besides the GitHub problems (02, section 4), for the page and the menu's
+ * count. Machine and account items get their screen with the Machines section (lot 2 step D):
+ * until then only project items are shown and counted.
+ */
 export function useNeedsYou() {
   return useQuery({
     queryKey: keys.needsYou,
     queryFn: () => api('GET', '/api/needs-you', NeedsYouResponse),
+    select: (data) => ({
+      items: data.items.flatMap((item) => (item.type === 'project_setup_failed' ? [item] : [])),
+    }),
   });
 }
 
