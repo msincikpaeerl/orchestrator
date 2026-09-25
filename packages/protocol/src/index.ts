@@ -96,6 +96,28 @@ export {
   UpdateTicketRequest,
 } from './api/tickets.js';
 export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export {
+  AccountListResponse,
+  AccountPlan,
+  AccountState,
+  ClaudeAccount,
+  ClaudeCodeSupportLevel,
+  CreateAccountRequest,
+  CreateMachineRequest,
+  DisplayName,
+  Enrollment,
+  EnrollmentResponse,
+  MAX_CONCURRENT_RUNS,
+  Machine,
+  MachineCapability,
+  MachineListResponse,
+  MachineState,
+  MaxConcurrentRuns,
+  NAME_MAX_LENGTH,
+  SetCapabilitiesRequest,
+  UnusableReason,
+  UpdateAccountRequest,
+} from './api/machines.js';
 export { UiSettingsResponse } from './api/ui-settings.js';
 export {
   GlobalSetting,
@@ -105,6 +127,8 @@ export {
   ProjectSettingsResponse,
   SETTINGS,
   SETTING_ORDER,
+  inOrder,
+  type SettingOrder,
   SetSettingRequest,
   SettingGroup,
   SettingName,
@@ -157,6 +181,24 @@ export {
   WorkspaceFacts,
 } from './daemon/relay.js';
 export { DaemonMessage, ServerMessage } from './daemon/messages.js';
+export {
+  CLAUDE_CODE_MIN_VERSION,
+  CLAUDE_CODE_VALIDATED_VERSION,
+  claudeCodeSupport,
+  compareVersions,
+  type ClaudeCodeSupport,
+} from './daemon/claude-code.js';
+export {
+  DAEMON_SOCKET_PATH,
+  DaemonCloseCode,
+  ENROLLMENT_CODE_ALPHABET,
+  ENROLLMENT_CODE_LENGTH,
+  EnrollRequest,
+  EnrollResponse,
+  EnrollmentCode,
+  MachineToken,
+  isCompatibleProtocol,
+} from './daemon/enrollment.js';
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
 export {
   DodReport,

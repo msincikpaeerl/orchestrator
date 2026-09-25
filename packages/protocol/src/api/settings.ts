@@ -7,6 +7,7 @@ export const SettingGroup = z.enum([
   'projects',
   'tickets',
   'runs',
+  'machines',
   'scheduler',
 ]);
 export type SettingGroup = z.infer<typeof SettingGroup>;
@@ -285,6 +286,39 @@ const definitions = {
     perProject: false,
     usedFrom: '0.3.0',
   },
+  enrollmentCodeLifetimeMinutes: {
+    group: 'machines',
+    label: 'Enrollment code lifetime',
+    description:
+      'How long the code shown by Add machine can be used to connect the machine; after that, generate a new code.',
+    unit: 'minutes',
+    min: 1,
+    max: 1440,
+    default: 15,
+    perProject: false,
+  },
+  heartbeatIntervalSeconds: {
+    group: 'machines',
+    label: 'Heartbeat interval',
+    description:
+      'How often a connected machine tells the Orchestrator it is still there. A machine uses the value it received when it connected.',
+    unit: 'seconds',
+    min: 5,
+    max: 120,
+    default: 15,
+    perProject: false,
+  },
+  machineOfflineAfterSeconds: {
+    group: 'machines',
+    label: 'Machine offline after',
+    description:
+      'A machine that sends nothing for this long is shown offline. At least twice the heartbeat interval.',
+    unit: 'seconds',
+    min: 15,
+    max: 600,
+    default: 60,
+    perProject: false,
+  },
   schedulerTickSeconds: {
     group: 'scheduler',
     label: 'Scheduler check interval',
@@ -326,14 +360,42 @@ export const SETTINGS: Readonly<Record<SettingName, Readonly<SettingDefinition>>
 export const SettingName = z.enum(Object.keys(SETTINGS) as [SettingName, ...SettingName[]]);
 
 /**
- * Pairs of settings whose values must stay in order: `smaller` never above `larger` (04,
- * section 8; 07, section 8). A change or reset breaking the order is refused with `setting_order_invalid`.
- * Both settings of a pair are global only, so no project override can break the order.
+ * Pairs of settings whose values must stay in order (04, section 8; 07, section 8): `factor`
+ * times `smaller` is never above `larger`, and is below it when `strict`. A change or reset
+ * breaking the order is refused with `setting_order_invalid`, naming both settings and their
+ * values. Both settings of a pair are global only, so no project override can break the order.
  */
-export const SETTING_ORDER: readonly { smaller: SettingName; larger: SettingName }[] = [
-  { smaller: 'loginFirstDelaySeconds', larger: 'loginMaxDelaySeconds' },
-  { smaller: 'quotaFallbackDelayMinutes', larger: 'quotaFallbackMaxDelayMinutes' },
+export interface SettingOrder {
+  smaller: SettingName;
+  larger: SettingName;
+  /** `larger` must be at least this many times `smaller` (1: never above). */
+  factor: number;
+  /** `smaller` times `factor` must be strictly below `larger`. */
+  strict: boolean;
+}
+
+export const SETTING_ORDER: readonly SettingOrder[] = [
+  { smaller: 'loginFirstDelaySeconds', larger: 'loginMaxDelaySeconds', factor: 1, strict: false },
+  {
+    smaller: 'quotaFallbackDelayMinutes',
+    larger: 'quotaFallbackMaxDelayMinutes',
+    factor: 1,
+    strict: false,
+  },
+  // One lost heartbeat never marks a machine offline (05, section 3.2).
+  {
+    smaller: 'heartbeatIntervalSeconds',
+    larger: 'machineOfflineAfterSeconds',
+    factor: 2,
+    strict: false,
+  },
 ];
+
+/** Whether the values of a pair of `SETTING_ORDER` are in order. */
+export function inOrder(order: SettingOrder, smallerValue: number, largerValue: number): boolean {
+  const limit = order.factor * smallerValue;
+  return order.strict ? limit < largerValue : limit <= largerValue;
+}
 
 /** Resolved values of settings, by name. */
 export type SettingValues = { [Name in SettingName]: number };

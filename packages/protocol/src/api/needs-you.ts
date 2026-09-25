@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { DoctorCheck } from '../daemon/connection.js';
 import { ProjectKey, SetupStep } from './projects.js';
+
+const MachineRef = z.object({ id: z.uuid(), name: z.string() });
 
 /**
  * One item of "Needs you" (02, section 4), besides the GitHub connection problems of
@@ -13,9 +16,36 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     reason: z.string(),
     since: z.iso.datetime(),
   }),
+  /** Setup still to do (02, section 3): no Claude account exists. */
+  z.object({ type: z.literal('no_claude_account') }),
+  /** Setup still to do: no machine is enrolled and not revoked. */
+  z.object({ type: z.literal('no_machine') }),
+  /** The daemon's protocol version is refused: update the daemon (05, section 3.2). */
+  z.object({
+    type: z.literal('daemon_incompatible'),
+    machine: MachineRef,
+    daemonVersion: z.string().nullable(),
+    protocolVersion: z.int().nullable(),
+    since: z.iso.datetime(),
+  }),
+  /** Claude Code missing or below the minimum: the machine is unusable. */
+  z.object({
+    type: z.literal('claude_code_unsupported'),
+    machine: MachineRef,
+    version: z.string().nullable(),
+    minimum: z.string(),
+    since: z.iso.datetime(),
+  }),
+  /** `doctor` reports an error: the machine is unusable. */
+  z.object({
+    type: z.literal('machine_problem'),
+    machine: MachineRef,
+    checks: z.array(DoctorCheck),
+    since: z.iso.datetime(),
+  }),
 ]);
 export type NeedsYouItem = z.infer<typeof NeedsYouItem>;
 
-/** `GET /api/needs-you`: oldest first. */
+/** `GET /api/needs-you`: setup still to do first, then the other items oldest first. */
 export const NeedsYouResponse = z.object({ items: z.array(NeedsYouItem) });
 export type NeedsYouResponse = z.infer<typeof NeedsYouResponse>;

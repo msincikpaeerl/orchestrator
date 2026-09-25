@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  inOrder,
   PROJECT_SETTINGS,
   SETTING_ORDER,
   SETTINGS,
@@ -34,12 +35,30 @@ describe('SETTINGS', () => {
   });
 
   it('keeps ordered pairs global only, with defaults in order', () => {
-    for (const { smaller, larger } of SETTING_ORDER) {
+    for (const order of SETTING_ORDER) {
+      const { smaller, larger } = order;
       // An overridable pair would need checks across projects when a global value changes.
       expect([SETTINGS[smaller].perProject, SETTINGS[larger].perProject]).toEqual([false, false]);
-      expect(SETTINGS[smaller].default).toBeLessThanOrEqual(SETTINGS[larger].default);
+      expect(inOrder(order, SETTINGS[smaller].default, SETTINGS[larger].default)).toBe(true);
+      // The smallest value of `smaller` fits under the largest of `larger`: never a dead end.
+      expect(inOrder(order, SETTINGS[smaller].min, SETTINGS[larger].max)).toBe(true);
       expect(SETTINGS[smaller].unit).toBe(SETTINGS[larger].unit);
     }
+  });
+
+  it('keeps the machine offline delay at least twice the heartbeat interval', () => {
+    const order = SETTING_ORDER.find((each) => each.larger === 'machineOfflineAfterSeconds');
+    expect(order).toMatchObject({ smaller: 'heartbeatIntervalSeconds', factor: 2, strict: false });
+  });
+
+  it('compares a pair as never above, at least a multiple, or strictly below', () => {
+    const pair = { smaller: 'loginFirstDelaySeconds', larger: 'loginMaxDelaySeconds' } as const;
+    expect(inOrder({ ...pair, factor: 1, strict: false }, 10, 10)).toBe(true);
+    expect(inOrder({ ...pair, factor: 1, strict: false }, 11, 10)).toBe(false);
+    expect(inOrder({ ...pair, factor: 2, strict: false }, 15, 30)).toBe(true);
+    expect(inOrder({ ...pair, factor: 2, strict: false }, 15, 29)).toBe(false);
+    expect(inOrder({ ...pair, factor: 1, strict: true }, 30, 31)).toBe(true);
+    expect(inOrder({ ...pair, factor: 1, strict: true }, 30, 30)).toBe(false);
   });
 
   it('refuses values outside the range and fractions', () => {
