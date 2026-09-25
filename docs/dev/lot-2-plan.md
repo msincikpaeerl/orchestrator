@@ -226,7 +226,7 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
 ### [x] D. Accounts and machines screens, user documentation
 
 - Machines section (02 section 9):
-  - accounts: list and form (label, plan, maximum concurrent runs), state;
+  - accounts: list and form (label, plan, maximum concurrent runs); the state moves to step L;
   - machine list and detail: status, versions (with the "above validated" warning), capabilities editor, `doctor` results, disable, revoke with confirmation;
   - **Add machine**: the two commands, then `login` and `install-service`, then waits for the connection (without the stream yet, it refreshes on focus and after actions; step L makes it live).
 - "Needs you" items from step C.
@@ -252,6 +252,8 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
 - the account status line on "Needs you" and the active runs on machines move to step L.
 
 Choices within the step: the machine and its "Needs you" item carry `updateCommand` (the server's install command) for an incompatible daemon; `doctor` links are shown only when they are web addresses; the Help section `machines#keep-wsl-running` is the link `doctor` gives for the WSL idle timeout (step E); the e2e server drives the scripted daemon through its test-only control. A shutdown race of step C (queued status work running after the database closed) was fixed, with a regression test.
+
+Owner's review of the step: the "Needs you" item is renamed "No machine enrolled yet" (02 sections 3 and 4; the decisions above keep the earlier wording); the account state is left out of the screens until step L; the Machines Help page turns on systemd before adding a machine, checks that WSL stays running, and has a Troubleshooting section (`doctor` and `status` marked "available from step E").
 
 ### [ ] E. Daemon core
 
@@ -448,6 +450,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
 - Activity > Live runs and History (Queue stays "Coming in a later version").
+- Machines: each Claude account's state (`available`, or `limited` until a time) on the account list (02 section 9.1; left out of step D, since it is always `available` before step J).
 - "Needs you": the compact status line per Claude account (02 section 4; left out of step D), questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
 - `docs/user/`: a Runs page (Run now, watching, stopping, resuming, usage limits, what "suspected" means, where the commits are), a Questions section, the Tickets page (Accept and Reject, `in_review` in 0.3.0), Needs you, Activity, and the Settings reference.
 

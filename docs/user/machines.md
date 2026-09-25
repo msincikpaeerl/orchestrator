@@ -13,7 +13,7 @@ Everything here is in **Machines**, in the menu. Add a Claude account first, the
    - **Runs at the same time**: how many agents may work at once with this account, on all its machines together (1 to 10, 1 by default). A higher number uses your Claude usage faster.
 3. Click **Add the account**.
 
-The account shows its state: **Available**, or **Usage limit reached** until the time Claude gave. Click **Edit** to change its label, plan or runs at the same time.
+Click **Edit** to change its label, plan or runs at the same time.
 
 ## Before you start
 
@@ -25,18 +25,37 @@ The machine is a Linux computer, or a Windows computer with WSL 2 (Ubuntu). Type
 | Git | `git --version` | 2.40 or later |
 | tmux | `tmux -V` | 3.2 or later |
 | Claude Code | `claude --version` | 2.1.280 or later |
-| systemd (WSL only) | `systemctl --user is-system-running` | `running` |
+| systemd (WSL only) | `systemctl --user is-system-running` | `running`: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl) |
+| WSL kept running (WSL only) | — | Done after adding the machine: see [Keep WSL running](#keep-wsl-running) |
 
 To install what is missing:
 
 - **Node.js**: install **nvm** by following the [official nvm instructions](https://github.com/nvm-sh/nvm#installing-and-updating), open a new terminal, then type `nvm install 24`. With nvm, installing the daemon needs no `sudo`.
 - **Git and tmux**: `sudo apt update && sudo apt install git tmux`.
 - **Claude Code**: follow [Anthropic's installation guide](https://code.claude.com/docs/en/setup). Claude Code updates itself; you do not need to update it by hand.
-- **systemd on WSL**: see [Keep WSL running](#keep-wsl-running).
+- **systemd on WSL**: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl) below.
+
+### Turn on systemd on WSL
+
+On Windows, the daemon runs inside WSL as a service, which needs systemd (the service manager of Ubuntu). Do this once per computer, before adding the machine:
+
+1. In Ubuntu, type `sudo nano /etc/wsl.conf` and make sure the file contains:
+
+   ```ini
+   [boot]
+   systemd=true
+   ```
+
+2. Save, then in a Windows terminal (PowerShell) type `wsl.exe --shutdown` and open Ubuntu again.
+3. Check: `systemctl --user is-system-running` should answer `running`.
+
+Details: [Microsoft's systemd guide](https://learn.microsoft.com/windows/wsl/systemd).
 
 ### Agents on your own user
 
 In this version, the daemon runs under your own Linux user, so agents work with your user's rights. The Orchestrator blocks the folders it knows are sensitive (its own `~/.orchestrator` folder, which holds the machine's key, and the Claude configuration folders), and it limits file tools to the project's folder. Its checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly. Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
+
+Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents.
 
 ## Add a machine
 
@@ -44,7 +63,7 @@ In this version, the daemon runs under your own Linux user, so agents work with 
 2. Give the machine a **Name** (for example "Desktop") and choose its **Claude account**, then click **Show the commands**.
 3. On the machine, type the commands the page shows, in order:
    1. `npm install -g …`: installs the daemon of the same version as the Orchestrator, downloaded from the Orchestrator itself.
-   2. `orchestrator-daemon enroll …`: connects the machine to the Orchestrator with a one-time code. The code works once, and only for 15 minutes (the **Enrollment code lifetime** setting). If it expires, open the machine and click **New enrollment code**.
+   2. `orchestrator-daemon enroll …`: connects the machine to the Orchestrator with a one-time code. The code works once, and only for a limited time: 15 minutes by default (the **Enrollment code lifetime** setting, see [Settings](settings.md#machines)). If it expires, open the machine and click **New enrollment code**.
    3. `orchestrator-daemon login`: opens Claude Code once, in a configuration kept only for the Orchestrator (your own Claude Code settings are not used). Log in with the Claude account you chose, then quit Claude Code (type `/exit`).
    4. `orchestrator-daemon install-service`: starts the daemon as a background service, which also starts again after a restart of the computer.
 4. Come back to the Orchestrator page. It checks again each time you come back to it and shows **Connected** once the daemon has connected. If it says the machine cannot receive runs yet, see [When a machine has a problem](#when-a-machine-has-a-problem).
@@ -53,25 +72,20 @@ On Windows, also do [Keep WSL running](#keep-wsl-running).
 
 ### Keep WSL running
 
-On Windows, the daemon runs inside WSL. Two settings are needed, once per computer:
+On Windows, the daemon runs inside WSL, and Windows stops WSL a few seconds after its last Ubuntu window closes, even while the daemon runs. Do this once per computer:
 
-1. **Turn on systemd** (the service manager the daemon uses). In Ubuntu, type `sudo nano /etc/wsl.conf` and make sure the file contains:
-
-   ```ini
-   [boot]
-   systemd=true
-   ```
-
-   Save, then in a Windows terminal (PowerShell) type `wsl.exe --shutdown` and open Ubuntu again. `systemctl --user is-system-running` should now answer `running`. Details: [Microsoft's systemd guide](https://learn.microsoft.com/windows/wsl/systemd).
-
-2. **Stop Windows from shutting WSL down.** Windows stops WSL a few seconds after its last window closes, even while the daemon runs. In Windows, open the file `.wslconfig` in your user folder (type `notepad %UserProfile%\.wslconfig` in PowerShell; create it if it does not exist) and add:
+1. In Windows, open the file `.wslconfig` in your user folder (type `notepad %UserProfile%\.wslconfig` in PowerShell; create it if it does not exist) and add:
 
    ```ini
    [general]
    instanceIdleTimeout=-1
    ```
 
-   Save, then type `wsl.exe --shutdown` and open Ubuntu again. Instead, you can keep an Ubuntu window open. Details: [Microsoft's WSL settings guide](https://learn.microsoft.com/windows/wsl/wsl-config).
+2. Save, then type `wsl.exe --shutdown` in PowerShell and open Ubuntu again. The daemon's service starts with it.
+
+Instead, you can keep an Ubuntu window open. Details: [Microsoft's WSL settings guide](https://learn.microsoft.com/windows/wsl/wsl-config).
+
+**Check that it works**: close every Ubuntu window, wait two minutes, then open the machine in the Orchestrator: it is still **Online**. (A machine whose WSL stopped shows **Offline** after about a minute: the **Machine offline after** setting, 60 seconds by default. Waiting two minutes leaves time for it.)
 
 The daemon cannot read this Windows file: its checks show "Check this yourself" for it, with a link to this section.
 
@@ -117,7 +131,7 @@ If you run the daemon yourself in a terminal (`orchestrator-daemon start`) inste
 | Item | Why it appears | What to do |
 |---|---|---|
 | No Claude account yet | No Claude account exists. | Add one: see [Add a Claude account](#add-a-claude-account). |
-| No machine connected yet | No machine has enrolled (revoked machines do not count). | See [Add a machine](#add-a-machine). |
+| No machine enrolled yet | No machine has enrolled (revoked machines do not count). | See [Add a machine](#add-a-machine). |
 | Update the daemon on … | The machine's daemon does not match this version of the Orchestrator, so it cannot connect. This happens after updating the Orchestrator. | On the machine, type the `npm install -g …` command shown, then restart the daemon. |
 | Claude Code not supported on … | Claude Code is missing, or older than 2.1.280. The machine gets no runs. | Install or update Claude Code (see [Before you start](#before-you-start)), then restart the daemon. |
 | Problem on … | A check on the machine found an error, for example tmux missing or too old. The machine gets no runs. | Fix what the item names, then restart the daemon. |
@@ -127,3 +141,18 @@ An item disappears once the daemon connects again without the problem.
 ### After changing the Node.js version
 
 The service starts the daemon with the Node.js it was installed with. If you install another Node.js version (for example with `nvm install`), install the daemon again with the same `npm install -g …` command you typed when adding the machine, then type `orchestrator-daemon install-service` again.
+
+## Troubleshooting
+
+Type these commands on the machine, in its Ubuntu terminal:
+
+| To | Type |
+|---|---|
+| See whether the daemon's service is running, and its last messages | `systemctl --user status orchestrator-daemon` |
+| Read the daemon's last 100 messages | `journalctl --user -u orchestrator-daemon -n 100` |
+| Follow its messages as they come (stop with Ctrl+C) | `journalctl --user -u orchestrator-daemon -f` |
+| Check the machine: tools and versions, Claude Code login, systemd, WSL settings (available from step E) | `orchestrator-daemon doctor` |
+| See the connection to the Orchestrator, versions, capabilities and runs on this machine (available from step E) | `orchestrator-daemon status` |
+| Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
+
+If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.
