@@ -128,8 +128,8 @@ Health endpoint `/health` for Docker health checks; `/version` returns server an
 | Target | Notes |
 |---|---|
 | **WSL (first)** | Docker Engine inside WSL or Docker Desktop. Daemon on the same WSL instance connects to `http://localhost:8080`. |
-| **Unraid** | Compose stack (Compose Manager plugin) or two containers. Daemons on the local network connect to the Unraid address. |
-| **VPS** | Behind a VPN (for example Tailscale); reverse proxy with HTTPS. Daemons connect through the VPN. |
+| **Unraid** | Compose stack (Compose Manager plugin) or two containers. Daemons on other computers connect to the Unraid address through **HTTPS** (a reverse proxy): the daemon accepts plain `http://` for `localhost` only, because the machine token and the GitHub token for Git commands travel on its connection (05, section 3.2). The Help section [Orchestrator on another computer](../user/machines.md#orchestrator-on-another-computer) explains it. |
+| **VPS** | Behind a VPN (for example Tailscale); reverse proxy with HTTPS, required by daemons as for Unraid. Daemons connect through the VPN. |
 
 The daemon is never containerised (05, section 2).
 
