@@ -4,11 +4,11 @@
 
 ## Change a limit
 
-1. Open **Settings**, then **Limits**. Limits are grouped: login and sessions, GitHub, projects, tickets, runs and scheduler.
+1. Open **Settings**, then **Limits**. Limits are grouped: login and sessions, GitHub, projects, tickets, runs, machines and scheduler.
 2. Each limit shows what it does, its value and its default. Type a new value in **Value** and click **Save**. The value must be a whole number within the allowed range listed in the [reference](#settings-reference) below; if it is not, the field says which numbers are allowed.
 3. To go back to the default, click **Reset to default**. The button is available only when you have saved a value of your own.
 
-Some limits come in pairs that must stay in order: **Longest login delay** cannot be less than **First login delay**, and **Longest quota wait** cannot be less than **Quota wait when the reset time is unknown**. A value or a **Reset to default** that would break this is refused, naming both: change the other one first.
+Some limits come in pairs that must stay in order: **Longest login delay** cannot be less than **First login delay**, **Longest quota wait** cannot be less than **Quota wait when the reset time is unknown**, and **Machine offline after** must be at least twice the **Heartbeat interval** (so one lost heartbeat never shows a machine offline). A value or a **Reset to default** that would break this is refused, naming both with their values: change the other one first.
 
 What a change affects:
 
@@ -77,6 +77,14 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Idle timeout (from version 0.3.0) | 10 minutes | 1 to 120 | No | A run neither working nor waiting for something gets a reminder after this time, then is stopped. |
 | Most reminders per run (from version 0.3.0) | 2 reminders | 0 to 10 | No | Reminders sent to an agent that stops without finishing, before the run is stopped. |
 | Machine answer timeout (from version 0.3.0) | 60 seconds | 5 to 600 | No | How long the Orchestrator waits for a machine to confirm it starts a run; without an answer the run is cancelled and does not count as a failed attempt. |
+
+### Machines
+
+| Setting | Default | Allowed | Per project | What it does |
+|---|---|---|---|---|
+| Enrollment code lifetime | 15 minutes | 1 to 1,440 | No | How long the code shown by Add machine can be used to connect the machine; after that, generate a new code. |
+| Heartbeat interval | 15 seconds | 5 to 120 | No | How often a connected machine tells the Orchestrator it is still there. A machine uses the value it received when it connected. |
+| Machine offline after | 60 seconds | 15 to 600 | No | A machine that sends nothing for this long is shown offline. At least twice the heartbeat interval. |
 
 ### Scheduler
 
