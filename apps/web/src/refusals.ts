@@ -96,10 +96,40 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'This setting does not exist in this version of the Orchestrator. Reload the page.',
   setting_not_per_project: () =>
     'This setting cannot be changed for one project. Change it in Settings > Limits.',
-  setting_order_invalid: ({ settingOrder: order }) =>
-    order
-      ? `${SETTINGS[order.smaller].label} (${amount(order.smaller, order.smallerValue)}) cannot be more than ${SETTINGS[order.larger].label} (${amount(order.larger, order.largerValue)}). Change the other one first, or choose another value.`
-      : 'This value would put two related limits in the wrong order. Check both and try again.',
+  setting_order_invalid: ({ settingOrder: order }) => {
+    if (!order) {
+      return 'This value would put two related limits in the wrong order. Check both and try again.';
+    }
+    const larger = `${SETTINGS[order.larger].label} (${amount(order.larger, order.largerValue)})`;
+    const smaller = `${SETTINGS[order.smaller].label} (${amount(order.smaller, order.smallerValue)})`;
+    const rule = order.strict
+      ? `must be more than ${order.factor === 1 ? '' : `${String(order.factor)} times `}`
+      : order.factor === 1
+        ? 'cannot be less than '
+        : order.factor === 2
+          ? 'must be at least twice '
+          : `must be at least ${String(order.factor)} times `;
+    return `${larger} ${rule}${smaller}. Change the other one first, or choose another value.`;
+  },
+  account_not_found: () => 'This Claude account no longer exists. Reload the page.',
+  account_label_taken: () =>
+    'Another Claude account already has this label. Choose a different label.',
+  machine_not_found: () => 'This machine no longer exists. Reload the page.',
+  machine_name_taken: () => 'Another machine already has this name. Choose a different name.',
+  machine_revoked: () =>
+    'This machine is revoked. To use it again, generate a new enrollment code on its page.',
+  machine_already_enrolled: () =>
+    'This machine is already enrolled. Revoke it first if you need to enroll it again.',
+  machine_not_enrolled: () =>
+    'This machine has not connected yet, so there is nothing to revoke. Its enrollment code simply expires.',
+  enrollment_code_unknown: () =>
+    'No machine has this enrollment code. Check it, or generate a new code in Machines.',
+  enrollment_code_used: () =>
+    'This enrollment code was already used. Generate a new code in Machines.',
+  enrollment_code_expired: ({ setting }) =>
+    setting
+      ? `This enrollment code expired: codes are valid for ${amount(setting.name, setting.value)} (${SETTINGS[setting.name].label}). Generate a new code in Machines.`
+      : 'This enrollment code expired. Generate a new code in Machines.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */

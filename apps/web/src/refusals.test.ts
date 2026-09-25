@@ -47,10 +47,72 @@ describe('refusalText', () => {
         larger: 'quotaFallbackMaxDelayMinutes',
         smallerValue: 300,
         largerValue: 240,
+        factor: 1,
+        strict: false,
       },
     );
     expect(refusalText(error)).toBe(
-      'Quota wait when the reset time is unknown (300 minutes) cannot be more than Longest quota wait (240 minutes). Change the other one first, or choose another value.',
+      'Longest quota wait (240 minutes) cannot be less than Quota wait when the reset time is unknown (300 minutes). Change the other one first, or choose another value.',
+    );
+  });
+
+  it('states the rule of a pair that must be at least twice the other', () => {
+    const error = new ApiRequestError(
+      409,
+      'setting_order_invalid',
+      'x',
+      undefined,
+      undefined,
+      undefined,
+      {
+        smaller: 'heartbeatIntervalSeconds',
+        larger: 'machineOfflineAfterSeconds',
+        smallerValue: 20,
+        largerValue: 30,
+        factor: 2,
+        strict: false,
+      },
+    );
+    expect(refusalText(error)).toBe(
+      'Machine offline after (30 seconds) must be at least twice Heartbeat interval (20 seconds). Change the other one first, or choose another value.',
+    );
+  });
+
+  it('states the rule of a pair where one must stay strictly below the other', () => {
+    const error = new ApiRequestError(
+      409,
+      'setting_order_invalid',
+      'x',
+      undefined,
+      undefined,
+      undefined,
+      {
+        smaller: 'loginFirstDelaySeconds',
+        larger: 'loginMaxDelaySeconds',
+        smallerValue: 30,
+        largerValue: 30,
+        factor: 1,
+        strict: true,
+      },
+    );
+    expect(refusalText(error)).toBe(
+      'Longest login delay (30 seconds) must be more than First login delay (30 seconds). Change the other one first, or choose another value.',
+    );
+  });
+
+  it('states the current enrollment code lifetime when a code expired', () => {
+    const error = new ApiRequestError(
+      410,
+      'enrollment_code_expired',
+      'x',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { name: 'enrollmentCodeLifetimeMinutes', value: 20 },
+    );
+    expect(refusalText(error)).toBe(
+      'This enrollment code expired: codes are valid for 20 minutes (Enrollment code lifetime). Generate a new code in Machines.',
     );
   });
 

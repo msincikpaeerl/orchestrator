@@ -14,6 +14,8 @@ export class ApiRequestError extends Error {
     readonly cycle?: string[],
     /** The two settings out of order, for `setting_order_invalid`. */
     readonly settingOrder?: ApiError['error']['settingOrder'],
+    /** The setting behind the refusal and its current value. */
+    readonly setting?: ApiError['error']['setting'],
   ) {
     super(message);
   }
@@ -51,7 +53,8 @@ export async function api<T>(
     if (!parsed.success) {
       throw new ApiRequestError(response.status, 'unexpected', `Error ${String(response.status)}`);
     }
-    const { code, message, retryAfterSeconds, limits, cycle, settingOrder } = parsed.data.error;
+    const { code, message, retryAfterSeconds, limits, cycle, settingOrder, setting } =
+      parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
     throw new ApiRequestError(
       response.status,
@@ -61,6 +64,7 @@ export async function api<T>(
       limits,
       cycle,
       settingOrder,
+      setting,
     );
   }
   if (schema === null) return undefined as T;

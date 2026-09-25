@@ -8,7 +8,8 @@ import {
   type EventPayload,
   type EventType,
 } from '@orchestrator/protocol';
-import { formatDate, permissionLabel } from '../github/text';
+import { formatDate, formatDateTime, permissionLabel } from '../github/text';
+import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
 import { priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
@@ -49,6 +50,19 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.commented': 'Comment added',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
+  'account.created': 'Claude account added',
+  'account.updated': 'Claude account edited',
+  'machine.created': 'Machine added',
+  'machine.enrollment_code_created': 'Enrollment code created',
+  'machine.enrolled': 'Machine enrolled',
+  'machine.enrollment_throttled': 'Enrollments delayed after wrong codes',
+  'machine.online': 'Machine connected',
+  'machine.offline': 'Machine offline',
+  'machine.daemon_incompatible': 'Daemon too old or too new',
+  'machine.disabled': 'Machine disabled',
+  'machine.enabled': 'Machine enabled',
+  'machine.revoked': 'Machine revoked',
+  'machine.capabilities_changed': 'Machine capabilities edited',
 };
 
 /** Kinds of entity, for the filter. */
@@ -59,6 +73,8 @@ export const entityLabel: Record<EventEntityType, string> = {
   project: 'Projects',
   ticket: 'Tickets',
   setting: 'Settings',
+  claude_account: 'Claude accounts',
+  machine: 'Machines',
 };
 
 /** Who caused the event. */
@@ -261,6 +277,80 @@ const describe: { [T in EventType]: Describe<T> } = {
     }
     return [`${label} reset to its default, ${amount(p.name, SETTINGS[p.name].default)}`];
   },
+  'account.created': (p) => [
+    'Claude account ',
+    quote(p.label, null),
+    ` added: ${planLabel[p.plan]} plan, ${concurrentRuns(p.maxConcurrentRuns)}`,
+  ],
+  'account.updated': (p) => {
+    const changes: string[] = [];
+    if (p.previousLabel !== undefined) changes.push(`renamed from “${shorten(p.previousLabel)}”`);
+    if (p.plan !== undefined) changes.push(`${planLabel[p.plan]} plan`);
+    if (p.maxConcurrentRuns !== undefined) changes.push(concurrentRuns(p.maxConcurrentRuns));
+    return ['Claude account ', quote(p.label, null), ` edited: ${list(changes)}`];
+  },
+  'machine.created': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    ' added, using the Claude account ',
+    quote(p.account, null),
+  ],
+  'machine.enrollment_code_created': (p) => [
+    'Enrollment code created for the machine ',
+    quote(p.name, null),
+    `, valid until ${formatDateTime(p.expiresAt)}`,
+  ],
+  'machine.enrolled': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    ' enrolled: its daemon got its token',
+  ],
+  'machine.enrollment_throttled': (p) => [
+    `After ${String(p.failures)} wrong enrollment codes from the address ${p.address}, the next attempt must wait ${duration(p.delaySeconds)}`,
+  ],
+  'machine.online': (p) => {
+    const problems = p.unusable.map((reason) =>
+      reason === 'claude_code_unsupported'
+        ? 'its Claude Code version is not supported'
+        : 'doctor found a problem',
+    );
+    return [
+      'Machine ',
+      quote(p.name, null),
+      ` connected: daemon ${p.daemonVersion}, ${
+        p.claudeCodeVersion === null
+          ? 'Claude Code not found'
+          : `Claude Code ${p.claudeCodeVersion}`
+      }, detected ${p.detected.length === 0 ? 'nothing' : list(p.detected)}`,
+      problems.length === 0 ? '' : `. It cannot receive runs: ${list(problems)}`,
+    ];
+  },
+  'machine.offline': (p) => {
+    const why: Record<typeof p.reason, string> = {
+      connection_closed: 'its connection closed',
+      silent: 'nothing received from it in time',
+      server_restarted: 'the Orchestrator restarted, waiting for it to reconnect',
+      revoked: 'revoked',
+    };
+    return ['Machine ', quote(p.name, null), ` offline: ${why[p.reason]}`];
+  },
+  'machine.daemon_incompatible': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    ` refused: its daemon ${p.daemonVersion} speaks protocol version ${String(p.protocolVersion)}, which this Orchestrator does not accept. Install the daemon of this Orchestrator's version`,
+  ],
+  'machine.disabled': (p) => ['Machine ', quote(p.name, null), ' disabled: it gets no new runs'],
+  'machine.enabled': (p) => ['Machine ', quote(p.name, null), ' enabled again'],
+  'machine.revoked': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    ' revoked: its daemon was disconnected and its token no longer works',
+  ],
+  'machine.capabilities_changed': (p) => [
+    'Capabilities of the machine ',
+    quote(p.name, null),
+    ` set to ${p.capabilities.length === 0 ? 'none' : list(p.capabilities)}`,
+  ],
 };
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {
