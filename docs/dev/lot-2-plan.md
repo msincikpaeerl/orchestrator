@@ -337,6 +337,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   4. the status line input contains `rate_limits` (Pro or Max) and `cost` fields;
   5. `autoContinueAtUsageLimit` is accepted under its documented name: Claude Code reports no invalid or unknown setting for it at startup (debug log).
 - It records the hook payloads, the status line input and the transcript as fixtures under `apps/daemon/test/fixtures/claude-code-<version>/`. They are committed on the step's branch after the owner's run.
+- When every check passes on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked, in the same change.
 - The script is checked in CI with `bash -n`, and here with a dry run against the fake `claude`.
 
 **Done when** the owner has run the probe once with the real Claude Code, every check prints `PASS`, and the fixtures are committed. If a check fails, the next step starts by adjusting the specs with the owner.
@@ -469,6 +470,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
   3. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
+- If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
 
