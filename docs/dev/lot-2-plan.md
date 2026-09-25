@@ -248,8 +248,9 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
 - `apps/daemon`:
   - CLI with `enroll`, `start`, `status`, `doctor`, `install-service`, `login` (starts Claude Code with the dedicated `CLAUDE_CONFIG_DIR` for the owner; never started by tests with the real `claude`), `attach`;
   - `~/.orchestrator/config.json` with mode `600` (the home folder is configurable for tests: tests never touch the real home);
-  - connection with backoff constants, heartbeat, `hello` with the detected capabilities and the `doctor` results.
-- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, managed Claude Code settings found, WSL detection. What it cannot read (the Windows `.wslconfig` `instanceIdleTimeout`) it prints as "check this yourself" with the documentation link.
+  - connection with backoff constants, heartbeat, `hello` with the detected capabilities and the `doctor` results;
+  - `install-service`: systemd user unit `orchestrator-daemon`, with the absolute paths of `node` and of the daemon's script written into it (05 section 2, owner's decision in step D).
+- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, the unit's `node` path (an error when it no longer exists or differs from the `node` running the daemon), managed Claude Code settings found, WSL detection. What it cannot read (the Windows `.wslconfig` `instanceIdleTimeout`) it prints as "check this yourself" with the documentation link (`<server URL>/help/machines#keep-wsl-running`, the section written in step D).
 - Packaging: the daemon bundled into one file. The server builds the `.tgz` and serves it at `/downloads/orchestrator-daemon-<version>.tgz`. ADR: daemon packaging and bundler.
 - `docs/dev/architecture.md` updated.
 
@@ -277,6 +278,7 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
   - input through `load-buffer`/`paste-buffer -p` when idle, queued otherwise;
   - the hook socket and the daemon state machine (05 section 4.7);
   - nudges (never after `StopFailure`), idle timeout, maximum duration, session start timeout (new setting);
+  - the version of the `claude` launched, reported at each run start (05 section 4.3; the server's check comes in step J);
   - end of run with branch head and commits;
   - cleanup (worktree removed, branch kept in the bare clone);
   - recovery from `state.json` after a daemon restart.
@@ -377,7 +379,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - Commit author (04 section 4): a GitHub token saved before 0.3.0 whose account id is still unknown gets it at the first run (02 section 3.2; step C stores it at the save and at each check).
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
 - Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
-- Run now refuses an unusable, disabled, revoked or offline machine.
+- Run now refuses an unusable, disabled, revoked or offline machine. The Claude Code version the daemon reports at run start is checked again as at `hello`: missing or below the minimum marks the machine unusable and fails that start (05 section 4.3).
 - **Usage limits** on the server:
   - `paused_quota` with its reason;
   - account `limited` only for `detected`, until the reset time or `quotaFallbackDelayMinutes` (now used from 0.3.0);
@@ -432,10 +434,11 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - the answer box;
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
+- Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
 - Activity > Live runs and History (Queue stays "Coming in a later version").
-- "Needs you": questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
+- "Needs you": the compact status line per Claude account (02 section 4; left out of step D), questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
 - `docs/user/`: a Runs page (Run now, watching, stopping, resuming, usage limits, what "suspected" means, where the commits are), a Questions section, the Tickets page (Accept and Reject, `in_review` in 0.3.0), Needs you, Activity, and the Settings reference.
 
 **Done when** Playwright on both viewports, with a fake daemon, covers:
