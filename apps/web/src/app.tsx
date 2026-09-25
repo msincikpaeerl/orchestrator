@@ -5,6 +5,9 @@ import { ActivityPage } from './pages/activity';
 import { CenteredPage, Loading } from './components/ui';
 import { ComingLaterPage } from './pages/coming-later';
 import { LoginPage } from './pages/login';
+import { AddMachinePage } from './pages/add-machine';
+import { MachinePage } from './pages/machine';
+import { MachinesPage } from './pages/machines';
 import { NeedsYouPage } from './pages/needs-you';
 import { NewProjectPage } from './pages/new-project';
 import { ProjectPage, ProjectSettingsPage } from './pages/project';
@@ -25,7 +28,6 @@ const TicketPage = lazy(() =>
 const later: Record<string, string> = {
   '/requests': 'Talk to the Project Manager.',
   '/agents': 'Default and custom agent profiles.',
-  '/machines': 'Machines and Claude accounts.',
 };
 
 /**
@@ -87,6 +89,9 @@ export function App() {
           <Route path="/projects/:key/tickets/new" element={<NewTicketPage />} />
           <Route path="/projects/:key/tickets/:number" element={<TicketPage />} />
           <Route path="/projects/:key/tickets/:number/edit" element={<EditTicketPage />} />
+          <Route path="/machines" element={<MachinesPage />} />
+          <Route path="/machines/new" element={<AddMachinePage />} />
+          <Route path="/machines/:id" element={<MachinePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/github" element={<GitHubSettingsPage />} />
           <Route path="/settings/limits" element={<LimitsPage />} />

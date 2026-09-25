@@ -21,7 +21,7 @@ test('Needs you shows the token problems until the token is replaced', async ({ 
   ).toBeVisible();
   const menu = page.getByRole('button', { name: 'Menu' });
   if (await menu.isVisible()) await menu.click();
-  await expect(page.getByRole('navigation', { name: 'Main' }).getByLabel('2 items')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByLabel('4 items')).toBeVisible();
   if (await menu.isVisible()) await menu.click();
   await expectFitsScreen(page);
 
@@ -50,7 +50,11 @@ test('Needs you shows the token problems until the token is replaced', async ({ 
   expect(await page.content()).not.toContain(TOKEN_FULL);
 
   await openSection(page, 'Needs you');
-  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+  // Only the setup still to do is left (no Claude account and no machine in this test).
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'No Claude account yet',
+    'No machine connected yet',
+  ]);
 });
 
 test('a token entered without expiry date shows so in Settings', async ({ page }) => {

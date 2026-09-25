@@ -1,7 +1,10 @@
 import {
+  AccountListResponse,
   EventListResponse,
   GitHubStatusResponse,
   GlobalSettingsResponse,
+  Machine,
+  MachineListResponse,
   NeedsYouResponse,
   Project,
   ProjectListResponse,
@@ -34,6 +37,9 @@ export const keys = {
   tickets: (key: string) => ['projects', 'tickets', key] as const,
   ticket: (key: string, number: number) => ['projects', 'tickets', key, number] as const,
   events: (query: string) => ['events', query] as const,
+  accounts: ['accounts'],
+  machines: ['machines'],
+  machine: (id: string) => ['machines', id] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -70,18 +76,11 @@ export function useGitHubStatus(enabled = true) {
   });
 }
 
-/**
- * "Needs you" items besides the GitHub problems (02, section 4), for the page and the menu's
- * count. Machine and account items get their screen with the Machines section (lot 2 step D):
- * until then only project items are shown and counted.
- */
+/** "Needs you" items besides the GitHub problems (02, section 4), for the page and the menu's count. */
 export function useNeedsYou() {
   return useQuery({
     queryKey: keys.needsYou,
     queryFn: () => api('GET', '/api/needs-you', NeedsYouResponse),
-    select: (data) => ({
-      items: data.items.flatMap((item) => (item.type === 'project_setup_failed' ? [item] : [])),
-    }),
   });
 }
 
@@ -204,4 +203,44 @@ export function useEventLog(query: string) {
     },
     getNextPageParam: (last) => last.next,
   });
+}
+
+/** Claude accounts, by label (02, section 9.1). */
+export function useAccounts() {
+  return useQuery({
+    queryKey: keys.accounts,
+    queryFn: () => api('GET', '/api/accounts', AccountListResponse),
+  });
+}
+
+/** Machines, by name (02, section 9.2). */
+export function useMachines() {
+  return useQuery({
+    queryKey: keys.machines,
+    queryFn: () => api('GET', '/api/machines', MachineListResponse),
+  });
+}
+
+/**
+ * One machine. Read again when the window regains focus, so a machine being added shows its
+ * connection once the owner comes back from the terminal (the realtime stream comes later).
+ */
+export function useMachine(id: string) {
+  return useQuery({
+    queryKey: keys.machine(id),
+    queryFn: () => api('GET', `/api/machines/${encodeURIComponent(id)}`, Machine),
+  });
+}
+
+/**
+ * After an action on accounts or machines: both lists, every machine (they show their account's
+ * label) and "Needs you" are read again.
+ */
+export async function machinesChanged(machine?: Machine) {
+  if (machine) queryClient.setQueryData(keys.machine(machine.id), machine);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: keys.accounts }),
+    queryClient.invalidateQueries({ queryKey: keys.machines }),
+    queryClient.invalidateQueries({ queryKey: keys.needsYou }),
+  ]);
 }

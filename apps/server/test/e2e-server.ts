@@ -2,11 +2,13 @@ import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
+import { Hello } from '@orchestrator/protocol';
 import pg from 'pg';
 import { z } from 'zod';
 import { createLogger } from '../src/logger.js';
 import { startServer } from '../src/server.js';
 import { defaultWebRoot } from '../src/web.js';
+import { enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, startFakeGitHub } from './fake-github.js';
 import { TEST_SECRET_KEY } from './helpers.js';
 
@@ -77,8 +79,25 @@ const server = await startServer(
 // Test-only controls, never part of the server: POST /reset empties every table and resets the
 // fake GitHub, so each test starts from the first launch. POST /github/fail-next makes the next
 // GitHub request with this method and path suffix fail, for example
-// `{"method":"POST","path":"/git/trees","status":503}`.
+// `{"method":"POST","path":"/git/trees","status":503}`. POST /daemon/connect enrolls a scripted
+// daemon (apps/server/test/daemon-client.ts) with the code shown on the screen, connects it and
+// says `hello`, with the `hello` fields to change: `{"code":"…","hello":{"claudeCodeVersion":null}}`;
+// it sends heartbeats until POST /daemon/disconnect or the next reset.
 const pool = new pg.Pool({ connectionString: database.url });
+
+const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
+
+async function disconnectDaemons() {
+  for (const { daemon, heartbeat } of daemons.splice(0)) {
+    clearInterval(heartbeat);
+    await daemon.close();
+  }
+}
+
+const ConnectDaemon = z.object({
+  code: z.string(),
+  hello: Hello.shape.payload.partial().default({}),
+});
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -98,6 +117,7 @@ async function handle(request: IncomingMessage): Promise<number> {
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_info'",
     );
     const tables = rows.map((row) => `"${row.tablename}"`).join(', ');
+    await disconnectDaemons();
     await pool.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
     resetGitHub();
     return 204;
@@ -111,6 +131,21 @@ async function handle(request: IncomingMessage): Promise<number> {
       used = true;
       return { status: failure.status, body: { message: 'Failure requested by the test' } };
     };
+    return 204;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/connect') {
+    const { code, hello } = ConnectDaemon.parse(await readJson(request));
+    const serverUrl = `http://127.0.0.1:${String(port)}`;
+    const daemon = await ScriptedDaemon.connect(serverUrl, await enrollToken(serverUrl, code));
+    const welcome = await daemon.hello(hello);
+    const heartbeat = setInterval(() => {
+      if (daemon.isOpen) daemon.heartbeat();
+    }, 5000);
+    daemons.push({ daemon, heartbeat });
+    return welcome.accepted ? 204 : 409;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/disconnect') {
+    await disconnectDaemons();
     return 204;
   }
   return 404;
@@ -130,6 +165,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     control.close();
     void (async () => {
+      await disconnectDaemons();
       await server.close();
       await pool.end();
       await github.close();

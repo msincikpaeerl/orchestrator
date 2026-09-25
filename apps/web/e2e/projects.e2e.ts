@@ -177,7 +177,7 @@ test('a failed setup is shown in Needs you and tried again', async ({
   ).toBeVisible();
   const menu = page.getByRole('button', { name: 'Menu' });
   if (await menu.isVisible()) await menu.click();
-  await expect(page.getByRole('navigation', { name: 'Main' }).getByLabel('1 items')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByLabel('3 items')).toBeVisible();
   if (await menu.isVisible()) await menu.click();
   await expectFitsScreen(page);
   await page.getByRole('link', { name: 'Open the project' }).click();
@@ -191,7 +191,11 @@ test('a failed setup is shown in Needs you and tried again', async ({
   ]);
   expect(await projectRequestsWhileWaiting(page, 'GP')).toBe(0);
   await openSection(page, 'Needs you');
-  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+  // Only the setup still to do is left (no Claude account and no machine in this test).
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'No Claude account yet',
+    'No machine connected yet',
+  ]);
 });
 
 test('archiving and unarchiving a project, with confirmation', async ({ page }) => {
