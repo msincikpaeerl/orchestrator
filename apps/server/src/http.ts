@@ -9,8 +9,11 @@ export class HttpError extends Error {
     readonly statusCode: number,
     readonly code: ApiErrorCode,
     message: string,
-    /** Details the UI uses to explain the refusal (`limits`, `cycle`, `settingOrder`). */
-    readonly details: Pick<ApiError['error'], 'limits' | 'cycle' | 'settingOrder'> = {},
+    /** Details the UI uses to explain the refusal (`limits`, `cycle`, `settingOrder`, ...). */
+    readonly details: Pick<
+      ApiError['error'],
+      'limits' | 'cycle' | 'settingOrder' | 'setting' | 'retryAfterSeconds'
+    > = {},
   ) {
     super(message);
   }
@@ -26,6 +29,15 @@ export function parseInput<T>(schema: z.ZodType<T>, value: unknown): T {
     throw new HttpError(400, 'invalid_request', problems.join('; '));
   }
   return result.data;
+}
+
+/** Name of the unique constraint violated by a failed insert, or null for any other error. */
+export function uniqueViolation(error: unknown): string | null {
+  for (let cause = error; cause instanceof Error; cause = cause.cause) {
+    const { code, constraint } = cause as Error & { code?: unknown; constraint?: unknown };
+    if (code === '23505' && typeof constraint === 'string') return constraint;
+  }
+  return null;
 }
 
 /**

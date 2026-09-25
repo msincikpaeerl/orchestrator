@@ -1,22 +1,35 @@
-import { Project } from '@orchestrator/protocol';
+import {
+  ClaudeAccount,
+  EnrollmentResponse,
+  PROTOCOL_VERSION,
+  Project,
+} from '@orchestrator/protocol';
 import { expect } from 'vitest';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
 import { resetPassword } from '../src/reset-password.js';
+import { enroll, enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, type FakeGitHub } from './fake-github.js';
 import { createOwner, OWNER, startTestApp, type TestApp } from './helpers.js';
 
 const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
 
-/** The application with every setting the scenario needs; login throttling starts at once. */
+/**
+ * The application with every setting the scenario needs; login and enrollment throttling start
+ * at once. It listens, for the scripted daemon.
+ */
 export function startEveryEventApp(github: FakeGitHub): Promise<TestApp> {
-  return startTestApp({ githubApiUrl: github.url, settings: { loginFailuresBeforeDelay: 1 } });
+  return startTestApp({
+    githubApiUrl: github.url,
+    settings: { loginFailuresBeforeDelay: 1 },
+    listen: true,
+  });
 }
 
 /**
- * Writes every event type of lots 0 and 1 through the code that writes them in production: the
- * API where the owner causes it, the server functions otherwise. Two projects (`SHOP`, created,
- * and `LEG`, linked) with tickets `SHOP-1` and `SHOP-2`. Ends with the password reset, which
- * revokes every session.
+ * Writes every event type through the code that writes them in production: the API where the
+ * owner causes it, a scripted daemon for machines, the server functions otherwise. Two projects
+ * (`SHOP`, created, and `LEG`, linked) with tickets `SHOP-1` and `SHOP-2`, a Claude account and
+ * the machine `Laptop`. Ends with the password reset, which revokes every session.
  */
 export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<void> {
   const cookie = await createOwner(t.app);
@@ -91,6 +104,28 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
 
   await call('POST', '/api/projects/LEG/archive');
   await call('POST', '/api/projects/LEG/unarchive');
+
+  const account = ClaudeAccount.parse(
+    (await call('POST', '/api/accounts', { label: 'Personal Max', plan: 'max_5x' })).json(),
+  );
+  await call('PATCH', `/api/accounts/${account.id}`, { maxConcurrentRuns: 2 });
+  const { machine, enrollment } = EnrollmentResponse.parse(
+    (await call('POST', '/api/machines', { name: 'Laptop', accountId: account.id })).json(),
+  );
+  const token = await enrollToken(t.url, enrollment.code);
+  const daemon = await ScriptedDaemon.connect(t.url, token);
+  expect((await daemon.hello()).accepted).toBe(true);
+  await call('PUT', `/api/machines/${machine.id}/capabilities`, { capabilities: ['git'] });
+  await call('POST', `/api/machines/${machine.id}/disable`);
+  await call('POST', `/api/machines/${machine.id}/enable`);
+  // A second daemon of another version is refused; the first one stays connected.
+  const outdated = await ScriptedDaemon.connect(t.url, token);
+  await outdated.hello({ protocolVersion: PROTOCOL_VERSION + 1 });
+  await outdated.closed;
+  await call('POST', `/api/machines/${machine.id}/revoke`);
+  await daemon.closed;
+  // One wrong code starts the enrollment delay (loginFailuresBeforeDelay is 1).
+  expect((await enroll(t.url, 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01')).status).toBe(404);
 
   await markTokenInvalid(t.db, 'system', 'GET /user');
   await markTokenUnreadable(t.db);

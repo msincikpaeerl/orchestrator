@@ -27,7 +27,7 @@ import {
   findRepository,
   listOwnerRepositories,
 } from '../github/repositories.js';
-import { HttpError, parseInput } from '../http.js';
+import { HttpError, parseInput, uniqueViolation } from '../http.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { projectEntity, toProject, type ProjectRow } from './model.js';
 import { ProjectSetupRunner } from './setup.js';
@@ -37,15 +37,6 @@ export interface ProjectRoutesOptions {
   key: SecretKey;
   apiUrl: string;
   now?: () => Date;
-}
-
-/** Name of the unique constraint violated by a failed insert, or null for any other error. */
-function uniqueViolation(error: unknown): string | null {
-  for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    const { code, constraint } = cause as Error & { code?: unknown; constraint?: unknown };
-    if (code === '23505' && typeof constraint === 'string') return constraint;
-  }
-  return null;
 }
 
 const keyTaken = () =>

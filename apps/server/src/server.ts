@@ -5,6 +5,7 @@ import { buildApp, type App, type AppDependencies } from './app.js';
 import type { Config } from './config.js';
 import { createDatabase } from './database.js';
 import { detectUnreadableToken } from './github/connection.js';
+import { markAllOffline } from './machines/gateway.js';
 import { failInterruptedSetups } from './projects/setup.js';
 import { deriveSecretKey } from './secrets.js';
 import { defaultWebRoot } from './web.js';
@@ -33,6 +34,8 @@ export async function startServer(
     await detectUnreadableToken(db, deriveSecretKey(config.secretKey), logger);
     const interrupted = await failInterruptedSetups(db);
     if (interrupted > 0) logger.warn({ interrupted }, 'project setups interrupted by a restart');
+    const offline = await markAllOffline(db);
+    if (offline > 0) logger.info({ offline }, 'machines offline until their daemons reconnect');
     const app = buildApp({
       pool,
       logger,

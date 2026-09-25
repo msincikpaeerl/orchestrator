@@ -1,5 +1,11 @@
 import { schema } from '@orchestrator/db';
-import { SETTING_ORDER, SETTINGS, SettingName, type SettingValues } from '@orchestrator/protocol';
+import {
+  inOrder,
+  SETTING_ORDER,
+  SETTINGS,
+  SettingName,
+  type SettingValues,
+} from '@orchestrator/protocol';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -153,20 +159,28 @@ async function resetSetting(tx: Executor, name: SettingName, target: SettingScop
  * event) when a pair of `SETTING_ORDER` is no longer in order (04, section 8; 07, section 8).
  */
 async function checkOrder(tx: Executor, name: SettingName, projectId: string | null) {
-  for (const { smaller, larger } of SETTING_ORDER) {
+  for (const order of SETTING_ORDER) {
+    const { smaller, larger, factor, strict } = order;
     if (name !== smaller && name !== larger) continue;
     const values = await resolveSettings(tx, [smaller, larger], projectId ?? undefined);
-    if (values[smaller] <= values[larger]) continue;
+    if (inOrder(order, values[smaller], values[larger])) continue;
+    const relation = strict
+      ? 'must be above'
+      : factor === 1
+        ? 'cannot be below'
+        : `must be at least ${String(factor)} times`;
     throw new HttpError(
       409,
       'setting_order_invalid',
-      `${smaller} (${String(values[smaller])}) cannot be above ${larger} (${String(values[larger])})`,
+      `${larger} (${String(values[larger])}) ${relation} ${smaller} (${String(values[smaller])})`,
       {
         settingOrder: {
           smaller,
           larger,
           smallerValue: values[smaller],
           largerValue: values[larger],
+          factor,
+          strict,
         },
       },
     );

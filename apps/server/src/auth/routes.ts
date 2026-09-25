@@ -11,7 +11,7 @@ import type { Database } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import { hashPassword, unknownUserHash, verifyPassword } from './password.js';
-import { LoginThrottle } from './throttle.js';
+import { loginKeys, Throttle } from './throttle.js';
 import {
   SESSION_COOKIE,
   createSession,
@@ -44,7 +44,7 @@ export async function requireSession(
 }
 
 export function registerAuthRoutes(app: FastifyInstance, { db, secureCookies, now }: AuthOptions) {
-  const throttle = new LoginThrottle(db, now);
+  const throttle = new Throttle(db, now);
 
   async function ownerUsername(): Promise<string | null> {
     const [owner] = await db.select({ username: schema.owner.username }).from(schema.owner);
@@ -104,7 +104,7 @@ export function registerAuthRoutes(app: FastifyInstance, { db, secureCookies, no
 
   app.post('/api/auth/login', async (request, reply) => {
     const input = parseInput(LoginRequest, request.body);
-    const attempt = { username: input.username, address: request.ip };
+    const attempt = loginKeys({ username: input.username, address: request.ip });
     const wait = await throttle.waitSeconds(attempt);
     if (wait > 0) {
       request.log.warn({ wait }, 'login refused: too many failed attempts');

@@ -12,6 +12,9 @@ import { GITHUB_API_URL } from './github/client.js';
 import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
+import { registerAccountRoutes } from './machines/accounts.js';
+import { DaemonGateway } from './machines/gateway.js';
+import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
 import { deriveSecretKey } from './secrets.js';
@@ -33,6 +36,8 @@ export interface AppDependencies {
   now?: () => Date;
   /** Folder of the built UI; `null` or absent serves the API only. */
   webRoot?: string | null;
+  /** Milliseconds in one second of the daemon heartbeat settings; tests shorten it. */
+  daemonSecondMs?: number;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -42,6 +47,13 @@ export function buildApp(dependencies: AppDependencies) {
   const app = Fastify({ loggerInstance: logger });
   app.setErrorHandler(handleError);
   void app.register(cookie);
+  const gateway = new DaemonGateway({
+    db,
+    log: logger,
+    publicUrl: dependencies.publicUrl,
+    secondMs: dependencies.daemonSecondMs,
+  });
+  gateway.register(app);
 
   // Polled by Docker every few seconds: only failures are logged.
   app.get('/health', { logLevel: 'warn' }, async (request, reply) => {
@@ -76,6 +88,13 @@ export function buildApp(dependencies: AppDependencies) {
     registerUiSettingsRoutes(scope, { db });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
+    registerAccountRoutes(scope, { db });
+    registerMachineRoutes(scope, {
+      db,
+      gateway,
+      publicUrl: dependencies.publicUrl,
+      now: dependencies.now,
+    });
     done();
   });
 

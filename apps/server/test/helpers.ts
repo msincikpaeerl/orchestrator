@@ -24,6 +24,8 @@ export class LogCapture extends Writable {
 
 export interface TestApp {
   app: App;
+  /** `http://127.0.0.1:<port>` when started with `listen`, for daemons and WebSockets. */
+  url: string;
   db: Database;
   pool: pg.Pool;
   logs: LogCapture;
@@ -39,6 +41,10 @@ export async function startTestApp(
     settings?: Partial<SettingValues>;
     secretKey?: string;
     now?: () => Date;
+    /** Listens on a free local port, for tests with a WebSocket or `fetch`. */
+    listen?: boolean;
+    /** Milliseconds in one second of the heartbeat settings, to test offline quickly. */
+    daemonSecondMs?: number;
   } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
@@ -58,10 +64,13 @@ export async function startTestApp(
     publicUrl: 'http://localhost:8080',
     githubApiUrl: options.githubApiUrl,
     now: options.now,
+    daemonSecondMs: options.daemonSecondMs,
   });
   await app.ready();
+  const url = options.listen ? await app.listen({ port: 0, host: '127.0.0.1' }) : '';
   return {
     app,
+    url,
     db,
     pool,
     logs,

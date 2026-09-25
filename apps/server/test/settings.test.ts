@@ -272,6 +272,41 @@ describe('settings that must stay in order', () => {
     expect((await call('DELETE', first)).statusCode).toBe(200);
   });
 
+  it('keeps Machine offline after at least twice the heartbeat interval, naming both', async () => {
+    const heartbeat = 'settings/heartbeatIntervalSeconds';
+    const offline = 'settings/machineOfflineAfterSeconds';
+    // 31 seconds would need at least 62: the default offline delay is 60.
+    const above = await call('PUT', heartbeat, { value: 31 });
+    expect(above.statusCode).toBe(409);
+    expect(error(above)).toMatchObject({
+      code: 'setting_order_invalid',
+      settingOrder: {
+        smaller: 'heartbeatIntervalSeconds',
+        larger: 'machineOfflineAfterSeconds',
+        smallerValue: 31,
+        largerValue: 60,
+        factor: 2,
+        strict: false,
+      },
+    });
+    // The message states both settings and their values.
+    expect(error(above).message).toBe(
+      'machineOfflineAfterSeconds (60) must be at least 2 times heartbeatIntervalSeconds (31)',
+    );
+    const below = await call('PUT', offline, { value: 29 });
+    expect(below.statusCode).toBe(409);
+    expect(error(below).settingOrder).toMatchObject({ smallerValue: 15, largerValue: 29 });
+    // Exactly twice is in order; one more second of heartbeat is not.
+    expect((await call('PUT', offline, { value: 30 })).statusCode).toBe(200);
+    expect((await call('PUT', heartbeat, { value: 16 })).statusCode).toBe(409);
+    // A Reset to default of the offline delay (60) is refused under a 40-second heartbeat.
+    expect((await call('PUT', offline, { value: 100 })).statusCode).toBe(200);
+    expect((await call('PUT', heartbeat, { value: 40 })).statusCode).toBe(200);
+    const reset = await call('DELETE', offline);
+    expect(reset.statusCode).toBe(409);
+    expect(error(reset).settingOrder).toMatchObject({ smallerValue: 40, largerValue: 60 });
+  });
+
   it('never lets two changes that are each in order break the order together', async () => {
     await call('PUT', first, { value: 100 });
     await call('PUT', longest, { value: 200 });
