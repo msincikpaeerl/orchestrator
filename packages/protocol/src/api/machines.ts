@@ -115,6 +115,11 @@ export const Machine = z.object({
   protocolVersion: z.int().nullable(),
   /** The last connection was refused for its protocol version: update the daemon. */
   daemonIncompatible: z.boolean(),
+  /**
+   * When the daemon is incompatible: the command installing the daemon of the server's version,
+   * shown with the instruction to restart the daemon (02, section 4; 05, section 2).
+   */
+  updateCommand: z.string().nullable(),
   claudeCodeVersion: z.string().nullable(),
   claudeCodeSupport: ClaudeCodeSupportLevel.nullable(),
   lastHeartbeatAt: z.iso.datetime().nullable(),

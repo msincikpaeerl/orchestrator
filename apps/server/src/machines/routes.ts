@@ -70,7 +70,7 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
       .from(schema.claudeAccounts)
       .where(eq(schema.claudeAccounts.id, row.accountId));
     if (!account) throw accountNotFound();
-    return toMachine(row, account);
+    return toMachine(row, account, publicUrl);
   }
 
   /** The machine, locked for the rest of the transaction. */
@@ -142,7 +142,7 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
       .innerJoin(schema.claudeAccounts, eq(schema.claudeAccounts.id, schema.machines.accountId))
       .orderBy(asc(sql`lower(${schema.machines.name})`));
     return {
-      machines: rows.map((row) => toMachine(row.machine, row.account)),
+      machines: rows.map((row) => toMachine(row.machine, row.account, publicUrl)),
     } satisfies MachineListResponse;
   });
 

@@ -102,3 +102,56 @@ export async function createReadyProject(
     )
     .toBe('ready');
 }
+
+/**
+ * Enrolls and connects the scripted daemon of apps/server/test/e2e-server.ts with `code`, as
+ * `orchestrator-daemon enroll` then `start` would; `hello` changes what it reports. Returns the
+ * control's status: 204 when the server accepted the daemon, 409 when it refused it.
+ */
+export async function connectDaemon(
+  page: Page,
+  code: string,
+  hello: Record<string, unknown> = {},
+): Promise<number> {
+  const response = await page.request.post(`${controlUrl}/daemon/connect`, {
+    data: { code, hello },
+  });
+  return response.status();
+}
+
+/**
+ * The owner comes back to the page, for example from the terminal: the browser tells the page it
+ * is visible again, and the screens read their data again (02, section 1).
+ */
+export async function comeBack(page: Page) {
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event('visibilitychange', { bubbles: true }));
+  });
+}
+
+/** Adds a Claude account and a machine through the API; returns the machine's enrollment code. */
+export async function createMachine(
+  page: Page,
+  machine: { name: string; account: string },
+): Promise<{ id: string; code: string }> {
+  const accounts = (await (await page.request.get('/api/accounts')).json()) as {
+    accounts: { id: string; label: string }[];
+  };
+  let account = accounts.accounts.find((existing) => existing.label === machine.account);
+  if (!account) {
+    const created = await page.request.post('/api/accounts', {
+      data: { label: machine.account, plan: 'pro' },
+    });
+    expect(created.status()).toBe(201);
+    account = (await created.json()) as { id: string; label: string };
+  }
+  const response = await page.request.post('/api/machines', {
+    data: { name: machine.name, accountId: account.id },
+  });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as {
+    machine: { id: string };
+    enrollment: { code: string };
+  };
+  return { id: body.machine.id, code: body.enrollment.code };
+}

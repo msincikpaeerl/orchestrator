@@ -118,7 +118,11 @@ export function unusableReasons(row: MachineRow): UnusableReason[] {
   return reasons;
 }
 
-export function toMachine(row: MachineRow, account: Pick<AccountRow, 'id' | 'label'>): Machine {
+export function toMachine(
+  row: MachineRow,
+  account: Pick<AccountRow, 'id' | 'label'>,
+  publicUrl: string,
+): Machine {
   const lists = capabilityLists(row);
   const state = machineState(row);
   return {
@@ -131,6 +135,7 @@ export function toMachine(row: MachineRow, account: Pick<AccountRow, 'id' | 'lab
     daemonVersion: row.daemonVersion,
     protocolVersion: row.protocolVersion,
     daemonIncompatible: row.daemonIncompatibleSince !== null,
+    updateCommand: row.daemonIncompatibleSince === null ? null : daemonInstallCommand(publicUrl),
     claudeCodeVersion: row.claudeCodeVersion,
     claudeCodeSupport: row.daemonVersion === null ? null : claudeCodeSupport(row.claudeCodeVersion),
     lastHeartbeatAt: row.lastHeartbeatAt?.toISOString() ?? null,

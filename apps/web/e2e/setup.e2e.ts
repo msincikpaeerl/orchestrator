@@ -82,7 +82,11 @@ test('first launch: account, GitHub token, Done, then the getting started guide'
   // The wizard is over: the home page is "Needs you".
   await page.goto('/setup');
   await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible();
-  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+  // Accounts and machines are not wizard steps yet (02, section 3): "Needs you" lists them.
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'No Claude account yet',
+    'No machine enrolled yet',
+  ]);
 });
 
 test('a token without expiry date, and one with a missing permission', async ({ page }) => {

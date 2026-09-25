@@ -26,6 +26,8 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     machine: MachineRef,
     daemonVersion: z.string().nullable(),
     protocolVersion: z.int().nullable(),
+    /** Installs the daemon of the server's version; then the daemon is restarted. */
+    updateCommand: z.string(),
     since: z.iso.datetime(),
   }),
   /** Claude Code missing or below the minimum: the machine is unusable. */

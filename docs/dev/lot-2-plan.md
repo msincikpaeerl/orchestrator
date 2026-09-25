@@ -223,10 +223,10 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
 
 Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum and highest validated version (2.1.280 and 2.1.282) are constants in `packages/protocol`, shared with the daemon; an unknown token is refused with HTTP 401 before the WebSocket opens, a revoked one gets `welcome` refused with `token_revoked` (its hash is kept until a new code); the server's close codes are in `DaemonCloseCode`; a connection without `hello` within "Machine offline after" is closed; machine tokens start with `omt_`; refusals tied to a setting carry `setting` (name and current value) in the error body; the "Needs you" page shows only project items until step D; the Claude Code and `doctor` checks run at each `hello`; daemon messages other than `hello` and `heartbeat` are logged and ignored until step J. The GitHub account id is read at the save and at each check; its "first use" (02, section 3.2) is the first run, in step J.
 
-### [ ] D. Accounts and machines screens, user documentation
+### [x] D. Accounts and machines screens, user documentation
 
 - Machines section (02 section 9):
-  - accounts: list and form (label, plan, maximum concurrent runs), state;
+  - accounts: list and form (label, plan, maximum concurrent runs); the state moves to step L;
   - machine list and detail: status, versions (with the "above validated" warning), capabilities editor, `doctor` results, disable, revoke with confirmation;
   - **Add machine**: the two commands, then `login` and `install-service`, then waits for the connection (without the stream yet, it refreshes on focus and after actions; step L makes it live).
 - "Needs you" items from step C.
@@ -243,13 +243,26 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
 
 **Done when** Playwright covers creating an account, adding a machine until the scripted daemon connects, editing capabilities, and revoking it, on both viewports.
 
+*Done 2026-09-25.* Owner's decisions, written into 04 section 8, 05 sections 2, 4.3 and 8, 02 section 4, and steps E, F, H, J, L and N above:
+
+- the Claude Code minimum and highest validated versions are code constants, not settings; steps H and N raise the highest validated version when the owner's check passes on a newer Claude Code;
+- the systemd user unit is `orchestrator-daemon`; checks run at each `hello`, so after an update or a fix the owner restarts the daemon (`systemctl --user restart orchestrator-daemon`, or stops and starts `orchestrator-daemon start`); the screens and Help say so;
+- the daemon reports the Claude Code version it launches at each run start and the server checks it again (steps F and J);
+- Help recommends nvm for Node.js and links to the official nvm instructions; `install-service` writes absolute `node` and script paths, and `doctor` checks the unit's `node` path (step E); after changing the Node.js version, the owner reinstalls the daemon and runs `install-service` again;
+- the account status line on "Needs you" and the active runs on machines move to step L.
+
+Choices within the step: the machine and its "Needs you" item carry `updateCommand` (the server's install command) for an incompatible daemon; `doctor` links are shown only when they are web addresses; the Help section `machines#keep-wsl-running` is the link `doctor` gives for the WSL idle timeout (step E); the e2e server drives the scripted daemon through its test-only control. A shutdown race of step C (queued status work running after the database closed) was fixed, with a regression test.
+
+Owner's review of the step: the "Needs you" item is renamed "No machine enrolled yet" (02 sections 3 and 4; the decisions above keep the earlier wording); the account state is left out of the screens until step L; the Machines Help page turns on systemd before adding a machine, checks that WSL stays running, and has a Troubleshooting section (`doctor` and `status` marked "available from step E").
+
 ### [ ] E. Daemon core
 
 - `apps/daemon`:
   - CLI with `enroll`, `start`, `status`, `doctor`, `install-service`, `login` (starts Claude Code with the dedicated `CLAUDE_CONFIG_DIR` for the owner; never started by tests with the real `claude`), `attach`;
   - `~/.orchestrator/config.json` with mode `600` (the home folder is configurable for tests: tests never touch the real home);
-  - connection with backoff constants, heartbeat, `hello` with the detected capabilities and the `doctor` results.
-- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, managed Claude Code settings found, WSL detection. What it cannot read (the Windows `.wslconfig` `instanceIdleTimeout`) it prints as "check this yourself" with the documentation link.
+  - connection with backoff constants, heartbeat, `hello` with the detected capabilities and the `doctor` results;
+  - `install-service`: systemd user unit `orchestrator-daemon`, with the absolute paths of `node` and of the daemon's script written into it (05 section 2, owner's decision in step D).
+- `doctor`: `git`, `tmux`, `claude` with versions against the minimums, systemd user session, lingering, the unit's `node` path (an error when it no longer exists or differs from the `node` running the daemon), managed Claude Code settings found, WSL detection. What it cannot read (the Windows `.wslconfig` `instanceIdleTimeout`) it prints as "check this yourself" with the documentation link (`<server URL>/help/machines#keep-wsl-running`, the section written in step D).
 - Packaging: the daemon bundled into one file. The server builds the `.tgz` and serves it at `/downloads/orchestrator-daemon-<version>.tgz`. ADR: daemon packaging and bundler.
 - `docs/dev/architecture.md` updated.
 
@@ -277,6 +290,7 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
   - input through `load-buffer`/`paste-buffer -p` when idle, queued otherwise;
   - the hook socket and the daemon state machine (05 section 4.7);
   - nudges (never after `StopFailure`), idle timeout, maximum duration, session start timeout (new setting);
+  - the version of the `claude` launched, reported at each run start (05 section 4.3; the server's check comes in step J);
   - end of run with branch head and commits;
   - cleanup (worktree removed, branch kept in the bare clone);
   - recovery from `state.json` after a daemon restart.
@@ -337,6 +351,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   4. the status line input contains `rate_limits` (Pro or Max) and `cost` fields;
   5. `autoContinueAtUsageLimit` is accepted under its documented name: Claude Code reports no invalid or unknown setting for it at startup (debug log).
 - It records the hook payloads, the status line input and the transcript as fixtures under `apps/daemon/test/fixtures/claude-code-<version>/`. They are committed on the step's branch after the owner's run.
+- When every check passes on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked, in the same change.
 - The script is checked in CI with `bash -n`, and here with a dry run against the fake `claude`.
 
 **Done when** the owner has run the probe once with the real Claude Code, every check prints `PASS`, and the fixtures are committed. If a check fails, the next step starts by adjusting the specs with the owner.
@@ -376,7 +391,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - Commit author (04 section 4): a GitHub token saved before 0.3.0 whose account id is still unknown gets it at the first run (02 section 3.2; step C stores it at the save and at each check).
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
 - Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
-- Run now refuses an unusable, disabled, revoked or offline machine.
+- Run now refuses an unusable, disabled, revoked or offline machine. The Claude Code version the daemon reports at run start is checked again as at `hello`: missing or below the minimum marks the machine unusable and fails that start (05 section 4.3).
 - **Usage limits** on the server:
   - `paused_quota` with its reason;
   - account `limited` only for `detected`, until the reset time or `quotaFallbackDelayMinutes` (now used from 0.3.0);
@@ -431,10 +446,12 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - the answer box;
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
+- Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
 - Activity > Live runs and History (Queue stays "Coming in a later version").
-- "Needs you": questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
+- Machines: each Claude account's state (`available`, or `limited` until a time) on the account list (02 section 9.1; left out of step D, since it is always `available` before step J).
+- "Needs you": the compact status line per Claude account (02 section 4; left out of step D), questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
 - `docs/user/`: a Runs page (Run now, watching, stopping, resuming, usage limits, what "suspected" means, where the commits are), a Questions section, the Tickets page (Accept and Reject, `in_review` in 0.3.0), Needs you, Activity, and the Settings reference.
 
 **Done when** Playwright on both viewports, with a fake daemon, covers:
@@ -469,6 +486,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
   3. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
+- If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
 

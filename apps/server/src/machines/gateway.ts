@@ -53,7 +53,8 @@ export interface GatewayOptions {
 
 /**
  * Marks the machine offline and writes `machine.offline`, if it was online. Returns whether it
- * changed, so a machine never goes offline twice.
+ * changed, so a machine never goes offline twice. Call it in a transaction: the status and its
+ * event are written together.
  */
 export async function markOffline(
   db: Executor,
@@ -124,7 +125,10 @@ export class DaemonGateway {
         for (const connection of this.connections.values()) {
           this.end(connection, DaemonCloseCode.shutdown, 'server shutting down');
         }
-        done();
+        // Status work already queued finishes first: the database closes after the server.
+        void Promise.all(this.queues.values()).then(() => {
+          done();
+        });
       },
     });
     void app.register((scope, _options, done) => {
@@ -230,7 +234,7 @@ export class DaemonGateway {
         this.connections.delete(machine.id);
         if (!connection.welcomed || this.closing) return;
         log.info('daemon disconnected');
-        await markOffline(this.db, machine, 'connection_closed');
+        await this.db.transaction((tx) => markOffline(tx, machine, 'connection_closed'));
       });
     });
   }
@@ -255,10 +259,8 @@ export class DaemonGateway {
         );
         this.end(connection, DaemonCloseCode.silent, 'nothing received in time');
         if (connection.welcomed && !this.connections.has(connection.machineId)) {
-          await markOffline(
-            this.db,
-            { id: connection.machineId, name: connection.machineName },
-            'silent',
+          await this.db.transaction((tx) =>
+            markOffline(tx, { id: connection.machineId, name: connection.machineName }, 'silent'),
           );
         }
       });

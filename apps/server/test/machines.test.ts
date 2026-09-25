@@ -409,12 +409,14 @@ describe('the daemon connection', () => {
       state: 'offline',
       daemonIncompatible: true,
       daemonVersion: '9.0.0',
+      updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
     });
     expect(await needsYou()).toContainEqual(
       expect.objectContaining({
         type: 'daemon_incompatible',
         daemonVersion: '9.0.0',
         protocolVersion: PROTOCOL_VERSION + 1,
+        updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
       }),
     );
     // Retrying with the same versions writes no second event.
@@ -423,7 +425,10 @@ describe('the daemon connection', () => {
     await retry.closed;
     const updated = await connect(token);
     expect((await updated.hello()).accepted).toBe(true);
-    expect((await machine(created.machine.id)).daemonIncompatible).toBe(false);
+    expect(await machine(created.machine.id)).toMatchObject({
+      daemonIncompatible: false,
+      updateCommand: null,
+    });
     expect((await needsYou()).map((item) => item.type)).not.toContain('daemon_incompatible');
     const types = (await machineEvents()).map((event) => event.type);
     expect(types.filter((type) => type === 'machine.daemon_incompatible')).toHaveLength(1);
@@ -569,6 +574,61 @@ describe('the daemon connection', () => {
       type: 'machine.offline',
       payload: { name: 'Laptop', reason: 'connection_closed' },
     });
+  });
+
+  it('changes the status and writes its event together, or neither', async () => {
+    await start({ daemonSecondMs: SECOND_MS });
+    const closed = await connectedMachine('Closed');
+    const silent = await connectedMachine('Silent');
+    // Writing `machine.offline` fails: the status must not change without its event.
+    await t.pool.query(`
+      CREATE FUNCTION refuse_offline_event() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.type = 'machine.offline' THEN RAISE EXCEPTION 'event refused by the test'; END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER refuse_offline_event BEFORE INSERT ON events
+        FOR EACH ROW EXECUTE FUNCTION refuse_offline_event();
+    `);
+    await closed.daemon.close();
+    // `Silent` sends no heartbeat: after "Machine offline after" (60 test seconds) it is closed.
+    await eventually(() => {
+      expect(t.logs.text.match(/daemon gateway failed/g)).toHaveLength(2);
+      return Promise.resolve();
+    });
+    expect((await machine(closed.id)).state).toBe('online');
+    expect((await machine(silent.id)).state).toBe('online');
+  });
+
+  it('finishes the status work already queued before the server stops', async () => {
+    await start();
+    const { id, daemon } = await connectedMachine();
+    // Hold the machine's row, so marking it offline waits inside the queued work.
+    const holder = await t.pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM machines WHERE id = $1 FOR UPDATE', [id]);
+      await daemon.close();
+      await eventually(async () => {
+        const { rows } = await t.pool.query<{ waiting: number }>(
+          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock'",
+        );
+        expect(rows[0]?.waiting).toBe(1);
+      });
+      let closed = false;
+      const closing = t.app.close().then(() => {
+        closed = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(closed).toBe(false);
+      await holder.query('COMMIT');
+      await closing;
+    } finally {
+      holder.release();
+    }
+    const [row] = await t.db.select().from(schema.machines).where(eq(schema.machines.id, id));
+    expect(row?.status).toBe('offline');
+    expect(t.logs.text).not.toContain('daemon gateway failed');
   });
 
   it('replaces an older connection without going offline in between', async () => {
