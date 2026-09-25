@@ -8,6 +8,7 @@
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
 | Git | 2.40 or later | The daemon's tests use bare clones and worktrees (from lot 2). |
 | tmux | 3.2 or later (`tmux -V`) | The daemon's tests drive real tmux sessions with a fake `claude` (from lot 2 step F). Installed from the system's packages, so the version cannot be pinned; CI prints `tmux -V` in its log. |
+| `tar`, `openssl` | from the system | `tar` packs the daemon in `pnpm build`; `openssl` makes the test certificates of the daemon's `doctor` tests. Both come with Ubuntu and the CI runner. |
 | Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, end-to-end tests, full stack. |
 
 Windows is supported through WSL 2 only. The real Claude Code is never needed for development or tests (working rule 10); the owner's machines need it to run agents (`docs/user/`, from lot 2).
@@ -34,14 +35,15 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `pnpm format` | Rewrite files with Prettier (Markdown is excluded, ADR 0007). |
 | `pnpm typecheck` | `tsc` on the root config files and every package. |
 | `pnpm test` | Vitest, all packages. |
-| `pnpm build` | Build every package into its `dist/`. |
+| `pnpm build` | Build every package into its `dist/`; the daemon's is its package, `orchestrator-daemon-<version>.tgz` (ADR 0026). |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
 | `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the development database. |
 | `pnpm test:e2e:host` | The same on the host, with Chromium downloaded into `.playwright-browsers/`; needs Chromium's system libraries. |
 | `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`, and the UI with Vite on `http://localhost:5173`. |
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
 | `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
-| `pnpm --filter <folder> <script>` | Run a script in one package, for example `pnpm --filter daemon dev`. |
+| `pnpm --filter @orchestrator/daemon dev <command>` | The daemon from its sources, for example `... dev doctor` or `... dev start`. It uses `~/.orchestrator/`; set `ORCHESTRATOR_HOME` to another folder to keep a development daemon apart. Tests never use it. |
+| `pnpm --filter <package> <script>` | Run a script in one package. |
 
 Do not use `pnpm ci`: it is a built-in pnpm command (clean install), not our CI script (ADR 0005).
 

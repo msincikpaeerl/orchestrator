@@ -6,9 +6,9 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 
 | Folder | Package | Role | State |
 |---|---|---|---|
-| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, settings (Settings > Limits and project overrides), `orchestrator reset-password`, serves the UI |
+| `apps/server` | `@orchestrator/server` | Fastify server: API, realtime, daemon gateway, MCP backend, scheduler, GitHub integration, serves the UI. | config, migrations at start, `/health`, `/version`, `/downloads/` (the daemon package), owner account and sessions, GitHub token, projects API with repository setup, tickets API, "Needs you" API, UI settings, settings (Settings > Limits and project overrides), `orchestrator reset-password`, serves the UI |
 | `apps/web` | `@orchestrator/web` | React UI, built into static files served by the server. | setup wizard, login, app shell, Needs you, projects, tickets, Settings > GitHub connection and Limits, project overrides, Help |
-| `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | placeholder |
+| `apps/daemon` | `@orchestrator/daemon` | Runs on each machine: tmux and Claude Code sessions, hooks, MCP relay. | the `orchestrator-daemon` command (`enroll`, `login`, `start`, `status`, `doctor`, `install-service`, `attach`), the connection to the server, the control socket, the package served by the server (see below) |
 | `packages/protocol` | `@orchestrator/protocol` | Zod schemas shared by all apps. Holds `PROTOCOL_VERSION`. | API requests and responses, event types and the payload schema of each (`EventPayloads`), GitHub permission list, projects, tickets and comments, "Needs you" items; daemon messages (`src/daemon/`: `DaemonMessage` and `ServerMessage`, one schema per message type of 05 section 3.3); MCP tools (`src/mcp/`: `MCP_TOOLS` with each tool's description, input and output, and `McpError`); text ceilings derived from the settings' ranges (`text-limits.ts`) |
 | `packages/db` | `@orchestrator/db` | Drizzle schema and SQL migrations, `runMigrations`, test databases (`@orchestrator/db/testing`). | `owner`, `sessions`, `login_failures`, `secrets`, `github_connection`, `events`, `projects`, `tickets`, `ticket_dependencies`, `comments` |
 | `templates` | `@orchestrator/templates` | Files the server writes to GitHub, bundled in the image through the server's dependency (ADR 0023). | `project-skeleton/`: the common skeleton of a new repository (08, section 3.1) |
@@ -16,12 +16,12 @@ The full description is in [09 — Architecture and Deployment](../specs/09-arch
 ## Dependencies between packages
 
 ```
-apps/server  ──► packages/protocol, packages/db, apps/web (its built dist/), templates
-apps/daemon  ──► packages/protocol
+apps/server  ──► packages/protocol, packages/db, apps/web (its built dist/), apps/daemon (its built dist/), templates
+apps/daemon  ──► packages/protocol (bundled)
 apps/web     ──► packages/protocol
 ```
 
-The daemon's dependency is added with the code that needs it.
+The daemon's libraries are bundled into its package (ADR 0026), so they are `devDependencies` of `apps/daemon`.
 
 ## Server start
 
@@ -42,6 +42,7 @@ The daemon's dependency is added with the code that needs it.
 | `src/machines/` | Claude accounts (`accounts.ts`), machines and enrollment (`routes.ts`), the API view of a row, machine state label and capability sources (`model.ts`), enrollment codes and machine tokens, stored as SHA-256 hashes only (`credentials.ts`). A code is marked used in the transaction that sets the token, under the machine's row lock, so it enrolls one daemon only; wrong codes are throttled per address with the login throttle (`src/auth/throttle.ts`, key `enrollment:<address>`). |
 | `src/machines/gateway.ts` | The daemon gateway (05, section 3.2; ADR 0025): the `/daemon` WebSocket, authenticated by the machine token before it opens; `hello`/`welcome` with the protocol check; the machine's reported versions, capabilities and `doctor` results; the silence timer (no message for "Machine offline after", never below twice the connection's heartbeat interval); offline on close; a newer connection replacing an older one. Work on one machine's status runs in order (a promise chain per machine), so a close and a new `hello` never cross. Tests shorten its second (`daemonSecondMs` of `buildApp`). |
 | `src/needs-you.ts` | "Needs you" items other than GitHub problems: setup still to do (no Claude account, no enrolled machine), failed setups of active projects, and machines with an incompatible daemon, an unsupported Claude Code or a `doctor` error. |
+| `src/downloads.ts` | `GET /downloads/orchestrator-daemon-<version>.tgz`: the daemon package of the server's own version, from `apps/daemon/dist/` (ADR 0026); any other version is not found. |
 | `src/secrets.ts` | Encrypted secrets (ADR 0016). |
 | `src/events.ts` | `recordEvent`: every state change writes an event, in the same transaction; ticket events take the time of the change so the timeline keeps its order. `projectId` is the project the event concerns (`projectEntity` and `ticketEntity` give it; a project's setting override too); events about the owner, sessions, the GitHub connection and global settings have none. |
 | `src/event-log.ts` | `GET /api/events` (Activity > Event log): newest first by (`created_at`, `id`), filters, and a cursor of the last event's time (in microseconds, as stored) and id, so events written between two pages shift nothing. The index `events_project_time` (`project_id`, `created_at`, `id`) serves the project filter and the project list's last activity, `events_entity_time` the ticket and kind filters, `events_time` the rest. Each payload is parsed with its type's schema (other fields are dropped) and GitHub or Anthropic credentials are masked, also in quoted comments. |
@@ -81,13 +82,14 @@ The daemon's dependency is added with the code that needs it.
 | `POST /api/machines/:id/enrollment-code` | yes | **New enrollment code** for a machine waiting for enrollment or revoked; a revoked machine goes back to waiting. |
 | `POST /api/machines/:id/disable`, `.../enable`, `.../revoke` | yes | Disable (no new runs) and enable; revoke (disconnects the daemon, the token never works again). |
 | `PUT /api/machines/:id/capabilities` | yes | The tags the machine should have; the server keeps each tag's source (detected, added, removed). |
+| `GET /downloads/orchestrator-daemon-<version>.tgz` | no | The daemon package of the server's version, for `npm install -g` (05, section 2). |
 | `POST /daemon/enroll` | no | `orchestrator-daemon enroll`: a one-time code for the machine token (05, section 3.1). Throttled per address. |
 | `GET /daemon` (WebSocket) | machine token | The daemon connection (05, section 3.2): `Authorization: Bearer <token>`, then `hello`. |
 | `GET /api/ui-settings` | yes | Settings the screens use: `projectSetupPollSeconds`. |
 | `GET /api/settings`, `PUT /api/settings/:name`, `DELETE /api/settings/:name` | yes | Settings > Limits: every setting's global value; change one (`{ value }`, checked against its range); **Reset to default**. |
 | `GET /api/projects/:key/settings`, `PUT .../settings/:name`, `DELETE .../settings/:name` | yes | The settings a project can override, with the global values; override one; remove the override. Changes refused on an archived project and for global-only settings. |
 
-Request and response schemas are in `packages/protocol/src/api/`; the daemon's are in `packages/protocol/src/daemon/`. Any other `GET` address outside `/api`, `/health`, `/version` and `/assets` returns the UI.
+Request and response schemas are in `packages/protocol/src/api/`; the daemon's are in `packages/protocol/src/daemon/`. Any other `GET` address outside `/api`, `/health`, `/version`, `/assets`, `/downloads` and `/daemon` returns the UI.
 
 ## UI
 
@@ -106,6 +108,22 @@ Request and response schemas are in `packages/protocol/src/api/`; the daemon's a
 | `help/` | `docs/user/` bundled at build time, page order, links and search (ADR 0020). |
 
 Help is readable without logging in, so the login page and the wizard can link to it.
+
+## Daemon
+
+`apps/daemon/src`, run as `orchestrator-daemon` (05, section 8). Its files live in `~/.orchestrator/` (`ORCHESTRATOR_HOME` in tests and development, `paths.ts`).
+
+| Path | Role |
+|---|---|
+| `cli.ts` | The commands and their exit codes: 1 for a problem the owner fixes (`UserError`, printed without a stack trace), 78 (`EXIT_REFUSED`) for a refusal that retrying cannot fix, which the systemd unit does not restart. |
+| `enroll.ts`, `config.ts`, `server-url.ts` | `POST /daemon/enroll` with `node:http(s)` (for `--ca-file`); `config.json` written mode 600 by a temporary file renamed, in a folder of mode 700; plain `http://` only for `localhost`, `127.0.0.0/8` and `::1` (05, section 3.2). |
+| `start.ts`, `connection.ts` | The running daemon: `ServerConnection` builds `hello` before each attempt (checks, capabilities, versions), sends a heartbeat and a WebSocket ping each interval, abandons a connection after two intervals without a pong, reconnects with the backoff constants, and stops on the refusals of 05 section 3.2. Only the current socket's events count. Tests give it fake sockets (`socketFactory`). |
+| `control.ts` | The read-only control socket `daemon.sock` (05, section 8): `status` only, never a secret; `start` and `install-service` use it to find a running daemon, and remove a stale socket file. Its schemas are in `packages/protocol/src/daemon/control.ts`. |
+| `last-stop.ts` | `last-stop.json`: why the daemon last stopped, shown by `status` and `doctor`, cleared by an accepted `welcome` or a new enrollment. |
+| `doctor.ts`, `certificate.ts`, `environment.ts`, `detect.ts` | The checks of 05 section 8, graded as its table; `DoctorEnvironment` says where they look (tool `PATH`, system `PATH`, managed settings folders, WSL), so tests point them at fakes. `detect.ts`: WSL and the detected capabilities. |
+| `install-service.ts`, `unit.ts` | The systemd user unit `orchestrator-daemon`: absolute `node` and script, the terminal's `PATH` filtered, `RestartPreventExitStatus=78`; `systemctl --user` then `loginctl enable-linger`. `parseUnit` reads it back for `doctor`. |
+| `login.ts`, `attach.ts` | `claude` with `CLAUDE_CONFIG_DIR`; `tmux -L orchestrator attach-session [-r]` without the owner's `TMUX`. |
+| `scripts/pack.ts` | The package: esbuild bundle, `package.json`, bundled licenses, reproducible `.tgz` (ADR 0026). |
 
 ## Deployment
 

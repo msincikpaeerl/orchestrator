@@ -31,7 +31,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Install | `pnpm install` |
 | Start database | `docker compose -f docker/compose.dev.yml up -d postgres` |
 | Run server and UI in dev (UI on port 5173) | `pnpm dev` |
-| Run daemon in dev *(later)* | `pnpm --filter daemon dev` |
+| Run daemon in dev (a command: `start`, `doctor`, ...) | `pnpm --filter @orchestrator/daemon dev <command>` |
 | Unit and integration tests | `pnpm test` |
 | End-to-end tests (Playwright Docker image, desktop and phone) | `pnpm test:e2e` |
 | Lint and format check | `pnpm lint` (fix formatting: `pnpm format`) |
