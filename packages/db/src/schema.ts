@@ -86,6 +86,11 @@ export const githubConnection = pgTable(
   {
     id: smallint('id').primaryKey().default(1),
     account: text('account').notNull(),
+    /**
+     * GitHub's numeric id of the account, for the address of agent commits (04, section 4). Null
+     * for a token saved before 0.3.0 until its next check (02, section 3.2).
+     */
+    accountId: bigint('account_id', { mode: 'number' }),
     /** Entered by the owner; null for "No expiry date". */
     expiresOn: date('expires_on', { mode: 'string' }),
     savedAt: timestamp('saved_at', { withTimezone: true }).notNull(),
@@ -296,5 +301,84 @@ export const settingValues = pgTable(
   (table) => [
     // One global value per setting: the null project counts as one value.
     unique('setting_values_name_project').on(table.name, table.projectId).nullsNotDistinct(),
+  ],
+);
+
+/**
+ * Claude accounts (01, section 3.9). Allowed values of the text columns are the enums of
+ * `@orchestrator/protocol` (`AccountPlan`, `AccountState`).
+ */
+export const claudeAccounts = pgTable(
+  'claude_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    label: text('label').notNull(),
+    plan: text('plan').notNull(),
+    maxConcurrentRuns: integer('max_concurrent_runs').notNull().default(1),
+    state: text('state').notNull().default('available'),
+    /** When `limited`: the expected reset time, when known. */
+    limitedUntil: timestamp('limited_until', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('claude_accounts_label').on(sql`lower(${table.label})`),
+    check('claude_accounts_plan', sql`${table.plan} IN ('pro', 'max_5x', 'max_20x')`),
+    check('claude_accounts_max_concurrent_runs', sql`${table.maxConcurrentRuns} BETWEEN 1 AND 10`),
+    check(
+      'claude_accounts_state',
+      sql`${table.state} IN ('available', 'paused_manual', 'limited')`,
+    ),
+  ],
+);
+
+/**
+ * Machines running a daemon (01, section 3.8). Never deleted. The token and the enrollment code
+ * are kept as SHA-256 hashes only. `status` is the connection; enrolled, disabled and revoked are
+ * the times those actions happened, null otherwise.
+ */
+export const machines = pgTable(
+  'machines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => claudeAccounts.id),
+    status: text('status').notNull().default('offline'),
+    /** Reported by the daemon in `hello`; null before its first connection. */
+    os: text('os'),
+    daemonVersion: text('daemon_version'),
+    protocolVersion: integer('protocol_version'),
+    claudeCodeVersion: text('claude_code_version'),
+    /** `DoctorCheck[]` of the last accepted connection. */
+    doctor: jsonb('doctor').notNull().default([]),
+    /** Capability tags (01, section 3.8): reported by the daemon, added and removed by the owner. */
+    detectedCapabilities: jsonb('detected_capabilities').notNull().default([]),
+    addedCapabilities: jsonb('added_capabilities').notNull().default([]),
+    removedCapabilities: jsonb('removed_capabilities').notNull().default([]),
+    lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    /** Since when the last `hello` was refused for its protocol version; cleared by an accepted one. */
+    daemonIncompatibleSince: timestamp('daemon_incompatible_since', { withTimezone: true }),
+    /** Since when Claude Code is missing or below the minimum, for "Needs you". */
+    claudeCodeUnsupportedSince: timestamp('claude_code_unsupported_since', { withTimezone: true }),
+    /** Since when `doctor` reports an error, for "Needs you". */
+    doctorErrorSince: timestamp('doctor_error_since', { withTimezone: true }),
+    enrolledAt: timestamp('enrolled_at', { withTimezone: true }),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    tokenHash: text('token_hash').unique(),
+    enrollmentCodeHash: text('enrollment_code_hash').unique(),
+    enrollmentCodeExpiresAt: timestamp('enrollment_code_expires_at', { withTimezone: true }),
+    /** Kept after use, so a reused code is told apart from an unknown one. */
+    enrollmentCodeUsedAt: timestamp('enrollment_code_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('machines_name').on(sql`lower(${table.name})`),
+    check('machines_status', sql`${table.status} IN ('online', 'offline')`),
+    check('machines_os', sql`${table.os} IN ('linux', 'wsl')`),
+    index('machines_account_id').on(table.accountId),
   ],
 );
