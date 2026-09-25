@@ -223,7 +223,7 @@ Owner's review of the tool descriptions (same day), written into 04 section 8 an
 
 Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum and highest validated version (2.1.280 and 2.1.282) are constants in `packages/protocol`, shared with the daemon; an unknown token is refused with HTTP 401 before the WebSocket opens, a revoked one gets `welcome` refused with `token_revoked` (its hash is kept until a new code); the server's close codes are in `DaemonCloseCode`; a connection without `hello` within "Machine offline after" is closed; machine tokens start with `omt_`; refusals tied to a setting carry `setting` (name and current value) in the error body; the "Needs you" page shows only project items until step D; the Claude Code and `doctor` checks run at each `hello`; daemon messages other than `hello` and `heartbeat` are logged and ignored until step J. The GitHub account id is read at the save and at each check; its "first use" (02, section 3.2) is the first run, in step J.
 
-### [ ] D. Accounts and machines screens, user documentation
+### [x] D. Accounts and machines screens, user documentation
 
 - Machines section (02 section 9):
   - accounts: list and form (label, plan, maximum concurrent runs), state;
@@ -242,6 +242,16 @@ Choices within the step: WebSocket library in ADR 0025; the Claude Code minimum 
 - Playwright on both viewports, with the scripted daemon client from step C as a test helper.
 
 **Done when** Playwright covers creating an account, adding a machine until the scripted daemon connects, editing capabilities, and revoking it, on both viewports.
+
+*Done 2026-09-25.* Owner's decisions, written into 04 section 8, 05 sections 2, 4.3 and 8, 02 section 4, and steps E, F, H, J, L and N above:
+
+- the Claude Code minimum and highest validated versions are code constants, not settings; steps H and N raise the highest validated version when the owner's check passes on a newer Claude Code;
+- the systemd user unit is `orchestrator-daemon`; checks run at each `hello`, so after an update or a fix the owner restarts the daemon (`systemctl --user restart orchestrator-daemon`, or stops and starts `orchestrator-daemon start`); the screens and Help say so;
+- the daemon reports the Claude Code version it launches at each run start and the server checks it again (steps F and J);
+- Help recommends nvm for Node.js and links to the official nvm instructions; `install-service` writes absolute `node` and script paths, and `doctor` checks the unit's `node` path (step E); after changing the Node.js version, the owner reinstalls the daemon and runs `install-service` again;
+- the account status line on "Needs you" and the active runs on machines move to step L.
+
+Choices within the step: the machine and its "Needs you" item carry `updateCommand` (the server's install command) for an incompatible daemon; `doctor` links are shown only when they are web addresses; the Help section `machines#keep-wsl-running` is the link `doctor` gives for the WSL idle timeout (step E); the e2e server drives the scripted daemon through its test-only control. A shutdown race of step C (queued status work running after the database closed) was fixed, with a regression test.
 
 ### [ ] E. Daemon core
 

@@ -7,7 +7,9 @@ User-facing changes, newest first. One entry per change that users can see.
 Lot 2, Machines and manual runs.
 
 - Settings > Limits has a Machines group: **Enrollment code lifetime** (15 minutes), **Heartbeat interval** (15 seconds) and **Machine offline after** (60 seconds, at least twice the heartbeat interval: a value breaking this is refused, naming both limits and their values). Help: "Settings".
-- Activity: the event log shows what happens to Claude accounts and machines (added, enrolled, connected, offline, disabled, revoked, capabilities edited), in plain words, with a filter for each. The screens to add them come next.
+- Activity: the event log shows what happens to Claude accounts and machines (added, enrolled, connected, offline, disabled, revoked, capabilities edited), in plain words, with a filter for each.
+- Machines: add your Claude accounts (label, plan, runs at the same time) and the computers where agents will work. **Add machine** shows the commands to type on the computer (install the daemon from the Orchestrator, enroll with a one-time code, log in to Claude, start the service) and shows when it connects. Each machine's page shows its status, versions (with a warning for a Claude Code newer than the one checked), the daemon's checks, and lets you edit its capabilities, disable, enable or revoke it, and get a new enrollment code. Help: "Machines", including how to keep WSL running.
+- Needs you: shows "No Claude account yet" and "No machine connected yet" until you add them, and machines that cannot work (daemon to update, Claude Code missing or too old, a problem found by the daemon's checks), each with the commands to fix it. Help: "Needs you", "Machines".
 
 ## 0.2.0 — 2026-09-24
 

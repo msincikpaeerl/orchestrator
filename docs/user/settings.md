@@ -80,9 +80,11 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 
 ### Machines
 
+What these limits apply to: see [Machines](machines.md).
+
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
-| Enrollment code lifetime | 15 minutes | 1 to 1,440 | No | How long the code shown by Add machine can be used to connect the machine; after that, generate a new code. |
+| Enrollment code lifetime | 15 minutes | 1 to 1,440 | No | How long the code shown by **Add machine** can be used to connect the machine; after that, click **New enrollment code** on the machine's page. |
 | Heartbeat interval | 15 seconds | 5 to 120 | No | How often a connected machine tells the Orchestrator it is still there. A machine uses the value it received when it connected. |
 | Machine offline after | 60 seconds | 15 to 600 | No | A machine that sends nothing for this long is shown offline. At least twice the heartbeat interval. |
 
