@@ -87,10 +87,25 @@ const pool = new pg.Pool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
 
+/**
+ * Closes the scripted daemons and waits until the server has recorded each of them offline:
+ * emptying the tables while it still writes those changes would deadlock the reset.
+ */
 async function disconnectDaemons() {
-  for (const { daemon, heartbeat } of daemons.splice(0)) {
+  const closing = daemons.splice(0);
+  for (const { daemon, heartbeat } of closing) {
     clearInterval(heartbeat);
     await daemon.close();
+  }
+  if (closing.length === 0) return;
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const { rows } = await pool.query<{ online: number }>(
+      "SELECT count(*)::int AS online FROM machines WHERE status = 'online'",
+    );
+    if (rows[0]?.online === 0) return;
+    if (Date.now() > deadline) throw new Error('the server did not record the daemons offline');
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
 
