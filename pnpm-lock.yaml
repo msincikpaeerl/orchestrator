@@ -205,9 +205,30 @@ importers:
 
   apps/daemon:
     devDependencies:
+      '@orchestrator/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      pino:
+        specifier: 10.3.1
+        version: 10.3.1
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
       vitest:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      ws:
+        specifier: 8.21.3
+        version: 8.21.3
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   apps/server:
     dependencies:
@@ -223,6 +244,9 @@ importers:
       '@node-rs/argon2':
         specifier: 2.2.1
         version: 2.2.1
+      '@orchestrator/daemon':
+        specifier: workspace:*
+        version: link:../daemon
       '@orchestrator/db':
         specifier: workspace:*
         version: link:../../packages/db
