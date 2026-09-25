@@ -205,9 +205,9 @@ export function SetupDonePage() {
       <h1 className="mb-4 text-2xl font-semibold text-slate-900">Setup done</h1>
       <Card className="space-y-4">
         <p>
-          Your account is created and GitHub is connected. The next versions of the Orchestrator add
-          machines and agents; until then, &quot;Needs you&quot; tells you when something needs your
-          attention.
+          Your account is created and GitHub is connected. Next, add your Claude account and the
+          computer where agents will work, in Machines: &quot;Needs you&quot; reminds you, and tells
+          you whenever something needs your attention.
         </p>
         <p>
           The Help section explains everything the Orchestrator does, starting with the{' '}
