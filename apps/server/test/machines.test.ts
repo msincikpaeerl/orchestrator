@@ -576,6 +576,30 @@ describe('the daemon connection', () => {
     });
   });
 
+  it('changes the status and writes its event together, or neither', async () => {
+    await start({ daemonSecondMs: SECOND_MS });
+    const closed = await connectedMachine('Closed');
+    const silent = await connectedMachine('Silent');
+    // Writing `machine.offline` fails: the status must not change without its event.
+    await t.pool.query(`
+      CREATE FUNCTION refuse_offline_event() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.type = 'machine.offline' THEN RAISE EXCEPTION 'event refused by the test'; END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER refuse_offline_event BEFORE INSERT ON events
+        FOR EACH ROW EXECUTE FUNCTION refuse_offline_event();
+    `);
+    await closed.daemon.close();
+    // `Silent` sends no heartbeat: after "Machine offline after" (60 test seconds) it is closed.
+    await eventually(() => {
+      expect(t.logs.text.match(/daemon gateway failed/g)).toHaveLength(2);
+      return Promise.resolve();
+    });
+    expect((await machine(closed.id)).state).toBe('online');
+    expect((await machine(silent.id)).state).toBe('online');
+  });
+
   it('finishes the status work already queued before the server stops', async () => {
     await start();
     const { id, daemon } = await connectedMachine();
