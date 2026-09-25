@@ -84,7 +84,7 @@ export function buildApp(dependencies: AppDependencies) {
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
     registerTicketRoutes(scope, { db, now: dependencies.now });
-    registerNeedsYouRoutes(scope, { db });
+    registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl });
     registerUiSettingsRoutes(scope, { db });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });

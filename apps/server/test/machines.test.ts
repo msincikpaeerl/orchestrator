@@ -409,12 +409,14 @@ describe('the daemon connection', () => {
       state: 'offline',
       daemonIncompatible: true,
       daemonVersion: '9.0.0',
+      updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
     });
     expect(await needsYou()).toContainEqual(
       expect.objectContaining({
         type: 'daemon_incompatible',
         daemonVersion: '9.0.0',
         protocolVersion: PROTOCOL_VERSION + 1,
+        updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
       }),
     );
     // Retrying with the same versions writes no second event.
@@ -423,7 +425,10 @@ describe('the daemon connection', () => {
     await retry.closed;
     const updated = await connect(token);
     expect((await updated.hello()).accepted).toBe(true);
-    expect((await machine(created.machine.id)).daemonIncompatible).toBe(false);
+    expect(await machine(created.machine.id)).toMatchObject({
+      daemonIncompatible: false,
+      updateCommand: null,
+    });
     expect((await needsYou()).map((item) => item.type)).not.toContain('daemon_incompatible');
     const types = (await machineEvents()).map((event) => event.type);
     expect(types.filter((type) => type === 'machine.daemon_incompatible')).toHaveLength(1);

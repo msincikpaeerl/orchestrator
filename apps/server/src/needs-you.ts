@@ -9,14 +9,17 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
-import { doctorErrors } from './machines/model.js';
+import { daemonInstallCommand, doctorErrors } from './machines/model.js';
 import { toProject } from './projects/model.js';
 
 /**
  * "Needs you" items (02, section 4): setup still to do first, then the others oldest first.
  * GitHub connection problems are part of `GET /api/github`.
  */
-export function registerNeedsYouRoutes(app: FastifyInstance, { db }: { db: Database }) {
+export function registerNeedsYouRoutes(
+  app: FastifyInstance,
+  { db, publicUrl }: { db: Database; publicUrl: string },
+) {
   app.get('/api/needs-you', async (request) => {
     await requireSession(db, request);
     // Archived projects start no work: their failed setup waits until they are unarchived.
@@ -53,6 +56,7 @@ export function registerNeedsYouRoutes(app: FastifyInstance, { db }: { db: Datab
           machine: ref,
           daemonVersion: machine.daemonVersion,
           protocolVersion: machine.protocolVersion,
+          updateCommand: daemonInstallCommand(publicUrl),
           since: machine.daemonIncompatibleSince.toISOString(),
         });
       }
