@@ -94,12 +94,14 @@ export async function saveToken(
     token: string;
     expiresOn: string | null;
     account: string;
+    accountId: number;
     permissions: PermissionCheck[];
   },
 ): Promise<void> {
   const now = new Date();
   const values = {
     account: input.account,
+    accountId: input.accountId,
     expiresOn: input.expiresOn,
     savedAt: now,
     checkedAt: now,
@@ -129,16 +131,20 @@ export async function saveToken(
   });
 }
 
-/** Stores the result of re-checking the saved token. A valid token clears earlier refusals. */
+/**
+ * Stores the result of re-checking the saved token. A valid token clears earlier refusals. The
+ * account id is stored here too, for a token saved before 0.3.0 (02, section 3.2).
+ */
 export async function saveCheck(
   db: Database,
-  input: { account: string; permissions: PermissionCheck[] },
+  input: { account: string; accountId: number; permissions: PermissionCheck[] },
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(schema.githubConnection)
       .set({
         account: input.account,
+        accountId: input.accountId,
         checkedAt: new Date(),
         permissions: input.permissions,
         invalidSince: null,

@@ -19,12 +19,15 @@ import {
 // GitHub: write permissions are probed with requests GitHub must refuse as invalid.
 
 export type TokenIdentity =
-  { valid: false } | { valid: true; account: string; suggestedExpiresOn: string | null };
+  | { valid: false }
+  | { valid: true; account: string; accountId: number; suggestedExpiresOn: string | null };
 
 export type TokenCheck =
-  { valid: false } | { valid: true; account: string; permissions: PermissionCheck[] };
+  | { valid: false }
+  | { valid: true; account: string; accountId: number; permissions: PermissionCheck[] };
 
-const User = z.object({ login: z.string().min(1) });
+/** The account's login and numeric id: the id gives the address of agent commits (04, section 4). */
+const User = z.object({ login: z.string().min(1), id: z.int().positive() });
 
 const Repository = z.object({
   name: z.string(),
@@ -53,6 +56,7 @@ export async function inspectToken(client: GitHubClient, now = new Date()): Prom
   return {
     valid: true,
     account: user.data.login,
+    accountId: user.data.id,
     suggestedExpiresOn: plausibleExpiry(
       response.headers.get('github-authentication-token-expiration'),
       now,
@@ -187,6 +191,7 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
   return {
     valid: true,
     account: identity.account,
+    accountId: identity.accountId,
     permissions: REQUIRED_GITHUB_PERMISSIONS.map(({ permission, access }) => ({
       permission,
       access,
