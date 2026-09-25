@@ -32,7 +32,7 @@ The item disappears once the setup is ready. An archived project is not listed, 
 | Item | Why it appears | What to do |
 |---|---|---|
 | No Claude account yet | No Claude account exists yet. | Click **Open Machines**, then **Add a Claude account**. See [Add a Claude account](machines.md#add-a-claude-account). |
-| No machine connected yet | No machine has enrolled yet, or every machine is revoked. | Click **Add machine**. See [Add a machine](machines.md#add-a-machine). |
+| No machine enrolled yet | No machine has enrolled yet, or every machine is revoked. | Click **Add machine**. See [Add a machine](machines.md#add-a-machine). |
 | Update the daemon on … | The machine's daemon does not match this version of the Orchestrator. | On the machine, type the two commands the item shows: the install command, then the restart. |
 | Claude Code not supported on … | Claude Code is missing on the machine, or too old. | Install or update Claude Code, then type the restart command the item shows. |
 | Problem on … | A check on the machine found an error; the item lists it. | Fix it on the machine, then type the restart command. |

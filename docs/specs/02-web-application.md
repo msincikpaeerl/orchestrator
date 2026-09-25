@@ -32,14 +32,14 @@ This document describes the screens of the web application and what the owner ca
 
 Shown on first launch until completed. Each step links to its help page.
 
-The wizard covers only the steps that exist in the current version and ends on a **Done** page linking to Help. Steps added by later versions are not forced through the wizard again: until they are done, they appear as items in "Needs you" (for example "No machine connected yet") with a link to the right screen.
+The wizard covers only the steps that exist in the current version and ends on a **Done** page linking to Help. Steps added by later versions are not forced through the wizard again: until they are done, they appear as items in "Needs you" (for example "No machine enrolled yet") with a link to the right screen.
 
 1. **Create the owner account**: username and password (at least 12 characters). See 01, section 3.11.
 2. **Connect GitHub**: a "Create the token on GitHub" button opens GitHub's token form with the name, expiry and permissions already filled in (section 3.1). The owner pastes the token and enters its expiry date, or chooses "No expiry date"; the application checks the token and shows the result of each permission (section 3.2).
 3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Version 0.6.0, lot 5.)*
 4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Version 0.6.0, lot 5.)*
 
-Before these wizard steps exist, accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine connected yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
+Before these wizard steps exist, accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine enrolled yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
 5. **Done**: links to Help; once requests exist, suggests submitting a first request.
 
 ### 3.1 GitHub token requirements
@@ -88,7 +88,7 @@ The owner's task list, ordered by age:
 - pull requests awaiting merge, with a link to GitHub and the review summary;
 - tickets stopped after repeated failures;
 - system problems: machine offline with active work, account limited, daemon incompatible (its protocol version is refused, with the update instruction: the server's install command, then restarting the daemon, 05 section 2), Claude Code version not supported (missing or below the minimum), machine with a problem found by `doctor` (a check reporting an error). The last two make the machine unusable (01, section 3.8); warnings found by `doctor` are shown only on the machine page (owner's decision, lot 2 step C);
-- setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet" while no account exists, "No machine connected yet" while no machine is enrolled and not revoked (a machine that enrolled and is now offline does not bring it back; owner's decision, lot 2 step C);
+- setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet" while no account exists, "No machine enrolled yet" while no machine is enrolled and not revoked (a machine that enrolled and is now offline does not bring it back; owner's decision, lot 2 step C);
 - GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
 Also shows a compact status line per Claude account (available, limited until, paused, next window).

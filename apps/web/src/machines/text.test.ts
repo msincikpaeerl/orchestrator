@@ -85,7 +85,7 @@ describe('needsYouText', () => {
   });
 
   it('names the machine and what to do', () => {
-    expect(needsYouText({ type: 'no_machine' }).title).toBe('No machine connected yet');
+    expect(needsYouText({ type: 'no_machine' }).title).toBe('No machine enrolled yet');
     expect(needsYouText({ type: 'no_claude_account' }).title).toBe('No Claude account yet');
     const unsupported = needsYouText({
       type: 'claude_code_unsupported',

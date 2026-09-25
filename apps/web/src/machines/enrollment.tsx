@@ -79,7 +79,7 @@ export function EnrollmentSteps({
       <h2 className="text-lg font-semibold text-slate-900">Connect {machine.name}</h2>
       <p className="text-slate-700">
         Type these commands in a terminal of the computer you are adding (in Ubuntu on Windows). It
-        needs Node.js, Git, tmux and Claude Code first: see{' '}
+        needs Node.js, Git, tmux, Claude Code and, on Windows, systemd turned on first: see{' '}
         <HelpLink page="machines#before-you-start">Before you start</HelpLink>.
       </p>
       <ol className="list-decimal space-y-4 pl-6">

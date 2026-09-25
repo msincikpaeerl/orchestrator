@@ -1,7 +1,6 @@
 import {
   CLAUDE_CODE_VALIDATED_VERSION,
   type AccountPlan,
-  type ClaudeAccount,
   type DoctorCheck,
   type Machine,
   type MachineOs,
@@ -9,7 +8,6 @@ import {
   type NeedsYouItem,
   type UnusableReason,
 } from '@orchestrator/protocol';
-import { formatDateTime } from '../github/text';
 
 /** Claude plans in plain words (01, section 3.9). */
 export const planLabel: Record<AccountPlan, string> = {
@@ -21,20 +19,6 @@ export const planLabel: Record<AccountPlan, string> = {
 /** `1 run at a time`, `3 runs at a time`. */
 export function concurrentRuns(count: number): string {
   return `${String(count)} run${count === 1 ? '' : 's'} at a time`;
-}
-
-/** An account's state (01, section 3.9): available, or limited until a time. */
-export function accountStateText(account: ClaudeAccount): string {
-  switch (account.state) {
-    case 'available':
-      return 'Available';
-    case 'paused_manual':
-      return 'Paused';
-    case 'limited':
-      return account.limitedUntil === null
-        ? 'Usage limit reached'
-        : `Usage limit reached, until ${formatDateTime(account.limitedUntil)}`;
-  }
 }
 
 /** The machine's status label (02, section 9.2). */
@@ -127,7 +111,7 @@ export function needsYouText(item: Exclude<NeedsYouItem, { type: 'project_setup_
       };
     case 'no_machine':
       return {
-        title: 'No machine connected yet',
+        title: 'No machine enrolled yet',
         detail:
           'Add the computer where agents will work: install the Orchestrator daemon on it and connect it.',
       };

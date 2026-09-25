@@ -194,7 +194,7 @@ test('a failed setup is shown in Needs you and tried again', async ({
   // Only the setup still to do is left (no Claude account and no machine in this test).
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'No Claude account yet',
-    'No machine connected yet',
+    'No machine enrolled yet',
   ]);
 });
 

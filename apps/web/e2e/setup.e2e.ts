@@ -85,7 +85,7 @@ test('first launch: account, GitHub token, Done, then the getting started guide'
   // Accounts and machines are not wizard steps yet (02, section 3): "Needs you" lists them.
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
     'No Claude account yet',
-    'No machine connected yet',
+    'No machine enrolled yet',
   ]);
 });
 

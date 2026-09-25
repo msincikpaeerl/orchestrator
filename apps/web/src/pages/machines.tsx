@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import { Button, buttonLinkClass, Card, ErrorMessage, Loading, PageHeader } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { AccountForm } from '../machines/account-form';
-import { accountStateText, concurrentRuns, osLabel, planLabel, statusText } from '../machines/text';
+import { concurrentRuns, osLabel, planLabel, statusText } from '../machines/text';
 import { useAccounts, useMachines } from '../queries';
 
 const badgeLook: Record<Machine['state'], string> = {
@@ -93,7 +93,6 @@ function Accounts() {
                       <p className="text-slate-700">
                         {planLabel[account.plan]} · {concurrentRuns(account.maxConcurrentRuns)}
                       </p>
-                      <p className="text-slate-700">{accountStateText(account)}</p>
                     </div>
                     <Button
                       variant="secondary"

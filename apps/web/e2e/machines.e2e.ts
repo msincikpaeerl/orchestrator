@@ -13,7 +13,7 @@ test('adding a Claude account, then editing it', async ({ page }) => {
   await completeSetup(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'No Claude account yet' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'No machine connected yet' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No machine enrolled yet' })).toBeVisible();
   await expectFitsScreen(page);
 
   await page.getByRole('link', { name: 'Open Machines' }).click();
@@ -35,7 +35,6 @@ test('adding a Claude account, then editing it', async ({ page }) => {
   await expect(accounts.getByRole('listitem')).toHaveCount(1);
   await expect(accounts).toContainText('Personal');
   await expect(accounts).toContainText('Max 5x · 2 runs at a time');
-  await expect(accounts).toContainText('Available');
 
   // A second account cannot reuse the label, whatever its case.
   await page.getByRole('button', { name: 'Add a Claude account' }).click();
@@ -52,7 +51,7 @@ test('adding a Claude account, then editing it', async ({ page }) => {
   await expect(accounts).toContainText('Max 20x · 2 runs at a time');
 
   await openSection(page, 'Needs you');
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['No machine connected yet']);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['No machine enrolled yet']);
 });
 
 test('adding a machine until its daemon connects, editing capabilities, revoking it', async ({
@@ -134,9 +133,9 @@ test('adding a machine until its daemon connects, editing capabilities, revoking
   await expect(page.getByText('This machine is revoked')).toBeVisible();
   await expect(page.getByLabel('Add a capability')).toBeHidden();
 
-  // A revoked machine brings "No machine connected yet" back.
+  // A revoked machine brings "No machine enrolled yet" back.
   await openSection(page, 'Needs you');
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['No machine connected yet']);
+  await expect(page.getByRole('heading', { level: 2 })).toHaveText(['No machine enrolled yet']);
 
   // New enrollment code shows the commands again.
   await openSection(page, 'Machines');
