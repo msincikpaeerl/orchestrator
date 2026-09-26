@@ -326,6 +326,19 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - no remote URL holds a token;
 - a `git fetch` run in the worktree outside the daemon fails for lack of credentials.
 
+Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05 sections 2, 3.3, 4.2, 4.2.1, 4.3, 4.5, 4.8, 5 and 7:
+
+- **Idle timeout**: time without any hook while the run is `working` or `idle`, paused while a tool call runs; when reached, the run ends with `idle_timeout` without a nudge. Nudges are sent at once when a turn ends. The setting's description is reworded.
+- **Live log in F**: the daemon reads the transcript tolerantly (an unknown or malformed line is skipped and counted, and the count is shown in the run's log as a warning, never a failure), adds an entry for each message sent, masks credentials with the event log's patterns (moved to `packages/protocol`) and sends `run.events`.
+- **`run.resume`** (the `--resume` launch path) is in F; closing the session after the waiting run lifetime and on a usage limit is in G.
+- **Claude Code version at run start**: `run.state` `starting` carries `claudeCodeVersion`; missing or below the minimum, the daemon does not launch and ends the run with the new reason `claude_code_unsupported`.
+- **Credential helper**: a one-shot socket per Git command (random name, mode 600, random key), `credential.helper=` reset first, `GIT_TERMINAL_PROMPT=0`; the server is asked only when Git asks; the helper answers only for the exact protocol and host of the clone URL, and a refusal is logged without the token (tested with a request for another host).
+- **Hooks**: `hook <event> --run <id>` and `status-line --run <id>` use the run's socket; an unreachable daemon denies `PreToolUse` and lets every other event pass. The risk of an agent writing to its run's socket is written in 05 section 2 and in Help ("Agents on your own user"): the server's barrier is the run token (steps J and K).
+- **Fake `claude` MCP**: a minimal JSON-RPC client of its own, tested in F against a small test MCP server; step G tests it against the real SDK-based server too.
+- **Maximum duration** counts from the launch while `starting`, `working` or `idle`, kept in `state.json`.
+- **Trust**: writes serialised and made while no run is `starting`; tested with several registrations at once while another process rewrites the file.
+- **Bare clone**: remote branches fetched into `refs/remotes/origin/*`; the worktree uses the local ticket branch, else the remote one, else a new branch from `origin/<base>`; the author set with `extensions.worktreeConfig`.
+
 ### [ ] G. Permission enforcement, MCP relay and usage-limit detection
 
 - **`PreToolUse` rules** (05 section 4.6), each with its reason:
@@ -336,6 +349,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - Settings deny rules for the same folders in the run's `settings.json`.
 - **MCP relay**: `orchestrator-daemon mcp --run <id>` (stdio, wire names of 06 section 3), forwarding through `daemon.sock` and `mcp.call`/`mcp.result`; `UNAVAILABLE` after the MCP call timeout or while disconnected. `mcp.json` carries the Claude Code MCP tool timeout. New settings "MCP call timeout" and "Claude Code MCP tool timeout" with their cross-setting rule. ADR: MCP SDK.
 - **Usage-limit module** (05 section 4.10) with its pattern table and fixtures from the documentation; the status line collector (reset time and `cost.total_cost_usd`); `run.quota_limited` and closing the session.
+- **Decision tools on the daemon**: `ticket_submit`, `ticket_ask` and `ticket_give_up` seen through the relay (no nudge after them, `waiting_human` after `ticket_ask`); the session closed after the waiting run lifetime, keeping the worktree and the Claude session id (step F decision).
 - **Profile settings generation**: allowlist and deny rules from a profile snapshot (`ToolSearch` always allowed).
 
 **Done when** fake `claude` tests show:
@@ -345,7 +359,8 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - `detected` for the documented messages (with the status line reset time, with the message time, and with neither);
 - `suspected` for a `rate_limit` without a known message, an `overloaded` and a `server_error` `StopFailure`, an API-error turn with no tool use, and an idle timeout right after one;
 - no nudge in any of these cases;
-- the estimated usage read from the status line.
+- the estimated usage read from the status line;
+- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F).
 
 ### [ ] H. Owner check of documented Claude Code behaviour
 
