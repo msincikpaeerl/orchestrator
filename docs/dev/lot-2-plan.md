@@ -351,7 +351,7 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 - the status line input reaches the run but is used from step G (collector);
 - test homes live under `/tmp/od-test-*` so that a run's socket path fits the 107 bytes of a Unix socket.
 
-Open point for the owner: "`orchestrator-daemon status` lists local branches" (decisions above, "The local branch") is in no step yet; `status` shows live runs only.
+`orchestrator-daemon status` listing local branches (decisions above, "The local branch") goes to step L (owner's decision, review of step F); until then `status` shows live runs only.
 
 ### [ ] G. Permission enforcement, MCP relay and usage-limit detection
 
@@ -489,6 +489,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
 - Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
+- `orchestrator-daemon status` lists the local ticket branches of the machine's bare clones, with their head and commits ahead of the base branch, as the ticket page shows them (decisions above, "The local branch"; owner's decision, review of step F).
 - Machines: **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
@@ -506,6 +507,8 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - an agent's ticket accepted;
 - a run finishing with the branch and commits shown;
 - a paused run resumed.
+
+A daemon test shows `orchestrator-daemon status` listing a ticket branch kept after a run, with its commits.
 
 ### [ ] M. End-to-end daemon test and limit capture tooling
 
