@@ -1,0 +1,199 @@
+{
+  "source": "Claude Code documentation for 2.1.282 (hooks, errors, status line pages), read in lot 2 step A; not yet observed on a real limit (05, section 9). Times without a zone are the machine's local time; a status line window's resets_at is given as local time in resetsAtLocal and converted to Unix seconds by the test.",
+  "cases": [
+    {
+      "name": "session limit message with its time, no status line",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "You've hit your session limit · resets 3:45pm"
+      },
+      "expect": {
+        "kind": "detected",
+        "resetsAt": "2026-09-26T15:45:00",
+        "signal": "stop_failure",
+        "error": "rate_limit"
+      }
+    },
+    {
+      "name": "the time has passed today: tomorrow",
+      "now": "2026-09-26T16:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "You've hit your session limit · resets 3:45pm"
+      },
+      "expect": { "kind": "detected", "resetsAt": "2026-09-27T15:45:00" }
+    },
+    {
+      "name": "weekly limit with a weekday (2026-09-26 is a Saturday)",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "You've hit your weekly limit · resets Mon 12:00am"
+      },
+      "expect": { "kind": "detected", "resetsAt": "2026-09-28T00:00:00" }
+    },
+    {
+      "name": "Opus limit, in a StopFailure of another type",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "unknown",
+        "message": "You’ve hit your Opus limit · resets 11am"
+      },
+      "expect": { "kind": "detected", "resetsAt": "2026-09-26T11:00:00", "error": "unknown" }
+    },
+    {
+      "name": "Sonnet limit as a turn's API error text (Stop)",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop", "message": "You've hit your Sonnet limit · resets 12:30pm" },
+      "transcriptApiError": "You've hit your Sonnet limit · resets 12:30pm",
+      "expect": {
+        "kind": "detected",
+        "resetsAt": "2026-09-26T12:30:00",
+        "signal": "api_error_turn",
+        "error": null
+      }
+    },
+    {
+      "name": "the status line's reset time wins over the message's",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "You've hit your session limit · resets 3:45pm"
+      },
+      "statusLine": {
+        "five_hour": { "used_percentage": 100, "resetsAtLocal": "2026-09-26T15:44:00" }
+      },
+      "expect": { "kind": "detected", "resetsAt": "2026-09-26T15:44:00", "window": "five_hour" }
+    },
+    {
+      "name": "known message without a time: no reset time (the fallback delay applies on the server)",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "You've hit your session limit"
+      },
+      "expect": { "kind": "detected", "resetsAt": null }
+    },
+    {
+      "name": "rate_limit while a window is full: detected, the later of two full windows",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "API Error: Rate limited"
+      },
+      "statusLine": {
+        "five_hour": { "used_percentage": 100, "resetsAtLocal": "2026-09-26T13:00:00" },
+        "seven_day": { "used_percentage": 100, "resetsAtLocal": "2026-09-29T09:00:00" }
+      },
+      "expect": { "kind": "detected", "resetsAt": "2026-09-29T09:00:00", "window": "seven_day" }
+    },
+    {
+      "name": "rate_limit alone: suspected (a server throttle is possible)",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "Server is temporarily limiting requests"
+      },
+      "expect": { "kind": "suspected", "signal": "stop_failure", "error": "rate_limit" }
+    },
+    {
+      "name": "rate_limit with an old full window (reset passed): suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "API Error: Rate limited"
+      },
+      "statusLine": {
+        "five_hour": { "used_percentage": 100, "resetsAtLocal": "2026-09-26T09:00:00" }
+      },
+      "expect": { "kind": "suspected", "window": "five_hour" }
+    },
+    {
+      "name": "rate_limit with a window at 80 %: suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "rate_limit",
+        "message": "API Error: Rate limited"
+      },
+      "statusLine": {
+        "five_hour": { "used_percentage": 80, "resetsAtLocal": "2026-09-26T13:00:00" }
+      },
+      "expect": { "kind": "suspected", "window": "five_hour" }
+    },
+    {
+      "name": "overloaded: suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop_failure", "error": "overloaded", "message": "API Error: Overloaded" },
+      "expect": { "kind": "suspected", "error": "overloaded" }
+    },
+    {
+      "name": "server_error: suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": {
+        "kind": "stop_failure",
+        "error": "server_error",
+        "message": "API Error: 500 Internal server error"
+      },
+      "expect": { "kind": "suspected", "error": "server_error" }
+    },
+    {
+      "name": "an undocumented StopFailure type: suspected as unknown",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop_failure", "error": "something_new", "message": "API Error" },
+      "expect": { "kind": "suspected", "error": "unknown" }
+    },
+    {
+      "name": "API error turn with no tool use (transcript mark): suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop", "message": "" },
+      "transcriptApiError": "API Error: Request timed out",
+      "expect": { "kind": "suspected", "signal": "api_error_turn", "error": null }
+    },
+    {
+      "name": "API error text in Stop's message with no tool use: suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop", "message": "API Error: Connection error." },
+      "expect": { "kind": "suspected", "signal": "api_error_turn" }
+    },
+    {
+      "name": "API error turn after a tool use: not a limit (nudged as usual)",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop", "message": "API Error: Connection error." },
+      "toolUsed": true,
+      "expect": null
+    },
+    {
+      "name": "idle timeout right after an API error: suspected",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "idle_timeout" },
+      "transcriptApiError": "API Error: Request timed out",
+      "expect": { "kind": "suspected", "signal": "idle_after_api_error", "error": null }
+    },
+    {
+      "name": "idle timeout without an API error: not a limit",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "idle_timeout" },
+      "expect": null
+    },
+    {
+      "name": "an ordinary turn: nothing",
+      "now": "2026-09-26T10:00:00",
+      "end": { "kind": "stop", "message": "I added the notes page and its tests." },
+      "statusLine": {
+        "five_hour": { "used_percentage": 100, "resetsAtLocal": "2026-09-26T13:00:00" }
+      },
+      "expect": null
+    }
+  ]
+}
