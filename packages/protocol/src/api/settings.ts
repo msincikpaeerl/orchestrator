@@ -286,6 +286,30 @@ const definitions = {
     perProject: false,
     usedFrom: '0.3.0',
   },
+  mcpCallTimeoutSeconds: {
+    group: 'runs',
+    label: 'MCP call timeout',
+    description:
+      "How long a machine waits for the Orchestrator's answer to an agent's tool call; after that the agent is told to try again later. Below the Claude Code MCP tool timeout.",
+    unit: 'seconds',
+    min: 5,
+    max: 300,
+    default: 30,
+    perProject: false,
+    usedFrom: '0.3.0',
+  },
+  claudeCodeMcpToolTimeoutSeconds: {
+    group: 'runs',
+    label: 'Claude Code MCP tool timeout',
+    description:
+      'How long Claude Code waits for an Orchestrator tool call before giving up on it. Above the MCP call timeout, so the machine always answers first.',
+    unit: 'seconds',
+    min: 10,
+    max: 1800,
+    default: 120,
+    perProject: false,
+    usedFrom: '0.3.0',
+  },
   dispatchAckTimeoutSeconds: {
     group: 'runs',
     label: 'Machine answer timeout',
@@ -400,6 +424,13 @@ export const SETTING_ORDER: readonly SettingOrder[] = [
     larger: 'machineOfflineAfterSeconds',
     factor: 2,
     strict: false,
+  },
+  // The machine always answers a tool call (UNAVAILABLE) before Claude Code gives up on it (06, section 1).
+  {
+    smaller: 'mcpCallTimeoutSeconds',
+    larger: 'claudeCodeMcpToolTimeoutSeconds',
+    factor: 1,
+    strict: true,
   },
 ];
 
