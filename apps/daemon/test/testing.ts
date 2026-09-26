@@ -1,9 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pino, type Logger } from 'pino';
+import { findExecutable } from '../src/exec.js';
 import { daemonPaths, type DaemonPaths } from '../src/paths.js';
 
 // Test helpers for the daemon (`@orchestrator/daemon/testing`): a throw-away home folder, fake
@@ -13,6 +15,14 @@ import { daemonPaths, type DaemonPaths } from '../src/paths.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const tsxCli = createRequire(join(root, 'package.json')).resolve('tsx/cli');
 const cliSource = join(root, 'src', 'cli.ts');
+
+/** `orchestrator-daemon` from its sources: what hooks and Git helpers run in the tests. */
+export const DAEMON_COMMAND: readonly string[] = [
+  process.execPath,
+  tsxCli,
+  '--conditions=source',
+  cliSource,
+];
 
 export interface TestHome {
   root: string;
@@ -25,7 +35,9 @@ export interface TestHome {
 }
 
 export async function createTestHome(): Promise<TestHome> {
-  const folder = await mkdtemp(join(tmpdir(), 'orchestrator-daemon-test-'));
+  // Short: a run's socket, `runs/<run id>/daemon.sock` under the home, must fit the 107 bytes
+  // of a Unix socket path.
+  const folder = await mkdtemp(join(tmpdir(), 'od-test-'));
   const bin = join(folder, 'bin');
   await mkdir(bin);
   const env: NodeJS.ProcessEnv = {
@@ -45,6 +57,18 @@ export async function createTestHome(): Promise<TestHome> {
     env,
     remove: () => rm(folder, { recursive: true, force: true }),
   };
+}
+
+/**
+ * Links the host's own `name` (found in the PATH of the tests) into `folder`: runner tests use the
+ * real `git` and `tmux` (ADR 0027). Throws when the host does not have it.
+ */
+export async function linkSystemTool(folder: string, name: string): Promise<string> {
+  const found = findExecutable(name, process.env.PATH);
+  if (!found) throw new Error(`${name} is needed by the daemon's tests: see docs/dev/setup.md`);
+  const link = join(folder, name);
+  await symlink(found, link);
+  return link;
 }
 
 /** Writes an executable shell script named `name` in `folder`. */
@@ -119,6 +143,13 @@ export async function runDaemon(
   const process = spawnDaemon(args, env, input);
   const code = await process.exited;
   return { code, stdout: process.stdout(), stderr: process.stderr() };
+}
+
+/** A logger keeping its lines, so tests can check what was logged (and what never was). */
+export function captureLogger(): { log: Logger; lines: () => string[] } {
+  const lines: string[] = [];
+  const log = pino({ level: 'debug' }, { write: (line: string) => lines.push(line) });
+  return { log, lines: () => lines };
 }
 
 /** Polls `condition` every 50 ms until it holds, or throws after `timeoutMs`. */
