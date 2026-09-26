@@ -44,6 +44,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The daemon's runner tests use the host's tmux and Git (ADR 0027). tmux comes from apt and
+      # cannot be pinned: its version is printed (minimum 3.2, docs/dev/setup.md).
+      - name: tmux for the daemon's tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends tmux
+          tmux -V
+          git --version
+
       - run: pnpm verify
 
       - name: Dependency audit (fails on critical vulnerabilities)
