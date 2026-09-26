@@ -124,6 +124,10 @@ export class Run {
     return this.data.claudeSessionId;
   }
 
+  get limits(): RunStart['payload']['limits'] {
+    return this.data.start.limits;
+  }
+
   get ended(): boolean {
     return this.data.state === 'ended';
   }

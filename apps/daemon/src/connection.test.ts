@@ -63,6 +63,7 @@ const payload: Hello['payload'] = {
 
 let sockets: FakeSocket[];
 let refusals: Refusal[];
+let received: ServerMessage[];
 let connection: ServerConnection;
 
 /** Lets the promise work of an attempt (building `hello`) run. */
@@ -82,6 +83,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   sockets = [];
   refusals = [];
+  received = [];
   connection = new ServerConnection({
     url: 'ws://localhost:8080/daemon',
     token: `omt_${'a'.repeat(43)}`,
@@ -89,6 +91,7 @@ beforeEach(() => {
     log: pino({ level: 'silent' }),
     hello: () => Promise.resolve(payload),
     onRefused: (refusal) => refusals.push(refusal),
+    onMessage: (message) => received.push(message),
     socketFactory: () => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -104,6 +107,28 @@ afterEach(() => {
 });
 
 describe('the daemon connection (05, section 3.2)', () => {
+  it("passes the server's messages on and sends reports only once welcomed", async () => {
+    const socket = await open();
+    const ack: ServerMessage = {
+      type: 'ack',
+      id: '0b6f2f7e-3c1a-4d5e-9f8a-1b2c3d4e5f60',
+      payload: { ok: true },
+    };
+    const heartbeat: DaemonMessage = {
+      type: 'heartbeat',
+      id: '1b6f2f7e-3c1a-4d5e-9f8a-1b2c3d4e5f60',
+      payload: {},
+    };
+    socket.receive(ack);
+    expect(received).toEqual([]);
+    expect(connection.sendMessage(heartbeat)).toBe(false);
+    socket.welcome();
+    socket.receive(ack);
+    expect(received).toEqual([ack]);
+    expect(connection.sendMessage(heartbeat)).toBe(true);
+    expect(socket.sent.at(-1)).toEqual(heartbeat);
+  });
+
   it('says hello first, then sends a heartbeat and a ping at each interval', async () => {
     const socket = await open();
     expect(socket.sent.map((message) => message.type)).toEqual(['hello']);
