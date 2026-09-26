@@ -353,7 +353,7 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 
 `orchestrator-daemon status` listing local branches (decisions above, "The local branch") goes to step L (owner's decision, review of step F); until then `status` shows live runs only.
 
-### [ ] G. Permission enforcement, MCP relay and usage-limit detection
+### [x] G. Permission enforcement, MCP relay and usage-limit detection
 
 - **`PreToolUse` rules** (05 section 4.6), each with its reason:
   - `git push` and any command reaching GitHub;
@@ -388,6 +388,17 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 se
 - **API-error turns**: the module reads the hooks (`StopFailure`, and `Stop`'s message against the pattern table) and one transcript fact, the turn's last assistant entry marked `isApiErrorMessage`, which also covers the idle timeout after an error.
 - **Reset time**: a message time is the next such local time (or weekday) on the machine; a status line window is full at 100 % with a `resets_at` still to come, and the later of two full windows counts.
 - **Choices confirmed**: the relay uses `@modelcontextprotocol/server` 2.x (a stable release) with its low-level server and no validation of its own (ADR 0028); results are JSON text, refusals an `isError` result; calls get `UNAVAILABLE` at once while disconnected or when the connection drops; decisions take effect at the turn's `Stop`, a refused decision tool being no decision; the waiting run lifetime counts from that `Stop` and survives a daemon restart; `run.input` to a closed session is refused; the usage estimate is the status line's cost, else the transcript's last `cost-state`; the two new settings are in the Runs group, used from 0.3.0, the MCP call timeout strictly below the other.
+
+*Done 2026-09-26.* Choices within the step:
+
+- `@modelcontextprotocol/server` 2.1.0 is the `latest` tag and not a pre-release, and its README calls v2 "the stable release line", so ADR 0028 takes it. Its low-level `Server` is marked deprecated for ordinary use and kept "for advanced use cases": the two uses carry an ESLint exception naming the ADR.
+- "Git commands that talk to a remote" also refuses `git remote update`, `remote prune`, `remote show`, `fetch-pack` and `submodule`, which contact a remote too. Git options before the subcommand (`-C`, `-c`, `--git-dir`, …) and wrappers (`env`, `timeout`, `xargs`, …) are skipped.
+- Glob and Grep patterns are checked only when they are rooted (`/`, `~`) or hold `..`; a `PreToolUse` whose input cannot be read is refused, like an unreachable daemon.
+- A call to an unknown tool name gets `VALIDATION_FAILED` from the daemon, listing the tools; the relay answers `UNAVAILABLE` when the daemon cannot be reached.
+- The transcript's API-error mark is cleared at each message sent, so a hang after a later message is not taken for an API error.
+- `state.json` gains the decision, the turn's tool use, the waiting start, the latest status line and the transcript facts, with defaults so a file written by 0.2.0 still loads.
+- The empty `credential.helper` is set at each preparation, so bare clones made by 0.2.0 get it too. Step F's test "no helper in any Git configuration" now allows that empty helper only; the new global-helper test was checked to fail without it.
+- The fake `claude`'s MCP client lists the tools after `initialize`, as Claude Code does; the runner tests share `runner-harness.ts`.
 
 ### [ ] H. Owner check of documented Claude Code behaviour
 
