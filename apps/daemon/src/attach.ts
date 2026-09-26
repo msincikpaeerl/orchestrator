@@ -4,11 +4,7 @@ import { RunId } from '@orchestrator/protocol';
 import { findExecutable, runCommand } from './exec.js';
 import { UserError } from './errors.js';
 import { TMUX_SOCKET_NAME } from './paths.js';
-
-/** The tmux session of a run (05, section 4.3). */
-export function sessionName(runId: string): string {
-  return `orch-${runId}`;
-}
+import { sessionName } from './tmux.js';
 
 /**
  * `orchestrator-daemon attach <run-id> [--write]` (05, section 8): watches a run's session on the

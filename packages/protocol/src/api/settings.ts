@@ -254,7 +254,7 @@ const definitions = {
     group: 'runs',
     label: 'Idle timeout',
     description:
-      'A run neither working nor waiting for something gets a reminder after this time, then is stopped.',
+      'A run whose agent shows no activity for this long is stopped. Time waiting for you, for CI or for the quota, and time running a command, does not count.',
     unit: 'minutes',
     min: 1,
     max: 120,
@@ -271,6 +271,18 @@ const definitions = {
     min: 0,
     max: 10,
     default: 2,
+    perProject: false,
+    usedFrom: '0.3.0',
+  },
+  sessionStartTimeoutSeconds: {
+    group: 'runs',
+    label: 'Session start timeout',
+    description:
+      "How long a machine waits for Claude Code to start a run's session; after that the run fails (a startup dialog or a change in Claude Code is likely).",
+    unit: 'seconds',
+    min: 5,
+    max: 600,
+    default: 30,
     perProject: false,
     usedFrom: '0.3.0',
   },

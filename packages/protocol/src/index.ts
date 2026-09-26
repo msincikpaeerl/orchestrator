@@ -136,9 +136,10 @@ export {
   type SettingDefinition,
   type SettingValues,
 } from './api/settings.js';
+export { HIDDEN, maskSecrets } from './secrets.js';
 export { TEXT_CEILING, boundedText, requiredText, settingCeiling } from './text-limits.js';
 export { AgentKey, AgentRole } from './api/agents.js';
-export { Ack, MessageId, message } from './daemon/envelope.js';
+export { Ack, DAEMON_MESSAGE_MAX_BYTES, MessageId, message } from './daemon/envelope.js';
 export {
   BranchReport,
   CommitSummary,
@@ -181,6 +182,16 @@ export {
   WorkspaceFacts,
 } from './daemon/relay.js';
 export { DaemonMessage, ServerMessage } from './daemon/messages.js';
+export {
+  CredentialSocketAnswer,
+  CredentialSocketRequest,
+  HookAnswer,
+  HookEvent,
+  HookInputs,
+  RunSocketRequest,
+  StatusLineInput,
+  type HookInput,
+} from './daemon/run-socket.js';
 export {
   CLAUDE_CODE_MIN_VERSION,
   CLAUDE_CODE_VALIDATED_VERSION,

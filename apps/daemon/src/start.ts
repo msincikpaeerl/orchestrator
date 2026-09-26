@@ -1,17 +1,32 @@
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:net';
-import { PROTOCOL_VERSION, type ControlStatus, type Hello } from '@orchestrator/protocol';
+import { join } from 'node:path';
+import {
+  PROTOCOL_VERSION,
+  type ControlStatus,
+  type GitCredential,
+  type Hello,
+} from '@orchestrator/protocol';
 import { requireConfig } from './config.js';
 import { ServerConnection, type SocketFactory } from './connection.js';
+import type { CredentialSource } from './credentials.js';
 import { probeControl, removeStaleControl, serveControl } from './control.js';
 import { detectCapabilities, machineOs } from './detect.js';
 import { runDoctor } from './doctor.js';
 import { doctorEnvironment } from './environment.js';
 import { EXIT_REFUSED, UserError } from './errors.js';
+import { findExecutable } from './exec.js';
+import { Git } from './git.js';
 import { clearLastStop, writeLastStop, type LastStop } from './last-stop.js';
 import { createLogger } from './logger.js';
 import type { DaemonPaths } from './paths.js';
+import { RunManager } from './runs.js';
+import { selfCommand } from './self.js';
 import { parseServerUrl, webSocketUrl } from './server-url.js';
+import { Tmux } from './tmux.js';
+import { TrustRegistry } from './trust.js';
 import { DAEMON_VERSION } from './version.js';
+import { Workspaces } from './workspace.js';
 
 export interface StartOptions {
   paths: DaemonPaths;
@@ -48,6 +63,59 @@ export async function startDaemon(options: StartOptions): Promise<number> {
   const startedAt = new Date();
   const environment = doctorEnvironment(paths, 'daemon');
   let lastHello: Hello['payload'] | null = null;
+  // Set below: the credential source needs the connection, which needs the runs for `hello`.
+  let connection: ServerConnection | null = null;
+
+  // The GitHub credential for one Git command, asked from the server (05, section 7). The
+  // answer is awaited at most the run's MCP call timeout, the daemon's wait for any answer.
+  const credentialAnswers = new Map<string, (answer: GitCredential['payload'] | null) => void>();
+  const credentials: CredentialSource = (request) =>
+    new Promise((resolve) => {
+      const run = runs.get(request.runId);
+      if (!run) {
+        resolve(null);
+        return;
+      }
+      const id = randomUUID();
+      const timeoutSeconds = run.limits.mcpCallTimeoutSeconds;
+      const timer = setTimeout(() => {
+        credentialAnswers.delete(id);
+        log.warn({ runId: request.runId }, 'no Git credential from the Orchestrator in time');
+        resolve(null);
+      }, timeoutSeconds * 1000);
+      credentialAnswers.set(id, (answer) => {
+        clearTimeout(timer);
+        credentialAnswers.delete(id);
+        if (answer && !answer.ok) log.warn({ runId: request.runId }, answer.message);
+        resolve(answer?.ok ? { username: answer.username, password: answer.password } : null);
+      });
+      if (!connection?.sendMessage({ type: 'git.credential_request', id, payload: request })) {
+        credentialAnswers.get(id)?.(null);
+      }
+    });
+
+  const tools = environment.toolPath;
+  const trust = new TrustRegistry(join(paths.claudeConfig, '.claude.json'));
+  const self = selfCommand();
+  const runs = new RunManager({
+    paths,
+    log,
+    tmux: new Tmux(findExecutable('tmux', tools) ?? 'tmux', process.env),
+    trust,
+    workspaces: new Workspaces({
+      paths,
+      git: new Git(findExecutable('git', tools) ?? 'git', process.env),
+      trust,
+      credentials,
+      selfCommand: self,
+      log,
+    }),
+    selfCommand: self,
+    toolPath: tools,
+    envCommand: findExecutable('env', tools) ?? '/usr/bin/env',
+    secondMs: 1000,
+  });
+  await runs.recover();
 
   const buildHello = async (): Promise<Hello['payload']> => {
     const doctor = await runDoctor(environment);
@@ -58,8 +126,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       os: machineOs(environment.wsl),
       capabilities: detectCapabilities(environment.toolPath),
       doctor: doctor.checks,
-      // Runs are started from lot 2 step F on.
-      runs: [],
+      runs: runs.list(),
     };
     const problems = doctor.checks.filter((check) => check.status === 'error');
     if (problems.length > 0) {
@@ -77,21 +144,48 @@ export async function startDaemon(options: StartOptions): Promise<number> {
   });
   let control: Server | null = null;
   const end = async (stop: LastStop, code: number) => {
-    connection.stop();
+    connection?.stop();
+    // Sessions keep running; the next start finds them (05, section 6).
+    await runs.shutdown();
     await writeLastStop(paths.lastStop, stop);
     control?.close();
     await removeStaleControl(paths.controlSocket);
     finish(code);
   };
 
-  const connection = new ServerConnection({
+  const server = new ServerConnection({
     url: webSocketUrl(serverUrl),
     token: config.machineToken,
     ca: config.ca,
     log,
     hello: buildHello,
     socketFactory: options.socketFactory,
-    onWelcome: () => void clearLastStop(paths.lastStop),
+    onWelcome: () => {
+      void clearLastStop(paths.lastStop);
+      runs.outbox.resend();
+    },
+    onMessage: (message) => {
+      switch (message.type) {
+        case 'ack':
+          runs.outbox.ack(
+            message.id,
+            message.payload.ok,
+            message.payload.ok ? null : message.payload.message,
+          );
+          return;
+        case 'git.credential':
+          credentialAnswers.get(message.id)?.(message.payload);
+          return;
+        case 'mcp.result':
+          // The MCP relay comes with plan step G.
+          log.debug('MCP result not handled by this daemon version');
+          return;
+        default:
+          void runs
+            .handle(message)
+            .then((payload) => server.sendMessage({ type: 'ack', id: message.id, payload }));
+      }
+    },
     onRefused: (refusal) => {
       process.stderr.write(`${refusal.message}\n`);
       void end(
@@ -101,6 +195,9 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     },
   });
 
+  connection = server;
+  runs.outbox.connect((message) => server.sendMessage(message));
+
   control = await serveControl(paths.controlSocket, () => ({
     type: 'status',
     mode,
@@ -108,15 +205,15 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     startedAt: startedAt.toISOString(),
     serverUrl,
     machineName: config.machineName,
-    connection: connection.state,
-    connectedAt: connection.connectedAt?.toISOString() ?? null,
-    lastError: connection.lastError,
+    connection: server.state,
+    connectedAt: server.connectedAt?.toISOString() ?? null,
+    lastError: server.lastError,
     daemonVersion: DAEMON_VERSION,
     protocolVersion: PROTOCOL_VERSION,
     claudeCodeVersion: lastHello?.claudeCodeVersion ?? null,
     os: lastHello?.os ?? machineOs(environment.wsl),
     capabilities: lastHello?.capabilities ?? [],
-    runs: [],
+    runs: runs.list().map(({ runId, state }) => ({ runId, state })),
   }));
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
@@ -137,6 +234,6 @@ export async function startDaemon(options: StartOptions): Promise<number> {
   }
 
   log.info({ serverUrl, mode, version: DAEMON_VERSION }, 'daemon started');
-  connection.start();
+  server.start();
   return finished;
 }

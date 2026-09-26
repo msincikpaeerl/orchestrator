@@ -1,5 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
+  DAEMON_MESSAGE_MAX_BYTES,
   CLAUDE_CODE_MIN_VERSION,
   DAEMON_SOCKET_PATH,
   DaemonCloseCode,
@@ -119,7 +120,7 @@ export class DaemonGateway {
   /** Registers the WebSocket plugin and the `/daemon` route. */
   register(app: FastifyInstance): void {
     void app.register(websocket, {
-      options: { maxPayload: 1024 * 1024 },
+      options: { maxPayload: DAEMON_MESSAGE_MAX_BYTES },
       preClose: (done) => {
         this.closing = true;
         for (const connection of this.connections.values()) {

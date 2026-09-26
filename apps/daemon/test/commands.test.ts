@@ -237,3 +237,28 @@ describe('login', () => {
     expect(result.stderr).toMatch(/Claude Code \(claude\) is not installed/);
   });
 });
+
+describe('hook and status-line (internal)', () => {
+  it('denies a tool call when the daemon cannot be reached, and lets other events pass', async () => {
+    const pre = await runDaemon(['hook', 'PreToolUse', '--run', RUN_ID], home.env, '{}');
+    expect(pre.code).toBe(0);
+    expect(JSON.parse(pre.stdout)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'Orchestrator daemon unavailable',
+      },
+    });
+    for (const args of [
+      ['hook', 'Stop', '--run', RUN_ID],
+      ['status-line', '--run', RUN_ID],
+    ]) {
+      expect(await runDaemon(args, home.env, '{}')).toMatchObject({ code: 0, stdout: '' });
+    }
+  });
+
+  it('refuses an unknown event or run id', async () => {
+    expect((await runDaemon(['hook', 'Other', '--run', RUN_ID], home.env, '{}')).code).toBe(1);
+    expect((await runDaemon(['hook', 'Stop', '--run', 'x'], home.env, '{}')).code).toBe(1);
+  });
+});

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import {
+  DAEMON_MESSAGE_MAX_BYTES,
   DaemonCloseCode,
   ServerMessage,
   type ConnectionState,
@@ -41,7 +42,7 @@ export const openWebSocket: SocketFactory = (url, token, ca) =>
   new WebSocket(url, {
     headers: { authorization: `Bearer ${token}` },
     handshakeTimeout: 10_000,
-    maxPayload: 1024 * 1024,
+    maxPayload: DAEMON_MESSAGE_MAX_BYTES,
     ...(ca ? { ca } : {}),
   });
 
@@ -62,6 +63,8 @@ export interface ConnectionOptions {
   onRefused: (refusal: Refusal) => void;
   /** Called after each accepted `welcome`. */
   onWelcome?: () => void;
+  /** Every other message of the server on the current connection: commands, acks, answers. */
+  onMessage?: (message: Exclude<ServerMessage, { type: 'welcome' }>) => void;
   socketFactory?: SocketFactory;
 }
 
@@ -183,8 +186,7 @@ export class ServerConnection {
       }
       const message = parsed.data;
       if (message.type !== 'welcome') {
-        // Runs, MCP results and Git credentials are handled from lot 2 step F on.
-        this.options.log.warn({ type: message.type }, 'message not handled by this daemon version');
+        if (this.state === 'connected') this.options.onMessage?.(message);
         return;
       }
       if (message.id !== hello.id) return;
@@ -277,5 +279,13 @@ export class ServerConnection {
 
   private send(socket: SocketLike, message: DaemonMessage): void {
     socket.send(JSON.stringify(message));
+  }
+
+  /** Sends on the current connection once `welcome` accepted it; false otherwise. */
+  sendMessage(message: DaemonMessage): boolean {
+    const socket = this.current;
+    if (!socket || this.state !== 'connected') return false;
+    this.send(socket, message);
+    return true;
   }
 }

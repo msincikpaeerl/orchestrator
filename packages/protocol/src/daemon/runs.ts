@@ -49,6 +49,11 @@ export const RunEndReason = z.enum([
   'idle_timeout',
   /** No `SessionStart` within the session start timeout (05, section 4.2.1). */
   'session_start_timeout',
+  /**
+   * The `claude` about to be launched is missing or older than the minimum, so it was not
+   * launched (05, section 4.3): a machine problem, never a failed attempt.
+   */
+  'claude_code_unsupported',
   /** The workspace could not be prepared, or the session ended unexpectedly. */
   'crashed',
 ]);
@@ -168,7 +173,15 @@ const RunStateBase = z.object({
 export const RunState = message(
   'run.state',
   z.discriminatedUnion('state', [
-    RunStateBase.extend({ state: DaemonRunState.exclude(['ended']) }),
+    RunStateBase.extend({ state: DaemonRunState.exclude(['starting', 'ended']) }),
+    RunStateBase.extend({
+      state: z.literal('starting'),
+      /**
+       * `claude --version` of the executable about to be launched, null when it is missing: the
+       * server checks it again at each run start (05, section 4.3).
+       */
+      claudeCodeVersion: requiredText().nullable(),
+    }),
     RunStateBase.extend({
       state: z.literal('ended'),
       reason: RunEndReason,
@@ -194,6 +207,8 @@ export const RunLogEvent = z.object({
     'tool_result',
     /** A message sent to the agent: first message, answer, nudge. */
     'input',
+    /** Something the daemon could not show, such as transcript lines it skipped (05, section 4.5). */
+    'warning',
   ]),
   /** Tool name for `tool_call` and `tool_result`. */
   tool: boundedText().nullable(),

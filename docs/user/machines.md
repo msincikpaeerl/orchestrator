@@ -55,6 +55,8 @@ Details: [Microsoft's systemd guide](https://learn.microsoft.com/windows/wsl/sys
 
 In this version, the daemon runs under your own Linux user, so agents work with your user's rights. The Orchestrator blocks the folders it knows are sensitive (its own `~/.orchestrator` folder, which holds the machine's key, and the Claude configuration folders), and it limits file tools to the project's folder. Its checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly. Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
 
+For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never touch another ticket or another project.
+
 Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents.
 
 ## Add a machine

@@ -281,7 +281,7 @@ Owner's review of the step: the WebSocket ping and the choices below are confirm
 
 Choices within the step: a WebSocket ping with each heartbeat, and a connection without a pong for two intervals is abandoned and replaced (the case where the "`replaced` on an abandoned connection" rule applies); a certificate that cannot be checked because the server is unreachable is a warning; `last-stop.json` is cleared by an accepted `welcome` or a new enrollment; the unit starts `start --service`, which is how `status` knows the mode; packaging with esbuild and `tar`, the daemon's libraries as `devDependencies` since they are bundled, and their licenses in the package (ADR 0026); `@orchestrator/daemon/testing` for the tests of both apps; the server test application gained `restart()`; `/daemon` and `/downloads` addresses are never answered with the UI.
 
-### [ ] F. Fake `claude`, workspace and tmux runner
+### [x] F. Fake `claude`, workspace and tmux runner
 
 - **Fake `claude`** (`apps/daemon/test/fake-claude/`), an executable driven by a scenario file:
   - reads its arguments (and checks the argument order of 05 section 4.3);
@@ -326,6 +326,33 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - no remote URL holds a token;
 - a `git fetch` run in the worktree outside the daemon fails for lack of credentials.
 
+Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05 sections 2, 3.3, 4.2, 4.2.1, 4.3, 4.5, 4.8, 5 and 7:
+
+- **Idle timeout**: time without any hook while the run is `working` or `idle`, paused while a tool call runs; when reached, the run ends with `idle_timeout` without a nudge. Nudges are sent at once when a turn ends. The setting's description is reworded.
+- **Live log in F**: the daemon reads the transcript tolerantly (an unknown or malformed line is skipped and counted, and the count is shown in the run's log as a warning, never a failure), adds an entry for each message sent, masks credentials with the event log's patterns (moved to `packages/protocol`) and sends `run.events`.
+- **`run.resume`** (the `--resume` launch path) is in F; closing the session after the waiting run lifetime and on a usage limit is in G.
+- **Claude Code version at run start**: `run.state` `starting` carries `claudeCodeVersion`; missing or below the minimum, the daemon does not launch and ends the run with the new reason `claude_code_unsupported`.
+- **Credential helper**: a one-shot socket per Git command (random name, mode 600, random key), `credential.helper=` reset first, `GIT_TERMINAL_PROMPT=0`; the server is asked only when Git asks; the helper answers only for the exact protocol and host of the clone URL, and a refusal is logged without the token (tested with a request for another host).
+- **Hooks**: `hook <event> --run <id>` and `status-line --run <id>` use the run's socket; an unreachable daemon denies `PreToolUse` and lets every other event pass. The risk of an agent writing to its run's socket is written in 05 section 2 and in Help ("Agents on your own user"): the server's barrier is the run token (steps J and K).
+- **Fake `claude` MCP**: a minimal JSON-RPC client of its own, tested in F against a small test MCP server; step G tests it against the real SDK-based server too.
+- **Maximum duration** counts from the launch while `starting`, `working` or `idle`, kept in `state.json`.
+- **Trust**: writes serialised and made while no run is `starting`; tested with several registrations at once while another process rewrites the file.
+- **Bare clone**: remote branches fetched into `refs/remotes/origin/*`; the worktree uses the local ticket branch, else the remote one, else a new branch from `origin/<base>`; the author set with `extensions.worktreeConfig`.
+
+*Done 2026-09-26.* Choices within the step, written into 05 sections 4.2.1, 7 and 8 where they are behaviour:
+
+- trust is also checked before each launch and written again when missing, since Claude Code's own rewrites of `.claude.json` could drop an entry (found with the concurrent-writer test);
+- the bare clone is made with `git init --bare` and a remote, and `core.bare` moves to its `config.worktree`: with `extensions.worktreeConfig` on, Git otherwise treats every worktree as bare and commits fail (found by the tests);
+- the credential helper is the internal command `orchestrator-daemon git-credential`; the daemon waits for the server's `git.credential` at most the run's MCP call timeout; a credential request for a run it does not know gets none;
+- at the end of a turn a queued message (an answer) is sent instead of a nudge;
+- a run's folder is removed once the run has ended and the server acknowledged all its reports;
+- the live log gains a `warning` kind; entries are sent in batches below half of `DAEMON_MESSAGE_MAX_BYTES`, the 1 MiB message limit now declared once in `packages/protocol`;
+- the shared `maskSecrets` also hides machine tokens (`omt_…`), which 05 section 3.1 already required of the event log;
+- the status line input reaches the run but is used from step G (collector);
+- test homes live under `/tmp/od-test-*` so that a run's socket path fits the 107 bytes of a Unix socket.
+
+`orchestrator-daemon status` listing local branches (decisions above, "The local branch") goes to step L (owner's decision, review of step F); until then `status` shows live runs only.
+
 ### [ ] G. Permission enforcement, MCP relay and usage-limit detection
 
 - **`PreToolUse` rules** (05 section 4.6), each with its reason:
@@ -336,6 +363,7 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - Settings deny rules for the same folders in the run's `settings.json`.
 - **MCP relay**: `orchestrator-daemon mcp --run <id>` (stdio, wire names of 06 section 3), forwarding through `daemon.sock` and `mcp.call`/`mcp.result`; `UNAVAILABLE` after the MCP call timeout or while disconnected. `mcp.json` carries the Claude Code MCP tool timeout. New settings "MCP call timeout" and "Claude Code MCP tool timeout" with their cross-setting rule. ADR: MCP SDK.
 - **Usage-limit module** (05 section 4.10) with its pattern table and fixtures from the documentation; the status line collector (reset time and `cost.total_cost_usd`); `run.quota_limited` and closing the session.
+- **Decision tools on the daemon**: `ticket_submit`, `ticket_ask` and `ticket_give_up` seen through the relay (no nudge after them, `waiting_human` after `ticket_ask`); the session closed after the waiting run lifetime, keeping the worktree and the Claude session id (step F decision).
 - **Profile settings generation**: allowlist and deny rules from a profile snapshot (`ToolSearch` always allowed).
 
 **Done when** fake `claude` tests show:
@@ -345,7 +373,8 @@ The credential tests use a local authenticated Git HTTP remote (`git http-backen
 - `detected` for the documented messages (with the status line reset time, with the message time, and with neither);
 - `suspected` for a `rate_limit` without a known message, an `overloaded` and a `server_error` `StopFailure`, an API-error turn with no tool use, and an idle timeout right after one;
 - no nudge in any of these cases;
-- the estimated usage read from the status line.
+- the estimated usage read from the status line;
+- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F).
 
 ### [ ] H. Owner check of documented Claude Code behaviour
 
@@ -460,6 +489,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
 - Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
+- `orchestrator-daemon status` lists the local ticket branches of the machine's bare clones, with their head and commits ahead of the base branch, as the ticket page shows them (decisions above, "The local branch"; owner's decision, review of step F).
 - Machines: **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
@@ -477,6 +507,8 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - an agent's ticket accepted;
 - a run finishing with the branch and commits shown;
 - a paused run resumed.
+
+A daemon test shows `orchestrator-daemon status` listing a ticket branch kept after a run, with its commits.
 
 ### [ ] M. End-to-end daemon test and limit capture tooling
 

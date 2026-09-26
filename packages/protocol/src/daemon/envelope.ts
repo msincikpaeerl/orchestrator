@@ -8,6 +8,12 @@ import { requiredText } from '../text-limits.js';
 export const MessageId = z.uuid();
 export type MessageId = z.infer<typeof MessageId>;
 
+/**
+ * Largest message, in bytes, either side of the daemon connection accepts. Larger reports are
+ * split (a batch of log entries) so that none reaches it; one entry is far below it.
+ */
+export const DAEMON_MESSAGE_MAX_BYTES = 1024 * 1024;
+
 /** A message of type `type`: `{ type, id, payload }` (05, section 3.3). */
 export function message<Type extends string, Payload extends z.ZodType>(
   type: Type,

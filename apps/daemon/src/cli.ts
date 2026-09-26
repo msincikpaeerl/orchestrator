@@ -1,5 +1,9 @@
+import { text } from 'node:stream/consumers';
 import { parseArgs } from 'node:util';
+import { HookEvent, RunId } from '@orchestrator/protocol';
 import { attach } from './attach.js';
+import { safeJson } from './config.js';
+import { gitCredentialHelper } from './credentials.js';
 import { runDoctor } from './doctor.js';
 import { enroll } from './enroll.js';
 import { doctorEnvironment } from './environment.js';
@@ -8,6 +12,7 @@ import { installService } from './install-service.js';
 import { describeLastStop, readLastStop } from './last-stop.js';
 import { login } from './login.js';
 import { daemonPaths } from './paths.js';
+import { forwardToRun } from './run-socket.js';
 import { startDaemon } from './start.js';
 import { formatChecks, status } from './status.js';
 import { DAEMON_VERSION } from './version.js';
@@ -96,6 +101,37 @@ async function main(argv: string[]): Promise<number> {
     case 'attach': {
       const { positionals, values } = parse({ write: { type: 'boolean' } }, 1);
       return attach(positionals[0] ?? '', values.write ?? false, { input: process.stdin, out });
+    }
+    // Internal commands run by Claude Code and Git (05, sections 4.5, 7 and 8).
+    case 'hook':
+    case 'status-line': {
+      const { positionals, values } = parse(
+        { run: { type: 'string' } },
+        command === 'hook' ? 1 : 0,
+      );
+      const runId = RunId.safeParse(values.run);
+      const event = HookEvent.safeParse(positionals[0]);
+      if (!runId.success || (command === 'hook' && !event.success)) {
+        throw new UserError(
+          `Usage: orchestrator-daemon ${command}${command === 'hook' ? ' <event>' : ''} --run <run-id>`,
+        );
+      }
+      const input = safeJson(await text(process.stdin));
+      const answer = await forwardToRun(
+        paths,
+        runId.data,
+        command === 'hook' && event.success
+          ? { type: 'hook', event: event.data, input }
+          : { type: 'status_line', input },
+      );
+      process.stdout.write(answer.stdout);
+      return answer.exitCode;
+    }
+    case 'git-credential': {
+      const { positionals } = parse({}, 1);
+      const input = await text(process.stdin);
+      process.stdout.write(await gitCredentialHelper(positionals[0] ?? '', input, process.env));
+      return 0;
     }
     default:
       throw new UserError(`Unknown command "${command}".\n\n${USAGE}`);

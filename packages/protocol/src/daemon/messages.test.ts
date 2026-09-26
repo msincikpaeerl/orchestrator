@@ -400,4 +400,23 @@ describe('payload checks', () => {
       }).success,
     ).toBe(true);
   });
+
+  it('carries the Claude Code version with the starting state only', () => {
+    const starting = (payload: Json) =>
+      DaemonMessage.safeParse({
+        type: 'run.state',
+        id,
+        payload: {
+          runId,
+          at,
+          state: 'starting',
+          claudeSessionId: null,
+          sessionAlive: false,
+          ...payload,
+        },
+      }).success;
+    expect(starting({ claudeCodeVersion: '2.1.282 (Claude Code)' })).toBe(true);
+    expect(starting({ claudeCodeVersion: null })).toBe(true);
+    expect(starting({})).toBe(false);
+  });
 });

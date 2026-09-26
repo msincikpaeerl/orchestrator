@@ -6,6 +6,7 @@ import {
   EventListQuery,
   EventPayloads,
   EventType,
+  maskSecrets,
   shorten,
   type EventListResponse,
   type EventLogEntry,
@@ -15,19 +16,6 @@ import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
 import { HttpError, parseInput } from './http.js';
-
-const HIDDEN = '[hidden]';
-
-/**
- * Credentials that could end up in a payload or comment by mistake: GitHub tokens (classic and
- * fine-grained) and Anthropic keys. They are never shown in the event log.
- */
-const SECRET =
-  /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{10,})/g;
-
-export function maskSecrets(text: string): string {
-  return text.replace(SECRET, HIDDEN);
-}
 
 function maskValue(value: unknown): unknown {
   if (typeof value === 'string') return maskSecrets(value);
