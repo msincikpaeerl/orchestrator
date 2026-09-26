@@ -28,7 +28,31 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const scope: PermissionScope = { worktree, daemonHome, userHome, tempDirs: ['/tmp'] };
+/** The root folders of a typical Linux or WSL machine: the tests do not depend on the host's. */
+const ROOT = new Set([
+  'bin',
+  'dev',
+  'etc',
+  'home',
+  'lib',
+  'lib64',
+  'mnt',
+  'opt',
+  'proc',
+  'root',
+  'sbin',
+  'srv',
+  'tmp',
+  'usr',
+  'var',
+]);
+const scope: PermissionScope = {
+  worktree,
+  daemonHome,
+  userHome,
+  tempDirs: ['/tmp'],
+  rootEntryExists: (name) => ROOT.has(name),
+};
 const bash = (command: string) => checkBash(scope, command);
 const tool = (name: string, input: Record<string, unknown>) => checkToolCall(scope, name, input);
 
@@ -130,6 +154,35 @@ describe('PreToolUse rules for Bash', () => {
     expect(bash('cat ../../../other')).toBe(REASONS.bashPath);
     expect(bash('cp notes.md --target-directory=/srv/x')).toBe(REASONS.bashPath);
     expect(bash('npm test > /home/other/out.txt')).toBe(REASONS.bashPath);
+  });
+
+  it('does not take text whose first folder is not at the root for a path, such as a route', () => {
+    for (const command of [
+      'grep -rn "/api/users" src',
+      'curl -s localhost:3000/api/notes/12',
+      'grep -r /users/:id/settings src',
+      'echo /v1/health',
+    ]) {
+      expect(bash(command), command).toBeNull();
+    }
+  });
+
+  it('still checks a path that does not exist yet under an existing root folder', () => {
+    expect(bash('echo secret > /home/other/new-file.txt')).toBe(REASONS.bashPath);
+    expect(bash('touch /mnt/c/Users/owner/new.txt')).toBe(REASONS.bashPath);
+    expect(bash('mkdir -p /var/new-folder/deeper')).toBe(REASONS.bashPath);
+    expect(bash(`cp notes.md ${userHome}/not-yet/copy.md`)).toBe(REASONS.bashPath);
+    // `..` is resolved first: text starting with an unknown folder cannot hide a real path.
+    expect(bash('cat /api/../home/other/.ssh/id_ed25519')).toBe(REASONS.bashPath);
+    // The root itself is a path.
+    expect(bash('ls /')).toBe(REASONS.bashPath);
+  });
+
+  it('looks at the real filesystem root by default', () => {
+    const real: PermissionScope = { worktree, daemonHome, userHome, tempDirs: ['/tmp'] };
+    expect(checkBash(real, 'grep -rn "/no-such-root-folder-od/users" src')).toBeNull();
+    expect(checkBash(real, 'touch /usr/../no-such-root-folder-od-2')).toBeNull();
+    expect(checkBash(real, 'cat /proc/1/environ')).toBe(REASONS.bashPath);
   });
 
   it('allows the worktree, the standard devices, the temporary folder and system folders', () => {

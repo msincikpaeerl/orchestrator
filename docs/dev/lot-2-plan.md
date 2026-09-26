@@ -400,6 +400,8 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 se
 - The empty `credential.helper` is set at each preparation, so bare clones made by 0.2.0 get it too. Step F's test "no helper in any Git configuration" now allows that empty helper only; the new global-helper test was checked to fail without it.
 - The fake `claude`'s MCP client lists the tools after `initialize`, as Claude Code does; the runner tests share `runner-harness.ts`.
 
+Owner's review of the step: in Bash commands a word is an absolute path only when its first folder exists at the filesystem root (after resolving `..`), so routes such as `/api/users` are not refused; a path not yet created under an existing root folder is still checked (05 section 4.6, Help).
+
 ### [ ] H. Owner check of documented Claude Code behaviour
 
 The lot's security and quota design relies on behaviour read in the documentation but never run (notes above). The owner checks it now, before any run code depends on it (owner's review of step A).

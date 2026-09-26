@@ -1,4 +1,4 @@
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 // Permission enforcement for a run (05, section 4.6), in two layers: the allowlist and deny rules
@@ -16,7 +16,14 @@ export interface PermissionScope {
   userHome: string;
   /** The system temporary folders a Bash command may name: `/tmp` and `$TMPDIR`. */
   tempDirs: readonly string[];
+  /**
+   * Whether a folder or file of this name exists at the filesystem root (`/<name>`). Tests give a
+   * fixed listing; the default looks at the real root.
+   */
+  rootEntryExists?: (name: string) => boolean;
 }
+
+const realRootEntryExists = (name: string) => existsSync(join('/', name));
 
 /** Always allowed: Claude Code loads MCP tools with it (03, section 6). */
 export const TOOL_SEARCH = 'ToolSearch';
@@ -66,7 +73,7 @@ export const REASONS = {
     "Access to the Orchestrator's own folder is refused: it holds the machine's key and other runs' work.",
   claudeConfig: "Access to Claude Code's configuration folders is refused: they hold its login.",
   outside: `Access outside your worktree is refused. Work with paths inside the worktree (relative paths are best). ${ASK}`,
-  bashPath: `This command names a path outside your worktree, which is refused. Use paths inside the worktree (relative paths are best); /tmp, /dev/null and system folders such as /usr and /etc are allowed. If the text is not a path (a URL path in a grep pattern, for example), write it without its leading "/". ${ASK}`,
+  bashPath: `This command names a path outside your worktree, which is refused. Use paths inside the worktree (relative paths are best); /tmp, /dev/null and system folders such as /usr and /etc are allowed. ${ASK}`,
   home: `This command names the home folder (~ or $HOME), which is refused. Use paths inside your worktree. ${ASK}`,
 } as const;
 
@@ -271,6 +278,11 @@ function pathRefusal(scope: PermissionScope, word: string): string | null {
     const absolute = candidate.startsWith('/');
     if (!absolute && !candidate.split('/').includes('..')) continue;
     const path = resolve(scope.worktree, candidate);
+    // Text such as a route ("/api/users") is not a path: an absolute path counts only when its
+    // first folder exists at the root. What follows need not exist (a file about to be written).
+    const first = path.split('/')[1] ?? '';
+    if (absolute && first !== '' && !(scope.rootEntryExists ?? realRootEntryExists)(first))
+      continue;
     if (inside(path, scope.worktree)) continue;
     const refusal = protectedRefusal(scope, path);
     if (refusal) return refusal;
