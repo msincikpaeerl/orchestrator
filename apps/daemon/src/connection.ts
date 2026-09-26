@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import {
+  DAEMON_MESSAGE_MAX_BYTES,
   DaemonCloseCode,
   ServerMessage,
   type ConnectionState,
@@ -41,7 +42,7 @@ export const openWebSocket: SocketFactory = (url, token, ca) =>
   new WebSocket(url, {
     headers: { authorization: `Bearer ${token}` },
     handshakeTimeout: 10_000,
-    maxPayload: 1024 * 1024,
+    maxPayload: DAEMON_MESSAGE_MAX_BYTES,
     ...(ca ? { ca } : {}),
   });
 

@@ -139,7 +139,7 @@ export {
 export { HIDDEN, maskSecrets } from './secrets.js';
 export { TEXT_CEILING, boundedText, requiredText, settingCeiling } from './text-limits.js';
 export { AgentKey, AgentRole } from './api/agents.js';
-export { Ack, MessageId, message } from './daemon/envelope.js';
+export { Ack, DAEMON_MESSAGE_MAX_BYTES, MessageId, message } from './daemon/envelope.js';
 export {
   BranchReport,
   CommitSummary,
