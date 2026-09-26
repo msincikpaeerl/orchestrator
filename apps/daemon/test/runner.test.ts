@@ -1,133 +1,33 @@
-import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DaemonMessage, RunLogEvent, RunStart, RunState } from '@orchestrator/protocol';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { findExecutable } from '../src/exec.js';
-import { Git } from '../src/git.js';
-import { TMUX_SOCKET_NAME } from '../src/paths.js';
-import { RunManager } from '../src/runs.js';
-import { Tmux, sessionName } from '../src/tmux.js';
-import { TrustRegistry } from '../src/trust.js';
-import { Workspaces } from '../src/workspace.js';
-import { installFakeClaude, type FakeClaude } from './fake-claude/install.js';
-import { createRemote, gitIn } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import type { RunState } from '@orchestrator/protocol';
+import { describe, expect, it } from 'vitest';
+import { sessionName } from '../src/tmux.js';
+import { gitIn } from './remote.js';
 import {
-  DAEMON_COMMAND,
-  captureLogger,
-  createTestHome,
-  linkSystemTool,
-  waitFor,
-  type TestHome,
-} from './testing.js';
+  TIMEOUT,
+  cloneUrl,
+  daemon,
+  ended,
+  fake,
+  home,
+  logEvents,
+  messagesReceived,
+  sent,
+  start,
+  states,
+  tmux,
+  useRunnerHarness,
+} from './runner-harness.js';
+import { runStartPayload } from './run-start.js';
+import { waitFor } from './testing.js';
 
 // The runner with the real tmux and the fake `claude` (ADR 0027): the session's start, input,
 // nudges, timeouts, the end with the branch, and a daemon restart. The server is a recorder
 // that acknowledges every report.
 
-const TIMEOUT = 60_000;
-
-let home: TestHome;
-let fake: FakeClaude;
-let tmux: Tmux;
-let cloneUrl: string;
-let managers: RunManager[];
-let sent: DaemonMessage[];
-
-beforeEach(async () => {
-  home = await createTestHome();
-  await linkSystemTool(home.bin, 'git');
-  await linkSystemTool(home.bin, 'tmux');
-  fake = await installFakeClaude(home.bin, join(home.root, 'fake'));
-  // The test's own tmux server, apart from the owner's and other tests' (ADR 0027).
-  const tmuxDir = join(home.root, 'tmux');
-  await mkdir(tmuxDir, { mode: 0o700 });
-  home.env.TMUX_TMPDIR = tmuxDir;
-  tmux = new Tmux(join(home.bin, 'tmux'), home.env);
-  const remote = await createRemote(join(home.root, 'remotes'), 'owner', 'notes', home.env);
-  cloneUrl = `file://${remote}`;
-  managers = [];
-  sent = [];
-});
-afterEach(async () => {
-  for (const manager of managers) await manager.shutdown();
-  spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env: home.env });
-  await home.remove();
-});
-
-/** A daemon's run manager; `secondMs` shortens the run limits. */
-function daemon(options: { secondMs?: number; acknowledge?: boolean } = {}): RunManager {
-  const { log } = captureLogger();
-  const trust = new TrustRegistry(join(home.paths.claudeConfig, '.claude.json'));
-  const manager = new RunManager({
-    paths: home.paths,
-    log,
-    tmux,
-    trust,
-    workspaces: new Workspaces({
-      paths: home.paths,
-      git: new Git(join(home.bin, 'git'), home.env),
-      trust,
-      credentials: () => Promise.resolve(null),
-      selfCommand: DAEMON_COMMAND,
-      log,
-    }),
-    selfCommand: DAEMON_COMMAND,
-    toolPath: home.env.PATH ?? '',
-    envCommand: findExecutable('env', process.env.PATH) ?? '/usr/bin/env',
-    secondMs: options.secondMs ?? 1000,
-  });
-  manager.outbox.connect((message) => {
-    sent.push(message);
-    if (options.acknowledge ?? true) {
-      setImmediate(() => manager.outbox.ack(message.id, true, null));
-    }
-    return true;
-  });
-  managers.push(manager);
-  return manager;
-}
-
-async function start(
-  manager: RunManager,
-  changes: Parameters<typeof runStartPayload>[1] = {},
-): Promise<RunStart['payload']> {
-  const payload = runStartPayload(cloneUrl, changes);
-  expect(await manager.handle({ type: 'run.start', id: randomUUID(), payload })).toEqual({
-    ok: true,
-  });
-  return payload;
-}
-
-function states(runId: string): RunState['payload'][] {
-  return sent
-    .filter((message): message is RunState => message.type === 'run.state')
-    .map((message) => message.payload)
-    .filter((payload) => payload.runId === runId);
-}
-
-function logEvents(runId: string): RunLogEvent[] {
-  return sent.flatMap((message) =>
-    message.type === 'run.events' && message.payload.runId === runId ? message.payload.events : [],
-  );
-}
-
-async function ended(runId: string, timeoutMs = 30_000) {
-  await waitFor(
-    () => states(runId).some((state) => state.state === 'ended'),
-    timeoutMs,
-    'the end of the run',
-  );
-  const last = states(runId).at(-1);
-  if (last?.state !== 'ended') throw new Error('the last state is not ended');
-  return last;
-}
-
-async function messagesReceived(): Promise<string[]> {
-  return (await fake.log()).flatMap((entry) => (entry.event === 'message' ? [entry.text] : []));
-}
+useRunnerHarness();
 
 describe('runner', () => {
   it(

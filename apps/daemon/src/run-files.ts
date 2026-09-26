@@ -5,11 +5,13 @@ import {
   HookEvent,
   RunEndReason,
   RunStart,
+  StatusLineInput,
   type RunLimits,
 } from '@orchestrator/protocol';
 import { z } from 'zod';
 import { safeJson } from './config.js';
 import type { DaemonPaths } from './paths.js';
+import { settingsPermissions } from './permissions.js';
 import { runFolder, runSocketPath } from './run-socket.js';
 import { shellCommand } from './self.js';
 
@@ -50,6 +52,18 @@ export const RunStateFile = z.object({
   pendingInputs: z.array(z.string()),
   bare: z.string().nullable(),
   worktree: z.string().nullable(),
+  // Defaults: a state.json written by daemon 0.2.0 has none of the fields below.
+  /** An accepted decision tool of the current turn, applied when the turn ends (05, section 4.8). */
+  decision: z.enum(['submitted', 'gave_up', 'asked']).nullable().default(null),
+  /** A `PreToolUse` came during the current turn (05, section 4.10). */
+  turnToolUsed: z.boolean().default(false),
+  /** When the run started waiting for the owner (epoch ms): the waiting run lifetime's clock. */
+  waitingSince: z.number().nullable().default(null),
+  /** The latest status line input (05, section 4.5). */
+  statusLine: StatusLineInput.nullable().default(null),
+  /** The transcript facts of `TranscriptReader`, kept across a daemon restart. */
+  transcriptApiError: z.string().nullable().default(null),
+  transcriptCostUsd: z.number().nullable().default(null),
 });
 export type RunStateFile = z.infer<typeof RunStateFile>;
 
@@ -64,10 +78,22 @@ export function createRunFolder(paths: DaemonPaths, runId: string): string {
   return folder;
 }
 
-/** The hooks the daemon declares, each reporting to the run's socket (05, section 4.5). */
-export function runSettings(runId: string, selfCommand: readonly string[]) {
-  const command = (...args: string[]) => shellCommand([...selfCommand, ...args, '--run', runId]);
+/**
+ * The run's settings (05, sections 4.5 and 4.6): the hooks, each reporting to the run's socket,
+ * the status line command, the allowlist and deny rules, and no automatic continue.
+ */
+export function runSettings(
+  paths: Pick<DaemonPaths, 'home' | 'userHome'>,
+  start: Pick<RunStart['payload'], 'runId' | 'profile'>,
+  selfCommand: readonly string[],
+) {
+  const command = (...args: string[]) =>
+    shellCommand([...selfCommand, ...args, '--run', start.runId]);
   return {
+    permissions: settingsPermissions(
+      { daemonHome: paths.home, userHome: paths.userHome },
+      start.profile.allowedTools,
+    ),
     hooks: Object.fromEntries(
       HookEvent.options.map((event) => [
         event,
@@ -111,7 +137,7 @@ export function writeRunFiles(
   const settings = join(folder, 'settings.json');
   const mcpConfig = join(folder, 'mcp.json');
   writeFileSync(join(folder, 'system-prompt.md'), start.profile.instructions, { mode: 0o600 });
-  writeJsonAtomic(settings, runSettings(start.runId, selfCommand));
+  writeJsonAtomic(settings, runSettings(paths, start, selfCommand));
   writeJsonAtomic(mcpConfig, runMcpConfig(start.runId, selfCommand, start.limits));
   return { settings, mcpConfig, socket: runSocketPath(paths, start.runId) };
 }

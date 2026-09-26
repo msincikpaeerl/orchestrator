@@ -1,7 +1,7 @@
 import { createInterface } from 'node:readline';
 
 // A minimal MCP server over stdio for the fake `claude`'s own tests: `echo` returns its
-// arguments. The daemon's relay replaces it from step G, tested with the fake too.
+// arguments. The runner tests use the daemon's SDK-based relay instead (ADR 0028).
 
 const send = (message: unknown) => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -20,6 +20,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
           capabilities: { tools: {} },
           serverInfo: { name: 'test', version: '1' },
         },
+      });
+      return;
+    case 'tools/list':
+      send({
+        jsonrpc: '2.0',
+        id: request.id,
+        result: { tools: [{ name: 'echo', inputSchema: { type: 'object' } }] },
       });
       return;
     case 'tools/call': {
