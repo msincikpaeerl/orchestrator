@@ -22,4 +22,6 @@ or, on your home network without HTTPS:
 PUBLIC_URL=http://192.168.1.20:8080
 ```
 
+Machines on other computers need the `https://` form: their daemon refuses plain `http://` outside `localhost` (see [Orchestrator on another computer](machines.md#orchestrator-on-another-computer)).
+
 The address must match what you type in the browser. With an `https://` address, the Orchestrator marks its login cookie as secure, so the browser sends it only over HTTPS: logging in from an `http://` address would then fail.

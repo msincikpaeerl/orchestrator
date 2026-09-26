@@ -255,7 +255,7 @@ Choices within the step: the machine and its "Needs you" item carry `updateComma
 
 Owner's review of the step: the "Needs you" item is renamed "No machine enrolled yet" (02 sections 3 and 4; the decisions above keep the earlier wording); the account state is left out of the screens until step L; the Machines Help page turns on systemd before adding a machine, checks that WSL stays running, and has a Troubleshooting section (`doctor` and `status` marked "available from step E").
 
-### [ ] E. Daemon core
+### [x] E. Daemon core
 
 - `apps/daemon`:
   - CLI with `enroll`, `start`, `status`, `doctor`, `install-service`, `login` (starts Claude Code with the dedicated `CLAUDE_CONFIG_DIR` for the owner; never started by tests with the real `claude`), `attach`;
@@ -267,6 +267,19 @@ Owner's review of the step: the "Needs you" item is renamed "No machine enrolled
 - `docs/dev/architecture.md` updated.
 
 **Done when** daemon tests against the real server from step C cover enrol, connect, reconnect after a server restart, and revocation. `doctor` is tested with fake `git`/`tmux`/`claude` executables reporting missing, old and new versions. A test installs the served package into a temporary prefix and runs `orchestrator-daemon --version`.
+
+*Done 2026-09-26.* Owner's decisions, written into 05 sections 2, 3.2, 4.2, 4.3, 4.6 and 8, and 09 section 7.2:
+
+- **Service PATH**: `install-service` writes the terminal's `PATH` into the unit, without empty or relative entries (`.` included) and, on WSL, without entries under `/mnt/`, and prints it; `doctor` reports an error when `claude`, `git` or `tmux` is not found in the unit's `PATH`, a warning for `node` or `npm`; Help says to run `install-service` again after installing a tool or changing Node.js.
+- **Plain `http://`** only for `localhost`, `127.0.0.0/8` and `::1`, with the reason in the refusal; `enroll --ca-file <path>` stores a PEM authority used for enrollment and the WebSocket, and checks are never disabled; `doctor` reports the scheme and the certificate, with a warning within 14 days of its expiry; 09 section 7.2 says Unraid and VPS daemons need HTTPS, pointing to the new Help section "Orchestrator on another computer".
+- **Refusals that retrying cannot fix** (unknown or revoked token, incompatible protocol, `replaced`) stop the daemon with exit code 78, which the unit does not restart, and a message naming the cause and the fix, kept as the last stop reason shown by `doctor` and `status`. `replaced` counts only on the current connection, with a test of the sequence.
+- **`doctor` grading**: the full table is in 05 section 8; Claude Code not logged in (`.credentials.json` present, never read) and managed Claude Code settings found are errors; service, systemd and lingering problems are warnings.
+- **Control socket** `~/.orchestrator/daemon.sock`: read-only, never a secret; `status` shows whether the daemon runs as the service or in a terminal; `start` refuses when a daemon answers and removes a socket nothing answers on.
+- **tmux**: sessions on the daemon's own server (`tmux -L orchestrator`), `TMUX` and `TMUX_PANE` unset in sessions (step F), `PreToolUse` denies Bash commands invoking `tmux` (tested in step G); `attach --write` asks for confirmation and warns.
+
+Owner's review of the step: the WebSocket ping and the choices below are confirmed; the Add machine warning for a plain `http://` address outside `localhost` goes to step L.
+
+Choices within the step: a WebSocket ping with each heartbeat, and a connection without a pong for two intervals is abandoned and replaced (the case where the "`replaced` on an abandoned connection" rule applies); a certificate that cannot be checked because the server is unreachable is a warning; `last-stop.json` is cleared by an accepted `welcome` or a new enrollment; the unit starts `start --service`, which is how `status` knows the mode; packaging with esbuild and `tar`, the daemon's libraries as `devDependencies` since they are bundled, and their licenses in the package (ADR 0026); `@orchestrator/daemon/testing` for the tests of both apps; the server test application gained `restart()`; `/daemon` and `/downloads` addresses are never answered with the UI.
 
 ### [ ] F. Fake `claude`, workspace and tmux runner
 
@@ -447,6 +460,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
 - Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
+- Machines: **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
 - Activity > Live runs and History (Queue stays "Coming in a later version").
@@ -457,6 +471,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 **Done when** Playwright on both viewports, with a fake daemon, covers:
 
 - Run now and its refusal reason;
+- the Add machine warning for a plain `http://` address outside `localhost`;
 - log lines appearing without reload;
 - a question answered from "Needs you";
 - an agent's ticket accepted;

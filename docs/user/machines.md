@@ -65,10 +65,30 @@ Your GitHub token is never stored on the machine. The daemon receives it from th
    1. `npm install -g …`: installs the daemon of the same version as the Orchestrator, downloaded from the Orchestrator itself.
    2. `orchestrator-daemon enroll …`: connects the machine to the Orchestrator with a one-time code. The code works once, and only for a limited time: 15 minutes by default (the **Enrollment code lifetime** setting, see [Settings](settings.md#machines)). If it expires, open the machine and click **New enrollment code**.
    3. `orchestrator-daemon login`: opens Claude Code once, in a configuration kept only for the Orchestrator (your own Claude Code settings are not used). Log in with the Claude account you chose, then quit Claude Code (type `/exit`).
-   4. `orchestrator-daemon install-service`: starts the daemon as a background service, which also starts again after a restart of the computer.
+   4. `orchestrator-daemon install-service`: starts the daemon as a background service, which also starts again after a restart of the computer. The service uses the tools this terminal finds (Node.js, Git, tmux, Claude Code): the command prints the list of folders it looks in (the `PATH`). Type it in a terminal where `node --version` and `claude --version` work.
 4. Come back to the Orchestrator page. It checks again each time you come back to it and shows **Connected** once the daemon has connected. If it says the machine cannot receive runs yet, see [When a machine has a problem](#when-a-machine-has-a-problem).
 
 On Windows, also do [Keep WSL running](#keep-wsl-running).
+
+If the Orchestrator runs on another computer, read [Orchestrator on another computer](#orchestrator-on-another-computer) first.
+
+### Orchestrator on another computer
+
+The machine's key, and your GitHub token for each Git command, travel between the daemon and the Orchestrator. So the daemon accepts a plain `http://` address only when the Orchestrator runs on the same computer (`http://localhost:8080`). Otherwise it refuses the address and asks for `https://`.
+
+To use machines with an Orchestrator on another computer (a home server such as Unraid, or a VPS):
+
+1. Put the Orchestrator behind a reverse proxy with HTTPS (such as Nginx Proxy Manager or Caddy), and set its `PUBLIC_URL` to the `https://` address: see [Open the Orchestrator from another device](network-access.md).
+2. Add the machine: the commands then use the `https://` address.
+3. If the reverse proxy uses a certificate from your own certificate authority (a self-signed or internal certificate), copy that authority's certificate (a PEM file, starting with `-----BEGIN CERTIFICATE-----`) to the machine and add `--ca-file` to the enroll command:
+
+   ```sh
+   orchestrator-daemon enroll https://orchestrator.home.lan ABCD-... --ca-file ~/orchestrator-ca.pem
+   ```
+
+   The daemon keeps a copy of it and uses it for every connection. Certificates are always checked: there is no way to turn the check off.
+
+`orchestrator-daemon doctor` shows the address and whether its certificate is valid, with a warning when it expires within 14 days.
 
 ### Keep WSL running
 
@@ -140,7 +160,21 @@ An item disappears once the daemon connects again without the problem.
 
 ### After changing the Node.js version
 
-The service starts the daemon with the Node.js it was installed with. If you install another Node.js version (for example with `nvm install`), install the daemon again with the same `npm install -g …` command you typed when adding the machine, then type `orchestrator-daemon install-service` again.
+The service starts the daemon with the Node.js it was installed with. If you install another Node.js version (for example with `nvm install`), install the daemon again with the same `npm install -g …` command you typed when adding the machine, then type `orchestrator-daemon install-service` again. The checks show an error until you do.
+
+### After installing a tool
+
+The service looks for tools in the folders it was given by `install-service`. After installing a tool (for example Docker, or Claude Code in another folder), type `orchestrator-daemon install-service` again from a terminal where the tool works.
+
+### When the daemon stopped by itself
+
+The daemon stops, instead of trying again, when trying again cannot help:
+
+- the machine was revoked, or got a new enrollment code: enroll it again with the command shown on its page, then restart the daemon;
+- the daemon's version does not match the Orchestrator's: install it again with the `npm install -g …` command shown, then restart it;
+- another daemon connected with this machine's key (a second terminal, or a copy of the `~/.orchestrator` folder on another computer): stop the other one, or add that computer as its own machine.
+
+`orchestrator-daemon status` and `orchestrator-daemon doctor` show why it last stopped. Only one daemon runs per user: `orchestrator-daemon start` refuses when the service already runs.
 
 ## Troubleshooting
 
@@ -151,8 +185,8 @@ Type these commands on the machine, in its Ubuntu terminal:
 | See whether the daemon's service is running, and its last messages | `systemctl --user status orchestrator-daemon` |
 | Read the daemon's last 100 messages | `journalctl --user -u orchestrator-daemon -n 100` |
 | Follow its messages as they come (stop with Ctrl+C) | `journalctl --user -u orchestrator-daemon -f` |
-| Check the machine: tools and versions, Claude Code login, systemd, WSL settings (available from step E) | `orchestrator-daemon doctor` |
-| See the connection to the Orchestrator, versions, capabilities and runs on this machine (available from step E) | `orchestrator-daemon status` |
+| Check the machine: tools and versions, Claude Code login, systemd, the service, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
+| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities and runs on this machine, or why it last stopped | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.

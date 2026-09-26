@@ -26,7 +26,7 @@ Non-responsibilities: deciding what runs next (scheduler), validating ticket tra
 | Supported OS | Linux, and Windows through WSL 2 (Linux distribution). No native Windows. |
 | Runtime | Node.js 24 LTS, TypeScript. Claude Code's native installer does not need Node.js, so Node.js is a prerequisite of the daemon itself. |
 | Distribution | npm package exposing an `orchestrator-daemon` command, bundled into a single file and served by the server of the same version at `/downloads/orchestrator-daemon-<version>.tgz`. The owner installs it with `npm install -g <server URL>/downloads/orchestrator-daemon-<version>.tgz`; nothing is published to the npm registry (owner's decision, lot 2 step A). |
-| Service | systemd user service named `orchestrator-daemon`, installed by `orchestrator-daemon install-service`, with lingering enabled (`loginctl enable-linger`) so it runs without an open login. The unit starts the daemon with the absolute paths of the `node` executable and of the daemon's script found at install time, so it never depends on a login shell's `PATH` (nvm). After changing the Node.js version, the owner installs the daemon again and runs `install-service` again. The checks of section 3.2 run at each `hello`: after updating the daemon or Claude Code, or fixing a `doctor` error, the owner restarts the daemon with `systemctl --user restart orchestrator-daemon` (or stops and starts `orchestrator-daemon start` when it runs in the foreground) (owner's decision, lot 2 step D). On WSL, systemd must be enabled (`[boot] systemd=true` in `/etc/wsl.conf`), and systemd services do not keep WSL running: the user documentation explains how to keep it running (`instanceIdleTimeout=-1` in the `[general]` section of `%UserProfile%\.wslconfig`, or an open WSL window). The daemon cannot read the Windows `.wslconfig`: the Add machine help page explains the setting, and `doctor` prints it as "check this yourself" with the documentation link (owner's decision, lot 2 step A). |
+| Service | systemd user service named `orchestrator-daemon`, installed by `orchestrator-daemon install-service`, with lingering enabled (`loginctl enable-linger`) so it runs without an open login. The unit starts the daemon with the absolute paths of the `node` executable and of the daemon's script found at install time, so it never depends on a login shell's `PATH` (nvm). The unit also sets `PATH` to the `PATH` of the terminal where `install-service` is typed, so the service finds the same tools as the owner (`claude` in `~/.local/bin`, `node` and `npm` from nvm) and agents' commands find them too; `install-service` drops empty and relative entries (including `.`) and, on WSL, every entry under `/mnt/` (Windows folders added by WSL interop), and prints the `PATH` it wrote. After installing a tool or changing the Node.js version, the owner installs the daemon again if needed and runs `install-service` again (owner's decision, lot 2 step E). The checks of section 3.2 run at each `hello`: after updating the daemon or Claude Code, or fixing a `doctor` error, the owner restarts the daemon with `systemctl --user restart orchestrator-daemon` (or stops and starts `orchestrator-daemon start` when it runs in the foreground) (owner's decision, lot 2 step D). On WSL, systemd must be enabled (`[boot] systemd=true` in `/etc/wsl.conf`), and systemd services do not keep WSL running: the user documentation explains how to keep it running (`instanceIdleTimeout=-1` in the `[general]` section of `%UserProfile%\.wslconfig`, or an open WSL window). The daemon cannot read the Windows `.wslconfig`: the Add machine help page explains the setting, and `doctor` prints it as "check this yourself" with the documentation link (owner's decision, lot 2 step A). |
 | Dependencies checked at start | `git` (2.40 or later), `tmux` (3.2 or later, for `paste-buffer -p`), `claude` (2.1.280 or later). Missing dependencies or versions below these are reported to the server and the machine is marked unusable. A Claude Code version above the highest one validated with the spike scripts is accepted with a warning in `doctor` and on the machine page, because Claude Code updates itself often; the session start timeout (section 4.2.1) catches a real incompatibility (owner's decision, lot 2 step A). |
 | Recommended setup | A dedicated Linux user for the daemon, so agents cannot read the owner's personal files. In lot 2 the daemon runs under the owner's own user, and the user documentation says plainly that an agent is then less isolated and that the path checks on Bash commands are best effort (section 4.6); the guide for a dedicated user comes with lot 7 (owner's decision, lot 2 step A). |
 | Claude configuration | Agents run with a **dedicated Claude Code configuration folder** (`CLAUDE_CONFIG_DIR=~/.orchestrator/claude-config`), separate from the owner's personal one. It holds its own login (same subscription), trust entries and transcripts. See ADR 0002. |
@@ -54,7 +54,10 @@ The exchange (owner's decision, lot 2 step C):
 
 ### 3.2 Connection
 
-- A single WebSocket from the daemon to the server (`wss://` when the server is remote, `ws://` accepted for `localhost` only).
+- A single WebSocket from the daemon to the server (`wss://` when the server is remote, `ws://` accepted for `localhost` only). The rule is checked by `enroll` and at every connection (owner's decision, lot 2 step E):
+  - an `http://` server address is accepted only when its host is `localhost`, an address in `127.0.0.0/8` or `::1`; any other is refused, and the refusal says why: the machine token and, for Git commands, the GitHub token travel on this connection. A server on another computer is reached through `https://` (a reverse proxy, 09 section 7.2);
+  - `enroll` accepts `--ca-file <path>`, a PEM certificate authority for a reverse proxy with an internal or self-signed certificate. Its content is stored in `config.json` and used for the enrollment request and the WebSocket. Certificate checks are never disabled, and there is no "insecure" option;
+  - `doctor` reports the server address scheme and, for `https://`, whether the certificate is valid, with a warning when it expires within 14 days.
 - The daemon authenticates with the machine token on connection (`Authorization: Bearer <token>` on the WebSocket request to `/daemon`). An unknown token is refused before the WebSocket opens (HTTP 401). A revoked token gets a `welcome` refused with `token_revoked`, then the connection is closed.
 - The first message is `hello`. The server accepts the current protocol version and the previous one (09, section 6); any other version gets a `welcome` refused with `protocol_incompatible` and the update instruction, the connection is closed, and the machine shows "daemon incompatible" in "Needs you" until a compatible `hello`. A connection that sends no `hello` within the "machine offline after" delay is closed.
 - A machine whose Claude Code is missing or below the minimum (section 2), or whose `doctor` reports an error, is still accepted: it shows online, is marked **unusable** with the reasons, and receives no runs. Warnings never block it. The next `hello` whose checks pass clears it (01 section 3.8, 02 section 4; owner's decision, lot 2 step C).
@@ -64,7 +67,8 @@ The exchange (owner's decision, lot 2 step C):
 - Going offline only changes the machine's status and writes an event. In lot 2 it never ends or fails a run by itself: tmux sessions keep running on the host, and the daemon resends its unacknowledged reports when it reconnects. Only the owner's **Stop run** fails a run with `machine_offline`; lot 4 adds the automatic failure of section 6 (owner's decision, lot 2 step C).
 - Revoking a machine closes its connection at once.
 - Every connection the server closes has a WebSocket close code from `packages/protocol`, so the daemon can tell the reason (revoked, incompatible, replaced, silent).
-- Reconnection with exponential backoff (1 s to 60 s). These two values are constants of the daemon, not settings: the daemon needs them before it is connected and can read any setting (owner's decision, lot 2 step A).
+- Reconnection with exponential backoff (1 s to 60 s). These two values are constants of the daemon, not settings: the daemon needs them before it is connected and can read any setting (owner's decision, lot 2 step A). The daemon also sends a WebSocket ping with each heartbeat; a connection with no answer for two heartbeat intervals is abandoned and a new one opened, so a connection lost without a close (a sleeping computer, a network change) is noticed.
+- **Refusals that retrying cannot fix stop the daemon** (owner's decision, lot 2 step E): an unknown token (HTTP 401), a revoked token (`token_revoked` or the `revoked` close code), an incompatible protocol (`protocol_incompatible` or the `incompatible` close code), and the `replaced` close code (another daemon connected with this machine's token). The daemon writes a message naming the cause and the fix (for example "This machine was revoked in the Orchestrator: enroll it again with a new enrollment code, then restart the daemon"), records it as the **last stop reason** in `~/.orchestrator/last-stop.json`, which `doctor` and `status` show, and exits with code 78; the systemd unit does not restart it for that code (`RestartPreventExitStatus=78`). The daemon acts on a close only when it arrives on its current connection: a `replaced` close on a connection it has already abandoned for a newer one is ignored. Every other close (network error, server restart, `silent`, `shutdown`) reconnects with the backoff. Stopping the daemon (`systemctl --user stop`, Ctrl+C) is recorded as the last stop reason too; an accepted `welcome` clears it.
 - When the server is not on the same network (VPS), the recommended setup is a private network such as a VPN; the web application is not exposed publicly in v1.
 
 ### 3.3 Messages
@@ -116,7 +120,9 @@ Everything the daemon manages lives under `~/.orchestrator/`:
 
 ```
 ~/.orchestrator/
-  config.json              machine token, server URL
+  config.json              machine token, server URL, optional certificate authority (mode 600)
+  daemon.sock              control socket of the running daemon, read-only (section 8)
+  last-stop.json           why the daemon last stopped (section 3.2)
   claude-config/           dedicated CLAUDE_CONFIG_DIR: login, trust entries, transcripts
   repos/<owner>/<name>.git bare clone, one per repository, reused across runs
   worktrees/<run-id>/      Git worktree for a run
@@ -151,7 +157,7 @@ If a session does not report `SessionStart` within the session start timeout (a 
 
 ### 4.3 Starting Claude Code
 
-The daemon creates a detached tmux session named `orch-<run-id>`, with the worktree as working directory and `CLAUDE_CONFIG_DIR` set to the dedicated configuration, and starts Claude Code in interactive mode. The command is built as an argument list, never as a shell string, in this order:
+The daemon creates a detached tmux session named `orch-<run-id>` on its own tmux server (`tmux -L orchestrator`), separate from the owner's tmux sessions, with the worktree as working directory and `CLAUDE_CONFIG_DIR` set to the dedicated configuration, and starts Claude Code in interactive mode. `TMUX` and `TMUX_PANE` are unset in each session's environment, so nothing in a session finds the tmux server through them (owner's decision, lot 2 step E). The command is built as an argument list, never as a shell string, in this order:
 
 | Argument | Purpose |
 |---|---|
@@ -197,6 +203,7 @@ Two layers, validated by the spike (ADR 0002):
    - `git push` and any command reaching GitHub (pushing is done by the daemon);
    - any change to the repository's `.claude/` folder: runs ignore the repository's settings (section 4.3), but the owner's own Claude Code would load them;
    - any access to the daemon's folder `~/.orchestrator/` (including `config.json` and its machine token) and to the Claude configuration folders, whether through a file tool or a Bash command (owner's decision, lot 2 step A);
+   - any Bash command invoking `tmux`, so an agent cannot reach its own or another run's session (owner's decision, lot 2 step E; tested with the other rules in plan step G);
    - any other access outside the worktree and the run folder.
 
    Paths of file tools are checked exactly, after resolving `..` and symbolic links. For Bash commands the check is **best effort**: the hook denies absolute paths outside the allowed folders, `..` leaving the worktree, `~`, `$HOME` and the folders above, but a program can still open files in ways no command text shows (Claude Code's documentation says the same of its own Bash rules). The user documentation says so (section 2, recommended setup). Each deny rule has its own test.
@@ -316,15 +323,36 @@ In v1 the GitHub credential is the owner's fine-grained personal token. A GitHub
 
 | Command | Purpose |
 |---|---|
-| `orchestrator-daemon enroll <url> <code>` | Register the machine. |
+| `orchestrator-daemon enroll <url> <code> [--ca-file <path>]` | Register the machine (section 3.1); `--ca-file` for a certificate authority (section 3.2). Enrolling again replaces the stored token. |
 | `orchestrator-daemon login` | Open Claude Code once with the dedicated configuration folder to log in. |
-| `orchestrator-daemon start` | Run in the foreground. |
-| `orchestrator-daemon install-service` | Install and enable the systemd user service. |
-| `orchestrator-daemon status` | Connection state, versions, capabilities, live runs. |
-| `orchestrator-daemon attach <run-id>` | Attach to a run's tmux session to watch it live (read-only by default). |
-| `orchestrator-daemon doctor` | Check dependencies, Claude Code login, managed Claude Code settings, WSL configuration, and the service: an error when the `node` path written in the unit no longer exists or differs from the `node` running the daemon (owner's decision, lot 2 step D). What it cannot read, such as `instanceIdleTimeout` in the Windows `.wslconfig`, it prints as "check this yourself" with the link to the documentation. |
+| `orchestrator-daemon start` | Run in the foreground. Refused when another daemon of this user answers on the control socket. |
+| `orchestrator-daemon install-service` | Install and enable the systemd user service, with lingering (section 2). Refused while a daemon runs in a terminal. |
+| `orchestrator-daemon status` | Whether a daemon runs, as the service or in a terminal; connection state, versions, capabilities, live runs; the last stop reason when none runs. |
+| `orchestrator-daemon attach <run-id> [--write]` | Attach to a run's tmux session to watch it live. Read-only by default; `--write` asks for confirmation and warns that typing in the session interferes with the agent. |
+| `orchestrator-daemon doctor` | Check the machine (grading below) and show the last stop reason. What it cannot read, such as `instanceIdleTimeout` in the Windows `.wslconfig`, it prints as "check this yourself" with the link to the documentation. |
 | `orchestrator-daemon mcp --run <id>` | MCP server started by Claude Code for a run (internal). |
 | `orchestrator-daemon hook <event>`, `orchestrator-daemon status-line` | Commands Claude Code runs for hooks and the status line (internal, section 4.5). |
+
+**Control socket** (owner's decision, lot 2 step E). The running daemon listens on `~/.orchestrator/daemon.sock` (mode `600`). `status` asks it for the daemon's state; `start` and `install-service` use it to find a daemon already running. A socket file left by a crash, where nothing answers, is removed and the command continues. The socket is **read-only**: no request changes any state, and no answer contains a token or another secret, because agents run under the same user and the deny rules on `~/.orchestrator/` are best effort for programs that open files indirectly (section 4.6).
+
+**`doctor` grading** (owner's decisions, lot 2 steps D and E). An error makes the machine unusable (section 3.2); a warning is shown on the machine page only. The daemon runs the checks at each `hello`; the `doctor` command runs the same ones in the terminal. The tools are looked up in the `PATH` the daemon runs with: the unit's `PATH` when the service is installed and `doctor` is typed in a terminal, the process's own otherwise.
+
+| Check | Grade | Message |
+|---|---|---|
+| Enrollment | error when `config.json` is missing or invalid | "Not enrolled: run the enroll command shown by the Orchestrator." |
+| Server address | ok | The address, "encrypted (https)" or "this computer only (http)". |
+| Server certificate (`https://` only) | ok with its expiry date; warning when it expires within 14 days or the server cannot be reached; error when it is not trusted | "Not trusted: <reason>. Enroll again with `--ca-file` if the Orchestrator uses its own certificate authority." |
+| Git | error when missing or below 2.40; ok with the version | "Git not found in the daemon's PATH" / "Git 2.39.0 is older than 2.40". |
+| tmux | error when missing or below 3.2; ok with the version | As for Git. |
+| Claude Code | error when missing or below the minimum; warning above the highest validated version; ok with the version | As for Git; the warning says runs are still allowed. |
+| Claude Code login | error when `.credentials.json` is missing from the dedicated configuration folder (its presence only is checked; the file is never read) | "Not logged in: run `orchestrator-daemon login`." |
+| Node.js, npm | warning when missing | "Not found in the daemon's PATH: agents cannot run npm commands. Run install-service again from a terminal where `node --version` works." |
+| systemd | warning when `systemctl --user is-system-running` does not answer `running` | The answer, and the Help link to turn on systemd. |
+| Lingering | warning when off | "The service stops when you log out: type `loginctl enable-linger`." |
+| Service | warning when the unit is not installed; error when the `node` path written in the unit no longer exists or differs from the `node` running the daemon; ok otherwise | "Run `orchestrator-daemon install-service` again." |
+| Managed Claude Code settings | error when found: `/etc/claude-code/managed-settings.json`, `managed-settings.d/`, `managed-mcp.json`, and on WSL the same files under `C:\Program Files\ClaudeCode\`; ok when none | The files found: "they apply to every run and can change its permissions". |
+| WSL | ok, on WSL only | "WSL detected". |
+| WSL idle timeout | check yourself, on WSL only | "`instanceIdleTimeout=-1` in `%UserProfile%\.wslconfig`", with the link `<server URL>/help/machines#keep-wsl-running`. |
 
 ## 9. Spike results
 

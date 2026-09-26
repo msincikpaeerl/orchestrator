@@ -9,6 +9,7 @@ import type { Pool } from 'pg';
 import { registerAuthRoutes } from './auth/routes.js';
 import { createDatabase } from './database.js';
 import { GITHUB_API_URL } from './github/client.js';
+import { registerDownloads, defaultDaemonPackageDir } from './downloads.js';
 import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
@@ -38,6 +39,8 @@ export interface AppDependencies {
   webRoot?: string | null;
   /** Milliseconds in one second of the daemon heartbeat settings; tests shorten it. */
   daemonSecondMs?: number;
+  /** Folder of the daemon package served at `/downloads/`; tests build their own. */
+  daemonPackageDir?: string;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -65,6 +68,8 @@ export function buildApp(dependencies: AppDependencies) {
       return reply.code(503).send({ status: 'error', database: 'error' } satisfies HealthResponse);
     }
   });
+
+  registerDownloads(app, dependencies.daemonPackageDir ?? defaultDaemonPackageDir());
 
   app.get('/version', () => {
     return { server: SERVER_VERSION, protocol: PROTOCOL_VERSION } satisfies VersionResponse;

@@ -12,7 +12,7 @@ export function defaultWebRoot(): string {
 
 /** Addresses that are never a screen of the UI: the server's own, and the UI's files. */
 function isScreenPath(url: string): boolean {
-  return !/^\/(api|health|version|assets)(\/|\?|$)/.test(url);
+  return !/^\/(api|health|version|assets|downloads|daemon)(\/|\?|$)/.test(url);
 }
 
 /**

@@ -214,3 +214,4 @@ export {
   type McpToolInput,
   type McpToolOutput,
 } from './mcp/tools.js';
+export { ConnectionState, ControlRequest, ControlStatus } from './daemon/control.js';

@@ -4,6 +4,7 @@ import pg from 'pg';
 import { buildApp, type App } from '../src/app.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
+import { markAllOffline } from '../src/machines/gateway.js';
 import { runMigrations, schema } from '@orchestrator/db';
 import type { SettingName, SettingValues } from '@orchestrator/protocol';
 
@@ -30,6 +31,11 @@ export interface TestApp {
   pool: pg.Pool;
   logs: LogCapture;
   database: TestDatabase;
+  /**
+   * Stops the application and starts it again on the same database and port, as a server
+   * restart does (machines left online become offline); `app` is then the new one.
+   */
+  restart(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -45,6 +51,8 @@ export async function startTestApp(
     listen?: boolean;
     /** Milliseconds in one second of the heartbeat settings, to test offline quickly. */
     daemonSecondMs?: number;
+    /** Folder of the daemon package served at `/downloads/`. */
+    daemonPackageDir?: string;
   } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
@@ -57,30 +65,43 @@ export async function startTestApp(
   }));
   if (values.length > 0) await db.insert(schema.settingValues).values(values);
   const logs = new LogCapture();
-  const app = buildApp({
-    pool,
-    logger: createLogger('trace', logs),
-    secretKey: options.secretKey ?? TEST_SECRET_KEY,
-    publicUrl: 'http://localhost:8080',
-    githubApiUrl: options.githubApiUrl,
-    now: options.now,
-    daemonSecondMs: options.daemonSecondMs,
-  });
+  const build = () =>
+    buildApp({
+      pool,
+      logger: createLogger('trace', logs),
+      secretKey: options.secretKey ?? TEST_SECRET_KEY,
+      publicUrl: 'http://localhost:8080',
+      githubApiUrl: options.githubApiUrl,
+      now: options.now,
+      daemonSecondMs: options.daemonSecondMs,
+      daemonPackageDir: options.daemonPackageDir,
+    });
+  const app = build();
   await app.ready();
   const url = options.listen ? await app.listen({ port: 0, host: '127.0.0.1' }) : '';
-  return {
+  const testApp: TestApp = {
     app,
     url,
     db,
     pool,
     logs,
     database,
+    async restart() {
+      await testApp.app.close();
+      await markAllOffline(db);
+      testApp.app = build();
+      await testApp.app.ready();
+      if (options.listen) {
+        await testApp.app.listen({ port: Number(new URL(url).port), host: '127.0.0.1' });
+      }
+    },
     async close() {
-      await app.close();
+      await testApp.app.close();
       await pool.end();
       await database.drop();
     },
   };
+  return testApp;
 }
 
 /** Creates the owner through the API and returns the session cookie, `name=value`. */

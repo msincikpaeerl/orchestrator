@@ -3,12 +3,28 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./testing": {
+      "source": "./test/testing.ts"
+    }
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsx scripts/pack.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "dev": "echo 'The daemon is built in lot 2.'"
+    "dev": "tsx --conditions=source src/cli.ts"
   },
   "devDependencies": {
-    "vitest": "5.0.1"
+    "@orchestrator/protocol": "workspace:*",
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "pino": "10.3.1",
+    "tsx": "4.23.15",
+    "vitest": "5.0.1",
+    "ws": "8.21.3",
+    "zod": "4.6.5"
   }
 }
