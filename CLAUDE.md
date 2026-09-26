@@ -43,7 +43,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the database started. Requires Node.js 24 (`.nvmrc`) and Docker; setup details in `docs/dev/setup.md`.
+Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
 
 ## Repository map
 

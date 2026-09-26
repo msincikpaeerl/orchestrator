@@ -281,7 +281,7 @@ Owner's review of the step: the WebSocket ping and the choices below are confirm
 
 Choices within the step: a WebSocket ping with each heartbeat, and a connection without a pong for two intervals is abandoned and replaced (the case where the "`replaced` on an abandoned connection" rule applies); a certificate that cannot be checked because the server is unreachable is a warning; `last-stop.json` is cleared by an accepted `welcome` or a new enrollment; the unit starts `start --service`, which is how `status` knows the mode; packaging with esbuild and `tar`, the daemon's libraries as `devDependencies` since they are bundled, and their licenses in the package (ADR 0026); `@orchestrator/daemon/testing` for the tests of both apps; the server test application gained `restart()`; `/daemon` and `/downloads` addresses are never answered with the UI.
 
-### [ ] F. Fake `claude`, workspace and tmux runner
+### [x] F. Fake `claude`, workspace and tmux runner
 
 - **Fake `claude`** (`apps/daemon/test/fake-claude/`), an executable driven by a scenario file:
   - reads its arguments (and checks the argument order of 05 section 4.3);
@@ -338,6 +338,20 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 - **Maximum duration** counts from the launch while `starting`, `working` or `idle`, kept in `state.json`.
 - **Trust**: writes serialised and made while no run is `starting`; tested with several registrations at once while another process rewrites the file.
 - **Bare clone**: remote branches fetched into `refs/remotes/origin/*`; the worktree uses the local ticket branch, else the remote one, else a new branch from `origin/<base>`; the author set with `extensions.worktreeConfig`.
+
+*Done 2026-09-26.* Choices within the step, written into 05 sections 4.2.1, 7 and 8 where they are behaviour:
+
+- trust is also checked before each launch and written again when missing, since Claude Code's own rewrites of `.claude.json` could drop an entry (found with the concurrent-writer test);
+- the bare clone is made with `git init --bare` and a remote, and `core.bare` moves to its `config.worktree`: with `extensions.worktreeConfig` on, Git otherwise treats every worktree as bare and commits fail (found by the tests);
+- the credential helper is the internal command `orchestrator-daemon git-credential`; the daemon waits for the server's `git.credential` at most the run's MCP call timeout; a credential request for a run it does not know gets none;
+- at the end of a turn a queued message (an answer) is sent instead of a nudge;
+- a run's folder is removed once the run has ended and the server acknowledged all its reports;
+- the live log gains a `warning` kind; entries are sent in batches below half of `DAEMON_MESSAGE_MAX_BYTES`, the 1 MiB message limit now declared once in `packages/protocol`;
+- the shared `maskSecrets` also hides machine tokens (`omt_…`), which 05 section 3.1 already required of the event log;
+- the status line input reaches the run but is used from step G (collector);
+- test homes live under `/tmp/od-test-*` so that a run's socket path fits the 107 bytes of a Unix socket.
+
+Open point for the owner: "`orchestrator-daemon status` lists local branches" (decisions above, "The local branch") is in no step yet; `status` shows live runs only.
 
 ### [ ] G. Permission enforcement, MCP relay and usage-limit detection
 
