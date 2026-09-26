@@ -277,6 +277,8 @@ Owner's review of the step: the "Needs you" item is renamed "No machine enrolled
 - **Control socket** `~/.orchestrator/daemon.sock`: read-only, never a secret; `status` shows whether the daemon runs as the service or in a terminal; `start` refuses when a daemon answers and removes a socket nothing answers on.
 - **tmux**: sessions on the daemon's own server (`tmux -L orchestrator`), `TMUX` and `TMUX_PANE` unset in sessions (step F), `PreToolUse` denies Bash commands invoking `tmux` (tested in step G); `attach --write` asks for confirmation and warns.
 
+Owner's review of the step: the WebSocket ping and the choices below are confirmed; the Add machine warning for a plain `http://` address outside `localhost` goes to step L.
+
 Choices within the step: a WebSocket ping with each heartbeat, and a connection without a pong for two intervals is abandoned and replaced (the case where the "`replaced` on an abandoned connection" rule applies); a certificate that cannot be checked because the server is unreachable is a warning; `last-stop.json` is cleared by an accepted `welcome` or a new enrollment; the unit starts `start --service`, which is how `status` knows the mode; packaging with esbuild and `tar`, the daemon's libraries as `devDependencies` since they are bundled, and their licenses in the package (ADR 0026); `@orchestrator/daemon/testing` for the tests of both apps; the server test application gained `restart()`; `/daemon` and `/downloads` addresses are never answered with the UI.
 
 ### [ ] F. Fake `claude`, workspace and tmux runner
@@ -458,6 +460,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
 - Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
+- Machines: **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
 - **Run page** with the live log and estimated usage.
 - Activity > Live runs and History (Queue stays "Coming in a later version").
@@ -468,6 +471,7 @@ The lot's security and quota design relies on behaviour read in the documentatio
 **Done when** Playwright on both viewports, with a fake daemon, covers:
 
 - Run now and its refusal reason;
+- the Add machine warning for a plain `http://` address outside `localhost`;
 - log lines appearing without reload;
 - a question answered from "Needs you";
 - an agent's ticket accepted;
