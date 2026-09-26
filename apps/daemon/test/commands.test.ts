@@ -1,12 +1,23 @@
+import { spawn } from 'node:child_process';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import type { ControlStatus } from '@orchestrator/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeConfig } from '../src/config.js';
 import { serveControl } from '../src/control.js';
 import { EXIT_REFUSED } from '../src/errors.js';
+import { DAEMON_UNREACHABLE } from '../src/run-socket.js';
 import { parseUnit } from '../src/unit.js';
-import { createTestHome, fakeExecutable, recording, runDaemon, type TestHome } from './testing.js';
+import {
+  DAEMON_COMMAND,
+  createTestHome,
+  fakeExecutable,
+  recording,
+  runDaemon,
+  waitFor,
+  type TestHome,
+} from './testing.js';
 
 // The `orchestrator-daemon` commands run as the owner types them, with fake `systemctl`,
 // `loginctl`, `tmux` and `claude`.
@@ -255,6 +266,46 @@ describe('hook and status-line (internal)', () => {
     ]) {
       expect(await runDaemon(args, home.env, '{}')).toMatchObject({ code: 0, stdout: '' });
     }
+  });
+
+  it('answers UNAVAILABLE from the MCP relay when the daemon cannot be reached', async () => {
+    const [command = '', ...args] = DAEMON_COMMAND;
+    const relay = spawn(command, [...args, 'mcp', '--run', RUN_ID], { env: home.env });
+    const answers: { id?: number; result?: unknown }[] = [];
+    createInterface({ input: relay.stdout }).on('line', (line) => {
+      answers.push(JSON.parse(line) as { id?: number; result?: unknown });
+    });
+    const write = (message: unknown) => relay.stdin.write(`${JSON.stringify(message)}\n`);
+    write({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 't', version: '1' },
+      },
+    });
+    write({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    write({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'ticket_get', arguments: {} },
+    });
+    await waitFor(() => answers.some((answer) => answer.id === 2), 20_000, 'the tool result');
+    relay.stdin.end();
+    expect(answers.find((answer) => answer.id === 2)?.result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(DAEMON_UNREACHABLE.ok ? {} : DAEMON_UNREACHABLE.error),
+        },
+      ],
+      isError: true,
+    });
+    expect(await new Promise((resolve) => relay.on('close', resolve))).toBe(0);
+    expect((await runDaemon(['mcp', '--run', 'x'], home.env)).code).toBe(1);
   });
 
   it('refuses an unknown event or run id', async () => {

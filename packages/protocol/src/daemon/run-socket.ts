@@ -69,10 +69,19 @@ export const StatusLineInput = z.looseObject({
 });
 export type StatusLineInput = z.infer<typeof StatusLineInput>;
 
-/** A request on a run's socket. `input` is checked by the daemon against `HookInputs`. */
+/**
+ * A request on a run's socket. `input` is checked by the daemon against `HookInputs`. `mcp` comes
+ * from the run's MCP relay (06, section 1): the tool's wire name and its arguments as the agent
+ * gave them, checked by the server only; the daemon adds the run token.
+ */
 export const RunSocketRequest = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hook'), event: HookEvent, input: z.unknown() }),
   z.object({ type: z.literal('status_line'), input: z.unknown() }),
+  z.object({
+    type: z.literal('mcp'),
+    tool: z.string().max(200),
+    arguments: z.record(z.string(), z.unknown()),
+  }),
 ]);
 export type RunSocketRequest = z.infer<typeof RunSocketRequest>;
 

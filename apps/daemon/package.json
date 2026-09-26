@@ -18,6 +18,7 @@
     "dev": "tsx --conditions=source src/cli.ts"
   },
   "devDependencies": {
+    "@modelcontextprotocol/server": "2.1.0",
     "@orchestrator/protocol": "workspace:*",
     "@types/ws": "8.18.1",
     "esbuild": "0.28.2",
