@@ -374,7 +374,20 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 - `suspected` for a `rate_limit` without a known message, an `overloaded` and a `server_error` `StopFailure`, an API-error turn with no tool use, and an idle timeout right after one;
 - no nudge in any of these cases;
 - the estimated usage read from the status line;
-- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F).
+- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F);
+- a `git fetch` from the worktree getting no credentials while a global credential helper is configured in the test's home folder.
+
+Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 sections 4.3, 4.4, 4.5, 4.6, 4.8, 4.10 and 7, and 06 section 1:
+
+- **Timeouts**: `mcp.json` carries the Claude Code MCP tool timeout, never the MCP call timeout, which is the daemon's wait for the server (as in the specs; the brief of the step said otherwise by mistake).
+- **Daemon folder**: the settings deny rules list `~/.orchestrator/`'s entries one by one and leave out `worktrees/`, since a deny rule always wins and the worktree lives there; other runs' worktrees are refused by the hook. The run folder is not open to the agent.
+- **Paths**: file tools reach the worktree only, checked exactly. Bash commands may also name `/dev/null` and the standard streams, the system temporary folder, and `/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/opt`, `/proc/self`; every other absolute path, `~`, `$HOME` and `..` leaving the worktree are refused.
+- **GitHub and remotes**: every Bash Git command that talks to a remote (`push`, `fetch`, `pull`, `clone`, `ls-remote`, `remote add`/`set-url`, `send-pack`), any `gh` or `hub` command and any command naming a GitHub host are refused; `WebFetch` may read public GitHub pages. On WSL a global credential helper would give an agent's Git the owner's GitHub login, so the bare clone sets an empty `credential.helper` (no secret), and sessions run with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`.
+- **`.claude/` and `tmux`**: a Bash command naming a `.claude` path part is refused, even to read it; file tools may read the worktree's `.claude/`. A Bash command where `tmux` appears as a whole word or a path ending in `/tmux` is refused.
+- **Allowlist**: the daemon always adds `ToolSearch` and `mcp__orchestrator`; the server enforces each role's MCP permissions.
+- **API-error turns**: the module reads the hooks (`StopFailure`, and `Stop`'s message against the pattern table) and one transcript fact, the turn's last assistant entry marked `isApiErrorMessage`, which also covers the idle timeout after an error.
+- **Reset time**: a message time is the next such local time (or weekday) on the machine; a status line window is full at 100 % with a `resets_at` still to come, and the later of two full windows counts.
+- **Choices confirmed**: the relay uses `@modelcontextprotocol/server` 2.x (a stable release) with its low-level server and no validation of its own (ADR 0028); results are JSON text, refusals an `isError` result; calls get `UNAVAILABLE` at once while disconnected or when the connection drops; decisions take effect at the turn's `Stop`, a refused decision tool being no decision; the waiting run lifetime counts from that `Stop` and survives a daemon restart; `run.input` to a closed session is refused; the usage estimate is the status line's cost, else the transcript's last `cost-state`; the two new settings are in the Runs group, used from 0.3.0, the MCP call timeout strictly below the other.
 
 ### [ ] H. Owner check of documented Claude Code behaviour
 
