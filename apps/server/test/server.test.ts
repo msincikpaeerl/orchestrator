@@ -3,10 +3,11 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { runMigrations } from '@orchestrator/db';
+import { endPool, runMigrations } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
 import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
+import { waitFor } from '@orchestrator/daemon/testing';
 import { TEST_SECRET_KEY } from './helpers.js';
 
 const logger = pino({ level: 'silent' });
@@ -62,7 +63,7 @@ describe('health when the database is unreachable', () => {
   let pool: pg.Pool;
 
   afterEach(async () => {
-    await pool.end();
+    await endPool(pool);
   });
 
   it('answers 503 and names the database', async () => {
@@ -108,7 +109,52 @@ describe('start after a restart during a project setup', () => {
         { setup_status: 'failed', setup_step: 'skeleton', setup_failure: INTERRUPTED_REASON },
       ]);
     } finally {
-      await pool.end();
+      await endPool(pool);
+      await database.drop();
+    }
+  });
+});
+
+describe('database connections lost, as in a PostgreSQL restart', () => {
+  it('logs the terminated connections and keeps working', async () => {
+    const database = await createTestDatabase();
+    const lines: string[] = [];
+    const captured = pino({ level: 'info' }, { write: (line: string) => lines.push(line) });
+    const server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, captured);
+    const admin = new pg.Client({ connectionString: database.url });
+    try {
+      const address = server.app.server.address();
+      if (address === null || typeof address === 'string') throw new Error('no TCP address');
+      const health = () => fetch(`http://127.0.0.1:${String(address.port)}/health`);
+      // Several idle connections in the server's pool.
+      await Promise.all(Array.from({ length: 4 }, health));
+
+      await admin.connect();
+      const { rows } = await admin.query<{ pid: number }>(
+        `SELECT pg_terminate_backend(pid) AS terminated, pid FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()`,
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      await waitFor(
+        () => lines.some((line) => line.includes('database connection lost')),
+        5000,
+        'the lost connection logged',
+      );
+      const logged = lines
+        .map((line) => JSON.parse(line) as { msg: string; err?: { code?: string } })
+        .find((entry) => entry.msg === 'database connection lost');
+      expect(logged?.err?.code).toBe('57P01');
+
+      // New connections replace them.
+      const response = await health();
+      expect(response.status).toBe(200);
+      expect(HealthResponse.parse(await response.json())).toEqual({
+        status: 'ok',
+        database: 'ok',
+      });
+    } finally {
+      await admin.end();
+      await server.close();
       await database.drop();
     }
   });

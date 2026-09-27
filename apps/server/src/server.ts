@@ -1,4 +1,4 @@
-import { runMigrations } from '@orchestrator/db';
+import { endPool, reportConnectionErrors, runMigrations } from '@orchestrator/db';
 import type { FastifyBaseLogger } from 'fastify';
 import pg from 'pg';
 import { buildApp, type App, type AppDependencies } from './app.js';
@@ -23,8 +23,8 @@ export async function startServer(
   options: Pick<AppDependencies, 'githubApiUrl' | 'webRoot'> = {},
 ): Promise<RunningServer> {
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
-  pool.on('error', (error) => {
-    logger.error({ err: error }, 'idle database connection failed');
+  reportConnectionErrors(pool, (error) => {
+    logger.error({ err: error }, 'database connection lost');
   });
 
   try {
@@ -49,11 +49,11 @@ export async function startServer(
       app,
       async close() {
         await app.close();
-        await pool.end();
+        await endPool(pool);
       },
     };
   } catch (error) {
-    await pool.end();
+    await endPool(pool);
     throw error;
   }
 }
