@@ -40,6 +40,8 @@ const TOKEN = 'ghp_ScriptedServerToken0123456789abcdefgh';
 class ScriptedServer {
   received: DaemonMessage[] = [];
   acknowledge = true;
+  /** What to do with each next `mcp.call`: answer it, never answer, or drop the connection. */
+  mcpScript: ('answer' | 'silent' | 'drop')[] = [];
   private socket: WebSocket | null = null;
   private readonly http: Server;
   private readonly wss: WebSocketServer;
@@ -81,6 +83,17 @@ class ScriptedServer {
           payload: { ok: true, username: 'x-access-token', password: TOKEN },
         });
         return;
+      case 'mcp.call': {
+        const action = this.mcpScript.shift() ?? 'answer';
+        if (action === 'answer') {
+          send({
+            type: 'mcp.result',
+            id: message.id,
+            payload: { ok: true, output: { tool: message.payload.tool } },
+          });
+        } else if (action === 'drop') socket.terminate();
+        return;
+      }
       case 'run.state':
       case 'run.events':
       case 'run.quota_limited':
@@ -248,6 +261,65 @@ describe('daemon runs over the connection', () => {
         return server.states(payload.runId).at(-1)?.payload;
       })();
       expect(end).toMatchObject({ state: 'ended', reason: 'nudges_exhausted' });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "relays the agent's tool calls to the server, UNAVAILABLE on timeout and on disconnection",
+    async () => {
+      server.mcpScript = ['answer', 'silent', 'drop', 'answer'];
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'mcp', tool: 'ticket_get', arguments: {} },
+              { do: 'mcp', tool: 'ticket_list', arguments: {} },
+              { do: 'mcp', tool: 'agent_list', arguments: {} },
+              // The daemon connects again (backoff of 1 second) before the next call.
+              { do: 'sleep', ms: 4000 },
+              { do: 'mcp', tool: 'project_get', arguments: {} },
+            ],
+          },
+        ],
+      });
+      startDaemon();
+      await waitFor(() => server.hellos().length === 1, 20_000, 'hello');
+      const payload = runStartPayload(`${git.url}/owner/notes.git`, {
+        limits: { maxNudgesPerRun: 0, mcpCallTimeoutSeconds: 2 },
+      });
+      server.send({ type: 'run.start', id: randomUUID(), payload });
+      await waitFor(
+        () => server.states(payload.runId).some((state) => state.payload.state === 'ended'),
+        60_000,
+        'the end of the run',
+      );
+
+      const calls = server.received.filter((message) => message.type === 'mcp.call');
+      expect(calls.map((call) => call.payload)).toEqual([
+        { tool: 'ticket_get', runToken: payload.runToken, input: {} },
+        { tool: 'ticket_list', runToken: payload.runToken, input: {} },
+        { tool: 'agent_list', runToken: payload.runToken, input: {} },
+        { tool: 'project_get', runToken: payload.runToken, input: {} },
+      ]);
+      const results = (await fake.log()).flatMap((entry) =>
+        entry.event === 'mcp'
+          ? [entry.result as { content: { text: string }[]; isError?: boolean }]
+          : [],
+      );
+      expect(results.map((result) => result.isError ?? false)).toEqual([false, true, true, false]);
+      expect(JSON.parse(results[0]?.content[0]?.text ?? '')).toEqual({ tool: 'ticket_get' });
+      expect(JSON.parse(results[1]?.content[0]?.text ?? '')).toMatchObject({
+        code: 'UNAVAILABLE',
+        message: expect.stringContaining(
+          'within 2 seconds (the "MCP call timeout" setting)',
+        ) as unknown,
+      });
+      expect(JSON.parse(results[2]?.content[0]?.text ?? '')).toMatchObject({
+        code: 'UNAVAILABLE',
+        message: expect.stringContaining('not connected to the Orchestrator') as unknown,
+      });
+      expect(server.hellos()).toHaveLength(2);
     },
     TIMEOUT,
   );

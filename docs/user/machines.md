@@ -53,7 +53,15 @@ Details: [Microsoft's systemd guide](https://learn.microsoft.com/windows/wsl/sys
 
 ### Agents on your own user
 
-In this version, the daemon runs under your own Linux user, so agents work with your user's rights. The Orchestrator blocks the folders it knows are sensitive (its own `~/.orchestrator` folder, which holds the machine's key, and the Claude configuration folders), and it limits file tools to the project's folder. Its checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly. Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
+In this version, the daemon runs under your own Linux user, so agents work with your user's rights. The Orchestrator refuses, and tells the agent why:
+
+- its own `~/.orchestrator` folder, which holds the machine's key and the other runs' work, and the Claude configuration folders (`~/.claude`, `~/.claude.json`, and the Orchestrator's own Claude login);
+- any file outside the project's folder for the file tools (reading, writing, searching);
+- in shell commands: your home folder (`~`), paths outside the project's folder other than `/tmp`, `/dev/null` and system folders such as `/usr` and `/etc`, the Windows drives under `/mnt`, and changes to the project's `.claude` folder;
+- every Git command that reaches another computer (`push`, `fetch`, `pull`, `clone`, …), `gh` and `hub`, and any command naming GitHub: on WSL, Git often remembers your own GitHub login (Git Credential Manager), and an agent must never use it. The Orchestrator itself fetches the project and, later, pushes the agent's branch;
+- `tmux`, so an agent cannot reach its own session or another one.
+
+An agent may still read public GitHub pages in its web browsing tool. The checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly, while text that only looks like a path, such as a web route in `grep "/api/users"`, is not refused: something counts as a path only when its first folder exists on the computer (`/home`, `/mnt`, `/usr`, …). Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
 
 For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never touch another ticket or another project.
 

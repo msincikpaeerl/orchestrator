@@ -353,7 +353,7 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 
 `orchestrator-daemon status` listing local branches (decisions above, "The local branch") goes to step L (owner's decision, review of step F); until then `status` shows live runs only.
 
-### [ ] G. Permission enforcement, MCP relay and usage-limit detection
+### [x] G. Permission enforcement, MCP relay and usage-limit detection
 
 - **`PreToolUse` rules** (05 section 4.6), each with its reason:
   - `git push` and any command reaching GitHub;
@@ -374,7 +374,33 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8 and 05
 - `suspected` for a `rate_limit` without a known message, an `overloaded` and a `server_error` `StopFailure`, an API-error turn with no tool use, and an idle timeout right after one;
 - no nudge in any of these cases;
 - the estimated usage read from the status line;
-- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F).
+- the fake `claude`'s own MCP client (step F) calling tools on the real SDK-based relay, so the two cannot drift (owner's decision, step F);
+- a `git fetch` from the worktree getting no credentials while a global credential helper is configured in the test's home folder.
+
+Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 sections 4.3, 4.4, 4.5, 4.6, 4.8, 4.10 and 7, and 06 section 1:
+
+- **Timeouts**: `mcp.json` carries the Claude Code MCP tool timeout, never the MCP call timeout, which is the daemon's wait for the server (as in the specs; the brief of the step said otherwise by mistake).
+- **Daemon folder**: the settings deny rules list `~/.orchestrator/`'s entries one by one and leave out `worktrees/`, since a deny rule always wins and the worktree lives there; other runs' worktrees are refused by the hook. The run folder is not open to the agent.
+- **Paths**: file tools reach the worktree only, checked exactly. Bash commands may also name `/dev/null` and the standard streams, the system temporary folder, and `/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/opt`, `/proc/self`; every other absolute path, `~`, `$HOME` and `..` leaving the worktree are refused.
+- **GitHub and remotes**: every Bash Git command that talks to a remote (`push`, `fetch`, `pull`, `clone`, `ls-remote`, `remote add`/`set-url`, `send-pack`), any `gh` or `hub` command and any command naming a GitHub host are refused; `WebFetch` may read public GitHub pages. On WSL a global credential helper would give an agent's Git the owner's GitHub login, so the bare clone sets an empty `credential.helper` (no secret), and sessions run with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`.
+- **`.claude/` and `tmux`**: a Bash command naming a `.claude` path part is refused, even to read it; file tools may read the worktree's `.claude/`. A Bash command where `tmux` appears as a whole word or a path ending in `/tmux` is refused.
+- **Allowlist**: the daemon always adds `ToolSearch` and `mcp__orchestrator`; the server enforces each role's MCP permissions.
+- **API-error turns**: the module reads the hooks (`StopFailure`, and `Stop`'s message against the pattern table) and one transcript fact, the turn's last assistant entry marked `isApiErrorMessage`, which also covers the idle timeout after an error.
+- **Reset time**: a message time is the next such local time (or weekday) on the machine; a status line window is full at 100 % with a `resets_at` still to come, and the later of two full windows counts.
+- **Choices confirmed**: the relay uses `@modelcontextprotocol/server` 2.x (a stable release) with its low-level server and no validation of its own (ADR 0028); results are JSON text, refusals an `isError` result; calls get `UNAVAILABLE` at once while disconnected or when the connection drops; decisions take effect at the turn's `Stop`, a refused decision tool being no decision; the waiting run lifetime counts from that `Stop` and survives a daemon restart; `run.input` to a closed session is refused; the usage estimate is the status line's cost, else the transcript's last `cost-state`; the two new settings are in the Runs group, used from 0.3.0, the MCP call timeout strictly below the other.
+
+*Done 2026-09-26.* Choices within the step:
+
+- `@modelcontextprotocol/server` 2.1.0 is the `latest` tag and not a pre-release, and its README calls v2 "the stable release line", so ADR 0028 takes it. Its low-level `Server` is marked deprecated for ordinary use and kept "for advanced use cases": the two uses carry an ESLint exception naming the ADR.
+- "Git commands that talk to a remote" also refuses `git remote update`, `remote prune`, `remote show`, `fetch-pack` and `submodule`, which contact a remote too. Git options before the subcommand (`-C`, `-c`, `--git-dir`, …) and wrappers (`env`, `timeout`, `xargs`, …) are skipped.
+- Glob and Grep patterns are checked only when they are rooted (`/`, `~`) or hold `..`; a `PreToolUse` whose input cannot be read is refused, like an unreachable daemon.
+- A call to an unknown tool name gets `VALIDATION_FAILED` from the daemon, listing the tools; the relay answers `UNAVAILABLE` when the daemon cannot be reached.
+- The transcript's API-error mark is cleared at each message sent, so a hang after a later message is not taken for an API error.
+- `state.json` gains the decision, the turn's tool use, the waiting start, the latest status line and the transcript facts, with defaults so a file written by 0.2.0 still loads.
+- The empty `credential.helper` is set at each preparation, so bare clones made by 0.2.0 get it too. Step F's test "no helper in any Git configuration" now allows that empty helper only; the new global-helper test was checked to fail without it.
+- The fake `claude`'s MCP client lists the tools after `initialize`, as Claude Code does; the runner tests share `runner-harness.ts`.
+
+Owner's review of the step: in Bash commands a word is an absolute path only when its first folder exists at the filesystem root (after resolving `..`), so routes such as `/api/users` are not refused; a path not yet created under an existing root folder is still checked (05 section 4.6, Help).
 
 ### [ ] H. Owner check of documented Claude Code behaviour
 

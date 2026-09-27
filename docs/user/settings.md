@@ -77,6 +77,8 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Idle timeout (from version 0.3.0) | 10 minutes | 1 to 120 | No | A run whose agent shows no activity for this long is stopped. Time waiting for you, for CI or for the quota, and time running a command, does not count. |
 | Most reminders per run (from version 0.3.0) | 2 reminders | 0 to 10 | No | Reminders sent to an agent that stops without finishing, before the run is stopped. |
 | Session start timeout (from version 0.3.0) | 30 seconds | 5 to 600 | No | How long a machine waits for Claude Code to start a run's session; after that the run fails (a startup dialog or a change in Claude Code is likely). |
+| MCP call timeout (from version 0.3.0) | 30 seconds | 5 to 300 | No | How long a machine waits for the Orchestrator's answer to an agent's tool call; after that the agent is told to try again later. Must be below the Claude Code MCP tool timeout. |
+| Claude Code MCP tool timeout (from version 0.3.0) | 120 seconds | 10 to 1,800 | No | How long Claude Code waits for an Orchestrator tool call before giving up on it. Must be above the MCP call timeout, so the machine always answers first: a value breaking this is refused, naming both limits and their values. |
 | Machine answer timeout (from version 0.3.0) | 60 seconds | 5 to 600 | No | How long the Orchestrator waits for a machine to confirm it starts a run; without an answer the run is cancelled and does not count as a failed attempt. |
 
 ### Machines

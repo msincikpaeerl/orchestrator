@@ -11,6 +11,7 @@ import { UserError } from './errors.js';
 import { installService } from './install-service.js';
 import { describeLastStop, readLastStop } from './last-stop.js';
 import { login } from './login.js';
+import { runRelay } from './mcp-relay.js';
 import { daemonPaths } from './paths.js';
 import { forwardToRun } from './run-socket.js';
 import { startDaemon } from './start.js';
@@ -126,6 +127,12 @@ async function main(argv: string[]): Promise<number> {
       );
       process.stdout.write(answer.stdout);
       return answer.exitCode;
+    }
+    case 'mcp': {
+      const { values } = parse({ run: { type: 'string' } }, 0);
+      const runId = RunId.safeParse(values.run);
+      if (!runId.success) throw new UserError('Usage: orchestrator-daemon mcp --run <run-id>');
+      return runRelay(paths, runId.data);
     }
     case 'git-credential': {
       const { positionals } = parse({}, 1);

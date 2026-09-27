@@ -82,6 +82,7 @@ export type FakeLogEntry =
   | { event: 'message'; text: string }
   | { event: 'hook'; hook: string; exitCode: number; stdout: string }
   | { event: 'denied'; tool: string; reason: string }
+  | { event: 'mcp_tools'; tools: { name: string; inputSchema: unknown }[] }
   | { event: 'mcp'; tool: string; result: unknown }
   | { event: 'bash'; command: string; exitCode: number; output: string }
   | { event: 'exit'; code: number };

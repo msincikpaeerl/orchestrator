@@ -263,6 +263,13 @@ class Session {
         clientInfo: { name: 'fake-claude', version: this.scenario.version },
       });
       this.mcp.notify('notifications/initialized');
+      // As Claude Code does: the tools, with their descriptions and input schemas.
+      const listed = await this.mcp.request('tools/list', {});
+      const tools = (listed.result as { tools?: { name: string; inputSchema?: unknown }[] }).tools;
+      record({
+        event: 'mcp_tools',
+        tools: (tools ?? []).map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema })),
+      });
     }
     const answer = await this.mcp.request('tools/call', { name: tool, arguments: args });
     record({ event: 'mcp', tool, result: answer.result ?? answer.error });

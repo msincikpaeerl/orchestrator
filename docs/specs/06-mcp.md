@@ -26,7 +26,10 @@ sequenceDiagram
 - It is a thin relay. **All validation happens on the server**: permissions, state transitions, Definition of Done, limits.
 - Some calls also trigger daemon actions (for example `ticket.submit` makes the daemon push the branch first, see 05, section 4.9).
 - Nothing is exposed on the network by the daemon; the server is reached through the daemon's existing connection.
-- The daemon waits for the server's answer at most the MCP call timeout, then answers `UNAVAILABLE`. It writes Claude Code's own tool timeout for this server into `mcp.json` (the Claude Code MCP tool timeout), which is always longer (04, section 8).
+- The daemon waits for the server's answer at most the MCP call timeout, then answers `UNAVAILABLE`. It writes Claude Code's own tool timeout for this server into `mcp.json` (the Claude Code MCP tool timeout, never the MCP call timeout), which is always longer (04, section 8), so the agent always gets the daemon's answer first (owner's decision, lot 2 step G).
+- A call made while the daemon is disconnected from the server, or still waiting when the connection drops, gets `UNAVAILABLE` at once; an answer arriving after the timeout is ignored (owner's decision, lot 2 step G).
+- The relay is built on the official MCP SDK (ADR 0028) with its low-level server: it lists the tools with their descriptions and input schemas from `packages/protocol` as JSON Schema, and passes the arguments to the server as they are, without checking them itself. A result reaches Claude Code as JSON text; a refusal is a result marked as an error (`isError`) whose text is the JSON `{ code, message, details }` of section 3 (owner's decision, lot 2 step G).
+- The relay never holds the run token: it reaches the daemon through the run's socket (05, section 4.5), and the daemon adds the token to `mcp.call`.
 
 ## 2. Identity and scope
 

@@ -22,6 +22,7 @@ import { createLogger } from './logger.js';
 import type { DaemonPaths } from './paths.js';
 import { RunManager } from './runs.js';
 import { selfCommand } from './self.js';
+import { ServerCalls } from './server-calls.js';
 import { parseServerUrl, webSocketUrl } from './server-url.js';
 import { Tmux } from './tmux.js';
 import { TrustRegistry } from './trust.js';
@@ -94,6 +95,9 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       }
     });
 
+  // The agents' tool calls (06, section 1).
+  const serverCalls = new ServerCalls((message) => connection?.sendMessage(message) ?? false);
+
   const tools = environment.toolPath;
   const trust = new TrustRegistry(join(paths.claudeConfig, '.claude.json'));
   const self = selfCommand();
@@ -110,6 +114,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       selfCommand: self,
       log,
     }),
+    callServer: (call, timeoutSeconds) => serverCalls.call(call, timeoutSeconds),
     selfCommand: self,
     toolPath: tools,
     envCommand: findExecutable('env', tools) ?? '/usr/bin/env',
@@ -164,6 +169,9 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       void clearLastStop(paths.lastStop);
       runs.outbox.resend();
     },
+    onDisconnected: () => {
+      serverCalls.disconnected();
+    },
     onMessage: (message) => {
       switch (message.type) {
         case 'ack':
@@ -177,8 +185,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
           credentialAnswers.get(message.id)?.(message.payload);
           return;
         case 'mcp.result':
-          // The MCP relay comes with plan step G.
-          log.debug('MCP result not handled by this daemon version');
+          serverCalls.answer(message);
           return;
         default:
           void runs

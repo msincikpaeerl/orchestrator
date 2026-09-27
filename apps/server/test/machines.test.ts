@@ -665,6 +665,10 @@ describe('the daemon connection', () => {
     const { id } = await connectedMachine();
     // As after a crash: the machine is still recorded online.
     for (const daemon of daemons.splice(0)) await daemon.close();
+    // The server handles the close on its own time: let it finish before forcing the row back.
+    await eventually(async () => {
+      expect((await machine(id)).state).toBe('offline');
+    });
     await t.db.update(schema.machines).set({ status: 'online' }).where(eq(schema.machines.id, id));
     expect(await markAllOffline(t.db)).toBe(1);
     expect((await machine(id)).state).toBe('offline');

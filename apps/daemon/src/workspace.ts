@@ -1,6 +1,11 @@
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { TEXT_CEILING, type BranchReport, type RunStart } from '@orchestrator/protocol';
+import {
+  TEXT_CEILING,
+  type BranchReport,
+  type RunStart,
+  type WorkspaceFacts,
+} from '@orchestrator/protocol';
 import type { Logger } from 'pino';
 import { withCredentialHelper, type CredentialSource } from './credentials.js';
 import type { Git } from './git.js';
@@ -10,7 +15,8 @@ import type { TrustRegistry } from './trust.js';
 // A run's Git workspace (05, section 4.2): one bare clone per repository, reused across runs,
 // and one worktree per run on the ticket branch. The bare clone fetches the remote's branches
 // into `refs/remotes/origin/*`, so a fetch never overwrites a ticket branch holding commits not
-// pushed yet; its configuration never holds a credential.
+// pushed yet; its configuration never holds a credential, and its empty `credential.helper` keeps
+// the owner's own helpers away from it.
 
 type Repository = RunStart['payload']['repository'];
 
@@ -71,6 +77,10 @@ export class Workspaces {
     await this.locked(bare, async () => {
       if (!(await exists(join(bare, 'HEAD')))) await this.init(bare, repository.cloneUrl);
       else await git.run(['-C', bare, 'remote', 'set-url', 'origin', repository.cloneUrl]);
+      // An empty helper, holding no secret: the owner's global and system helpers (such as Git
+      // Credential Manager on WSL) never answer for this repository or its worktrees (05,
+      // section 7). Set at each preparation, so bare clones made by 0.2.0 get it too.
+      await git.run(['-C', bare, 'config', 'credential.helper', '']);
       await this.fetch(start, bare, runFolder);
       if (await exists(worktree)) return;
       await mkdir(dirname(worktree), { recursive: true, mode: 0o700 });
@@ -170,6 +180,26 @@ export class Workspaces {
           return { hash, subject: subject.slice(0, TEXT_CEILING) };
         }),
     };
+  }
+
+  /**
+   * The worktree's facts for a `ticket_submit`, read now, never cached (05, section 4.9): clean
+   * (no change, untracked files included), and the ticket branch's head and commits.
+   */
+  async facts(
+    bare: string,
+    worktree: string,
+    repository: Pick<Repository, 'baseBranch' | 'ticketBranch'>,
+  ): Promise<WorkspaceFacts | null> {
+    const status = await this.options.git.run([
+      '-C',
+      worktree,
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+    ]);
+    const branch = await this.branchReport(bare, repository);
+    return branch ? { clean: status.trim() === '', branch } : null;
   }
 
   /** Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). */

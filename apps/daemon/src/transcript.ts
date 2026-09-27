@@ -39,6 +39,14 @@ function inputText(input: unknown): string {
 export class TranscriptReader {
   /** Tool names by call id, to name results. */
   private readonly tools = new Map<string, string>();
+  /**
+   * The text of the last assistant entry when Claude Code marked it as an API error
+   * (`isApiErrorMessage`), else null: the one fact the usage-limit module reads (05, section 4.10).
+   * The daemon clears it when it sends a message.
+   */
+  lastApiError: string | null = null;
+  /** `totalCostUSD` of the last `cost-state` entry: the usage estimate without a status line. */
+  costUsd: number | null = null;
 
   /** `offset`: bytes already read, kept in `state.json` so a restarted daemon goes on from there. */
   constructor(public offset = 0) {}
@@ -73,7 +81,13 @@ export class TranscriptReader {
 
   /** The log entries of one line; null when the line is unknown or malformed. */
   private parse(line: string): LogEntry[] | null {
-    let entry: { type?: unknown; timestamp?: unknown; message?: { content?: unknown } };
+    let entry: {
+      type?: unknown;
+      timestamp?: unknown;
+      isApiErrorMessage?: unknown;
+      totalCostUSD?: unknown;
+      message?: { content?: unknown };
+    };
     try {
       entry = JSON.parse(line) as typeof entry;
     } catch {
@@ -87,7 +101,11 @@ export class TranscriptReader {
         : new Date().toISOString();
     const content = entry.message?.content;
     const entries: LogEntry[] = [];
+    if (entry.type === 'cost-state' && typeof entry.totalCostUSD === 'number') {
+      this.costUsd = entry.totalCostUSD;
+    }
     if (entry.type === 'assistant') {
+      this.lastApiError = entry.isApiErrorMessage === true ? textOf(content) || 'API error' : null;
       if (typeof content === 'string' && content) {
         entries.push({ at, kind: 'agent_text', tool: null, text: content });
       }

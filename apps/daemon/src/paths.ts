@@ -11,6 +11,8 @@ export const TMUX_SOCKET_NAME = 'orchestrator';
 export interface DaemonPaths {
   /** `~/.orchestrator`, or `ORCHESTRATOR_HOME`: tests never touch the real home folder. */
   home: string;
+  /** The owner's home folder (`HOME`), whose Claude configuration runs must never reach. */
+  userHome: string;
   config: string;
   /** The dedicated `CLAUDE_CONFIG_DIR` (ADR 0002). */
   claudeConfig: string;
@@ -26,6 +28,7 @@ export function daemonPaths(env: NodeJS.ProcessEnv = process.env): DaemonPaths {
   const configHome = env.XDG_CONFIG_HOME || join(homedir(), '.config');
   return {
     home,
+    userHome: env.HOME || homedir(),
     config: join(home, 'config.json'),
     claudeConfig: join(home, 'claude-config'),
     controlSocket: join(home, 'daemon.sock'),

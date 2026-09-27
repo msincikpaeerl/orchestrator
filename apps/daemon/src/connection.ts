@@ -63,6 +63,8 @@ export interface ConnectionOptions {
   onRefused: (refusal: Refusal) => void;
   /** Called after each accepted `welcome`. */
   onWelcome?: () => void;
+  /** Called when a connection accepted by `welcome` is lost or closed. */
+  onDisconnected?: () => void;
   /** Every other message of the server on the current connection: commands, acks, answers. */
   onMessage?: (message: Exclude<ServerMessage, { type: 'welcome' }>) => void;
   socketFactory?: SocketFactory;
@@ -97,6 +99,7 @@ export class ServerConnection {
 
   /** Closes the connection for good (the daemon is stopping). */
   stop(): void {
+    this.leave();
     this.stopped = true;
     clearTimeout(this.retryTimer);
     clearInterval(this.heartbeatTimer);
@@ -115,8 +118,16 @@ export class ServerConnection {
     return Math.min(BACKOFF_MAX_MS, BACKOFF_FIRST_MS * 2 ** Math.min(retries, 16));
   }
 
+  /** Leaves the connected state, telling the daemon once. */
+  private leave(): void {
+    if (this.state !== 'connected') return;
+    this.state = 'waiting';
+    this.options.onDisconnected?.();
+  }
+
   private scheduleRetry(): void {
     if (this.stopped) return;
+    this.leave();
     this.state = 'waiting';
     this.connectedAt = null;
     const delay = ServerConnection.backoffMs(this.retries);

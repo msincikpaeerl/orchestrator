@@ -1,8 +1,11 @@
 import { rm } from 'node:fs/promises';
 import type { Server } from 'node:net';
+import { tmpdir } from 'node:os';
 import {
   DAEMON_MESSAGE_MAX_BYTES,
   HookInputs,
+  McpToolName,
+  StatusLineInput,
   TEXT_CEILING,
   claudeCodeSupport,
   maskSecrets,
@@ -11,6 +14,7 @@ import {
   type DaemonRunState,
   type HookAnswer,
   type HookEvent,
+  type McpCall,
   type RunEndReason,
   type RunLogEvent,
   type RunSocketRequest,
@@ -27,15 +31,25 @@ import {
   writeJsonAtomic,
   writeRunFiles,
 } from './run-files.js';
-import { runSocketPath, serveRunSocket } from './run-socket.js';
+import { checkToolCall, type PermissionScope } from './permissions.js';
+import {
+  denyAnswer,
+  runSocketPath,
+  serveRunSocket,
+  type McpAnswer,
+  type RunSocketAnswer,
+} from './run-socket.js';
 import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
+import { assessTurn, type Assessment, type TurnEnd } from './usage-limit.js';
 import type { Workspaces } from './workspace.js';
 
 // One run on this machine (05, section 4): its workspace, its Claude Code session in tmux, the
-// state machine of section 4.7 driven by hooks, the input queue, nudges and timeouts, the live
-// log, and its end. The daemon reports facts; the server decides what they mean for the ticket.
+// state machine of section 4.7 driven by hooks, the permission rules of the `PreToolUse` hook,
+// the agent's tool calls relayed to the server and its decisions, usage limits, the input queue,
+// nudges and timeouts, the waiting run lifetime, the live log, and its end. The daemon reports
+// facts; the server decides what they mean for the ticket.
 
 export interface RunContext {
   paths: DaemonPaths;
@@ -44,6 +58,11 @@ export interface RunContext {
   trust: TrustRegistry;
   workspaces: Workspaces;
   outbox: Outbox;
+  /**
+   * Sends an agent's tool call to the server and resolves with its result, or `UNAVAILABLE` when
+   * disconnected or after `timeoutSeconds` (06, section 1).
+   */
+  callServer: (call: McpCall['payload'], timeoutSeconds: number) => Promise<McpAnswer>;
   /** How hooks, the status line and the MCP relay run this daemon (`self.ts`). */
   selfCommand: readonly string[];
   /** `PATH` of sessions, where `claude` is also looked up. */
@@ -73,6 +92,8 @@ export class Run {
   private readonly toolsRunning = new Set<string>();
   private events: RunLogEvent[] = [];
   private ticking = false;
+  /** Between a turn's `Stop` and `afterTurn`: messages wait for `afterTurn`. */
+  private turnEnding = false;
   private ending: Promise<void> | null = null;
   /** Set when the daemon stops: this object no longer acts, the session goes on. */
   private stopped = false;
@@ -83,6 +104,8 @@ export class Run {
   ) {
     this.log = context.log.child({ runId: data.start.runId, ticket: ticketOf(data.start) });
     this.reader = new TranscriptReader(data.transcriptOffset);
+    this.reader.lastApiError = data.transcriptApiError;
+    this.reader.costUsd = data.transcriptCostUsd;
   }
 
   /** A new run from `run.start`; `begin()` prepares and launches it. */
@@ -102,6 +125,12 @@ export class Run {
       pendingInputs: [],
       bare: null,
       worktree: null,
+      decision: null,
+      turnToolUsed: false,
+      waitingSince: null,
+      statusLine: null,
+      transcriptApiError: null,
+      transcriptCostUsd: null,
     });
     run.save();
     return run;
@@ -138,6 +167,8 @@ export class Run {
 
   private save(): void {
     this.data.transcriptOffset = this.reader.offset;
+    this.data.transcriptApiError = this.reader.lastApiError;
+    this.data.transcriptCostUsd = this.reader.costUsd;
     writeJsonAtomic(stateFilePath(this.context.paths, this.runId), this.data);
   }
 
@@ -207,10 +238,16 @@ export class Run {
       }
       this.context.outbox.add(this.runId, {
         type: 'run.events',
-        payload: { runId: this.runId, events: batch, estimatedUsageUsd: null },
+        payload: { runId: this.runId, events: batch, estimatedUsageUsd: this.estimatedUsage() },
       });
     }
     this.save();
+  }
+
+  /** The status line's cost, else the transcript's last `cost-state` (05, section 4.5). */
+  private estimatedUsage(): number | null {
+    const cost = this.data.statusLine?.cost?.total_cost_usd;
+    return cost !== undefined && cost >= 0 ? cost : this.reader.costUsd;
   }
 
   // Launch (05, sections 4.2 and 4.3).
@@ -266,7 +303,13 @@ export class Run {
       await this.context.tmux.newSession({
         name: this.name,
         cwd: this.data.worktree ?? '',
-        env: { CLAUDE_CONFIG_DIR: this.context.paths.claudeConfig, PATH: this.context.toolPath },
+        env: {
+          CLAUDE_CONFIG_DIR: this.context.paths.claudeConfig,
+          PATH: this.context.toolPath,
+          // No Git command of the agent prompts or opens Git Credential Manager (05, section 7).
+          GIT_TERMINAL_PROMPT: '0',
+          GCM_INTERACTIVE: 'never',
+        },
         envCommand: this.context.envCommand,
         command: [
           claude,
@@ -295,6 +338,7 @@ export class Run {
     }
     this.sessionAlive = true;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
+    this.newTurn();
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text: message });
     this.startTimer();
     this.log.info({ session: this.name, version }, 'session launched');
@@ -305,22 +349,47 @@ export class Run {
     this.timer = setInterval(() => void this.tick(), this.context.secondMs);
   }
 
-  // Hooks and the status line (05, section 4.5).
+  // Hooks, the status line and the MCP relay (05, sections 4.5 and 4.6; 06, section 1).
 
-  private onSocket(request: RunSocketRequest): Promise<HookAnswer> {
-    const answer = Promise.resolve<HookAnswer>({ stdout: '', exitCode: 0 });
-    // The status line collector comes with the usage-limit module (plan step G).
-    if (request.type !== 'hook' || this.ending) return answer;
+  /** Where the agent may work (05, section 4.6). */
+  private get scope(): PermissionScope {
+    const { paths } = this.context;
+    return {
+      worktree: this.data.worktree ?? '',
+      daemonHome: paths.home,
+      userHome: paths.userHome,
+      tempDirs: [...new Set(['/tmp', tmpdir()])],
+    };
+  }
+
+  private async onSocket(request: RunSocketRequest): Promise<RunSocketAnswer> {
+    const pass: HookAnswer = { stdout: '', exitCode: 0 };
+    if (request.type === 'mcp') return this.onMcp(request.tool, request.arguments);
+    if (this.ending) {
+      return request.type === 'hook' && request.event === 'PreToolUse'
+        ? denyAnswer('The run has ended.')
+        : pass;
+    }
+    if (request.type === 'status_line') {
+      const input = StatusLineInput.safeParse(request.input);
+      // Kept, and saved with the next log batch: the command runs at each refresh.
+      if (input.success) this.data.statusLine = input.data;
+      return pass;
+    }
     const input = HookInputs[request.event].safeParse(request.input);
     if (!input.success) {
       this.log.warn({ event: request.event }, 'hook input not understood: ignored');
-      return answer;
+      // An unreadable tool call is refused, as when the daemon is unreachable.
+      return request.event === 'PreToolUse' ? denyAnswer('Orchestrator daemon unavailable') : pass;
     }
-    this.onHook(request.event, input.data);
-    return answer;
+    return this.onHook(request.event, input.data);
   }
 
-  private onHook(event: HookEvent, input: { session_id: string; [key: string]: unknown }): void {
+  private onHook(
+    event: HookEvent,
+    input: { session_id: string; [key: string]: unknown },
+  ): HookAnswer {
+    const pass: HookAnswer = { stdout: '', exitCode: 0 };
     this.lastActivity = Date.now();
     switch (event) {
       case 'SessionStart': {
@@ -332,37 +401,139 @@ export class Run {
         this.data.transcriptPath = path;
         if (this.data.state === 'starting') this.setState('working');
         else this.save();
-        return;
+        return pass;
       }
-      case 'PreToolUse':
+      case 'PreToolUse': {
+        this.data.turnToolUsed = true;
+        const tool = String(input.tool_name);
+        const reason = checkToolCall(this.scope, tool, input.tool_input);
+        if (reason !== null) {
+          this.log.info({ tool, reason }, 'tool call refused');
+          return denyAnswer(reason);
+        }
         this.toolsRunning.add(toolKey(input));
-        return;
+        return pass;
+      }
       case 'PostToolUse':
         this.toolsRunning.delete(toolKey(input));
-        return;
+        return pass;
       case 'Stop':
+      case 'StopFailure': {
         this.toolsRunning.clear();
         this.setState('idle');
-        // After the hook's answer, so Claude Code is idle when the text arrives.
-        setImmediate(() => void this.afterTurn());
-        return;
-      case 'StopFailure':
-        // A turn ending on an API error: never a nudge (05, section 4.10; plan step G).
-        this.toolsRunning.clear();
-        this.setState('idle');
-        return;
+        const message =
+          typeof input.last_assistant_message === 'string' ? input.last_assistant_message : null;
+        const end: TurnEnd =
+          event === 'Stop'
+            ? { kind: 'stop', message }
+            : {
+                kind: 'stop_failure',
+                error: typeof input.error === 'string' ? input.error : null,
+                message,
+              };
+        // After the hook's answer, so Claude Code is idle when a message arrives.
+        this.turnEnding = true;
+        setImmediate(() => void this.afterTurn(end));
+        return pass;
+      }
       case 'Notification':
       case 'SessionEnd':
-        return;
+        return pass;
     }
   }
 
-  /** At the end of a turn: a queued message, else a nudge, else the end (05, section 4.8). */
-  private async afterTurn(): Promise<void> {
-    if (this.data.state !== 'idle' || this.ending || this.stopped) return;
-    const next = this.data.pendingInputs.shift();
-    if (next !== undefined) {
-      await this.send(next);
+  /**
+   * A tool call of the agent, relayed to the server with the run token (06, section 1). An
+   * accepted decision tool is remembered until the turn ends (05, section 4.8).
+   */
+  private async onMcp(name: string, args: Record<string, unknown>): Promise<McpAnswer> {
+    if (this.ended || this.ending) {
+      return { ok: false, error: { code: 'UNAVAILABLE', message: 'This run has ended.' } };
+    }
+    const tool = McpToolName.safeParse(name);
+    if (!tool.success) {
+      return {
+        ok: false,
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: `Unknown tool "${name.slice(0, 100)}". The Orchestrator's tools are: ${McpToolName.options.join(', ')}.`,
+        },
+      };
+    }
+    const { start } = this.data;
+    const timeout = start.limits.mcpCallTimeoutSeconds;
+    let call: McpCall['payload'];
+    if (tool.data === 'ticket_submit') {
+      const facts =
+        this.data.bare && this.data.worktree
+          ? await this.context.workspaces
+              .facts(this.data.bare, this.data.worktree, start.repository)
+              .catch((error: unknown) => {
+                this.log.error({ err: error }, 'worktree facts not read');
+                return null;
+              })
+          : null;
+      if (!facts) {
+        return {
+          ok: false,
+          error: {
+            code: 'UNAVAILABLE',
+            message:
+              'The Orchestrator could not read your worktree and branch. Check that your work is committed on the ticket branch, then try again.',
+          },
+        };
+      }
+      call = { tool: 'ticket_submit', runToken: start.runToken, input: args, workspace: facts };
+    } else {
+      call = { tool: tool.data, runToken: start.runToken, input: args };
+    }
+    const answer = await this.context.callServer(call, timeout);
+    if (answer.ok) {
+      const decision = DECISIONS[tool.data];
+      if (decision) {
+        this.data.decision = decision;
+        this.save();
+      }
+    }
+    return answer;
+  }
+
+  /**
+   * At the end of a turn (05, sections 4.8 and 4.10): a usage limit, detected or suspected,
+   * pauses the run; else the turn's decision applies; else a queued message is sent; else a
+   * nudge, or the end once the nudges are used up.
+   */
+  private async afterTurn(end: TurnEnd): Promise<void> {
+    try {
+      await this.decideAfterTurn(end);
+    } finally {
+      this.turnEnding = false;
+    }
+  }
+
+  /** The turn's end can still be handled: nothing sent, stopped or ended meanwhile. */
+  private turnStillEnded(): boolean {
+    return this.data.state === 'idle' && !this.ending && !this.stopped;
+  }
+
+  private async decideAfterTurn(end: TurnEnd): Promise<void> {
+    if (!this.turnStillEnded()) return;
+    await this.readTranscript();
+    // A message or a stop may have come while the transcript was read.
+    if (!this.turnStillEnded()) return;
+    const limit = this.assess(end);
+    if (limit) {
+      await this.pauseForQuota(limit);
+      return;
+    }
+    const { decision } = this.data;
+    if (decision === 'submitted' || decision === 'gave_up') {
+      await this.end(decision, null);
+      return;
+    }
+    if (await this.sendQueued()) return;
+    if (decision === 'asked') {
+      this.waitForOwner();
       return;
     }
     if (this.data.nudgesSent < this.data.start.limits.maxNudgesPerRun) {
@@ -373,8 +544,37 @@ export class Run {
     await this.end('nudges_exhausted', null);
   }
 
+  private assess(end: TurnEnd): Assessment {
+    return assessTurn({
+      end,
+      toolUsed: this.data.turnToolUsed,
+      transcriptApiError: this.reader.lastApiError,
+      statusLine: this.data.statusLine,
+      now: new Date(),
+    });
+  }
+
+  /** Sends the first queued message when the session can take it; false when none was sent. */
+  private async sendQueued(): Promise<boolean> {
+    if (!this.sessionAlive || !['idle', 'waiting_human'].includes(this.data.state)) return false;
+    const next = this.data.pendingInputs.shift();
+    if (next === undefined) return false;
+    await this.send(next);
+    return true;
+  }
+
+  /** A new turn starts: its tool use, decision and API-error mark start empty. */
+  private newTurn(): void {
+    this.data.decision = null;
+    this.data.turnToolUsed = false;
+    this.data.waitingSince = null;
+    this.reader.lastApiError = null;
+    this.save();
+  }
+
   /** Pastes `text` into the idle session (05, section 4.4). */
   private async send(text: string): Promise<void> {
+    this.newTurn();
     this.setState('working');
     this.lastActivity = Date.now();
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text });
@@ -389,12 +589,63 @@ export class Run {
     }
   }
 
-  /** `run.input`: sent at once when the session is idle, queued otherwise (05, section 4.4). */
+  /** The agent asked the owner: the run waits, its session alive for the lifetime (05, section 4.8). */
+  private waitForOwner(): void {
+    this.data.waitingSince = Date.now();
+    this.setState('waiting_human');
+  }
+
+  /**
+   * Closes the tmux session and keeps the worktree and the Claude session id, for a run waiting
+   * for the owner or paused on a usage limit (05, sections 4.8 and 4.10).
+   */
+  private async closeSession(): Promise<void> {
+    clearInterval(this.timer);
+    this.releaseStart?.();
+    this.releaseStart = null;
+    this.toolsRunning.clear();
+    if (this.sessionAlive) {
+      this.sessionAlive = false;
+      await this.context.tmux.killSession(this.name);
+    }
+    await this.readTranscript().catch(() => undefined);
+    this.flushEvents();
+    await this.closeSocket();
+  }
+
+  /** A usage limit, detected or suspected: no nudge, the session closed (05, section 4.10). */
+  private async pauseForQuota(limit: NonNullable<Assessment>): Promise<void> {
+    this.log.warn({ kind: limit.kind, evidence: limit.evidence }, 'usage limit: run paused');
+    this.context.outbox.add(this.runId, {
+      type: 'run.quota_limited',
+      payload:
+        limit.kind === 'detected'
+          ? {
+              runId: this.runId,
+              kind: 'detected',
+              resetsAt: limit.resetsAt,
+              evidence: limit.evidence,
+            }
+          : { runId: this.runId, kind: 'suspected', evidence: limit.evidence },
+    });
+    await this.closeSession();
+    this.data.waitingSince = null;
+    this.setState('quota_paused');
+  }
+
+  /**
+   * `run.input`: sent at once when the session is idle or waiting for the owner, queued while
+   * the agent works; refused once the session was closed (05, section 4.4).
+   */
   input(text: string): string | null {
     if (this.ended || this.ending) return 'The run has ended.';
+    if (!this.sessionAlive && ['waiting_human', 'quota_paused'].includes(this.data.state)) {
+      return 'session closed: use run.resume';
+    }
     this.data.pendingInputs.push(text);
     this.save();
-    if (this.data.state === 'idle' && this.sessionAlive) void this.afterTurn();
+    // Between a turn's end and `afterTurn`, the queue waits: `afterTurn` sends it first.
+    if (this.data.state === 'waiting_human' || !this.turnEnding) void this.sendQueued();
     return null;
   }
 
@@ -448,10 +699,27 @@ export class Run {
         return;
       }
       if (
+        this.data.state === 'waiting_human' &&
+        this.data.waitingSince !== null &&
+        now - this.data.waitingSince >= limits.waitingRunLifetimeMinutes * 60 * second
+      ) {
+        // The answer will come with run.resume (05, section 4.8).
+        this.log.info('waiting run lifetime reached: session closed until the answer');
+        await this.closeSession();
+        this.report('waiting_human');
+        return;
+      }
+      if (
         (this.data.state === 'working' || this.data.state === 'idle') &&
         this.toolsRunning.size === 0 &&
         now - this.lastActivity >= limits.idleTimeoutMinutes * 60 * second
       ) {
+        // Right after an API error, the idle timeout is a suspected usage limit (05, section 4.10).
+        const limit = this.assess({ kind: 'idle_timeout' });
+        if (limit) {
+          await this.pauseForQuota(limit);
+          return;
+        }
         await this.end(
           'idle_timeout',
           `No activity from the agent for ${String(limits.idleTimeoutMinutes)} minutes, the "Idle timeout" setting.`,
@@ -539,7 +807,7 @@ export class Run {
       if (WORKING.includes(this.data.state)) {
         await this.end('crashed', "Claude Code's session ended while the daemon was stopped.");
       }
-      // A waiting or paused run keeps its closed session (plan step G).
+      // A waiting or paused run keeps its closed session until run.resume (05, section 4.11).
       return;
     }
     this.sessionAlive = true;
@@ -563,6 +831,13 @@ export class Run {
     await this.ending;
   }
 }
+
+/** The decision each accepted tool makes, applied when the turn ends (05, section 4.8). */
+const DECISIONS: Partial<Record<McpToolName, 'submitted' | 'gave_up' | 'asked'>> = {
+  ticket_submit: 'submitted',
+  ticket_give_up: 'gave_up',
+  ticket_ask: 'asked',
+};
 
 function toolKey(input: Record<string, unknown>): string {
   return typeof input.tool_use_id === 'string' ? input.tool_use_id : String(input.tool_name);

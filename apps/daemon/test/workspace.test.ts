@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { GitCredentialRequest } from '@orchestrator/protocol';
@@ -112,8 +112,12 @@ describe('workspace with credentials', () => {
     for (const file of files) {
       const text = await readFile(file, 'utf8');
       expect(text).not.toContain(TOKEN);
-      expect(text).not.toMatch(/helper/);
+      // Only the empty helper of the bare clone, which turns the owner's helpers off (05, section 7).
+      for (const line of text.split('\n').filter((each) => /helper/.test(each))) {
+        expect(line.trim()).toBe('helper =');
+      }
     }
+    expect(gitIn(bare, ['config', '--get-all', 'credential.helper'], home.env)).toBe('\n');
     expect(gitIn(worktree, ['remote', 'get-url', 'origin'], home.env).trim()).toBe(
       `${server.url}/owner/notes.git`,
     );
@@ -140,6 +144,37 @@ describe('workspace with credentials', () => {
       /Authentication failed|could not read Username|terminal prompts disabled/,
     );
     expect(server.requests.at(-1)?.authenticated).toBe(false);
+  });
+
+  it("gives an agent's git fetch none of the owner's own credentials, even with a global helper", async () => {
+    const { worktree } = await prepare();
+    // The owner's global helper, as Git Credential Manager is on WSL: here `store`, with the token
+    // saved for the remote's host in the home folder.
+    const host = new URL(server.url).host;
+    await writeFile(
+      join(home.env.HOME ?? '', '.git-credentials'),
+      `http://x-access-token:${TOKEN}@${host}\n`,
+      { mode: 0o600 },
+    );
+    await writeFile(join(home.env.HOME ?? '', '.gitconfig'), '[credential]\n\thelper = store\n');
+    const before = server.requests.length;
+    const fetch = await promisify(execFile)(join(home.bin, 'git'), ['fetch', 'origin'], {
+      cwd: worktree,
+      // As in a run's session (05, section 4.3).
+      env: { ...home.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+    }).then(
+      () => null,
+      (error: unknown) => (error as { stderr: string }).stderr,
+    );
+    expect(fetch).toMatch(
+      /Authentication failed|could not read Username|terminal prompts disabled/,
+    );
+    const requests = server.requests.slice(before);
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.some((request) => request.authenticated)).toBe(false);
+    // The daemon's own fetch still works: its helper comes on the command line.
+    await prepare({ repository: { ticketBranch: 't/3-another' } });
+    expect(asked).toHaveLength(2);
   });
 
   it('never asks for a credential for a file:// remote', async () => {
