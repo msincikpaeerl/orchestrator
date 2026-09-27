@@ -26,6 +26,7 @@ import type { Outbox } from './outbox.js';
 import type { DaemonPaths } from './paths.js';
 import {
   RunStateFile,
+  claudeArguments,
   createRunFolder,
   stateFilePath,
   writeJsonAtomic,
@@ -313,22 +314,14 @@ export class Run {
         envCommand: this.context.envCommand,
         command: [
           claude,
-          '--mcp-config',
-          files.mcpConfig,
-          '--strict-mcp-config',
-          '--setting-sources',
-          'user',
-          '--settings',
-          files.settings,
-          '--permission-mode',
-          'dontAsk',
-          '--model',
-          start.profile.model,
-          '--append-system-prompt',
-          start.profile.instructions,
-          ...(resumeSessionId ? ['--resume', resumeSessionId] : []),
-          '--',
-          message,
+          ...claudeArguments({
+            mcpConfig: files.mcpConfig,
+            settings: files.settings,
+            model: start.profile.model,
+            instructions: start.profile.instructions,
+            resumeSessionId,
+            message,
+          }),
         ],
       });
     } catch (error) {
