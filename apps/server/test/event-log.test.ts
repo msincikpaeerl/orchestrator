@@ -1,4 +1,4 @@
-import { runMigrations, schema } from '@orchestrator/db';
+import { endPool, runMigrations, schema } from '@orchestrator/db';
 import { createTestDatabase, migrateUpTo } from '@orchestrator/db/testing';
 import {
   ApiError,
@@ -220,7 +220,7 @@ describe('migration of the events written before the project reference', () => {
       expect(expected.rows.some((row) => row.project_id !== null)).toBe(true);
       expect(expected.rows.some((row) => row.project_id === null)).toBe(true);
     } finally {
-      await oldPool.end();
+      await endPool(oldPool);
       await old.drop();
       await t.close();
     }
@@ -241,7 +241,7 @@ describe('migration of the events written before the project reference', () => {
       const { rows } = await pool.query('SELECT project_id FROM events');
       expect(rows).toEqual([{ project_id: null }, { project_id: null }, { project_id: null }]);
     } finally {
-      await pool.end();
+      await endPool(pool);
       await old.drop();
     }
   });

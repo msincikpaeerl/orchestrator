@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApiError } from '@orchestrator/protocol';
+import { endPool } from '@orchestrator/db';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
@@ -31,7 +32,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(webRoot, { recursive: true });
-  await pool.end();
+  await endPool(pool);
 });
 
 describe('the built UI', () => {
