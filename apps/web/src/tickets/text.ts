@@ -1,5 +1,6 @@
 import {
   BLOCKABLE_STATUSES,
+  type AgentLink,
   type TicketLink,
   type TicketPriority,
   type TicketStatus,
@@ -31,6 +32,11 @@ export const priorityLabel: Record<TicketPriority, string> = {
   normal: 'Normal',
   high: 'High',
 };
+
+/** The assignee as the screens show it: the profile's name. */
+export function assigneeLabel(assignee: AgentLink | null): string {
+  return assignee?.name ?? 'No assignee';
+}
 
 /** `WEB-12`: how every screen names a ticket. */
 export function ticketRef(projectKey: string, number: number): string {

@@ -1,5 +1,6 @@
 import {
   CreateTicketRequest,
+  type AgentKey,
   EDITABLE_STATUSES,
   TicketDetail,
   TicketPriority,
@@ -23,7 +24,7 @@ import {
 } from '../components/ui';
 import { refusalText } from '../refusals';
 import { priorityLabel, statusLabel, ticketPath, ticketRef, typeLabel } from '../tickets/text';
-import { ticketsChanged, useTicket, useTickets } from '../queries';
+import { ticketsChanged, useAgents, useTicket, useTickets } from '../queries';
 import { WithProject } from './project';
 import { useTicketNumber } from '../tickets/params';
 
@@ -33,6 +34,8 @@ interface Fields {
   description: string;
   acceptanceCriteria: string[];
   priority: TicketPriority;
+  /** Key of the agent profile expected to do the work, or null. */
+  assignee: AgentKey | null;
 }
 
 const MARKDOWN_HINT = 'Markdown is allowed. Links open in a new tab; images are shown as links.';
@@ -120,6 +123,46 @@ function CriteriaEditor({
         Add a criterion
       </Button>
     </fieldset>
+  );
+}
+
+/** The agent expected to do the work: any profile until lot 6 (01, section 3.4). */
+function AssigneeField({
+  value,
+  onChange,
+}: {
+  value: AgentKey | null;
+  onChange: (assignee: AgentKey | null) => void;
+}) {
+  const agents = useAgents();
+  const listed = agents.data?.agents ?? [];
+  return (
+    <SelectField
+      label="Assignee"
+      hint={
+        <>
+          The agent expected to do the work.{' '}
+          <Link to="/help/agents" className="text-blue-700 underline">
+            About agents
+          </Link>
+        </>
+      }
+      value={value ?? ''}
+      disabled={agents.isPending}
+      onChange={(event) => {
+        onChange(event.target.value === '' ? null : event.target.value);
+      }}
+    >
+      <option value="">No assignee</option>
+      {listed.map((agent) => (
+        <option key={agent.key} value={agent.key}>
+          {agent.name}
+        </option>
+      ))}
+      {value !== null && !listed.some((agent) => agent.key === value) && (
+        <option value={value}>{value}</option>
+      )}
+    </SelectField>
   );
 }
 
@@ -292,6 +335,12 @@ function TicketForm({
           </option>
         ))}
       </SelectField>
+      <AssigneeField
+        value={fields.assignee}
+        onChange={(assignee) => {
+          change({ assignee });
+        }}
+      />
       {withDependencies && (
         <NewDependencies project={project} chosen={blockedBy} onChange={setBlockedBy} />
       )}
@@ -329,6 +378,7 @@ export function NewTicketPage() {
                   description: '',
                   acceptanceCriteria: [],
                   priority: 'normal',
+                  assignee: null,
                 }}
                 submitLabel="Create the ticket"
                 cancelTo={`/projects/${project.key}`}
@@ -397,6 +447,7 @@ function EditForm({ project, number }: { project: Project; number: number }) {
         description: data.description,
         acceptanceCriteria: data.acceptanceCriteria,
         priority: data.priority,
+        assignee: data.assignee?.key ?? null,
       }}
       submitLabel="Save"
       cancelTo={back}

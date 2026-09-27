@@ -7,8 +7,8 @@ import {
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { buttonLinkClass, ErrorMessage, Loading, SelectField, TextField } from '../components/ui';
-import { useTickets } from '../queries';
-import { showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
+import { useAgents, useTickets } from '../queries';
+import { assigneeLabel, showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
 
 /**
  * Columns shown open, in the order of 04, section 1. `proposed` is hidden (02, section 6.3): its
@@ -39,6 +39,9 @@ function TicketCard({ ticket }: { ticket: TicketSummary }) {
       </Link>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
         <span>{typeLabel[ticket.type]}</span>
+        <span className={ticket.assignee ? undefined : 'text-slate-500'}>
+          · {assigneeLabel(ticket.assignee)}
+        </span>
         {showsBlocked(ticket) && <BlockedBadge />}
       </div>
     </li>
@@ -95,6 +98,16 @@ function matches(ticket: TicketSummary, text: string): boolean {
   );
 }
 
+/** The assignee filter: every ticket, the unassigned ones, or one profile's. */
+const ALL = '';
+const UNASSIGNED = '-';
+
+function matchesAssignee(ticket: TicketSummary, filter: string): boolean {
+  if (filter === ALL) return true;
+  if (filter === UNASSIGNED) return ticket.assignee === null;
+  return ticket.assignee?.key === filter;
+}
+
 /**
  * Project board (02, section 6.3): columns by state, `done` and `cancelled` collapsed, `proposed`
  * hidden. Columns sit side by side on a wide screen and one below the other on a
@@ -102,7 +115,9 @@ function matches(ticket: TicketSummary, text: string): boolean {
  */
 export function Board({ project }: { project: Project }) {
   const tickets = useTickets(project.key);
+  const agents = useAgents();
   const [type, setType] = useState<TicketType | ''>('');
+  const [assignee, setAssignee] = useState(ALL);
   const [text, setText] = useState('');
   const canCreate = project.status === 'active' && project.setup.status === 'ready';
 
@@ -112,7 +127,10 @@ export function Board({ project }: { project: Project }) {
   }
   const all = tickets.data.tickets;
   const shown = all.filter(
-    (ticket) => (type === '' || ticket.type === type) && matches(ticket, text),
+    (ticket) =>
+      (type === '' || ticket.type === type) &&
+      matchesAssignee(ticket, assignee) &&
+      matches(ticket, text),
   );
   const inState = (status: TicketStatus) => shown.filter((ticket) => ticket.status === status);
 
@@ -138,6 +156,23 @@ export function Board({ project }: { project: Project }) {
                 {TicketType.options.map((each) => (
                   <option key={each} value={each}>
                     {typeLabel[each]}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+            <div className="w-full sm:w-48">
+              <SelectField
+                label="Assignee"
+                value={assignee}
+                onChange={(event) => {
+                  setAssignee(event.target.value);
+                }}
+              >
+                <option value={ALL}>All assignees</option>
+                <option value={UNASSIGNED}>Unassigned</option>
+                {(agents.data?.agents ?? []).map((agent) => (
+                  <option key={agent.key} value={agent.key}>
+                    {agent.name}
                   </option>
                 ))}
               </SelectField>

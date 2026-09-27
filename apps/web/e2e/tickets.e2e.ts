@@ -106,8 +106,8 @@ test('creating tickets with a dependency, from the board', async ({ page }) => {
   await page.getByRole('link', { name: 'Back to WEB · Web shop' }).click();
   const todo = column(page, 'To do');
   await expect(todo.getByRole('listitem')).toHaveText([
-    /WEB-2 · Checkout page is broken\s*Bug\s*Blocked/,
-    /WEB-1 · Product list\s*Feature/,
+    /WEB-2 · Checkout page is broken\s*Bug\s*· No assignee\s*Blocked/,
+    /WEB-1 · Product list\s*Feature\s*· No assignee/,
   ]);
   await expect(todo.getByRole('listitem').nth(1)).not.toContainText('Blocked');
   await expect(page.getByRole('heading', { name: 'To do (2)' })).toBeVisible();
@@ -302,6 +302,56 @@ test('editing a ticket, and a dependency cycle refused in plain words', async ({
     page.getByRole('heading', { name: 'WEB-1 · Database tables', level: 1 }),
   ).toBeVisible();
   await expect(page.getByText('Chore', { exact: true })).toBeVisible();
+});
+
+test('assigning tickets to agents and filtering the board by assignee', async ({ page }) => {
+  await readyProject(page);
+  await createTicket(page, { title: 'Harness' });
+  await createTicket(page, { title: 'Product list', assignee: 'web_dev' });
+
+  // A new ticket assigned in the form.
+  await page.goto('/projects/WEB/tickets/new');
+  await page.getByLabel('Title').fill('Contact form');
+  await expect(page.getByLabel('Assignee')).toHaveValue('');
+  await page.getByLabel('Assignee').selectOption({ label: 'Web Developer' });
+  await expectFitsScreen(page);
+  await page.getByRole('button', { name: 'Create the ticket' }).click();
+  await expect(page.getByRole('heading', { name: 'WEB-3 · Contact form', level: 1 })).toBeVisible();
+  await expect(page.getByText('Web Developer', { exact: true })).toBeVisible();
+
+  // An unassigned ticket assigned by editing it.
+  await page.goto('/projects/WEB/tickets/1');
+  await expect(page.getByText('No assignee', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Edit' }).click();
+  await page.getByLabel('Assignee').selectOption({ label: 'Architect' });
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('heading', { name: 'WEB-1 · Harness', level: 1 })).toBeVisible();
+  await expect(page.getByText('Architect', { exact: true })).toBeVisible();
+  await createTicket(page, { title: 'Later' });
+
+  // The board shows each card's assignee and filters by it.
+  await page.goto('/projects/WEB');
+  const todo = column(page, 'To do');
+  await expect(todo.getByRole('listitem')).toHaveCount(4);
+  await expect(todo.getByRole('listitem').filter({ hasText: 'Harness' })).toContainText(
+    'Architect',
+  );
+  await expect(todo.getByRole('listitem').filter({ hasText: 'Later' })).toContainText(
+    'No assignee',
+  );
+  await page.getByLabel('Assignee').selectOption({ label: 'Web Developer' });
+  await expect(todo.getByRole('listitem')).toHaveCount(2);
+  await expect(todo).toContainText('Product list');
+  await expect(todo).toContainText('Contact form');
+  await page.getByLabel('Assignee').selectOption({ label: 'Unassigned' });
+  await expect(todo.getByRole('listitem')).toHaveCount(1);
+  await expect(todo).toContainText('Later');
+  await page.getByLabel('Assignee').selectOption({ label: 'Architect' });
+  await expect(todo.getByRole('listitem')).toHaveCount(1);
+  await expect(todo).toContainText('Harness');
+  await expectFitsScreen(page);
+  await page.getByLabel('Assignee').selectOption({ label: 'All assignees' });
+  await expect(todo.getByRole('listitem')).toHaveCount(4);
 });
 
 test('Markdown in tickets runs nothing and loads nothing', async ({ page, baseURL }) => {

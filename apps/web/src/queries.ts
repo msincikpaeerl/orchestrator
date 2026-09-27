@@ -1,5 +1,6 @@
 import {
   AccountListResponse,
+  AgentListResponse,
   EventListResponse,
   GitHubStatusResponse,
   GlobalSettingsResponse,
@@ -40,6 +41,7 @@ export const keys = {
   accounts: ['accounts'],
   machines: ['machines'],
   machine: (id: string) => ['machines', id] as const,
+  agents: ['agents'],
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -155,6 +157,14 @@ export async function projectsChanged(project?: Project) {
     queryClient.invalidateQueries({ queryKey: keys.projects }),
     queryClient.invalidateQueries({ queryKey: keys.needsYou }),
   ]);
+}
+
+/** The agent profiles, for a ticket's assignee. */
+export function useAgents() {
+  return useQuery({
+    queryKey: keys.agents,
+    queryFn: () => api('GET', '/api/agents', AgentListResponse),
+  });
 }
 
 export function useTickets(projectKey: string, enabled = true) {

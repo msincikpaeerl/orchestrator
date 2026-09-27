@@ -63,6 +63,8 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     priority: 'high',
     status: 'todo',
     blockedBy: ['WEB-3'],
+    assignee: 'web_dev',
+    assigneeName: 'Web Developer',
   },
   'ticket.updated': {
     project: 'WEB',
@@ -114,6 +116,13 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   'machine.enabled': { name: 'Laptop' },
   'machine.revoked': { name: 'Laptop' },
   'machine.capabilities_changed': { name: 'Laptop', capabilities: ['git', 'node'] },
+  'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
+  'agent_profile.updated': {
+    key: 'web_dev',
+    name: 'Web Developer',
+    previousVersion: 1,
+    version: 2,
+  },
 };
 
 function entry(type: EventType, overrides: Partial<EventLogEntry> = {}): EventLogEntry {
@@ -152,6 +161,25 @@ describe('eventText', () => {
     expect(text).not.toContain(type);
     expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b|undefined|null|\[object/);
     expect(text).toMatch(/^[A-Z“]/);
+  });
+
+  it('names the assignee of a ticket in words', () => {
+    expect(plainText(eventText(entry('ticket.created')))).toBe(
+      'WEB-12 created: “Checkout fails”, bug, high priority, to do, waits for WEB-3, assigned to “Web Developer”',
+    );
+    const assigned = { project: 'WEB', ticket: 'WEB-12', fields: ['assignee'] };
+    expect(
+      plainText(
+        eventText(
+          entry('ticket.updated', {
+            payload: { ...assigned, assignee: 'architect', assigneeName: 'Architect' },
+          }),
+        ),
+      ),
+    ).toBe('WEB-12 edited: assignee; now assigned to “Architect”');
+    expect(
+      plainText(eventText(entry('ticket.updated', { payload: { ...assigned, assignee: null } }))),
+    ).toBe('WEB-12 edited: assignee; no assignee now');
   });
 
   it('names the ticket and the comment of a Mark as done manually', () => {
