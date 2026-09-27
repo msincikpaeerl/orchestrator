@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -141,6 +142,28 @@ describe('fake claude', () => {
       event: 'arguments_refused',
       message: expect.stringMatching(/--setting-sources/) as unknown,
     });
+  });
+
+  it("accepts the probe's --debug-file, and a start without a message", async () => {
+    await fake.play({ debugLog: ['Settings Warning: unknown key'] });
+    const settings = await writeSettings();
+    const mcp = await writeMcpConfig();
+    const debugFile = join(root, 'debug.log');
+    const args = launchArgs(settings, mcp, 'unused').slice(0, -2);
+    const run = runFake([...args, '--debug-file', debugFile]);
+    await waitFor(() => existsSync(join(root, 'hooks.jsonl')), 10_000, 'SessionStart');
+    expect(await readFile(debugFile, 'utf8')).toBe('Settings Warning: unknown key\n');
+    expect((await hookInputs()).map((input) => input.hook_event_name)).toEqual(['SessionStart']);
+    run.child.kill();
+    await run.exited;
+    const log = await fake.log();
+    expect(log.some((entry) => entry.event === 'arguments_refused')).toBe(false);
+    expect(log.some((entry) => entry.event === 'message')).toBe(false);
+
+    // --debug-file comes before --, never after the message.
+    const late = runFake([...launchArgs(settings, mcp, 'Hello'), '--debug-file', debugFile]);
+    expect(await late.exited).toBe(1);
+    expect(late.stderr()).toMatch(/exactly one message/);
   });
 
   it('plays a scenario: hooks, transcript, MCP call, status line, pasted input, denial', async () => {
