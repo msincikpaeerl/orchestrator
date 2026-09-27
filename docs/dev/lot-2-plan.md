@@ -463,6 +463,15 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - Playwright assigns a ticket and filters by assignee on both viewports;
 - the smoke script passes a dry run with the fake `claude`.
 
+**Owner's answers** (2026-09-27, written into the specs):
+
+1. Profile files: a `---` header (`name`, `description`, `role`, `model`, `allowed_tools`) then the role instructions; the model is the alias `sonnet` (03 section 3, 01 section 3.6).
+2. The profile version covers the common rules and the profile's file: a change of either raises it at the next start; the four templates are versioned with the application (03 section 3).
+3. The Architect and the Web Developer share one allowlist: file tools, `WebFetch`, `WebSearch`, `ToolSearch`, package managers and `node`, local Git commands and basic file commands (03 section 2.2). The allowlist limits wasted turns and is not a security boundary; web access exposes agents to prompt injection, limited by the deny rules. Both points are in 03 section 2.2 and Help > Machines > "Agents on your own user".
+4. The first message has a byte budget (`FIRST_MESSAGE_MAX_BYTES`, a protocol constant from Linux's 128 KiB argument limit): the ticket in full, comments newest first while they fit with a pointer to `ticket_comments`; a description too long is cut at a line boundary with a visible marker pointing to `ticket_get` (03 section 3.2). The first message is visible to the user's other processes (`ps`) at launch and never holds a secret (05 section 2).
+5. `allowlist-smoke.sh` is built like the step H probe (recorder instead of the hook), one session per profile on `haiku` by default, `PASS`, `FAIL` or `NOT ATTEMPTED` per command, its own throw-away Claude configuration deleted with its credentials unless `--keep`, a dry run with the fake `claude` in CI, no personal data in its output or recorded files. The owner runs it in step N (03 section 6).
+6. The board's assignee filter has an "Unassigned" option; a new ticket starts with no assignee; the API names profiles by key.
+
 ### [ ] J. Runs (server) and Run now
 
 - Migration: table `runs` (01 section 3.7, with `pause_reason`, `branch_head`, `commits`, `estimated_usage`) and `run_log_entries`; `tickets.branch_name`, `attempt_count`.

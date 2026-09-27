@@ -62,6 +62,10 @@ This document defines the six default agent profiles, how their instructions are
 
 **Tools.** Full file tools. Bash limited to package managers, build, test, lint and local Git commands.
 
+**What an allowlist is for** (applies to every profile; owner's decision, lot 2 step I). The allowlist limits wasted turns and keeps agents on task: a command outside it is refused at once, and the agent asks instead of improvising. It is **not a security boundary**: `node`, `npx` and `pnpm` can run any code, and so can a project's own scripts. Isolation comes from the deny rules, the `PreToolUse` hook (05, section 4.6) and the limits of running under the owner's user (05, section 2, recommended setup). `WebFetch` and `WebSearch` let the agent read library documentation, and also expose it to instructions hidden in web pages (prompt injection); the deny rules and the hook limit what such instructions could make it do. Both points are in the Help, Machines > "Agents on your own user".
+
+**Lot 2 allowlist** of the Architect and the Web Developer (the same list, since a local dev server is a package manager script; owner's decision, lot 2 step I): `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ToolSearch`; Bash with `npm`, `npx`, `pnpm`, `yarn` and `node`; the local Git commands `status`, `diff`, `log`, `show`, `add`, `commit`, `rm`, `mv`, `restore`, `rev-parse` and `branch` (listing only: `git branch`, `--list`, `--show-current`); and the file commands `ls`, `mkdir`, `mv`, `cp`, `rm`, `cat`, `head`, `tail`, `wc`, `find`, `grep` and `sort`. The exact rules are in `agents/architect.md` and `agents/web_dev.md`.
+
 ### 2.3 Web Developer (`web_dev`)
 
 **Purpose.** Implement features and fixes on web apps and websites.
@@ -128,7 +132,11 @@ The text given to Claude Code at the start of a run has three layers, from most 
 | 2. Role instructions | Agent profile | Sections 2.1 to 2.6, written as direct instructions. |
 | 3. Run context | Built by the server | The ticket (or request), its comments, previous review points, the purpose of the run. |
 
-Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first message of the session. Project conventions are not copied into the prompt. Runs exclude the repository's own Claude Code settings (05, section 4.3), which also stops Claude Code from loading the repository's CLAUDE.md on its own, so the common rules tell the agent to read `CLAUDE.md` (and the files it points to) before anything else.
+Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first message of the session. Project conventions are not copied into the prompt.
+
+**Files** (owner's decisions, lot 2 step I). `agents/common-rules.md` holds layer 1. Each default profile is `agents/<key>.md`: a header between `---` lines with `name`, `description`, `role`, `model` and `allowed_tools` (one rule per `- ` line), then the role instructions (layer 2). The model is Claude Code's alias `sonnet`, which always names the current Sonnet. The run message templates are in `agents/templates/`. The server reads these files at start and seeds the table of profiles (01, section 3.6).
+
+**Profile version** (owner's decision, lot 2 step I). The version covers everything a run receives as its profile: the common rules, the profile's file (name, description, role, model, allowlist and instructions). When any of them changed since the last start, the server raises the version of the profiles concerned (a change of the common rules raises every default profile), so the version a run records names the exact instructions it received. The run message templates are versioned with the application, not with a profile. Runs exclude the repository's own Claude Code settings (05, section 4.3), which also stops Claude Code from loading the repository's CLAUDE.md on its own, so the common rules tell the agent to read `CLAUDE.md` (and the files it points to) before anything else.
 
 ### 3.1 Run purposes and their first message
 
@@ -151,6 +159,8 @@ Every text sent to an agent comes from a **run message template** in `agents/`, 
 - the nudge sent when a turn ends without a decision (05, section 4.8). The server fills it in when it builds `run.start` and sends it in that payload; the daemon decides when to nudge but never holds agent-facing text of its own.
 
 Lot 2 ships these four: `implement`, continue after a pause, the owner's answer, and the nudge.
+
+**Size of the first message** (owner's decision, lot 2 step I). The first message is passed to Claude Code as one command-line argument (05, section 4.3), and Linux caps one argument at 128 KiB. So the filled-in message has a byte budget, `FIRST_MESSAGE_MAX_BYTES` in `packages/protocol`: a constant, not a setting, because it follows from the operating system's limit (as the reconnection backoff of 05, section 3.2). The ticket is always included in full (description, acceptance criteria, dependencies), and its comments are added from the newest to the oldest while they fit; the message then says how many earlier comments were left out and that `ticket_comments` returns them. If the ticket alone does not fit, its description is cut at a line boundary and followed by a visible marker telling the agent to read the rest with `ticket_get`.
 
 ## 4. Assignment rules
 
@@ -179,6 +189,6 @@ Agent instructions are part of the harness:
 - they live in the Orchestrator's repository, under `agents/`, one file per default profile;
 - changes go through a pull request like code;
 - each default profile has a small set of reference tickets used to check its behaviour after a change (a manual evaluation checklist in v1);
-- each default profile's tool allowlist has an automated **smoke test**: a scripted session asks the agent to run the commands its role needs (install, build, test, lint, commit) and checks that none is refused and that forbidden ones are. Allowlist rules are strict (05, section 4.6), so this test runs whenever an allowlist changes. It needs the real Claude Code, so it is a script the owner runs (working rule 10), not part of CI; CI checks the generated settings and the `PreToolUse` rules with the fake `claude`;
+- each default profile's tool allowlist has an automated **smoke test**: a scripted session asks the agent to run the commands its role needs (install, build, test, lint, commit) and checks that none is refused and that forbidden ones are. Allowlist rules are strict (05, section 4.6), so this test runs whenever an allowlist changes. It needs the real Claude Code, so it is a script the owner runs (working rule 10), not part of CI; CI checks the generated settings and the `PreToolUse` rules with the fake `claude`. The script is `tools/smoke/allowlist-smoke.sh` (owner's decisions, lot 2 step I), built like the Claude Code probe of lot 2 step H: the settings and arguments come from the daemon's own code, with a recorder instead of the daemon's hook (so it checks the allowlist and the settings deny rules; the hook's rules are tested in CI). It runs one session per default profile in a scratch Node.js project whose scripts only print a line, asks the agent to run the commands the role needs and some that must be refused, and prints `PASS`, `FAIL` or `NOT ATTEMPTED` (a command the agent never tried) for each. It uses `haiku` by default (`--model` for another). Same guarantees as the probe: its own throw-away Claude configuration folder, deleted at the end with its credentials unless `--keep`; a dry run against the fake `claude` in CI; and no personal data in its output or in any file it records (the probe's sanitising and final guard);
 - allowlist rules use Claude Code's documented syntax: `Bash(pnpm test *)` (the older `Bash(pnpm test:*)` is equivalent), MCP tools as `mcp__orchestrator__<tool name>` (06, section 3);
 - every allowlist includes `ToolSearch`, which Claude Code needs to load MCP tools.
