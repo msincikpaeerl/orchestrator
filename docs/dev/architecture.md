@@ -25,7 +25,7 @@ The daemon's libraries are bundled into its package (ADR 0026), so they are `dev
 
 ## Server start
 
-`src/main.ts` reads the configuration (`src/config.ts`, Zod), creates the Pino logger, then `startServer` (`src/server.ts`) applies migrations, fails project setups interrupted by a restart, marks machines left `online` offline (no daemon is connected yet), and listens. Routes are declared in `buildApp` (`src/app.ts`), which tests call without a network port. `SIGTERM` closes the HTTP server, then the database pool.
+`src/main.ts` reads the configuration (`src/config.ts`, Zod), creates the Pino logger, then `startServer` (`src/server.ts`) applies migrations, fails project setups interrupted by a restart, marks machines left `online` offline (no daemon is connected yet), and listens. Routes are declared in `buildApp` (`src/app.ts`), which tests call without a network port. `SIGTERM` closes the HTTP server, then the database pool (`endPool`, which waits until every connection is closed). A lost database connection (a PostgreSQL restart, an administrator's command) is logged as "database connection lost" and replaced by a new one at the next query, whether it was idle or in use (`reportConnectionErrors`); it never stops the server.
 
 ## Server modules
 

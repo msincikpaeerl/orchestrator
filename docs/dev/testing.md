@@ -24,6 +24,8 @@ They need the development PostgreSQL:
 docker compose -f docker/compose.dev.yml up -d --wait postgres
 ```
 
+A test ends its pools with `endPool(pool)` from `@orchestrator/db`, never `pool.end()` alone, before dropping its database: `pool.end()` resolves while connections are still closing, and `DROP DATABASE … WITH (FORCE)` would terminate them, an unhandled 57P01 error in the test process (seen on a slow CI runner in lot 2 step H).
+
 GitHub is replaced by a local fake (`apps/server/test/fake-github.ts`) that answers like GitHub for the requests the server makes: tests configure the valid tokens, their permissions, the account's plan and repositories. Repositories keep commits, trees, branches and rulesets in memory; `repositoryHistory` and `repositoryFiles` read them back, and `override` injects any answer (for example a refusal) for one request. The server takes the API address as `githubApiUrl` in `buildApp`. `apps/server/test/helpers.ts` starts the application on a new database and captures its logs, so tests can prove that passwords and tokens never reach them.
 
 Daemons are replaced by a scripted client (`apps/server/test/daemon-client.ts`, ADR 0025): it enrolls with `POST /daemon/enroll`, opens the `/daemon` WebSocket with the machine token, sends `hello` (a healthy machine by default, any field changed by the test), heartbeats or any raw text, and records the server's messages and close code. Tests needing it start the application with `listen: true`, which gives its `url`. Offline detection is tested in milliseconds: `daemonSecondMs` makes one second of the heartbeat settings last, for example, 20 ms.
