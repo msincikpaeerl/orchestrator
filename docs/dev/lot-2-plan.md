@@ -475,7 +475,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 *Done 2026-09-27.* The server seeds `agent_profiles` at start from `agents/` and fills in the four templates (`apps/server/src/agents/`); the snapshot of the appended instructions and the messages for a sample ticket is `apps/server/src/agents/__snapshots__/run-messages.snapshot.md`. Two points for the steps that send these messages, settled by the owner at the review (2026-09-27, written into 03 section 3.2, 04 section 8, 07 section 3 and 02 section 6.4):
 
 - step J: a cross-setting rule, maximum acceptance criteria × longest acceptance criterion ≤ 20,000 characters (`FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS`: 80,000 bytes at 4 bytes per character, 20,000 bytes left for the rest of the first message), refused with a message naming both settings and the budget; **Run now** still refuses, with a clear message, a ticket whose first message cannot be built (`FirstMessageTooLarge`);
-- step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; a live answer (`run.input`) is never cut.
+- step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; the quoted question is cut the same way with its own marker, and the answer has priority (the question is cut first); a live answer (`run.input`) is never cut.
 
 ### [ ] J. Runs (server) and Run now
 
@@ -527,7 +527,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - **Questions**:
   - `ticket.ask` → `waiting_human`;
   - the owner's answer sent with `run.input` to a live session;
-  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the answer is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES` with the answer template's marker pointing to `ticket_comments` (03 section 3.2; owner's decision, review of step I);
+  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the question, then the answer, are cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, each with its marker from the answer template pointing to `ticket_comments`; the answer has priority over the question (03 section 3.2; owner's decisions, review of step I);
   - that machine offline → `machine_offline`, ticket back to `todo`.
 - Every MCP call recorded as an event (06 section 7).
 
@@ -536,7 +536,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - each tool with each of its refusals, and the role permissions;
 - the `ticket.create` limit and its `proposed` result, then Accept and Reject;
 - the reduced submission passing and failing;
-- `ticket.ask` answered live and after the lifetime (with an answer over the budget cut at a line boundary, with its marker), and the offline case;
+- `ticket.ask` answered live and after the lifetime (with a long question cut before a long answer, each at a line boundary with its marker), and the offline case;
 - an expired run token refused.
 
 ### [ ] L. Realtime, live screens and user documentation
