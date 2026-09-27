@@ -51,8 +51,21 @@ export class TranscriptReader {
   /** `offset`: bytes already read, kept in `state.json` so a restarted daemon goes on from there. */
   constructor(public offset = 0) {}
 
-  /** Reads the complete lines written since the last call. */
-  async read(path: string): Promise<{ entries: LogEntry[]; skipped: number }> {
+  /** The read in progress: reads run one after another. */
+  private reading: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Reads the complete lines written since the last call. The run's timer, the end of a turn and
+   * the end of the run can call it at the same time: each read waits for the one before, so it
+   * starts from the offset that read reached and no line is logged twice.
+   */
+  read(path: string): Promise<{ entries: LogEntry[]; skipped: number }> {
+    const next = this.reading.then(() => this.readNew(path));
+    this.reading = next.catch(() => undefined);
+    return next;
+  }
+
+  private async readNew(path: string): Promise<{ entries: LogEntry[]; skipped: number }> {
     let text: string;
     const file = await open(path, 'r').catch(() => null);
     if (!file) return { entries: [], skipped: 0 };

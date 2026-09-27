@@ -5,7 +5,7 @@ import { buildApp, type App } from '../src/app.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
 import { markAllOffline } from '../src/machines/gateway.js';
-import { runMigrations, schema } from '@orchestrator/db';
+import { endPool, runMigrations, schema } from '@orchestrator/db';
 import type { SettingName, SettingValues } from '@orchestrator/protocol';
 
 export const TEST_SECRET_KEY = 'test-secret-key-that-is-at-least-32-characters';
@@ -97,7 +97,7 @@ export async function startTestApp(
     },
     async close() {
       await testApp.app.close();
-      await pool.end();
+      await endPool(pool);
       await database.drop();
     },
   };

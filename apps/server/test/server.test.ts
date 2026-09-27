@@ -3,10 +3,11 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { runMigrations } from '@orchestrator/db';
+import { endPool, runMigrations } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
 import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
+import { waitFor } from '@orchestrator/daemon/testing';
 import { TEST_SECRET_KEY } from './helpers.js';
 
 const logger = pino({ level: 'silent' });
@@ -62,7 +63,7 @@ describe('health when the database is unreachable', () => {
   let pool: pg.Pool;
 
   afterEach(async () => {
-    await pool.end();
+    await endPool(pool);
   });
 
   it('answers 503 and names the database', async () => {
@@ -108,8 +109,78 @@ describe('start after a restart during a project setup', () => {
         { setup_status: 'failed', setup_step: 'skeleton', setup_failure: INTERRUPTED_REASON },
       ]);
     } finally {
-      await pool.end();
+      await endPool(pool);
       await database.drop();
     }
   });
+});
+
+describe('database connections lost, as in a PostgreSQL restart', () => {
+  // Above the deadlines below, so that a missed deadline is what the failure names.
+  it('logs each terminated connection, idle or in use, and recovers', async () => {
+    const database = await createTestDatabase();
+    const lines: string[] = [];
+    const captured = pino({ level: 'info' }, { write: (line: string) => lines.push(line) });
+    const server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, captured);
+    const admin = new pg.Client({ connectionString: database.url });
+    let held: pg.PoolClient | null = null;
+    const lost = () =>
+      lines
+        .map((line) => JSON.parse(line) as { msg: string; err?: { code?: string } })
+        .filter((entry) => entry.msg === 'database connection lost');
+    try {
+      const address = server.app.server.address();
+      if (address === null || typeof address === 'string') throw new Error('no TCP address');
+      const health = () => fetch(`http://127.0.0.1:${String(address.port)}/health`);
+      // One connection in use, as in a transaction waiting between two queries (without a
+      // listener of its own, its loss crashes the process), and one idle in the pool. Made
+      // directly, and checked: parallel requests may share one connection on a slow machine.
+      held = await server.pool.connect();
+      const idle = await server.pool.connect();
+      idle.release();
+      // Startup may have left other idle connections: all are terminated below.
+      expect(server.pool.idleCount).toBeGreaterThanOrEqual(1);
+
+      await admin.connect();
+      const { rows } = await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+          WHERE datname = current_database() AND pid <> pg_backend_pid()`,
+      );
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+      // Each connection reports its loss when its error arrives, which takes longer on a slow
+      // machine: wait for all of them, with a deadline.
+      await waitFor(
+        () => lost().length >= rows.length,
+        5000,
+        `${String(rows.length)} "database connection lost" logs`,
+      );
+      expect(lost().map((entry) => entry.err?.code)).toEqual(rows.map(() => '57P01'));
+      held.release(true);
+      held = null;
+
+      // A request may still meet a connection whose loss is not seen yet and answer 503: what
+      // must hold is that the server recovers, with a deadline.
+      await waitFor(
+        async () => {
+          try {
+            const response = await health();
+            return (
+              response.status === 200 &&
+              HealthResponse.parse(await response.json()).database === 'ok'
+            );
+          } catch {
+            // Not listening any more: the deadline fails the test.
+            return false;
+          }
+        },
+        5000,
+        '/health answering 200 with the database ok',
+      );
+    } finally {
+      held?.release(true);
+      await admin.end();
+      await server.close();
+      await database.drop();
+    }
+  }, 30_000);
 });

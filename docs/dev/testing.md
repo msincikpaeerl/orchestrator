@@ -16,6 +16,12 @@ Rules (also in CLAUDE.md):
 - The daemon's tmux and Claude Code layer is tested against a fake `claude` executable; no real Claude Code in CI.
 - Never weaken or delete a test to make CI pass.
 
+## Asynchronous effects
+
+After an asynchronous cause (a message sent, a connection terminated, a process started, a file written by another process), wait for its observable effect with a deadline, then assert: `waitFor` from `@orchestrator/daemon/testing`, or a local helper that throws naming what it waited for. Never assume the effect has happened after the cause returns, and never use a fixed sleep instead. Give the test a timeout above its deadlines, so that a failure names the missed deadline. To check that something does *not* happen, first wait for an effect that comes after it would have, as `pool.test.ts` waits for a connection's end before checking that its loss was reported once.
+
+Repeated local runs do not prove there is no race: CI is slower (a run took 352 s where the same tests take a fraction locally). Two tests of lot 2 passed every local run and failed in CI for this reason.
+
 ## Integration tests
 
 They need the development PostgreSQL:
@@ -23,6 +29,8 @@ They need the development PostgreSQL:
 ```sh
 docker compose -f docker/compose.dev.yml up -d --wait postgres
 ```
+
+A test ends its pools with `endPool(pool)` from `@orchestrator/db`, never `pool.end()` alone, before dropping its database: `pool.end()` resolves while connections are still closing, and `DROP DATABASE … WITH (FORCE)` would terminate them, an unhandled 57P01 error in the test process (seen on a slow CI runner in lot 2 step H).
 
 GitHub is replaced by a local fake (`apps/server/test/fake-github.ts`) that answers like GitHub for the requests the server makes: tests configure the valid tokens, their permissions, the account's plan and repositories. Repositories keep commits, trees, branches and rulesets in memory; `repositoryHistory` and `repositoryFiles` read them back, and `override` injects any answer (for example a refusal) for one request. The server takes the API address as `githubApiUrl` in `buildApp`. `apps/server/test/helpers.ts` starts the application on a new database and captures its logs, so tests can prove that passwords and tokens never reach them.
 

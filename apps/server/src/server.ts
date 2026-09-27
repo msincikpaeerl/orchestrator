@@ -1,4 +1,4 @@
-import { runMigrations } from '@orchestrator/db';
+import { endPool, reportConnectionErrors, runMigrations } from '@orchestrator/db';
 import type { FastifyBaseLogger } from 'fastify';
 import pg from 'pg';
 import { buildApp, type App, type AppDependencies } from './app.js';
@@ -12,6 +12,8 @@ import { defaultWebRoot } from './web.js';
 
 export interface RunningServer {
   app: App;
+  /** The database pool: tests hold a connection with it, as a transaction does. */
+  pool: pg.Pool;
   /** Stops accepting requests, then closes the database connections. */
   close(): Promise<void>;
 }
@@ -23,8 +25,8 @@ export async function startServer(
   options: Pick<AppDependencies, 'githubApiUrl' | 'webRoot'> = {},
 ): Promise<RunningServer> {
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
-  pool.on('error', (error) => {
-    logger.error({ err: error }, 'idle database connection failed');
+  reportConnectionErrors(pool, (error) => {
+    logger.error({ err: error }, 'database connection lost');
   });
 
   try {
@@ -47,13 +49,14 @@ export async function startServer(
     await app.listen({ port: config.port, host: '0.0.0.0' });
     return {
       app,
+      pool,
       async close() {
         await app.close();
-        await pool.end();
+        await endPool(pool);
       },
     };
   } catch (error) {
-    await pool.end();
+    await endPool(pool);
     throw error;
   }
 }

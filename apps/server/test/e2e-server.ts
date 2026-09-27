@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
 import { Hello } from '@orchestrator/protocol';
+import { endPool } from '@orchestrator/db';
 import pg from 'pg';
 import { z } from 'zod';
 import { createLogger } from '../src/logger.js';
@@ -182,7 +183,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     void (async () => {
       await disconnectDaemons();
       await server.close();
-      await pool.end();
+      await endPool(pool);
       await github.close();
       await database.drop();
       process.exit(0);
