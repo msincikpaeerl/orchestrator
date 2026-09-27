@@ -402,7 +402,7 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 se
 
 Owner's review of the step: in Bash commands a word is an absolute path only when its first folder exists at the filesystem root (after resolving `..`), so routes such as `/api/users` are not refused; a path not yet created under an existing root folder is still checked (05 section 4.6, Help).
 
-### [ ] H. Owner check of documented Claude Code behaviour
+### [x] H. Owner check of documented Claude Code behaviour
 
 The lot's security and quota design relies on behaviour read in the documentation but never run (notes above). The owner checks it now, before any run code depends on it (owner's review of step A).
 
@@ -442,6 +442,8 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - **Fixtures** keep only the transcript entries the daemon reads (`user`, `assistant`, `system`, `cost-state`), mask every e-mail address, and pass a final guard: the account's e-mail and organisation id (from the session's data), the global Git `user.name` and `user.email`, and the home folder path must not appear in any fixture after sanitising, or nothing is written. This run's files were sanitised the same way and passed the guard.
 - `CLAUDE_CODE_VALIDATED_VERSION` is raised to 2.1.283.
 - Help > Machines > "Agents on your own user" says that Claude Code shows every agent the account's e-mail address and the Git user.
+
+*Done 2026-09-27.* Checks 1 to 4 `PASS` and check 5 `INFO` on Claude Code 2.1.283 with the owner's grading; the sanitised fixtures are in `apps/daemon/test/fixtures/claude-code-2.1.283/`.
 
 ### [ ] I. Agent profiles and assignee
 
