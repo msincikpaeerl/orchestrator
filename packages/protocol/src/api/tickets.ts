@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentKey, AgentLink } from './agents.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
 export const TicketType = z.enum(['feature', 'bug', 'chore', 'docs', 'spike']);
@@ -104,6 +105,8 @@ export const TicketSummary = z.object({
   status: TicketStatus,
   /** Derived: at least one ticket it depends on is not `done` (01, section 3.4). */
   blocked: z.boolean(),
+  /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
+  assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -160,6 +163,8 @@ export const CreateTicketRequest = z.strictObject({
   priority: TicketPriority.default('normal'),
   /** Numbers of tickets of the same project this one depends on. */
   blockedBy: z.array(TicketNumber).default([]),
+  /** Key of an agent profile; none by default. */
+  assignee: AgentKey.nullable().default(null),
 });
 export type CreateTicketRequest = z.infer<typeof CreateTicketRequest>;
 
@@ -171,6 +176,8 @@ export const UpdateTicketRequest = z
     description: Description,
     acceptanceCriteria: AcceptanceCriteria,
     priority: TicketPriority,
+    /** Key of an agent profile, or null to leave the ticket unassigned. */
+    assignee: AgentKey.nullable(),
   })
   .partial()
   .refine((value) => Object.keys(value).length > 0, {

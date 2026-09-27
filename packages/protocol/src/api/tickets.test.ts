@@ -10,6 +10,7 @@ describe('CreateTicketRequest', () => {
       acceptanceCriteria: [],
       priority: 'normal',
       blockedBy: [],
+      assignee: null,
     });
   });
 
@@ -21,6 +22,7 @@ describe('CreateTicketRequest', () => {
       { type: 'bug', title: 'T', blockedBy: ['2'] },
       { type: 'bug', title: 'T', status: 'done' },
       { type: 'epic', title: 'T' },
+      { type: 'bug', title: 'T', assignee: 'Web Dev' },
     ]) {
       expect(CreateTicketRequest.safeParse(body).success).toBe(false);
     }
@@ -32,6 +34,8 @@ describe('UpdateTicketRequest', () => {
     expect(UpdateTicketRequest.safeParse({}).success).toBe(false);
     expect(UpdateTicketRequest.safeParse({ status: 'done' }).success).toBe(false);
     expect(UpdateTicketRequest.safeParse({ priority: 'high' }).success).toBe(true);
+    expect(UpdateTicketRequest.safeParse({ assignee: null }).success).toBe(true);
+    expect(UpdateTicketRequest.safeParse({ assignee: 'web_dev' }).success).toBe(true);
   });
 });
 
