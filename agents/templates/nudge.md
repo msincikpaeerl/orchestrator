@@ -1,0 +1,1 @@
+Your turn ended without `ticket_submit`, `ticket_ask` or `ticket_give_up`. Continue working on your ticket, and end your next turn with exactly one of these tools. If you are stuck, use `ticket_ask`; if the ticket cannot be done, use `ticket_give_up`. Without one of them, the run will soon end as failed.
