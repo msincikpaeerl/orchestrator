@@ -16,6 +16,12 @@ Rules (also in CLAUDE.md):
 - The daemon's tmux and Claude Code layer is tested against a fake `claude` executable; no real Claude Code in CI.
 - Never weaken or delete a test to make CI pass.
 
+## Asynchronous effects
+
+After an asynchronous cause (a message sent, a connection terminated, a process started, a file written by another process), wait for its observable effect with a deadline, then assert: `waitFor` from `@orchestrator/daemon/testing`, or a local helper that throws naming what it waited for. Never assume the effect has happened after the cause returns, and never use a fixed sleep instead. Give the test a timeout above its deadlines, so that a failure names the missed deadline. To check that something does *not* happen, first wait for an effect that comes after it would have, as `pool.test.ts` waits for a connection's end before checking that its loss was reported once.
+
+Repeated local runs do not prove there is no race: CI is slower (a run took 352 s where the same tests take a fraction locally). Two tests of lot 2 passed every local run and failed in CI for this reason.
+
 ## Integration tests
 
 They need the development PostgreSQL:
