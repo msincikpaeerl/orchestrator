@@ -472,10 +472,10 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 5. `allowlist-smoke.sh` is built like the step H probe (recorder instead of the hook), one session per profile on `haiku` by default, `PASS`, `FAIL` or `NOT ATTEMPTED` per command, its own throw-away Claude configuration deleted with its credentials unless `--keep`, a dry run with the fake `claude` in CI, no personal data in its output or recorded files. The owner runs it in step N (03 section 6).
 6. The board's assignee filter has an "Unassigned" option; a new ticket starts with no assignee; the API names profiles by key.
 
-*Done 2026-09-27.* The server seeds `agent_profiles` at start from `agents/` and fills in the four templates (`apps/server/src/agents/`); the snapshot of the appended instructions and the messages for a sample ticket is `apps/server/src/agents/__snapshots__/run-messages.snapshot.md`. Two points are left to the owner for the steps that send these messages:
+*Done 2026-09-27.* The server seeds `agent_profiles` at start from `agents/` and fills in the four templates (`apps/server/src/agents/`); the snapshot of the appended instructions and the messages for a sample ticket is `apps/server/src/agents/__snapshots__/run-messages.snapshot.md`. Two points for the steps that send these messages, settled by the owner at the review (2026-09-27, written into 03 section 3.2, 04 section 8, 07 section 3 and 02 section 6.4):
 
-- step J: a ticket whose first message cannot fit even with its description cut (its acceptance criteria alone are over the budget, possible only with the criteria limits raised far above their defaults) makes the server's builder throw `FirstMessageTooLarge`; how **Run now** refuses it is to be decided;
-- step K: the owner's answer sent with `run.resume` is also a command-line argument after `--resume`, under the same 128 KiB cap; a comment can be up to 100,000 characters (up to 400,000 bytes in UTF-8), so the answer message needs the same kind of budget.
+- step J: a cross-setting rule, maximum acceptance criteria × longest acceptance criterion ≤ 20,000 characters (`FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS`: 80,000 bytes at 4 bytes per character, 20,000 bytes left for the rest of the first message), refused with a message naming both settings and the budget; **Run now** still refuses, with a clear message, a ticket whose first message cannot be built (`FirstMessageTooLarge`);
+- step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; a live answer (`run.input`) is never cut.
 
 ### [ ] J. Runs (server) and Run now
 
@@ -493,6 +493,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - `git.credential_request`: the token is sent only for a fetch of the run's own repository while the run is active.
 - Commit author (04 section 4): a GitHub token saved before 0.3.0 whose account id is still unknown gets it at the first run (02 section 3.2; step C stores it at the save and at each check).
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
+- First message size (03 section 3.2; owner's decision, review of step I): the cross-setting rule `ticketMaxAcceptanceCriteria` × `acceptanceCriterionMaxLength` ≤ `FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS` (20,000) in `SETTING_ORDER`'s checks, refused naming both settings and the budget; Run now refuses a ticket whose first message cannot be built (`FirstMessageTooLarge`), in plain words.
 - Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
 - Run now refuses an unusable, disabled, revoked or offline machine. The Claude Code version the daemon reports at run start is checked again as at `hello`: missing or below the minimum marks the machine unusable and fails that start (05 section 4.3).
 - **Usage limits** on the server:
@@ -503,7 +504,8 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 
 **Done when** integration tests with a scripted daemon cover:
 
-- every Run now refusal;
+- every Run now refusal, the ticket too large for its first message included;
+- the criteria cross-setting rule refused with both settings and the budget named;
 - the acknowledgement timeout without an attempt counted;
 - a run through to `succeeded` via `run.state`, and a failure raising `attempt_count` with its comment;
 - Stop run, a `machine_offline` failure and a `machine_revoked` failure, none counted;
@@ -525,7 +527,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - **Questions**:
   - `ticket.ask` → `waiting_human`;
   - the owner's answer sent with `run.input` to a live session;
-  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine;
+  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the answer is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES` with the answer template's marker pointing to `ticket_comments` (03 section 3.2; owner's decision, review of step I);
   - that machine offline → `machine_offline`, ticket back to `todo`.
 - Every MCP call recorded as an event (06 section 7).
 
@@ -534,7 +536,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - each tool with each of its refusals, and the role permissions;
 - the `ticket.create` limit and its `proposed` result, then Accept and Reject;
 - the reduced submission passing and failing;
-- `ticket.ask` answered live and after the lifetime, and the offline case;
+- `ticket.ask` answered live and after the lifetime (with an answer over the budget cut at a line boundary, with its marker), and the offline case;
 - an expired run token refused.
 
 ### [ ] L. Realtime, live screens and user documentation
