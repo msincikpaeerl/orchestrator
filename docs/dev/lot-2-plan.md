@@ -433,6 +433,16 @@ Owner's decisions before the step (2026-09-27), written into 05 sections 4.3 and
 - **One prompt** listing the actions as numbered commands. Each action must appear in the recorded `PreToolUse` payloads (or, failing that, in the transcript, which the result line says); an action never attempted prints `NOT ATTEMPTED`, and the summary asks for another run.
 - **Fixtures**: hook payloads, status line inputs, the transcript and the control session's hooks, with the scratch path as `<probe>`, the home folder as `~` and credentials masked; the debug log stays in the scratch folder.
 
+The owner's run (2026-09-27, Claude Code 2.1.283, `haiku`): checks 1, 2 and 4 `PASS`; check 3 `FAIL` because the control file was refused too; check 5 `FAIL` ("cannot be proved this way"). The transcript showed two different refusals: `config.json` got the deny rule's message ("Permission to use Bash with command … has been denied."), the control file `dontAsk`'s ("… because Claude Code is running in don't ask mode"). The raw transcript also held the Claude account's e-mail address, the global Git user and the organisation id (Claude Code's `session_context` and `credential_org` entries); it was never committed.
+
+Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR 0002 and Help:
+
+- **Check 3** is proved by the refusal messages: `PASS` when `config.json` is refused with the rule's message and the control is read or refused by `dontAsk`; `FAIL` when `dontAsk`, not the rule, refused `config.json`, or when a rule refused the control. `dontAsk` refusing a Bash `cat` outside the worktree that an allow rule matches is written into 05 section 4.6 as a second barrier.
+- **Check 5** prints `INFO`, never `PASS`, since nothing is proved (`FAIL` only when the key is reported). The guarantee is that every usage limit, detected or suspected, closes the session (step G); the key in both settings files is an extra layer, to be confirmed by the usage-limit capture (05 section 4.10).
+- **Fixtures** keep only the transcript entries the daemon reads (`user`, `assistant`, `system`, `cost-state`), mask every e-mail address, and pass a final guard: the account's e-mail and organisation id (from the session's data), the global Git `user.name` and `user.email`, and the home folder path must not appear in any fixture after sanitising, or nothing is written. This run's files were sanitised the same way and passed the guard.
+- `CLAUDE_CODE_VALIDATED_VERSION` is raised to 2.1.283.
+- Help > Machines > "Agents on your own user" says that Claude Code shows every agent the account's e-mail address and the Git user.
+
 ### [ ] I. Agent profiles and assignee
 
 - `agents/`:

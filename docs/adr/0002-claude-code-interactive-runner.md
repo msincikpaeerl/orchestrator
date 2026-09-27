@@ -88,3 +88,13 @@ Read in Claude Code's documentation for version 2.1.282, not yet run on the real
 - Claude Code waits and continues on its own after a usage limit resets (`autoContinueAtUsageLimit`, on by default). Runs turn it off.
 - The transcript's format is documented as internal and changing between versions: it is used for display only.
 - Trust, hooks payloads (`SessionStart.source`, `Stop.last_assistant_message`) and the `dontAsk` mode are described as the spike found them.
+
+## Update 2026-09-27 (lot 2 step H, owner's probe)
+
+Run by the owner on Claude Code 2.1.283 with `tools/smoke/claude-code-probe.sh` (fixtures in `apps/daemon/test/fixtures/claude-code-2.1.283/`):
+
+- `--setting-sources user` ignores the repository's `.claude/settings.json` (its allow rule and hook did not apply) and `--strict-mcp-config` its `.mcp.json` (the server was not started or offered): validated.
+- A deny rule refuses `cat` of the daemon's `config.json` with its own message; `dontAsk` also refuses a `cat` outside the worktree that an allow rule matches, with a different message.
+- The status line input has `rate_limits` and `cost`: validated.
+- `autoContinueAtUsageLimit`: no settings problem reported, but unknown keys are not reported either, so only the usage-limit capture can confirm it; the session closing on every limit is the guarantee (05, section 4.10).
+- Claude Code adds the Claude account's e-mail address, the global Git user and the organisation id to the session's context and transcript: the probe's fixtures keep only the transcript entries the daemon reads, and refuse to write when any of these remains.
