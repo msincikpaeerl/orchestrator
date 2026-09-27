@@ -424,6 +424,15 @@ The lot's security and quota design relies on behaviour read in the documentatio
 
 **Done when** the owner has run the probe once with the real Claude Code, every check prints `PASS`, and the fixtures are committed. If a check fails, the next step starts by adjusting the specs with the owner.
 
+Owner's decisions before the step (2026-09-27), written into 05 sections 4.3 and 4.10:
+
+- **Configuration folder**: the probe's own, in its scratch folder under `$TMPDIR`, logged in with the daemon's `login` code; the scratch folder holds real credentials, so it is deleted at the end (after the sanitised fixtures are copied out) unless `--keep`, which says where it is and that it holds credentials.
+- **What the probe replaces**: the daemon's argument list (now `claudeArguments`, shared), permission rules and settings generation are used as they are; the hook, status line and MCP commands, which need a running daemon, point to a recorder; the model is `haiku`; the run settings add `enableAllProjectMcpServers: true`, so only `--strict-mcp-config` can keep the repository's server out.
+- **Check 3**: the probe copies the daemon's layout (`.orchestrator/config.json` denied, the worktree under `worktrees/`), allows `Bash(cat *)`, and has the agent also read a control file next to `config.json` that no rule covers; `PASS` only when `config.json` is refused and the control is read.
+- **Check 5**: Claude Code's settings reference gives `autoContinueAtUsageLimit` the scope "User or managed", so the daemon now also sets it in its user settings (`claude-config/settings.json`) before each launch. The probe records a debug log (`--debug-file`) and first starts a control session with a made-up setting and no prompt (no quota): if that setting is not reported either, check 5 prints `FAIL` ("cannot be proved this way").
+- **One prompt** listing the actions as numbered commands. Each action must appear in the recorded `PreToolUse` payloads (or, failing that, in the transcript, which the result line says); an action never attempted prints `NOT ATTEMPTED`, and the summary asks for another run.
+- **Fixtures**: hook payloads, status line inputs, the transcript and the control session's hooks, with the scratch path as `<probe>`, the home folder as `~` and credentials masked; the debug log stays in the scratch folder.
+
 ### [ ] I. Agent profiles and assignee
 
 - `agents/`:
