@@ -445,7 +445,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 
 *Done 2026-09-27.* Checks 1 to 4 `PASS` and check 5 `INFO` on Claude Code 2.1.283 with the owner's grading; the sanitised fixtures are in `apps/daemon/test/fixtures/claude-code-2.1.283/`.
 
-### [ ] I. Agent profiles and assignee
+### [x] I. Agent profiles and assignee
 
 - `agents/`:
   - common rules (06 section 6, including "read `CLAUDE.md` first" and the lot 2 ending with `ticket_submit`);
@@ -471,6 +471,11 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 4. The first message has a byte budget (`FIRST_MESSAGE_MAX_BYTES`, a protocol constant from Linux's 128 KiB argument limit): the ticket in full, comments newest first while they fit with a pointer to `ticket_comments`; a description too long is cut at a line boundary with a visible marker pointing to `ticket_get` (03 section 3.2). The first message is visible to the user's other processes (`ps`) at launch and never holds a secret (05 section 2).
 5. `allowlist-smoke.sh` is built like the step H probe (recorder instead of the hook), one session per profile on `haiku` by default, `PASS`, `FAIL` or `NOT ATTEMPTED` per command, its own throw-away Claude configuration deleted with its credentials unless `--keep`, a dry run with the fake `claude` in CI, no personal data in its output or recorded files. The owner runs it in step N (03 section 6).
 6. The board's assignee filter has an "Unassigned" option; a new ticket starts with no assignee; the API names profiles by key.
+
+*Done 2026-09-27.* The server seeds `agent_profiles` at start from `agents/` and fills in the four templates (`apps/server/src/agents/`); the snapshot of the appended instructions and the messages for a sample ticket is `apps/server/src/agents/__snapshots__/run-messages.snapshot.md`. Two points are left to the owner for the steps that send these messages:
+
+- step J: a ticket whose first message cannot fit even with its description cut (its acceptance criteria alone are over the budget, possible only with the criteria limits raised far above their defaults) makes the server's builder throw `FirstMessageTooLarge`; how **Run now** refuses it is to be decided;
+- step K: the owner's answer sent with `run.resume` is also a command-line argument after `--resume`, under the same 128 KiB cap; a comment can be up to 100,000 characters (up to 400,000 bytes in UTF-8), so the answer message needs the same kind of budget.
 
 ### [ ] J. Runs (server) and Run now
 
