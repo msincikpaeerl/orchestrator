@@ -10,9 +10,9 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { SETTINGS, maskSecrets } from '@orchestrator/protocol';
+import { SETTINGS } from '@orchestrator/protocol';
 import { login } from '../src/login.js';
 import { daemonPaths } from '../src/paths.js';
 import {
@@ -25,6 +25,13 @@ import {
 } from '../src/run-files.js';
 import { shellCommand } from '../src/self.js';
 import { TrustRegistry } from '../src/trust.js';
+import {
+  keptTranscript,
+  personalDataFound,
+  sanitise,
+  sessionPersonalValues,
+  type PersonalValue,
+} from './claude-code-probe-fixtures.js';
 
 // The helper of the Claude Code probe (lot 2 plan, step H), called by
 // `tools/smoke/claude-code-probe.sh` only. It builds everything from the daemon's own code (login,
@@ -48,6 +55,10 @@ const MARKER_COMMAND = './probe-marker.sh';
 const DENIED_FILE = 'config.json';
 const CONTROL_FILE = 'control.txt';
 const MCP_TOOL = 'mcp__orchestrator__ping';
+
+/** Claude Code's refusals (2.1.283): a matching rule, or `dontAsk` mode refusing what no rule allows. */
+const RULE_REFUSAL = /^Permission to use \w+ with command .+ has been denied\.?$/s;
+const DONT_ASK_REFUSAL = /don't ask mode/i;
 
 /** Words of a line reporting a setting as refused or ignored. */
 const REPORTED =
@@ -295,7 +306,51 @@ function transcriptCalls(transcript: Record<string, unknown>[]): ToolCall[] {
   });
 }
 
-type Verdict = 'PASS' | 'FAIL' | 'NOT ATTEMPTED';
+/** The text of each Bash call's result in the transcript, with its command. */
+function bashResults(transcript: Record<string, unknown>[]): { command: string; result: string }[] {
+  const commands = new Map<string, string>();
+  const results: { command: string; result: string }[] = [];
+  for (const entry of transcript) {
+    const content = (entry.message as { content?: unknown } | undefined)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content as {
+      type?: string;
+      id?: string;
+      name?: string;
+      input?: { command?: unknown };
+      tool_use_id?: string;
+      content?: unknown;
+    }[]) {
+      if (part.type === 'tool_use' && part.name === 'Bash' && part.id) {
+        commands.set(part.id, field(part.input?.command));
+      }
+      const command = part.tool_use_id ? commands.get(part.tool_use_id) : undefined;
+      if (part.type === 'tool_result' && command !== undefined) {
+        const result = Array.isArray(part.content)
+          ? (part.content as { text?: unknown }[]).map((item) => field(item.text)).join('')
+          : field(part.content);
+        results.push({ command, result: result.trim() });
+      }
+    }
+  }
+  return results;
+}
+
+/** How a `cat` of `file` ended: read, refused by a rule, refused by `dontAsk` mode, or unknown. */
+function catOutcome(
+  results: { command: string; result: string }[],
+  file: string,
+  token: string,
+  seen: string,
+): 'read' | 'rule' | 'dontAsk' | 'unknown' {
+  if (seen.includes(token)) return 'read';
+  const refusals = results.filter((item) => item.command.includes(file)).map((item) => item.result);
+  if (refusals.some((text) => RULE_REFUSAL.test(text))) return 'rule';
+  if (refusals.some((text) => DONT_ASK_REFUSAL.test(text))) return 'dontAsk';
+  return 'unknown';
+}
+
+type Verdict = 'PASS' | 'FAIL' | 'NOT ATTEMPTED' | 'INFO';
 interface Check {
   verdict: Verdict;
   title: string;
@@ -375,13 +430,23 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
     );
   }
 
-  // 3. A deny rule refuses cat on the daemon's folder.
+  // 3. A deny rule refuses cat on the daemon's folder. Its refusal message is the rule's, while
+  // the control file, which no rule covers, is read or refused by `dontAsk` mode (owner's
+  // decision after the first run: `dontAsk` refuses a Bash command reading outside the working
+  // folder even when an allow rule matches it).
   {
     const title = 'cat on the denied file refused by a deny rule';
     const denied = attempted(bash(DENIED_FILE));
     const control = attempted(bash(CONTROL_FILE));
+    const results = bashResults(transcript);
+    const deniedOutcome = catOutcome(results, DENIED_FILE, layout.tokens.denied, seen);
+    const controlOutcome = catOutcome(results, CONTROL_FILE, layout.tokens.control, seen);
+    const controlText =
+      controlOutcome === 'read'
+        ? 'the control file next to it was read'
+        : 'the control file next to it was refused by dontAsk mode';
     checks.push(
-      seen.includes(layout.tokens.denied)
+      deniedOutcome === 'read'
         ? {
             verdict: 'FAIL',
             title,
@@ -398,18 +463,29 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
                 .filter(Boolean)
                 .join(' or ')}`,
             }
-          : seen.includes(layout.tokens.control)
+          : deniedOutcome !== 'rule'
             ? {
-                verdict: 'PASS',
-                title,
-                detail: `refused, while the control file next to it was read (${denied})`,
-              }
-            : {
                 verdict: 'FAIL',
                 title,
                 detail:
-                  'the control file was refused too: cannot tell the deny rule from the working-folder limit',
-              },
+                  deniedOutcome === 'dontAsk'
+                    ? 'refused by dontAsk mode, not by the deny rule'
+                    : 'no refusal message found in the transcript',
+              }
+            : controlOutcome === 'read' || controlOutcome === 'dontAsk'
+              ? {
+                  verdict: 'PASS',
+                  title,
+                  detail: `refused with the rule's message, while ${controlText} (${denied})`,
+                }
+              : {
+                  verdict: 'FAIL',
+                  title,
+                  detail:
+                    controlOutcome === 'rule'
+                      ? 'the control file was refused by a rule too: a deny rule covers more than it should'
+                      : 'no outcome found in the transcript for the control file',
+                },
     );
   }
 
@@ -439,9 +515,12 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
     );
   }
 
-  // 5. autoContinueAtUsageLimit accepted, against a made-up key that must be reported.
+  // 5. autoContinueAtUsageLimit: Claude Code reports no unknown key (the control shows it), so
+  // nothing proves the name before a real usage limit: INFO, or FAIL when the key is reported
+  // (owner's decision after the first run; 05, section 4.10).
   {
-    const title = 'autoContinueAtUsageLimit accepted (no settings report), a made-up key reported';
+    const title =
+      'autoContinueAtUsageLimit: no settings problem reported (information only: the usage-limit capture proves it)';
     const reports = (name: string, key: string) =>
       [
         ...lines(join(layout.scratch, `debug-${name}.log`)),
@@ -460,58 +539,67 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
             title,
             detail: `reported: ${reported[0]?.trim().slice(0, 200) ?? 'a Settings Error dialog'}`,
           }
-        : !controlStarted
-          ? { verdict: 'FAIL', title, detail: 'the control session never started' }
-          : controlReported.length === 0
-            ? {
-                verdict: 'FAIL',
-                title,
-                detail: `cannot be proved this way: Claude Code did not report the made-up key ${CONTROL_KEY} either`,
-              }
-            : {
-                verdict: 'PASS',
-                title,
-                detail: `control reported: ${controlReported[0]?.trim().slice(0, 200) ?? ''}`,
-              },
+        : {
+            verdict: 'INFO',
+            title,
+            detail: !controlStarted
+              ? 'the control session never started'
+              : controlReported.length === 0
+                ? `the made-up key ${CONTROL_KEY} was not reported either`
+                : `the made-up key was reported: ${controlReported[0]?.trim().slice(0, 200) ?? ''}`,
+          },
     );
   }
   return { checks, transcriptPath };
 }
 
-/** Fixture text: scratch paths and the home folder replaced, credentials masked. */
-function sanitise(layout: Layout, value: string): string {
-  // Claude Code also names the transcript folder after the path, non-alphanumerics as `-`.
-  const encoded = (path: string) => path.replace(/[^A-Za-z0-9]/g, '-');
-  const replacements: [string, string][] = [
-    ...[realpathSync(layout.scratch), layout.scratch].flatMap((scratch): [string, string][] => [
-      [scratch, '<probe>'],
-      [encoded(scratch), '-probe-'],
-    ]),
-    [homedir(), '~'],
-    [encoded(homedir()), '-home-'],
+/** The global Git user, which Claude Code shows the agent (never the probe's own `-c` values). */
+function gitPersonalValues(): PersonalValue[] {
+  const read = (key: string) => {
+    try {
+      return execFileSync('git', ['config', '--global', '--get', key], { encoding: 'utf8' }).trim();
+    } catch {
+      return '';
+    }
+  };
+  return [
+    { kind: 'the global Git user name', value: read('user.name') },
+    { kind: 'the global Git e-mail address', value: read('user.email') },
   ];
-  let result = value;
-  for (const [from, to] of replacements) result = result.split(from).join(to);
-  return maskSecrets(result);
 }
 
+/**
+ * Writes the sanitised fixtures, or nothing when the owner's data still appears in one of them
+ * (the final guard); returns what was found.
+ */
 function writeFixtures(
   layout: Layout,
   folder: string,
   transcriptPath: string | null,
   report: string,
-) {
-  mkdirSync(folder, { recursive: true });
-  const files: [string, string][] = [
+): string[] {
+  const options = { scratch: [realpathSync(layout.scratch), layout.scratch], home: homedir() };
+  const rawTranscript = transcriptPath ? text(transcriptPath) : '';
+  const sources: [string, string][] = [
     ['hooks.jsonl', join(layout.record, 'hooks-probe.jsonl')],
     ['status-line.jsonl', join(layout.record, 'status-line-probe.jsonl')],
     ['control-hooks.jsonl', join(layout.record, 'hooks-control.jsonl')],
-    ...(transcriptPath ? [['transcript.jsonl', transcriptPath] as [string, string]] : []),
   ];
-  for (const [name, source] of files) {
-    if (existsSync(source)) writeFileSync(join(folder, name), sanitise(layout, text(source)));
+  const files: Record<string, string> = {};
+  for (const [name, source] of sources) {
+    if (existsSync(source)) files[name] = sanitise(text(source), options);
   }
-  writeFileSync(join(folder, 'results.txt'), sanitise(layout, report));
+  if (transcriptPath) files['transcript.jsonl'] = sanitise(keptTranscript(rawTranscript), options);
+  files['results.txt'] = sanitise(report, options);
+  const personal = [
+    ...sessionPersonalValues(rawTranscript, readJson(join(layout.claudeConfig, '.claude.json'))),
+    ...gitPersonalValues(),
+  ];
+  const found = personalDataFound(files, personal, options.home);
+  if (found.length > 0) return found;
+  mkdirSync(folder, { recursive: true });
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(folder, name), content);
+  return [];
 }
 
 async function main(): Promise<void> {
@@ -558,11 +646,21 @@ async function main(): Promise<void> {
             `${String(index + 1)}. ${check.verdict.padEnd(width)}  ${check.title}: ${check.detail}`,
         ),
       ].join('\n');
-      if (values.fixtures)
-        writeFixtures(layout, resolve(values.fixtures), transcriptPath, `${report}\n`);
       process.stdout.write(`${report}\n`);
       const verdicts = new Set(checks.map((check) => check.verdict));
       process.exitCode = verdicts.has('FAIL') ? 1 : verdicts.has('NOT ATTEMPTED') ? 2 : 0;
+      if (values.fixtures) {
+        const folder = resolve(values.fixtures);
+        const found = writeFixtures(layout, folder, transcriptPath, `${report}\n`);
+        if (found.length > 0) {
+          process.stdout.write(
+            `FIXTURES NOT WRITTEN: personal data still found after sanitising (${found.join('; ')}). Nothing was written.\n`,
+          );
+          process.exitCode = 3;
+        } else {
+          process.stdout.write(`Fixtures written to: ${relative(process.cwd(), folder)}\n`);
+        }
+      }
       return;
     }
     default:
