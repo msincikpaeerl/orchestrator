@@ -191,6 +191,45 @@ export const projects = pgTable(
 );
 
 /**
+ * Agent profiles (01, section 3.6). Default profiles are seeded from `agents/` when the server
+ * starts (03, section 3); `role` is an `AgentRole`, `allowed_tools` a `string[]` of Claude Code
+ * permission rules, `mcp_permissions` a `McpPermission[]` of `@orchestrator/protocol`.
+ */
+export const agentProfiles = pgTable(
+  'agent_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    key: text('key').notNull().unique(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    role: text('role').notNull(),
+    /** Role instructions (layer 2 of 03, section 3); the common rules are added at each run. */
+    instructions: text('instructions').notNull(),
+    model: text('model').notNull(),
+    allowedTools: jsonb('allowed_tools').notNull().default([]),
+    mcpPermissions: jsonb('mcp_permissions').notNull().default([]),
+    requiredCapabilities: jsonb('required_capabilities').notNull().default([]),
+    isDefault: boolean('is_default').notNull(),
+    version: integer('version').notNull().default(1),
+    /**
+     * For a default profile, the SHA-256 of the shipped files its version covers (its file and the
+     * common rules): a different value at start raises the version.
+     */
+    shippedHash: text('shipped_hash'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('agent_profiles_key_format', sql`${table.key} ~ '^[a-z][a-z0-9_]*$'`),
+    check(
+      'agent_profiles_role',
+      sql`${table.role} IN ('planner', 'builder', 'reviewer', 'writer')`,
+    ),
+    check('agent_profiles_version', sql`${table.version} >= 1`),
+  ],
+);
+
+/**
  * Tickets (01, section 3.4). Never deleted: cancelled. Allowed values of the text columns are the
  * enums of `@orchestrator/protocol` (`TicketType`, `TicketStatus`, ...). `status` is written only
  * by the server's transition module (04, section 2).
@@ -213,10 +252,13 @@ export const tickets = pgTable(
     status: text('status').notNull(),
     /** `owner`; agent profiles come with lot 2. */
     createdBy: text('created_by').notNull(),
+    /** The agent profile expected to do the work (01, section 3.4); null when unassigned. */
+    assigneeProfileId: uuid('assignee_profile_id').references(() => agentProfiles.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index('tickets_assignee_profile_id').on(table.assigneeProfileId),
     unique('tickets_project_number').on(table.projectId, table.number),
     // Target of the dependencies' foreign keys, which keep both tickets in one project.
     unique('tickets_project_id').on(table.projectId, table.id),
