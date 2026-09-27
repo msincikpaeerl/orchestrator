@@ -1,6 +1,8 @@
 import { endPool, reportConnectionErrors, runMigrations } from '@orchestrator/db';
 import type { FastifyBaseLogger } from 'fastify';
 import pg from 'pg';
+import { loadShippedAgents } from './agents/files.js';
+import { seedAgentProfiles } from './agents/seed.js';
 import { buildApp, type App, type AppDependencies } from './app.js';
 import type { Config } from './config.js';
 import { createDatabase } from './database.js';
@@ -33,6 +35,10 @@ export async function startServer(
     await runMigrations(pool);
     logger.info('database migrations applied');
     const db = createDatabase(pool);
+    const seeded = await seedAgentProfiles(db, await loadShippedAgents());
+    if (seeded.created.length + seeded.updated.length > 0) {
+      logger.info(seeded, 'default agent profiles seeded');
+    }
     await detectUnreadableToken(db, deriveSecretKey(config.secretKey), logger);
     const interrupted = await failInterruptedSetups(db);
     if (interrupted > 0) logger.warn({ interrupted }, 'project setups interrupted by a restart');

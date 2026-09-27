@@ -7,6 +7,7 @@ import {
   TicketPriority,
   TicketStatus,
   TicketType,
+  type AgentLink,
   type Comment,
   type EventPayload,
   type TicketLink,
@@ -35,6 +36,7 @@ export function toTicketSummary(
   row: TicketRow,
   projectKey: string,
   blocked: boolean,
+  assignee: AgentLink | null,
 ): TicketSummary {
   return {
     id: row.id,
@@ -45,6 +47,7 @@ export function toTicketSummary(
     priority: TicketPriority.parse(row.priority),
     status: TicketStatus.parse(row.status),
     blocked,
+    assignee,
     createdBy: TicketCreator.parse(row.createdBy),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

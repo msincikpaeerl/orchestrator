@@ -1,6 +1,6 @@
 import { schema } from '@orchestrator/db';
 import { ApiError, SessionResponse, SetupStateResponse } from '@orchestrator/protocol';
-import { eq } from 'drizzle-orm';
+import { asc, eq, ne } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createLogger } from '../src/logger.js';
@@ -16,8 +16,13 @@ afterEach(async () => {
   await t.close();
 });
 
+/** Events written since the start, without the default agent profiles seeded by the start. */
 async function eventTypes(): Promise<string[]> {
-  const rows = await t.db.select({ type: schema.events.type }).from(schema.events);
+  const rows = await t.db
+    .select({ type: schema.events.type })
+    .from(schema.events)
+    .where(ne(schema.events.entityType, 'agent_profile'))
+    .orderBy(asc(schema.events.id));
   return rows.map((row) => row.type);
 }
 

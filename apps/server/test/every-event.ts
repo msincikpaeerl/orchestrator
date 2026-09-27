@@ -6,6 +6,8 @@ import {
 } from '@orchestrator/protocol';
 import { expect } from 'vitest';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
+import { loadShippedAgents } from '../src/agents/files.js';
+import { seedAgentProfiles } from '../src/agents/seed.js';
 import { resetPassword } from '../src/reset-password.js';
 import { enroll, enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, type FakeGitHub } from './fake-github.js';
@@ -89,11 +91,24 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   expect((await settled('LEG')).setup.status).toBe('ready');
   await call('POST', '/api/projects/LEG/harness/check');
 
-  await call('POST', '/api/projects/SHOP/tickets', { type: 'feature', title: 'Cart' });
+  await call('POST', '/api/projects/SHOP/tickets', {
+    type: 'feature',
+    title: 'Cart',
+    assignee: 'web_dev',
+  });
   await call('POST', '/api/projects/SHOP/tickets', { type: 'bug', title: 'Checkout' });
-  await call('PATCH', '/api/projects/SHOP/tickets/2', { title: 'Checkout **fails**' });
+  await call('PATCH', '/api/projects/SHOP/tickets/2', {
+    title: 'Checkout **fails**',
+    assignee: 'architect',
+  });
   await call('POST', '/api/projects/SHOP/tickets/2/dependencies', { blockedBy: 1 });
   await call('DELETE', '/api/projects/SHOP/tickets/2/dependencies/1');
+  // A server started with a changed profile file (`agent_profile.created` came with the start).
+  const shipped = await loadShippedAgents();
+  await seedAgentProfiles(t.db, {
+    ...shipped,
+    profiles: shipped.profiles.map((profile) => ({ ...profile, shippedHash: 'changed' })),
+  });
   await call('POST', '/api/projects/SHOP/tickets/1/comments', { body: 'Looks *good*' });
   await call('POST', '/api/projects/SHOP/tickets/1/mark-done', { comment: 'Done by hand' });
 

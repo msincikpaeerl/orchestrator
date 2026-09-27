@@ -9,6 +9,7 @@ import {
   TicketNumber,
   TicketStatus,
   UpdateTicketRequest,
+  type AgentLink,
   type LimitExceeded,
   type OwnerTicketAction,
   type TicketDetail,
@@ -54,6 +55,13 @@ const blockedFlag = sql<boolean>`exists (
   join tickets b on b.id = d.blocked_by_id
   where d.ticket_id = "tickets"."id" and b.status <> 'done'
 )`.mapWith(Boolean);
+
+/** The assignee of each ticket row, from a left join on the profiles. */
+const assigneeColumns = { key: schema.agentProfiles.key, name: schema.agentProfiles.name };
+
+function assigneeLink(row: { key: string | null; name: string | null } | null): AgentLink | null {
+  return row?.key && row.name !== null ? { key: row.key, name: row.name } : null;
+}
 
 /** A ticket number from an address: digits only, as in `WEB-12`. */
 function parseNumber(value: string): number | null {
@@ -137,6 +145,27 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         `${what} can change only while the ticket is proposed or todo; it is ${ticket.status}`,
       );
     }
+  }
+
+  /** The profile with this key, refused with `agent_not_found` when there is none. */
+  async function findAgent(executor: Executor, key: string) {
+    const [row] = await executor
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.key, key));
+    if (!row) {
+      throw new HttpError(422, 'agent_not_found', `No agent profile with the key ${key}`);
+    }
+    return row;
+  }
+
+  async function assigneeOf(executor: Executor, ticket: TicketRow): Promise<AgentLink | null> {
+    if (ticket.assigneeProfileId === null) return null;
+    const [row] = await executor
+      .select(assigneeColumns)
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, ticket.assigneeProfileId));
+    return assigneeLink(row ?? null);
   }
 
   /**
@@ -262,6 +291,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         ticket,
         project.key,
         blockedByLinks.some((link) => link.status !== 'done'),
+        await assigneeOf(executor, ticket),
       ),
       description: ticket.description,
       acceptanceCriteria: acceptanceCriteria(ticket),
@@ -292,11 +322,14 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     await requireSession(db, request);
     const project = await findProject(request.params.key);
     const rows = await db
-      .select({ ticket: schema.tickets, blocked: blockedFlag })
+      .select({ ticket: schema.tickets, blocked: blockedFlag, assignee: assigneeColumns })
       .from(schema.tickets)
+      .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.tickets.assigneeProfileId))
       .where(eq(schema.tickets.projectId, project.id));
     const tickets = rows
-      .map((row) => toTicketSummary(row.ticket, project.key, row.blocked))
+      .map((row) =>
+        toTicketSummary(row.ticket, project.key, row.blocked, assigneeLink(row.assignee)),
+      )
       .sort(boardOrder);
     return { tickets } satisfies TicketListResponse;
   });
@@ -306,6 +339,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     const input = parseInput(CreateTicketRequest, request.body);
     await checkLimits(input);
     const created = await change(request.params.key, async (tx, project) => {
+      const assignee = input.assignee === null ? null : await findAgent(tx, input.assignee);
       const blockerNumbers = [...new Set(input.blockedBy)];
       const blockers =
         blockerNumbers.length === 0
@@ -345,6 +379,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         description: input.description,
         acceptanceCriteria: input.acceptanceCriteria,
         priority: input.priority,
+        assigneeProfileId: assignee?.id ?? null,
         now: at,
       });
       if (blockers.length > 0) {
@@ -368,6 +403,8 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           priority: ticket.priority,
           status: ticket.status,
           blockedBy: blockers.map((row) => ticketReference(project.key, row.number)).sort(),
+          assignee: assignee?.key ?? null,
+          ...(assignee ? { assigneeName: assignee.name } : {}),
         },
         at,
       });
@@ -391,6 +428,9 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     return change(request.params.key, async (tx, project) => {
       const ticket = await findTicket(tx, project.id, request.params.number);
       requireEditable(ticket, 'A ticket');
+      const { assignee: assigneeKey, ...fields } = input;
+      const assignee =
+        assigneeKey === undefined || assigneeKey === null ? null : await findAgent(tx, assigneeKey);
       const current = {
         type: ticket.type,
         title: ticket.title,
@@ -398,17 +438,25 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         acceptanceCriteria: acceptanceCriteria(ticket),
         priority: ticket.priority,
       };
-      const changes = Object.fromEntries(
-        Object.entries(input).filter(
+      const changes: Record<string, unknown> = Object.fromEntries(
+        Object.entries(fields).filter(
           ([field, value]) =>
             JSON.stringify(value) !== JSON.stringify(current[field as keyof typeof current]),
         ),
       );
-      if (Object.keys(changes).length === 0) return detail(tx, project, ticket);
+      const assigneeChanged =
+        assigneeKey !== undefined && (assignee?.id ?? null) !== ticket.assigneeProfileId;
+      if (Object.keys(changes).length === 0 && !assigneeChanged) {
+        return detail(tx, project, ticket);
+      }
       const at = now();
       const [updated] = await tx
         .update(schema.tickets)
-        .set({ ...changes, updatedAt: at })
+        .set({
+          ...changes,
+          ...(assigneeChanged ? { assigneeProfileId: assignee?.id ?? null } : {}),
+          updatedAt: at,
+        })
         .where(eq(schema.tickets.id, ticket.id))
         .returning();
       if (!updated) throw new Error('ticket disappeared');
@@ -420,10 +468,12 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         type: 'ticket.updated',
         payload: {
           ...about(project, updated),
-          fields: Object.keys(changes),
+          fields: [...Object.keys(changes), ...(assigneeChanged ? ['assignee'] : [])],
           type,
           title,
           priority,
+          ...(assigneeChanged ? { assignee: assignee?.key ?? null } : {}),
+          ...(assigneeChanged && assignee ? { assigneeName: assignee.name } : {}),
         },
         at,
       });

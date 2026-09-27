@@ -77,9 +77,9 @@ const server = await startServer(
   { githubApiUrl: github.url, webRoot },
 );
 
-// Test-only controls, never part of the server: POST /reset empties every table and resets the
-// fake GitHub, so each test starts from the first launch. POST /github/fail-next makes the next
-// GitHub request with this method and path suffix fail, for example
+// Test-only controls, never part of the server: POST /reset empties every table but the agent
+// profiles and resets the fake GitHub, so each test starts from the first launch. POST
+// /github/fail-next makes the next GitHub request with this method and path suffix fail, for example
 // `{"method":"POST","path":"/git/trees","status":503}`. POST /daemon/connect enrolls a scripted
 // daemon (apps/server/test/daemon-client.ts) with the code shown on the screen, connects it and
 // says `hello`, with the `hello` fields to change: `{"code":"…","hello":{"claudeCodeVersion":null}}`;
@@ -130,7 +130,8 @@ const FailNext = z.object({
 async function handle(request: IncomingMessage): Promise<number> {
   if (request.method === 'POST' && request.url === '/reset') {
     const { rows } = await pool.query<{ tablename: string }>(
-      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_info'",
+      // The default agent profiles stay, as they are seeded before the first launch.
+      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('schema_info', 'agent_profiles')",
     );
     const tables = rows.map((row) => `"${row.tablename}"`).join(', ');
     await disconnectDaemons();
