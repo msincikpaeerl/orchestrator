@@ -58,6 +58,8 @@ export const Scenario = z.object({
   version: z.string().default('2.1.282 (Claude Code)'),
   /** Wait before the `SessionStart` hook. */
   startDelayMs: z.int().min(0).default(0),
+  /** Lines written at startup to the file of `--debug-file`, when given. */
+  debugLog: z.array(z.string()).default([]),
   /** Never runs `SessionStart`, as when a startup dialog waits for a key. */
   noSessionStart: z.boolean().default(false),
   /**

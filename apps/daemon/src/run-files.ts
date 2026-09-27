@@ -101,9 +101,60 @@ export function runSettings(
       ]),
     ),
     statusLine: { type: 'command', command: command('status-line') },
-    // Only the Orchestrator decides when a paused run continues (05, section 4.10).
-    autoContinueAtUsageLimit: false,
+    ...NO_AUTOMATIC_CONTINUE,
   };
+}
+
+/**
+ * Only the Orchestrator decides when a paused run continues (05, section 4.10). Claude Code's
+ * documentation gives this key the scope "User or managed", so it goes both in the run's
+ * `--settings` and in the user settings of the dedicated configuration (05, section 4.3).
+ */
+export const NO_AUTOMATIC_CONTINUE = { autoContinueAtUsageLimit: false } as const;
+
+/**
+ * Sets the daemon's keys in `settings.json` of the dedicated configuration folder, the only user
+ * settings a run reads (`--setting-sources user`), keeping any other key found there.
+ */
+export function writeUserSettings(claudeConfig: string): string {
+  mkdirSync(claudeConfig, { recursive: true, mode: 0o700 });
+  const file = join(claudeConfig, 'settings.json');
+  const found = readJson(file);
+  const current = found !== null && typeof found === 'object' && !Array.isArray(found) ? found : {};
+  writeJsonAtomic(file, { ...current, ...NO_AUTOMATIC_CONTINUE });
+  return file;
+}
+
+/** What `claudeArguments` needs for one launch. */
+export interface LaunchInput {
+  mcpConfig: string;
+  settings: string;
+  model: string;
+  instructions: string;
+  resumeSessionId: string | null;
+  message: string;
+}
+
+/** The arguments of a launch, in the order of 05 section 4.3 (after the `claude` executable). */
+export function claudeArguments(launch: LaunchInput): string[] {
+  return [
+    '--mcp-config',
+    launch.mcpConfig,
+    '--strict-mcp-config',
+    '--setting-sources',
+    'user',
+    '--settings',
+    launch.settings,
+    '--permission-mode',
+    'dontAsk',
+    '--model',
+    launch.model,
+    '--append-system-prompt',
+    launch.instructions,
+    ...(launch.resumeSessionId ? ['--resume', launch.resumeSessionId] : []),
+    '--',
+    launch.message,
+  ];
 }
 
 /** The MCP relay of the run (06, section 1), with Claude Code's tool timeout (04, section 8). */
@@ -127,7 +178,10 @@ export interface RunFiles {
   socket: string;
 }
 
-/** Writes `system-prompt.md`, `settings.json` and `mcp.json` for a launch. */
+/**
+ * Writes `system-prompt.md`, `settings.json` and `mcp.json` for a launch, and the daemon's keys in
+ * the dedicated configuration's user settings.
+ */
 export function writeRunFiles(
   paths: DaemonPaths,
   start: RunStart['payload'],
@@ -139,5 +193,6 @@ export function writeRunFiles(
   writeFileSync(join(folder, 'system-prompt.md'), start.profile.instructions, { mode: 0o600 });
   writeJsonAtomic(settings, runSettings(paths, start, selfCommand));
   writeJsonAtomic(mcpConfig, runMcpConfig(start.runId, selfCommand, start.limits));
+  writeUserSettings(paths.claudeConfig);
   return { settings, mcpConfig, socket: runSocketPath(paths, start.runId) };
 }

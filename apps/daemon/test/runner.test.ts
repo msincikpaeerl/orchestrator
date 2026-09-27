@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RunState } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
@@ -35,6 +35,12 @@ describe('runner', () => {
     async () => {
       const manager = daemon();
       await fake.play({ turns: [{ steps: [{ do: 'sleep', ms: 60_000 }] }] });
+      // A key written there by Claude Code itself is kept.
+      await mkdir(home.paths.claudeConfig, { recursive: true });
+      await writeFile(
+        join(home.paths.claudeConfig, 'settings.json'),
+        JSON.stringify({ theme: 'dark', autoContinueAtUsageLimit: true }),
+      );
       const run = await start(manager);
       await waitFor(() => states(run.runId).some((state) => state.state === 'working'), 20_000);
 
@@ -80,6 +86,10 @@ describe('runner', () => {
         hooks: Record<string, unknown>;
       };
       expect(settings.autoContinueAtUsageLimit).toBe(false);
+      // The key's documented scope is "User or managed": the dedicated user settings carry it too.
+      expect(
+        JSON.parse(await readFile(join(home.paths.claudeConfig, 'settings.json'), 'utf8')),
+      ).toEqual({ theme: 'dark', autoContinueAtUsageLimit: false });
       expect(Object.keys(settings.hooks)).toEqual([
         'SessionStart',
         'PreToolUse',

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { Scenario, Turn, type FakeLogEntry, type Step, type TurnEnd } from './scenario.js';
@@ -28,10 +28,16 @@ interface Launch {
   model: string;
   systemPrompt: string;
   resume: string | null;
-  message: string;
+  debugFile: string | null;
+  /** Null for a session started without a message (the probe's startup check). */
+  message: string | null;
 }
 
-/** The arguments of 05 section 4.3, in that order; anything else is refused. */
+/**
+ * The arguments of 05 section 4.3, in that order; anything else is refused. The step H probe
+ * (`tools/smoke/claude-code-probe.sh`) also adds `--debug-file` before `--`, and starts its
+ * startup check without `--` and a message.
+ */
 function parseLaunch(args: string[]): Launch | string {
   const rest = [...args];
   const take = (option: string, withValue: boolean): string | null => {
@@ -56,9 +62,13 @@ function parseLaunch(args: string[]): Launch | string {
     const model = expect('--model', true);
     const systemPrompt = expect('--append-system-prompt', true);
     const resume = take('--resume', true);
+    const debugFile = take('--debug-file', true);
+    if (rest.length === 0) {
+      return { mcpConfig, settings, model, systemPrompt, resume, debugFile, message: null };
+    }
     expect('--', false);
     if (rest.length !== 1) throw new Error('expected exactly one message after --');
-    return { mcpConfig, settings, model, systemPrompt, resume, message: rest[0] ?? '' };
+    return { mcpConfig, settings, model, systemPrompt, resume, debugFile, message: rest[0] ?? '' };
   } catch (error) {
     return (error as Error).message;
   }
@@ -456,6 +466,9 @@ async function main(): Promise<void> {
     process.stderr.write(`fake claude: ${launch}\n`);
     process.exit(1);
   }
+  if (launch.debugFile !== null) {
+    writeFileSync(launch.debugFile, scenario.debugLog.map((line) => `${line}\n`).join(''));
+  }
   const session = new Session(launch, scenario, cwd);
   const queue: string[] = [];
   let busy = true;
@@ -475,7 +488,7 @@ async function main(): Promise<void> {
     if (!busy) void next();
   });
   if (!(await session.start())) return;
-  queue.unshift(launch.message);
+  if (launch.message !== null) queue.unshift(launch.message);
   await next();
 }
 

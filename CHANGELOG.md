@@ -6,6 +6,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs.
 
+- Help: "Machines" > "Agents on your own user" says that Claude Code shows every agent your Claude account's e-mail address and your Git user name and e-mail address.
 - Machines: agents are kept out of the Orchestrator's folder, the Claude configuration folders, your home folder and everything outside the project; they cannot run Git commands that reach GitHub or another computer (which could use your own GitHub login, as Git Credential Manager keeps it on WSL), `gh`, or `tmux`. Each refusal tells the agent why. Help: "Machines" > "Agents on your own user".
 - Settings > Limits, Runs: new **MCP call timeout** (30 seconds), how long a machine waits for the Orchestrator's answer to an agent's tool call, and **Claude Code MCP tool timeout** (120 seconds), always above it: a value breaking this is refused, naming both limits and their values. Both are used from version 0.3.0. Help: "Settings".
 - Settings > Limits, Runs: new **Session start timeout** (30 seconds), how long a machine waits for Claude Code to start a run's session. **Idle timeout** now stops a run whose agent shows no activity, without a reminder; time running a command does not count. Both are used from version 0.3.0. Help: "Settings".

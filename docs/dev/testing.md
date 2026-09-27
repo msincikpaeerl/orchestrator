@@ -44,6 +44,10 @@ The real daemon is tested in two ways. In `apps/daemon`, unit tests cover the co
 
 Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. `migrateUpTo(pool, tag)` applies the migrations up to one of them only, to write data as an older version did and then check a later migration (`apps/server/test/event-log.test.ts` does it with the events of `every-event.ts`, which writes every event type through the real code, machines with the scripted daemon). Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
 
+## Owner's Claude Code probe
+
+`tools/smoke/claude-code-probe.sh` (lot 2 plan, step H) checks with the **real** Claude Code the documented behaviour the daemon relies on: `--setting-sources user` ignoring the repository's settings, `--strict-mcp-config` ignoring `.mcp.json`, a deny rule refusing `cat`, the status line input, and `autoContinueAtUsageLimit`. Only the owner runs it (working rule 10). Its helper `apps/daemon/scripts/claude-code-probe.ts` builds everything from the daemon's own code (`login`, `runSettings`, `runMcpConfig`, `writeUserSettings`, `claudeArguments`, `TrustRegistry`); the daemon's hook, status line and MCP commands are replaced by `claude-code-probe-recorder.ts`, which records and decides nothing. It works in a scratch folder under `$TMPDIR` with its own Claude configuration folder (deleted at the end with the credentials, unless `--keep`), uses `haiku` and one prompt, prints `PASS`, `FAIL`, `NOT ATTEMPTED` or `INFO` per check, and writes sanitised fixtures to `apps/daemon/test/fixtures/claude-code-<version>/`: only the transcript entries the daemon reads, paths, e-mail addresses and credentials masked, and nothing at all when the owner's e-mail, Git user, organisation id or home folder path still appears (`claude-code-probe-fixtures.ts`, unit-tested with planted values). `pnpm lint` checks it with `bash -n`, and `apps/daemon/test/claude-code-probe.test.ts` runs it against the fake `claude` (`--dry-run`, no login).
+
 ## Running tests
 
 ```sh
@@ -85,7 +89,7 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 
 - Job `verify`, with a PostgreSQL service (same image as `docker/compose.dev.yml`):
   1. `pnpm install --frozen-lockfile`
-  2. `pnpm verify` (lint, format check, type check, tests, build, link check)
+  2. `pnpm verify` (lint, format check, `bash -n` of `tools/smoke/*.sh`, type check, tests, build, link check)
   3. `pnpm audit --audit-level critical`
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.

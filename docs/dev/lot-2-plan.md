@@ -402,7 +402,7 @@ Owner's decisions before the step (2026-09-26), written into 04 section 8, 05 se
 
 Owner's review of the step: in Bash commands a word is an absolute path only when its first folder exists at the filesystem root (after resolving `..`), so routes such as `/api/users` are not refused; a path not yet created under an existing root folder is still checked (05 section 4.6, Help).
 
-### [ ] H. Owner check of documented Claude Code behaviour
+### [x] H. Owner check of documented Claude Code behaviour
 
 The lot's security and quota design relies on behaviour read in the documentation but never run (notes above). The owner checks it now, before any run code depends on it (owner's review of step A).
 
@@ -423,6 +423,27 @@ The lot's security and quota design relies on behaviour read in the documentatio
 - The script is checked in CI with `bash -n`, and here with a dry run against the fake `claude`.
 
 **Done when** the owner has run the probe once with the real Claude Code, every check prints `PASS`, and the fixtures are committed. If a check fails, the next step starts by adjusting the specs with the owner.
+
+Owner's decisions before the step (2026-09-27), written into 05 sections 4.3 and 4.10:
+
+- **Configuration folder**: the probe's own, in its scratch folder under `$TMPDIR`, logged in with the daemon's `login` code; the scratch folder holds real credentials, so it is deleted at the end (after the sanitised fixtures are copied out) unless `--keep`, which says where it is and that it holds credentials.
+- **What the probe replaces**: the daemon's argument list (now `claudeArguments`, shared), permission rules and settings generation are used as they are; the hook, status line and MCP commands, which need a running daemon, point to a recorder; the model is `haiku`; the run settings add `enableAllProjectMcpServers: true`, so only `--strict-mcp-config` can keep the repository's server out.
+- **Check 3**: the probe copies the daemon's layout (`.orchestrator/config.json` denied, the worktree under `worktrees/`), allows `Bash(cat *)`, and has the agent also read a control file next to `config.json` that no rule covers; `PASS` only when `config.json` is refused and the control is read.
+- **Check 5**: Claude Code's settings reference gives `autoContinueAtUsageLimit` the scope "User or managed", so the daemon now also sets it in its user settings (`claude-config/settings.json`) before each launch. The probe records a debug log (`--debug-file`) and first starts a control session with a made-up setting and no prompt (no quota): if that setting is not reported either, check 5 prints `FAIL` ("cannot be proved this way").
+- **One prompt** listing the actions as numbered commands. Each action must appear in the recorded `PreToolUse` payloads (or, failing that, in the transcript, which the result line says); an action never attempted prints `NOT ATTEMPTED`, and the summary asks for another run.
+- **Fixtures**: hook payloads, status line inputs, the transcript and the control session's hooks, with the scratch path as `<probe>`, the home folder as `~` and credentials masked; the debug log stays in the scratch folder.
+
+The owner's run (2026-09-27, Claude Code 2.1.283, `haiku`): checks 1, 2 and 4 `PASS`; check 3 `FAIL` because the control file was refused too; check 5 `FAIL` ("cannot be proved this way"). The transcript showed two different refusals: `config.json` got the deny rule's message ("Permission to use Bash with command … has been denied."), the control file `dontAsk`'s ("… because Claude Code is running in don't ask mode"). The raw transcript also held the Claude account's e-mail address, the global Git user and the organisation id (Claude Code's `session_context` and `credential_org` entries); it was never committed.
+
+Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR 0002 and Help:
+
+- **Check 3** is proved by the refusal messages: `PASS` when `config.json` is refused with the rule's message and the control is read or refused by `dontAsk`; `FAIL` when `dontAsk`, not the rule, refused `config.json`, or when a rule refused the control. `dontAsk` refusing a Bash `cat` outside the worktree that an allow rule matches is written into 05 section 4.6 as a second barrier.
+- **Check 5** prints `INFO`, never `PASS`, since nothing is proved (`FAIL` only when the key is reported). The guarantee is that every usage limit, detected or suspected, closes the session (step G); the key in both settings files is an extra layer, to be confirmed by the usage-limit capture (05 section 4.10).
+- **Fixtures** keep only the transcript entries the daemon reads (`user`, `assistant`, `system`, `cost-state`), mask every e-mail address, and pass a final guard: the account's e-mail and organisation id (from the session's data), the global Git `user.name` and `user.email`, and the home folder path must not appear in any fixture after sanitising, or nothing is written. This run's files were sanitised the same way and passed the guard.
+- `CLAUDE_CODE_VALIDATED_VERSION` is raised to 2.1.283.
+- Help > Machines > "Agents on your own user" says that Claude Code shows every agent the account's e-mail address and the Git user.
+
+*Done 2026-09-27.* Checks 1 to 4 `PASS` and check 5 `INFO` on Claude Code 2.1.283 with the owner's grading; the sanitised fixtures are in `apps/daemon/test/fixtures/claude-code-2.1.283/`.
 
 ### [ ] I. Agent profiles and assignee
 
