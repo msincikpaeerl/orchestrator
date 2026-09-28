@@ -123,14 +123,14 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0008):
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0030). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
 
-- Job `verify`, with a PostgreSQL service (same image as `docker/compose.dev.yml`):
-  1. `pnpm install --frozen-lockfile`
-  2. `pnpm verify` (lint, format check, `bash -n` of `tools/smoke/*.sh`, type check, tests, build, link check)
-  3. `pnpm audit --audit-level critical`
+- Job `checks`: `pnpm lint` (lint, format check, `bash -n` of `tools/smoke/*.sh`), `pnpm typecheck`, `pnpm docs:links` and `pnpm audit --audit-level critical`.
+- Job `test`, with a PostgreSQL service (same image as `docker/compose.dev.yml`) and tmux from apt: `pnpm test`.
+- Job `build`: `pnpm build`.
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.
+- Job `ci`: needs every other job and fails when any of them failed, was cancelled or was skipped. Branch protection of `main` requires only this check, so jobs can be added or renamed without changing it; list every new job in its `needs` (a test checks it) and never rename or remove `ci`.
 
 To check the workflow file locally:
 
@@ -138,4 +138,4 @@ To check the workflow file locally:
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
 ```
 
-CI must stay under 10 minutes (08, section 4).
+CI must stay under 10 minutes (08, section 4): the timeouts are a safety net, not a target. When a job grows too long, split it further (for example test shards) rather than raising its timeout.

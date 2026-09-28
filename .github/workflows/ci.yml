@@ -13,9 +13,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  # `pnpm verify` split into parallel jobs, so that CI takes as long as its slowest part. Together
+  # they run every script of `pnpm verify` (a test in apps/server/src/github/skeleton.test.ts).
+  checks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Reads the pnpm version from the packageManager field of package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm docs:links
+
+      - name: Dependency audit (fails on critical vulnerabilities)
+        run: pnpm audit --audit-level critical
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     services:
       # Integration tests (docs/dev/testing.md). Same image as docker/compose.dev.yml.
       postgres:
@@ -53,10 +80,25 @@ jobs:
           tmux -V
           git --version
 
-      - run: pnpm verify
+      - run: pnpm test
 
-      - name: Dependency audit (fails on critical vulnerabilities)
-        run: pnpm audit --audit-level critical
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Reads the pnpm version from the packageManager field of package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
 
   e2e:
     # End-to-end tests in the same pinned Playwright image as `pnpm test:e2e` (ADR 0021).
@@ -138,3 +180,15 @@ jobs:
       - name: Server logs
         if: always()
         run: docker compose -f docker/compose.yml logs
+
+  # Branch protection requires this job only, by its name: never rename or remove it. List every
+  # other job in its needs; it fails when any of them failed, was cancelled or was skipped.
+  ci:
+    if: always()
+    needs: [checks, test, build, e2e, docker]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check that every job passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1

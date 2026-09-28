@@ -106,8 +106,11 @@ function workflowJobs(workflow: string): Map<string, string[]> {
 }
 
 describe('the check required by branch protection', () => {
-  it("is the skeleton CI's final job, which needs every other job", async () => {
-    const ci = await readFile(join(skeletonDirectory(), '.github/workflows/ci.yml'), 'utf8');
+  it.each([
+    ['the skeleton', skeletonDirectory()],
+    ['this repository', repositoryRoot],
+  ])("is %s's CI final job, which needs every other job", async (_name, directory) => {
+    const ci = await readFile(join(directory, '.github/workflows/ci.yml'), 'utf8');
     const jobs = workflowJobs(ci);
     const required = jobs.get(REQUIRED_CHECK);
     expect(required, `job ${REQUIRED_CHECK}`).toBeDefined();
@@ -121,6 +124,18 @@ describe('the check required by branch protection', () => {
     const others = [...jobs.keys()].filter((job) => job !== REQUIRED_CHECK);
     expect(others.length).toBeGreaterThan(0);
     expect(required).toContain(`needs: [${others.join(', ')}]`);
+  });
+});
+
+describe("this repository's CI", () => {
+  it('runs every script of `pnpm verify`, so a green local run predicts a green CI', async () => {
+    const rootPackage = JSON.parse(
+      await readFile(join(repositoryRoot, 'package.json'), 'utf8'),
+    ) as { scripts: Record<string, string> };
+    const ci = await readFile(join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const commands = rootPackage.scripts.verify?.split(' && ') ?? [];
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) expect(ci).toContain(`run: ${command}\n`);
   });
 });
 

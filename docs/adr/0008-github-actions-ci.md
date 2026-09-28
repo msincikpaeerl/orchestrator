@@ -1,6 +1,6 @@
 # 0008 — GitHub Actions for continuous integration
 
-- Status: accepted
+- Status: superseded by 0030
 - Date: 2026-09-23
 
 ## Context
