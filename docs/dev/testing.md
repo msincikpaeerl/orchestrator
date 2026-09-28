@@ -50,7 +50,7 @@ Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it 
 
 ## Realtime stream
 
-`apps/server/test/stream.test.ts` (lot 2 step L1, ADR 0029) opens `GET /api/stream` with `StreamClient` (`stream-client.ts`), which reads the Server-Sent Events as a browser would and waits for a message with a deadline naming it. It covers the refusal without a session, a `changed` message after a ticket change, a rolled-back event sending nothing (checked after a committed one arrives), a log notice after `run.events`, the end of the stream at logout and at the keep-alive after the session is gone (`streamKeepAliveMs` shortens the keep-alive), and `resync` after the database listener's connection is terminated with `pg_terminate_backend`.
+`apps/server/test/stream.test.ts` (lot 2 step L1, ADR 0029) opens `GET /api/stream` with `StreamClient` (`stream-client.ts`), which reads the Server-Sent Events as a browser would and waits for a message with a deadline naming it. It covers the refusal without a session, a `changed` message after a ticket change, a rolled-back event sending nothing (checked after a committed one arrives), a log notice after `run.events`, the end of the stream at logout and at the keep-alive after the session is gone (`streamKeepAliveMs` shortens the keep-alive), and `resync` after the database listener's connection is terminated with `pg_terminate_backend`. `shutdown.test.ts` runs the server as its own process (`src/main.ts` through `tsx`, as `docker stop` finds it) and checks that SIGTERM ends open streams and the process exits long before Docker's 10-second kill timeout.
 
 ## MCP backend and questions
 

@@ -641,7 +641,8 @@ Step L (realtime, live screens and user documentation) was too large for one ses
 - `Run` gains `outcome`, `workingMs`, `waitingMs` and `statusSince`; board tickets carry their active run (`activeRun`, with the progress line shown). The run statuses moved to `packages/protocol/src/api/run-status.ts`, shared by tickets and runs. Display constant `PROGRESS_CARD_MAX_LENGTH` (120 characters) for the card's progress line.
 - The "Projects" group of Settings > Limits is removed with its only setting.
 - The e2e server's scripted daemon acknowledges the server's commands itself, and two controls (`/daemon/run`, `/daemon/request`) play runs; `runs.e2e.ts` was checked to fail with the stream turned off.
-- Found by the tests: `daemon-package.test.ts` left a downloaded package unread, which kept a connection busy and the test server from closing once the change feed was added; the test now reads it.
+- Found by the tests: `daemon-package.test.ts` left a downloaded package unread, which kept a connection busy and the test server from closing; the test now reads it. Whether it hung depended on timing: it also hangs without the change feed (checked at the owner's review), so it was not caused by the stream.
+- Shutdown with open streams (owner's review): SIGTERM ends every open stream at once (the stream route's `preClose` hook) and the process exits in about 50 milliseconds, far from Docker's 10-second kill timeout. `apps/server/test/shutdown.test.ts` starts `src/main.ts` as its own process, opens two streams, sends SIGTERM and checks both streams end and the process exits with code 0 in under 3 seconds; it was checked to fail with the hook removed.
 
 ### [ ] L2. Needs you, Activity, Machines and daemon status
 
