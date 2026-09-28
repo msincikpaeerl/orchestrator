@@ -12,7 +12,13 @@ export class HttpError extends Error {
     /** Details the UI uses to explain the refusal (`limits`, `cycle`, `settingOrder`, ...). */
     readonly details: Pick<
       ApiError['error'],
-      'limits' | 'cycle' | 'settingOrder' | 'setting' | 'retryAfterSeconds'
+      | 'limits'
+      | 'cycle'
+      | 'settingOrder'
+      | 'settingProduct'
+      | 'setting'
+      | 'retryAfterSeconds'
+      | 'runRefusal'
     > = {},
   ) {
     super(message);

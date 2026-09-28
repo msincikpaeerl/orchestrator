@@ -38,7 +38,7 @@ export function registerAccountRoutes(app: FastifyInstance, { db }: { db: Databa
       .select()
       .from(schema.claudeAccounts)
       .orderBy(asc(sql`lower(${schema.claudeAccounts.label})`));
-    return { accounts: rows.map(toAccount) } satisfies AccountListResponse;
+    return { accounts: rows.map((row) => toAccount(row)) } satisfies AccountListResponse;
   });
 
   app.post('/api/accounts', async (request, reply) => {

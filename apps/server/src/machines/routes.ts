@@ -25,6 +25,7 @@ import {
   newEnrollmentCode,
   newMachineToken,
 } from './credentials.js';
+import type { RunService } from '../runs/service.js';
 import type { DaemonGateway } from './gateway.js';
 import { markOffline } from './gateway.js';
 import {
@@ -42,6 +43,7 @@ import {
 export interface MachineRoutesOptions {
   db: Database;
   gateway: DaemonGateway;
+  runs: RunService;
   publicUrl: string;
   now?: () => Date;
 }
@@ -60,7 +62,7 @@ const revoked = () =>
 
 /** Machines (02, section 9.2) and the daemon's enrollment (05, section 3.1). */
 export function registerMachineRoutes(app: FastifyInstance, options: MachineRoutesOptions) {
-  const { db, gateway, publicUrl } = options;
+  const { db, gateway, runs, publicUrl } = options;
   const now = () => options.now?.() ?? new Date();
   const throttle = new Throttle(db, now);
 
@@ -269,6 +271,8 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
       await markOffline(tx, row, 'revoked');
     });
     gateway.disconnect(machine.id, DaemonCloseCode.revoked, 'machine revoked');
+    // Its active runs fail with `machine_revoked`, not counted (01, sections 3.7 and 3.8).
+    await runs.failMachineRuns(machine.id);
     request.log.info({ machine: machine.name }, 'machine revoked');
     return machine;
   });

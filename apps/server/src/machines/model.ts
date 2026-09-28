@@ -15,6 +15,7 @@ import {
 } from '@orchestrator/protocol';
 import { z } from 'zod';
 import { HttpError } from '../http.js';
+import { effectiveAccountState } from '../runs/model.js';
 import { SERVER_VERSION } from '../version.js';
 
 type AccountRow = typeof schema.claudeAccounts.$inferSelect;
@@ -22,14 +23,16 @@ export type MachineRow = typeof schema.machines.$inferSelect;
 
 const Tags = z.array(Capability);
 
-export function toAccount(row: AccountRow): ClaudeAccount {
+export function toAccount(row: AccountRow, now = new Date()): ClaudeAccount {
+  const effective = effectiveAccountState(row, now);
   return {
     id: row.id,
     label: row.label,
     plan: AccountPlan.parse(row.plan),
     maxConcurrentRuns: row.maxConcurrentRuns,
-    state: AccountState.parse(row.state),
-    limitedUntil: row.limitedUntil?.toISOString() ?? null,
+    // A limit whose time has passed is shown available at once (07, section 3).
+    state: AccountState.parse(effective.state),
+    limitedUntil: effective.limitedUntil?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
 }

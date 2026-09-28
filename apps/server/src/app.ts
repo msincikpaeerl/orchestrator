@@ -9,7 +9,7 @@ import type { Pool } from 'pg';
 import { registerAgentRoutes } from './agents/routes.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { createDatabase } from './database.js';
-import { GITHUB_API_URL } from './github/client.js';
+import { GITHUB_API_URL, GITHUB_WEB_URL } from './github/client.js';
 import { registerDownloads, defaultDaemonPackageDir } from './downloads.js';
 import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
@@ -19,6 +19,8 @@ import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
+import { registerRunRoutes } from './runs/routes.js';
+import { RunService } from './runs/service.js';
 import { deriveSecretKey } from './secrets.js';
 import { registerSettingRoutes } from './settings/routes.js';
 import { registerTicketRoutes } from './tickets/routes.js';
@@ -34,6 +36,8 @@ export interface AppDependencies {
   publicUrl: string;
   /** GitHub's REST API; tests use a local fake. */
   githubApiUrl?: string;
+  /** Base of the clone URLs sent to daemons (05, section 4.1); tests use a local Git remote. */
+  gitBaseUrl?: string;
   /** Clock for time-based rules (login throttling) and timestamps; tests replace it. */
   now?: () => Date;
   /** Folder of the built UI; `null` or absent serves the API only. */
@@ -57,7 +61,29 @@ export function buildApp(dependencies: AppDependencies) {
     publicUrl: dependencies.publicUrl,
     secondMs: dependencies.daemonSecondMs,
   });
+  const key = deriveSecretKey(dependencies.secretKey);
+  const runs = new RunService({
+    db,
+    log: logger,
+    key,
+    githubApiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    gitBaseUrl: dependencies.gitBaseUrl ?? GITHUB_WEB_URL,
+    now: dependencies.now,
+    secondMs: dependencies.daemonSecondMs,
+  });
+  runs.attach(gateway);
+  gateway.attachRuns(runs);
   gateway.register(app);
+  // Dispatches waiting for their acknowledgement get their timers back after a restart. A
+  // database problem is logged and does not stop the server: the health check reports it.
+  app.addHook('onReady', async () => {
+    await runs.restoreTimers().catch((error: unknown) => {
+      logger.error({ err: error }, 'dispatch timers not restored');
+    });
+  });
+  app.addHook('onClose', () => {
+    runs.close();
+  });
 
   // Polled by Docker every few seconds: only failures are logged.
   app.get('/health', { logLevel: 'warn' }, async (request, reply) => {
@@ -84,12 +110,13 @@ export function buildApp(dependencies: AppDependencies) {
     });
     const github = {
       db,
-      key: deriveSecretKey(dependencies.secretKey),
+      key,
       apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
-    registerTicketRoutes(scope, { db, now: dependencies.now });
+    registerTicketRoutes(scope, { db, runs, now: dependencies.now });
+    registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl });
     registerUiSettingsRoutes(scope, { db });
@@ -99,6 +126,7 @@ export function buildApp(dependencies: AppDependencies) {
     registerMachineRoutes(scope, {
       db,
       gateway,
+      runs,
       publicUrl: dependencies.publicUrl,
       now: dependencies.now,
     });

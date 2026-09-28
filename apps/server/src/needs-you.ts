@@ -1,10 +1,11 @@
 import { schema } from '@orchestrator/db';
 import {
+  ACTIVE_RUN_STATUSES,
   CLAUDE_CODE_MIN_VERSION,
   DoctorCheck,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
-import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
@@ -76,6 +77,29 @@ export function registerNeedsYouRoutes(
           checks: doctorErrors(z.array(DoctorCheck).parse(machine.doctor)),
           since: machine.doctorErrorSince.toISOString(),
         });
+      }
+      if (machine.status === 'offline') {
+        // Its active runs show "machine offline"; Stop run fails them (05, section 6).
+        const active = await db
+          .select({ key: schema.projects.key, number: schema.tickets.number })
+          .from(schema.runs)
+          .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+          .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+          .where(
+            and(
+              eq(schema.runs.machineId, machine.id),
+              inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+            ),
+          )
+          .orderBy(asc(schema.projects.key), asc(schema.tickets.number));
+        if (active.length > 0) {
+          items.push({
+            type: 'machine_offline_with_runs',
+            machine: ref,
+            tickets: active.map((row) => `${row.key}-${String(row.number)}`),
+            since: (machine.lastHeartbeatAt ?? machine.updatedAt).toISOString(),
+          });
+        }
       }
     }
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));

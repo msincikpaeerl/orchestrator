@@ -2,6 +2,7 @@ import { schema } from '@orchestrator/db';
 import {
   inOrder,
   SETTING_ORDER,
+  SETTING_PRODUCTS,
   SETTINGS,
   SettingName,
   type SettingValues,
@@ -203,4 +204,34 @@ export async function changeSetting(
   if (value === null) await resetSetting(tx, name, target);
   else await storeSetting(tx, name, target, value);
   await checkOrder(tx, name, target.projectId);
+  await checkProducts(tx, name);
+}
+
+/**
+ * After a change or reset of `name`, in its transaction: refuses it when a pair of
+ * `SETTING_PRODUCTS` goes above its ceiling (04, section 8; 03, section 3.2).
+ */
+async function checkProducts(tx: Executor, name: SettingName) {
+  for (const product of SETTING_PRODUCTS) {
+    const { first, second, max, unit } = product;
+    if (name !== first && name !== second) continue;
+    const values = await resolveSettings(tx, [first, second]);
+    const total = values[first] * values[second];
+    if (total <= max) continue;
+    throw new HttpError(
+      409,
+      'setting_product_invalid',
+      `${first} (${String(values[first])}) times ${second} (${String(values[second])}) is ${String(total)} ${unit}, above ${String(max)}`,
+      {
+        settingProduct: {
+          first,
+          second,
+          firstValue: values[first],
+          secondValue: values[second],
+          max,
+          unit,
+        },
+      },
+    );
+  }
 }
