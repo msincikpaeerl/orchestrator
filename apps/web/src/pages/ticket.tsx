@@ -4,6 +4,8 @@ import {
   EDITABLE_STATUSES,
   MarkDoneRequest,
   OWNER_TRANSITIONS,
+  RejectRequest,
+  Run,
   TicketDetail,
   type OwnerTicketAction,
   type Project,
@@ -12,7 +14,7 @@ import {
 } from '@orchestrator/protocol';
 import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode, type SubmitEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api, ApiRequestError } from '../api';
 import { UntrustedMarkdown } from '../components/markdown';
 import {
@@ -28,6 +30,7 @@ import {
   TextArea,
   WarningMessage,
   buttonLinkClass,
+  secondaryButtonLinkClass,
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { refusalText } from '../refusals';
@@ -45,7 +48,9 @@ import {
   ticketRef,
   typeLabel,
 } from '../tickets/text';
-import { ticketsChanged, useTicket, useTickets } from '../queries';
+import { ticketsChanged, useRun, useTicket, useTicketRuns, useTickets } from '../queries';
+import { AnswerBox, CommitList, RunActions, RunTimes } from '../runs/components';
+import { isActive, purposeLabel, runStateText, runPath, usageText } from '../runs/text';
 import { WithProject } from './project';
 
 function ticketApi(ticket: TicketDetail, action = ''): string {
@@ -205,27 +210,242 @@ function ReopenAction({ ticket }: { ticket: TicketDetail }) {
   );
 }
 
+/**
+ * **Run now** (07, section 3): the run starts at once on a machine chosen for it, and the run
+ * page opens; when it cannot start, the reason is shown (02, section 6.4).
+ */
+function RunNowAction({ ticket }: { ticket: TicketDetail }) {
+  const navigate = useNavigate();
+  const runNow = useMutation({
+    mutationFn: () => api('POST', ticketApi(ticket, '/run'), Run),
+    onSettled: () => ticketsChanged(),
+    onSuccess: (run) => navigate(runPath(run.id)),
+  });
+  return (
+    <>
+      <Button
+        onClick={() => {
+          runNow.mutate();
+        }}
+        disabled={runNow.isPending}
+      >
+        Run now
+      </Button>
+      {runNow.error && (
+        <div className="w-full">
+          <ErrorMessage>{refusalText(runNow.error)}</ErrorMessage>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** **Accept** a ticket an agent proposed: it goes to To do (04, section 2). */
+function AcceptAction({ ticket }: { ticket: TicketDetail }) {
+  const accept = useTicketAction(() => api('POST', ticketApi(ticket, '/accept'), TicketDetail));
+  return (
+    <>
+      <Button
+        onClick={() => {
+          accept.mutate();
+        }}
+        disabled={accept.isPending}
+      >
+        Accept
+      </Button>
+      {accept.error && (
+        <div className="w-full">
+          <ErrorMessage>{refusalText(accept.error)}</ErrorMessage>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** **Reject** a ticket an agent proposed, with an optional comment: it is cancelled. */
+function RejectAction({ ticket }: { ticket: TicketDetail }) {
+  const [asking, setAsking] = useState(false);
+  const [comment, setComment] = useState('');
+  const reject = useTicketAction((body: RejectRequest) =>
+    api('POST', ticketApi(ticket, '/reject'), TicketDetail, body),
+  );
+  const ref = ticketRef(ticket.projectKey, ticket.number);
+  return (
+    <>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          reject.reset();
+          setAsking(true);
+        }}
+      >
+        Reject
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          title={`Reject ${ref}?`}
+          confirmLabel="Reject"
+          dismissLabel="Keep it"
+          busy={reject.isPending}
+          error={reject.error && <ErrorMessage>{refusalText(reject.error)}</ErrorMessage>}
+          onConfirm={() => {
+            reject.mutate(comment.trim() === '' ? {} : { comment: comment.trim() }, {
+              onSuccess: () => {
+                setAsking(false);
+                setComment('');
+              },
+            });
+          }}
+          onCancel={() => {
+            setAsking(false);
+          }}
+        >
+          <p>The ticket is cancelled and kept with its history. You can reopen it later.</p>
+          <TextArea
+            label="Why? (optional)"
+            hint="Added to the ticket's timeline."
+            value={comment}
+            onChange={(event) => {
+              setComment(event.target.value);
+            }}
+          />
+        </ConfirmDialog>
+      )}
+    </>
+  );
+}
+
 /** The actions of the ticket's state (02, section 6.4; 04, section 2). */
 function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }) {
   if (!canChange(project)) return null;
   const allowed = (action: OwnerTicketAction) =>
     OWNER_TRANSITIONS[action].from.includes(ticket.status);
   const editable = EDITABLE_STATUSES.includes(ticket.status);
-  if (!editable && !allowed('cancel') && !allowed('mark_done') && !allowed('reopen')) return null;
+  const proposedByAgent = ticket.status === 'proposed' && ticket.createdByAgent !== null;
+  const runnable = ticket.status === 'todo';
+  if (!editable && !runnable && !allowed('cancel') && !allowed('mark_done') && !allowed('reopen')) {
+    return null;
+  }
   return (
     <div className="flex flex-wrap items-start gap-2">
+      {runnable && <RunNowAction ticket={ticket} />}
+      {proposedByAgent && <AcceptAction ticket={ticket} />}
+      {proposedByAgent && <RejectAction ticket={ticket} />}
       {editable && (
         <Link
           to={`${ticketPath(ticket.projectKey, ticket.number)}/edit`}
-          className={buttonLinkClass}
+          className={runnable || proposedByAgent ? secondaryButtonLinkClass : buttonLinkClass}
         >
           Edit
         </Link>
       )}
       {allowed('reopen') && <ReopenAction ticket={ticket} />}
       {allowed('mark_done') && <MarkDoneAction ticket={ticket} />}
-      {allowed('cancel') && <CancelAction ticket={ticket} />}
+      {allowed('cancel') && !proposedByAgent && <CancelAction ticket={ticket} />}
     </div>
+  );
+}
+
+/** The ticket's active run: its state, progress line, **Stop run** and **Resume**. */
+function ActiveRun({ ticket }: { ticket: TicketDetail }) {
+  const run = useRun(ticket.activeRun?.id ?? '', ticket.activeRun !== null);
+  if (!ticket.activeRun || !run.data) return null;
+  return (
+    <Card className="space-y-3">
+      <SectionTitle>Run in progress</SectionTitle>
+      <p className="font-medium text-slate-900">
+        {runStateText(run.data)} · attempt {run.data.attempt} on {run.data.machine.name}
+      </p>
+      {run.data.progress && (
+        <p className="break-words" aria-label="Progress">
+          {run.data.progress.text}
+        </p>
+      )}
+      <p className="text-sm text-slate-700">
+        <RunTimes run={run.data} />
+      </p>
+      <Link to={runPath(run.data.id)} className="inline-block text-blue-700 underline">
+        Watch the run live
+      </Link>
+      <RunActions run={run.data} />
+    </Card>
+  );
+}
+
+/**
+ * The ticket branch: until pushing exists (lot 3), it lives only on the machine of the last run
+ * that reported it (02, section 6.4).
+ */
+function Branch({ ticket }: { ticket: TicketDetail }) {
+  const { branch } = ticket;
+  if (!branch) return null;
+  return (
+    <Card className="space-y-2">
+      <SectionTitle>Branch</SectionTitle>
+      <p className="break-words" aria-label="Branch">
+        <code className="rounded bg-slate-100 px-1 text-sm">{branch.name}</code>
+        {branch.machine
+          ? ` on machine ${branch.machine.name}, not on GitHub yet`
+          : ': no commits reported yet'}
+      </p>
+      {branch.machine && <CommitList commits={branch.commits} />}
+      <p className="text-sm text-slate-600">
+        <HelpLink page="runs#where-the-work-is">Where the work is</HelpLink>
+      </p>
+    </Card>
+  );
+}
+
+/** The agent's report with its latest accepted submission (lot 2: summary and criteria). */
+function Report({ ticket }: { ticket: TicketDetail }) {
+  const report = ticket.dodReport;
+  if (!report) return null;
+  return (
+    <Card className="space-y-3">
+      <SectionTitle>Agent's report</SectionTitle>
+      <UntrustedMarkdown>{report.summary}</UntrustedMarkdown>
+      <ol aria-label="Criteria in the report" className="space-y-2">
+        {report.criteria.map((criterion) => (
+          <li key={criterion.index} className="space-y-1">
+            <p className="font-medium text-slate-900">
+              {criterion.status === 'met' ? 'Met' : 'Not met'}:{' '}
+              {ticket.acceptanceCriteria[criterion.index] ??
+                `criterion ${String(criterion.index + 1)}`}
+            </p>
+            <p className="break-words text-slate-700">{criterion.justification}</p>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+/** Runs of the ticket, newest first (02, section 6.4). */
+function Runs({ ticket }: { ticket: TicketDetail }) {
+  const runs = useTicketRuns(ticket.projectKey, ticket.number);
+  if (!runs.data || runs.data.runs.length === 0) return null;
+  return (
+    <Card className="space-y-3">
+      <SectionTitle>Runs</SectionTitle>
+      <p className="text-slate-700">Failed attempts: {ticket.attemptCount}</p>
+      <ul aria-label="Runs" className="divide-y divide-slate-200">
+        {runs.data.runs.map((run) => (
+          <li key={run.id} className="space-y-1 py-2">
+            <Link to={runPath(run.id)} className="font-medium text-blue-700 underline">
+              Attempt {run.attempt} · {purposeLabel[run.purpose]}
+            </Link>
+            <p className="text-slate-800">{runStateText(run)}</p>
+            <p className="text-sm text-slate-600">
+              {run.profile.name} on {run.machine.name} · {formatDateTime(run.createdAt)} ·{' '}
+              <RunTimes run={run} /> · {usageText(run.estimatedUsageUsd)}
+            </p>
+            {run.outcome && !isActive(run.status) && (
+              <p className="text-sm break-words text-slate-700">{run.outcome}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
@@ -543,10 +763,15 @@ function TicketContent({ project, number }: { project: Project; number: number }
             <dt className="text-slate-600">Assignee</dt>
             <dd>{assigneeLabel(data.assignee)}</dd>
             <dt className="text-slate-600">Created</dt>
-            <dd>{formatDateTime(data.createdAt)} by you</dd>
+            <dd>
+              {formatDateTime(data.createdAt)}{' '}
+              {data.createdByAgent ? `by agent ${data.createdByAgent.profile.name}` : 'by you'}
+            </dd>
           </dl>
           <Actions project={project} ticket={data} />
         </Card>
+        <AnswerBox ticket={data} />
+        <ActiveRun ticket={data} />
         <BlockedNotice ticket={data} />
         <Card className="space-y-4">
           <div className="space-y-2">
@@ -572,7 +797,10 @@ function TicketContent({ project, number }: { project: Project; number: number }
             )}
           </div>
         </Card>
+        <Branch ticket={data} />
+        <Report ticket={data} />
         <Dependencies project={project} ticket={data} />
+        <Runs ticket={data} />
         <Timeline project={project} ticket={data} />
       </div>
     </>

@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
 import { api } from '../api';
+import { useLiveStream } from '../live';
 import { keys, queryClient, useGitHubStatus, useNeedsYou } from '../queries';
 
 /** The sections of 02, section 2, in its order. */
@@ -63,6 +64,8 @@ function Navigation({ onNavigate }: { onNavigate: () => void }) {
 
 /** Layout of the logged-in screens: navigation beside the page, or behind "Menu" on a phone. */
 export function Shell({ children }: { children: ReactNode }) {
+  // The realtime stream is open while a logged-in screen is shown (02, section 1).
+  useLiveStream(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useMutation({

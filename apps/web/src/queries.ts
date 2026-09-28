@@ -13,13 +13,15 @@ import {
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
+  Run,
+  RunListResponse,
   TicketListResponse,
-  UiSettingsResponse,
 } from '@orchestrator/protocol';
 import { QueryClient, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, ApiRequestError, setUnauthenticatedHandler } from './api';
 
-// Screens refresh after each action and when the window regains focus (02, section 1).
+// Screens refresh after each action, when the window regains focus, and on the realtime
+// stream's messages (02, section 1; `live.ts`).
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });
@@ -29,7 +31,6 @@ export const keys = {
   session: ['session'],
   github: ['github'],
   needsYou: ['needs-you'],
-  uiSettings: ['ui-settings'],
   settings: ['settings'],
   projects: ['projects'],
   projectList: (archived: boolean) => ['projects', 'list', archived] as const,
@@ -42,6 +43,9 @@ export const keys = {
   machines: ['machines'],
   machine: (id: string) => ['machines', id] as const,
   agents: ['agents'],
+  runs: ['runs'],
+  run: (id: string) => ['runs', id] as const,
+  ticketRuns: (key: string, number: number) => ['runs', 'ticket', key, number] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -86,14 +90,6 @@ export function useNeedsYou() {
   });
 }
 
-export function useUiSettings() {
-  return useQuery({
-    queryKey: keys.uiSettings,
-    queryFn: () => api('GET', '/api/ui-settings', UiSettingsResponse),
-    staleTime: Infinity,
-  });
-}
-
 /** Settings > Limits: every setting with its global value. */
 export function useGlobalSettings() {
   return useQuery({
@@ -121,10 +117,7 @@ export function useProjectSettings(projectKey: string) {
  */
 export async function settingsChanged(settings: GlobalSettingsResponse) {
   queryClient.setQueryData(keys.settings, settings);
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: keys.uiSettings }),
-    queryClient.invalidateQueries({ queryKey: ['projects', 'settings'] }),
-  ]);
+  await queryClient.invalidateQueries({ queryKey: ['projects', 'settings'] });
 }
 
 export function useProjects(archived: boolean) {
@@ -135,18 +128,11 @@ export function useProjects(archived: boolean) {
   });
 }
 
-/**
- * One project. While its repository setup runs, it is asked for again at the interval of the
- * `projectSetupPollSeconds` setting, and no longer once the setup is ready or failed.
- */
+/** One project; its repository setup's progress comes with the realtime stream. */
 export function useProject(key: string) {
-  const settings = useUiSettings();
-  const interval = (settings.data?.projectSetupPollSeconds ?? 0) * 1000;
   return useQuery({
     queryKey: keys.project(key),
     queryFn: () => api('GET', `/api/projects/${encodeURIComponent(key)}`, Project),
-    refetchInterval: (query) =>
-      interval > 0 && query.state.data?.setup.status === 'in_progress' ? interval : false,
   });
 }
 
@@ -194,7 +180,33 @@ export function useTicket(projectKey: string, number: number) {
  */
 export async function ticketsChanged(ticket?: TicketDetail) {
   if (ticket) queryClient.setQueryData(keys.ticket(ticket.projectKey, ticket.number), ticket);
-  await queryClient.invalidateQueries({ queryKey: keys.projects });
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: keys.projects }),
+    queryClient.invalidateQueries({ queryKey: keys.runs }),
+    queryClient.invalidateQueries({ queryKey: keys.needsYou }),
+  ]);
+}
+
+/** A ticket's runs, newest first (02, section 6.4). */
+export function useTicketRuns(projectKey: string, number: number) {
+  return useQuery({
+    queryKey: keys.ticketRuns(projectKey, number),
+    queryFn: () =>
+      api(
+        'GET',
+        `/api/projects/${encodeURIComponent(projectKey)}/tickets/${String(number)}/runs`,
+        RunListResponse,
+      ),
+  });
+}
+
+/** One run (02, section 7). */
+export function useRun(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.run(id),
+    queryFn: () => api('GET', `/api/runs/${encodeURIComponent(id)}`, Run),
+    enabled: enabled && id !== '',
+  });
 }
 
 /**
@@ -232,8 +244,8 @@ export function useMachines() {
 }
 
 /**
- * One machine. Read again when the window regains focus, so a machine being added shows its
- * connection once the owner comes back from the terminal (the realtime stream comes later).
+ * One machine. A machine being added shows its connection through the realtime stream, and again
+ * when the window regains focus.
  */
 export function useMachine(id: string) {
   return useQuery({

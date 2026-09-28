@@ -66,6 +66,10 @@ export function Button({
 export const buttonLinkClass =
   'inline-block rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800';
 
+/** A link shown as a secondary button, next to a primary one. */
+export const secondaryButtonLinkClass =
+  'inline-block rounded border border-slate-300 bg-white px-4 py-2 font-medium text-slate-800 hover:bg-slate-50';
+
 /** Ids and `aria-describedby` of a field's hint and error, shown under its label. */
 function useFieldIds(hint: ReactNode, error: ReactNode) {
   const id = useId();

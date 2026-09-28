@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
-import { Hello } from '@orchestrator/protocol';
+import { DaemonMessage, Hello, type RunStart } from '@orchestrator/protocol';
 import { endPool } from '@orchestrator/db';
 import pg from 'pg';
 import { z } from 'zod';
@@ -83,7 +83,11 @@ const server = await startServer(
 // `{"method":"POST","path":"/git/trees","status":503}`. POST /daemon/connect enrolls a scripted
 // daemon (apps/server/test/daemon-client.ts) with the code shown on the screen, connects it and
 // says `hello`, with the `hello` fields to change: `{"code":"…","hello":{"claudeCodeVersion":null}}`;
-// it sends heartbeats until POST /daemon/disconnect or the next reset.
+// it sends heartbeats until POST /daemon/disconnect or the next reset. Like a real daemon, it
+// acknowledges each command at once (`run.start`, `run.resume`, `run.input`, `run.stop`). POST
+// /daemon/run `{"runId":"…"}` waits for the run's `run.start` or `run.resume` and answers
+// `{"type":"run.start","runToken":"…"}`; POST /daemon/request `{"message":{…}}` sends a report or a
+// tool call of the latest daemon and answers the server's reply (`ack`, `mcp.result`).
 const pool = new pg.Pool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
@@ -110,6 +114,16 @@ async function disconnectDaemons() {
   }
 }
 
+/** The latest daemon connected: the one the run controls act for. */
+function latestDaemon(): ScriptedDaemon {
+  const latest = daemons.at(-1);
+  if (!latest) throw new Error('no daemon connected');
+  return latest.daemon;
+}
+
+const RunControl = z.object({ runId: z.uuid() });
+const RequestControl = z.object({ message: DaemonMessage });
+
 const ConnectDaemon = z.object({
   code: z.string(),
   hello: Hello.shape.payload.partial().default({}),
@@ -127,7 +141,9 @@ const FailNext = z.object({
   status: z.int().min(400).max(599),
 });
 
-async function handle(request: IncomingMessage): Promise<number> {
+async function handle(
+  request: IncomingMessage,
+): Promise<number | { status: number; body: unknown }> {
   if (request.method === 'POST' && request.url === '/reset') {
     const { rows } = await pool.query<{ tablename: string }>(
       // The default agent profiles stay, as they are seeded before the first launch.
@@ -154,12 +170,37 @@ async function handle(request: IncomingMessage): Promise<number> {
     const { code, hello } = ConnectDaemon.parse(await readJson(request));
     const serverUrl = `http://127.0.0.1:${String(port)}`;
     const daemon = await ScriptedDaemon.connect(serverUrl, await enrollToken(serverUrl, code));
+    daemon.onMessage = (message) => {
+      if (['run.start', 'run.resume', 'run.input', 'run.stop'].includes(message.type)) {
+        daemon.send({ type: 'ack', id: message.id, payload: { ok: true } });
+      }
+    };
     const welcome = await daemon.hello(hello);
     const heartbeat = setInterval(() => {
       if (daemon.isOpen) daemon.heartbeat();
     }, 5000);
     daemons.push({ daemon, heartbeat });
     return welcome.accepted ? 204 : 409;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/run') {
+    const { runId } = RunControl.parse(await readJson(request));
+    const daemon = latestDaemon();
+    const start = await daemon.find<RunStart>(
+      (message) => message.type === 'run.start' && message.payload.runId === runId,
+      `run.start of ${runId}`,
+      10_000,
+    );
+    const resumed = daemon.received.some(
+      (message) => message.type === 'run.resume' && message.payload.runId === runId,
+    );
+    return {
+      status: 200,
+      body: { type: resumed ? 'run.resume' : 'run.start', runToken: start.payload.runToken },
+    };
+  }
+  if (request.method === 'POST' && request.url === '/daemon/request') {
+    const { message } = RequestControl.parse(await readJson(request));
+    return { status: 200, body: await latestDaemon().request(message) };
   }
   if (request.method === 'POST' && request.url === '/daemon/disconnect') {
     await disconnectDaemons();
@@ -170,7 +211,14 @@ async function handle(request: IncomingMessage): Promise<number> {
 
 const control = createServer((request, response) => {
   handle(request)
-    .then((status) => response.writeHead(status).end())
+    .then((result) => {
+      if (typeof result === 'number') {
+        response.writeHead(result).end();
+      } else {
+        response.writeHead(result.status, { 'content-type': 'application/json' });
+        response.end(JSON.stringify(result.body));
+      }
+    })
     .catch((error: unknown) => {
       console.error(error);
       response.writeHead(500).end();
