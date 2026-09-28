@@ -109,6 +109,8 @@ const actionPath: Record<OwnerTicketAction, string> = {
   cancel: 'cancel',
   mark_done: 'mark-done',
   reopen: 'reopen',
+  accept: 'accept',
+  reject: 'reject',
 };
 
 function act(number: number, action: OwnerTicketAction, comment = 'Done outside the Orchestrator') {
@@ -345,11 +347,14 @@ describe('owner actions on the status (04, section 2)', () => {
           (from) => `mark_done:${from}`,
         ),
         'reopen:cancelled',
+        'accept:proposed',
+        'reject:proposed',
       ].sort(),
     );
   });
 
-  it.each(cases.filter((c) => c.to !== null))(
+  // Accept and Reject need a ticket an agent proposed: tested in mcp.test.ts.
+  it.each(cases.filter((c) => c.to !== null && c.action !== 'accept' && c.action !== 'reject'))(
     '$action from $from gives $to, with its event and timeline entry',
     async ({ from, action, to }) => {
       await create();
@@ -399,7 +404,7 @@ describe('owner actions on the status (04, section 2)', () => {
   it('explains the refusals in words', async () => {
     await create();
     await seedStatus(1, 'proposed');
-    expect(errorMessage(await act(1, 'mark_done'))).toMatch(/plan that is not approved/);
+    expect(errorMessage(await act(1, 'mark_done'))).toMatch(/not accepted yet/);
     await seedStatus(1, 'done');
     expect(errorMessage(await act(1, 'cancel'))).toBe(
       'Cancel is not possible for a ticket in done: only from proposed, todo, in_progress, waiting_human, in_review, awaiting_merge',

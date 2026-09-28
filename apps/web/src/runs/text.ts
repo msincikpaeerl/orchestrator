@@ -52,6 +52,7 @@ export const causeText: Record<RunChangeCause, string> = {
   machine_offline: 'the machine was offline',
   machine_revoked: 'the machine was revoked',
   claude_code_unsupported: "the machine's Claude Code is missing or too old",
+  answer: 'you answered its question',
 };
 
 /** Why one machine cannot take a run, for the refusal of **Run now** or **Resume**. */

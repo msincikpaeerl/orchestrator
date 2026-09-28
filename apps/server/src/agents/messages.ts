@@ -195,6 +195,51 @@ export function answerMessage(templates: Templates, question: string, answer: st
   return `${fill(template, template.main, { question: question.trim(), answer: answer.trim() })}\n`;
 }
 
+/**
+ * The owner's answer delivered with `run.resume`, a command-line argument within `maxBytes` (03,
+ * section 3.2): when it does not fit, the question is cut first at a line boundary, down to its
+ * marker alone, then the answer the same way; each cut ends with its marker from the template.
+ */
+export function answerResumeMessage(
+  templates: Templates,
+  question: string,
+  answer: string,
+  maxBytes = FIRST_MESSAGE_MAX_BYTES,
+): string {
+  const template = templates.answer;
+  const render = (q: string, a: string) =>
+    `${fill(template, template.main, { question: q, answer: a })}\n`;
+  const fits = (text: string) => bytes(text) <= maxBytes;
+  const q = question.trim();
+  const a = answer.trim();
+  if (fits(render(q, a))) return render(q, a);
+
+  /** The first `count` lines of `text`, then the marker. */
+  const cutText = (text: string, count: number, marker: string) =>
+    [text.split('\n').slice(0, count).join('\n').trimEnd(), part(template, marker)]
+      .filter((each) => each !== '')
+      .join('\n\n');
+  /** The most lines of `text` for which `build` still fits; -1 when none does. */
+  const most = (text: string, build: (count: number) => string) => {
+    let low = 0;
+    let high = text.split('\n').length - 1;
+    if (!fits(build(0))) return -1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (fits(build(middle))) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+
+  const questionLines = most(q, (count) => render(cutText(q, count, 'question-cut'), a));
+  if (questionLines >= 0) return render(cutText(q, questionLines, 'question-cut'), a);
+  const shortQuestion = cutText(q, 0, 'question-cut');
+  const answerLines = most(a, (count) => render(shortQuestion, cutText(a, count, 'answer-cut')));
+  if (answerLines < 0) throw new Error('the answer template alone does not fit');
+  return render(shortQuestion, cutText(a, answerLines, 'answer-cut'));
+}
+
 /** Sent with `run.resume` after a pause on a usage limit, detected or suspected. */
 export function continueMessage(templates: Templates): string {
   return `${fill(templates.continue, templates.continue.main, {})}\n`;

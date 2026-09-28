@@ -2,10 +2,13 @@ import { schema } from '@orchestrator/db';
 import {
   AddCommentRequest,
   AddDependencyRequest,
+  AnswerRequest,
+  DodReport,
   CreateTicketRequest,
   EDITABLE_STATUSES,
   MarkDoneRequest,
   ProjectKey,
+  RejectRequest,
   TicketNumber,
   TicketStatus,
   UpdateTicketRequest,
@@ -31,6 +34,7 @@ import {
   StatusChangedPayload,
   acceptanceCriteria,
   boardOrder,
+  profileLinks,
   ticketEntity,
   ticketReference,
   toComment,
@@ -270,18 +274,24 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       )
       .orderBy(asc(schema.events.id));
 
+    const profiles = await profileLinks(executor);
     const timeline: TimelineEntry[] = [
       ...comments.map((row) => ({
         type: 'comment' as const,
         at: row.createdAt.toISOString(),
-        comment: toComment(row),
+        comment: toComment(row, profiles),
       })),
       ...statusChanges.map((event) => {
         const payload = StatusChangedPayload.parse(event.payload);
         return {
           type: 'status_change' as const,
           at: event.createdAt.toISOString(),
-          actor: event.actor === 'owner' ? ('owner' as const) : ('system' as const),
+          actor:
+            event.actor === 'owner'
+              ? ('owner' as const)
+              : event.actor === 'agent'
+                ? ('agent' as const)
+                : ('system' as const),
           from: payload.from,
           to: payload.to,
           commentId: payload.commentId,
@@ -316,6 +326,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         project.key,
         blockedByLinks.some((link) => link.status !== 'done'),
         await assigneeOf(executor, ticket),
+        profiles,
       ),
       description: ticket.description,
       acceptanceCriteria: acceptanceCriteria(ticket),
@@ -324,6 +335,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       timeline,
       attemptCount: ticket.attemptCount,
       branch,
+      dodReport: ticket.dodReport === null ? null : DodReport.parse(ticket.dodReport),
     };
   }
 
@@ -352,9 +364,10 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       .from(schema.tickets)
       .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.tickets.assigneeProfileId))
       .where(eq(schema.tickets.projectId, project.id));
+    const profiles = await profileLinks(db);
     const tickets = rows
       .map((row) =>
-        toTicketSummary(row.ticket, project.key, row.blocked, assigneeLink(row.assignee)),
+        toTicketSummary(row.ticket, project.key, row.blocked, assigneeLink(row.assignee), profiles),
       )
       .sort(boardOrder);
     return { tickets } satisfies TicketListResponse;
@@ -677,7 +690,10 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       let afterCommit: () => void = () => undefined;
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
-        if (action !== 'reopen' && refusal(action, TicketStatus.parse(ticket.status)) === null) {
+        if (
+          (action === 'cancel' || action === 'mark_done') &&
+          refusal(action, TicketStatus.parse(ticket.status)) === null
+        ) {
           afterCommit = await options.runs.endForTicket(
             tx,
             project,
@@ -706,6 +722,22 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   ownerAction('cancel', 'cancel', () => undefined);
   ownerAction('mark-done', 'mark_done', (body) => parseInput(MarkDoneRequest, body).comment);
   ownerAction('reopen', 'reopen', () => undefined);
+  ownerAction('accept', 'accept', () => undefined);
+  ownerAction('reject', 'reject', (body) => parseInput(RejectRequest, body ?? {}).comment);
+
+  // The owner's answer to the open question (04, section 6): the waiting run receives it live, or
+  // resumes on its machine; with that machine offline, the run fails with `machine_offline`.
+  app.post<TicketParams>('/api/projects/:key/tickets/:number/answer', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(AnswerRequest, request.body);
+    await checkCommentLength(input.body, 'body');
+    const number = parseNumber(request.params.number);
+    if (number === null) throw ticketNotFound();
+    await options.runs.answer(request.params.key, number, input.body);
+    const project = await findProject(request.params.key);
+    const ticket = await findTicket(db, project.id, number);
+    return detail(db, project, ticket);
+  });
 }
 
 /** `invalid_request` naming each field over its limit; the message keeps the API's field names. */

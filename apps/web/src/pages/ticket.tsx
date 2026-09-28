@@ -408,7 +408,12 @@ function TimelineItem({
   return (
     <li className="space-y-1 border-l-4 border-blue-200 pl-3">
       <p className="text-sm text-slate-600">
-        {comment.author === 'owner' ? 'You' : 'The Orchestrator'} · {formatDateTime(entry.at)}
+        {comment.author === 'owner'
+          ? 'You'
+          : comment.agent
+            ? `Agent ${comment.agent.profile.name}`
+            : 'The Orchestrator'}{' '}
+        · {formatDateTime(entry.at)}
       </p>
       <UntrustedMarkdown>{comment.body}</UntrustedMarkdown>
     </li>

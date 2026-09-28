@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CommitSummary, GitHash } from '../daemon/git.js';
+import { DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
@@ -22,22 +23,22 @@ export type TicketStatus = z.infer<typeof TicketStatus>;
 export const TicketPriority = z.enum(['low', 'normal', 'high']);
 export type TicketPriority = z.infer<typeof TicketPriority>;
 
-/** Who created a ticket; agent profiles come with lot 2. */
-export const TicketCreator = z.enum(['owner']);
+/** Who created a ticket: the owner, or an agent with `ticket_create` (01, section 3.4). */
+export const TicketCreator = z.enum(['owner', 'agent']);
 export type TicketCreator = z.infer<typeof TicketCreator>;
 
 export const CommentKind = z.enum(['note', 'question', 'answer', 'review', 'status_change']);
 export type CommentKind = z.infer<typeof CommentKind>;
 
-/** Who wrote a comment; agent profiles come with lot 2. */
-export const CommentAuthor = z.enum(['owner', 'system']);
+/** Who wrote a comment (01, section 3.5); an agent's comment also names its profile and run. */
+export const CommentAuthor = z.enum(['owner', 'system', 'agent']);
 export type CommentAuthor = z.infer<typeof CommentAuthor>;
 
 /**
  * What the owner can do to a ticket's status (04, section 2). Every other transition is made by
  * the system, the scheduler or an agent, from later lots.
  */
-export const OwnerTicketAction = z.enum(['cancel', 'mark_done', 'reopen']);
+export const OwnerTicketAction = z.enum(['cancel', 'mark_done', 'reopen', 'accept', 'reject']);
 export type OwnerTicketAction = z.infer<typeof OwnerTicketAction>;
 
 const NON_TERMINAL = TicketStatus.options.filter(
@@ -58,7 +59,14 @@ export const OWNER_TRANSITIONS: Readonly<
     to: 'done',
   },
   reopen: { label: 'Reopen', from: ['cancelled'], to: 'todo' },
+  /** Only for a ticket an agent created (04, section 2). */
+  accept: { label: 'Accept', from: ['proposed'], to: 'todo' },
+  reject: { label: 'Reject', from: ['proposed'], to: 'cancelled' },
 };
+
+/** The agent that created a ticket or wrote a comment, with its run. */
+export const AgentAuthorship = z.object({ profile: AgentLink, runId: z.uuid() });
+export type AgentAuthorship = z.infer<typeof AgentAuthorship>;
 
 /** States in which a ticket's fields and dependencies can change (02, section 6.4). */
 export const EDITABLE_STATUSES: readonly TicketStatus[] = ['proposed', 'todo'];
@@ -109,6 +117,8 @@ export const TicketSummary = z.object({
   /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
   assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
+  /** For a ticket created by an agent ("created by agent"): its profile and run. */
+  createdByAgent: AgentAuthorship.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -121,9 +131,13 @@ export type TicketListResponse = z.infer<typeof TicketListResponse>;
 export const Comment = z.object({
   id: z.uuid(),
   author: CommentAuthor,
+  /** For an agent's comment: its profile and run. */
+  agent: AgentAuthorship.nullable(),
   kind: CommentKind,
   /** Markdown, rendered sanitized (01, section 3.5). */
   body: z.string(),
+  /** For an `answer`, the question it answers. */
+  answers: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type Comment = z.infer<typeof Comment>;
@@ -134,7 +148,7 @@ export const TimelineEntry = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('status_change'),
     at: z.iso.datetime(),
-    actor: z.enum(['owner', 'system']),
+    actor: z.enum(['owner', 'system', 'agent']),
     from: TicketStatus,
     to: TicketStatus,
     /** The `status_change` comment written with it, for **Mark as done manually**. */
@@ -167,6 +181,8 @@ export const TicketDetail = TicketSummary.extend({
       commits: z.array(CommitSummary),
     })
     .nullable(),
+  /** The latest Definition of Done report accepted from an agent (04, section 3.1). */
+  dodReport: DodReport.nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 
@@ -212,3 +228,11 @@ export type AddCommentRequest = z.infer<typeof AddCommentRequest>;
 /** **Mark as done manually**: the comment explaining why is mandatory (04, section 2). */
 export const MarkDoneRequest = z.strictObject({ comment: CommentBody });
 export type MarkDoneRequest = z.infer<typeof MarkDoneRequest>;
+
+/** The owner's answer to the ticket's open question (04, section 6). */
+export const AnswerRequest = z.strictObject({ body: CommentBody });
+export type AnswerRequest = z.infer<typeof AnswerRequest>;
+
+/** **Reject** of a ticket an agent created: the comment is optional (04, section 2). */
+export const RejectRequest = z.strictObject({ comment: CommentBody.optional() });
+export type RejectRequest = z.infer<typeof RejectRequest>;

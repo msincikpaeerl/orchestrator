@@ -73,6 +73,8 @@ export {
 export {
   AddCommentRequest,
   AddDependencyRequest,
+  AgentAuthorship,
+  AnswerRequest,
   BLOCKABLE_STATUSES,
   Comment,
   CommentAuthor,
@@ -82,6 +84,7 @@ export {
   MarkDoneRequest,
   OWNER_TRANSITIONS,
   OwnerTicketAction,
+  RejectRequest,
   TicketCreator,
   TicketDetail,
   TicketLink,
@@ -244,6 +247,8 @@ export {
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
 export {
   DodReport,
+  MCP_OUTPUT_MAX_CHARACTERS,
+  MCP_TICKET_LIST_PAGE_SIZE,
   MCP_TOOLS,
   McpComment,
   McpCommentAuthor,

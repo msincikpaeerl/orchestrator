@@ -78,6 +78,8 @@ export const ApiErrorCode = z.enum([
   'run_not_found',
   /** **Stop run** on a run that already ended. */
   'run_not_active',
+  /** An answer to a ticket with no question waiting for one (04, section 6). */
+  'no_open_question',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

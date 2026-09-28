@@ -49,6 +49,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.dependency_added': 'Dependency added',
   'ticket.dependency_removed': 'Dependency removed',
   'ticket.commented': 'Comment added',
+  'ticket.submitted': 'Work submitted by an agent',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -71,6 +72,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'agent_profile.updated': 'Agent profile updated',
   'run.created': 'Run started',
   'run.status_changed': 'Run status changed',
+  'run.progress': 'Run progress',
 };
 
 /** Kinds of entity, for the filter. */
@@ -92,6 +94,7 @@ export const actorLabel: Record<EventActor, string> = {
   owner: 'You',
   system: 'Orchestrator',
   cli: 'Server command',
+  agent: 'Agent',
 };
 
 const ticketFieldLabel: Record<string, string> = {
@@ -235,6 +238,7 @@ const describe: { [T in EventType]: Describe<T> } = {
       pieces.push(index === 0 ? ', waits for ' : ', ', ticketRefLink(reference));
     });
     if (p.assigneeName !== undefined) pieces.push(', assigned to ', quote(p.assigneeName, null));
+    if (p.agentName !== undefined) pieces.push(', proposed by agent ', quote(p.agentName, null));
     return pieces;
   },
   'ticket.updated': (p, c) => {
@@ -272,6 +276,20 @@ const describe: { [T in EventType]: Describe<T> } = {
             ? ' (counted as a failed attempt)'
             : ' (not counted as a failed attempt)',
         ];
+      case 'accept':
+        return [c.ticket, ' accepted: the ticket an agent proposed is now to do'];
+      case 'reject':
+        return [c.ticket, ' rejected: the ticket an agent proposed is cancelled', ...said];
+      case 'question_asked':
+        return [
+          c.ticket,
+          ' waits for you: ',
+          ...(p.agentName === undefined ? ['the agent'] : ['agent ', quote(p.agentName, null)]),
+          ' asked a question',
+          ...said,
+        ];
+      case 'answered':
+        return [c.ticket, ' in progress again: you answered the question'];
     }
   },
   'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
@@ -284,6 +302,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.ticket,
     c.comment === null ? ': comment added' : ': comment ',
     ...(c.comment === null ? [] : [quote(c.comment, c.ticketTo)]),
+    ...(p.agentName === undefined ? [] : [' by agent ', quote(p.agentName, null)]),
+  ],
+  'ticket.submitted': (p, c) => [
+    c.ticket,
+    ': ',
+    ...(p.agentName === undefined ? ['the agent'] : ['agent ', quote(p.agentName, null)]),
+    ` submitted its work with every acceptance criterion reported met (${String(p.criteria)})`,
   ],
   'setting.changed': (p, c) => {
     const { label } = SETTINGS[p.name];
@@ -437,6 +462,7 @@ const describe: { [T in EventType]: Describe<T> } = {
       p.detail === undefined ? '' : ` — ${shorten(p.detail)}`,
     ];
   },
+  'run.progress': (p, c) => ['Run of ', c.ticket, ': ', quote(p.text, null)],
 };
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {

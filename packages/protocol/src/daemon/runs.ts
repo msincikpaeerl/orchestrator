@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AgentKey, FIRST_MESSAGE_MAX_BYTES } from '../api/agents.js';
 import { RepositoryName } from '../api/projects.js';
 import { TicketReference } from '../api/tickets.js';
-import { boundedText, requiredText } from '../text-limits.js';
+import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
 import { message } from './envelope.js';
 import { BranchReport, GitBranchName, RepositoryOwner } from './git.js';
 
@@ -135,7 +135,16 @@ export type RunStart = z.infer<typeof RunStart>;
  * `run.input`: text for a live session (owner answer, CI result), 05 section 4.4. Built from a run
  * message template in `agents/` (03, section 3.2). Nudges come with `run.start`, not this way.
  */
-export const RunInput = message('run.input', z.object({ runId: RunId, text: requiredText() }));
+/**
+ * Text of `run.input`: the owner's answer is sent whole with the question it answers (03, section
+ * 3.2), each up to the longest comment, plus the template's own words.
+ */
+const RUN_INPUT_CEILING = 2 * settingCeiling('commentMaxLength') + 10_000;
+
+export const RunInput = message(
+  'run.input',
+  z.object({ runId: RunId, text: requiredText(RUN_INPUT_CEILING) }),
+);
 export type RunInput = z.infer<typeof RunInput>;
 
 /**
@@ -146,7 +155,15 @@ export type RunInput = z.infer<typeof RunInput>;
  */
 export const RunResume = message(
   'run.resume',
-  z.object({ runId: RunId, claudeSessionId: ClaudeSessionId, message: requiredText() }),
+  z.object({
+    runId: RunId,
+    claudeSessionId: ClaudeSessionId,
+    /** A command-line argument, like the first message: within `FIRST_MESSAGE_MAX_BYTES`. */
+    message: requiredText().refine(
+      (text) => new TextEncoder().encode(text).length <= FIRST_MESSAGE_MAX_BYTES,
+      `at most ${String(FIRST_MESSAGE_MAX_BYTES)} bytes`,
+    ),
+  }),
 );
 export type RunResume = z.infer<typeof RunResume>;
 

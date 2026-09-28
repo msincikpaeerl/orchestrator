@@ -251,8 +251,13 @@ export const tickets = pgTable(
     acceptanceCriteria: jsonb('acceptance_criteria').notNull().default([]),
     priority: text('priority').notNull(),
     status: text('status').notNull(),
-    /** `owner`; agent profiles come with lot 2. */
+    /** `owner`, or `agent` with the profile and the run that created it (`ticket_create`). */
     createdBy: text('created_by').notNull(),
+    createdByProfileId: uuid('created_by_profile_id').references(() => agentProfiles.id),
+    /** The run whose agent created it; no foreign key, since runs reference tickets. */
+    createdByRunId: uuid('created_by_run_id'),
+    /** Latest Definition of Done report accepted by `ticket_submit` (`DodReport`, 04 section 3.1). */
+    dodReport: jsonb('dod_report'),
     /** The agent profile expected to do the work (01, section 3.4); null when unassigned. */
     assigneeProfileId: uuid('assignee_profile_id').references(() => agentProfiles.id),
     /** `t/<number>-<slug>`, set at the first run (01, section 3.4; 04, section 4). */
@@ -268,6 +273,8 @@ export const tickets = pgTable(
     // Target of the dependencies' foreign keys, which keep both tickets in one project.
     unique('tickets_project_id').on(table.projectId, table.id),
     check('tickets_number', sql`${table.number} >= 1`),
+    check('tickets_created_by', sql`${table.createdBy} IN ('owner', 'agent')`),
+    index('tickets_created_by_run_id').on(table.createdByRunId),
     check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
     check('tickets_type', sql`${table.type} IN ('feature', 'bug', 'chore', 'docs', 'spike')`),
     check('tickets_priority', sql`${table.priority} IN ('low', 'normal', 'high')`),
@@ -309,7 +316,7 @@ export const ticketDependencies = pgTable(
 
 /**
  * Comments on tickets (01, section 3.5); comments on requests come with lot 5. `author` is
- * `owner` or `system`; agent profiles come with lot 2.
+ * `owner`, `system` or `agent`, with the agent's profile and run.
  */
 export const comments = pgTable(
   'comments',
@@ -319,7 +326,12 @@ export const comments = pgTable(
       .notNull()
       .references(() => tickets.id),
     author: text('author').notNull(),
+    authorProfileId: uuid('author_profile_id').references(() => agentProfiles.id),
+    /** The run of an agent's comment; no foreign key, since runs reference tickets. */
+    runId: uuid('run_id'),
     kind: text('kind').notNull(),
+    /** For an `answer`, the question it answers. */
+    answersCommentId: uuid('answers_comment_id'),
     /** Markdown, rendered sanitized (01, section 3.5). */
     body: text('body').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -329,6 +341,7 @@ export const comments = pgTable(
       'comments_kind',
       sql`${table.kind} IN ('note', 'question', 'answer', 'review', 'status_change')`,
     ),
+    check('comments_author', sql`${table.author} IN ('owner', 'system', 'agent')`),
     index('comments_ticket_id').on(table.ticketId, table.createdAt),
   ],
 );
@@ -470,7 +483,7 @@ export const runs = pgTable(
     runTokenRevokedAt: timestamp('run_token_revoked_at', { withTimezone: true }),
     /** Id of the last `run.start` or `run.resume`, matched by its `ack`. */
     dispatchMessageId: uuid('dispatch_message_id'),
-    /** `start` or `resume`: what a missing acknowledgement undoes. */
+    /** `start`, `resume` or `answer`: what a missing acknowledgement undoes. */
     dispatchKind: text('dispatch_kind'),
     /** Without an acknowledgement by then, the dispatch is undone (07, section 2). */
     ackDeadline: timestamp('ack_deadline', { withTimezone: true }),
@@ -483,8 +496,19 @@ export const runs = pgTable(
     branchHead: text('branch_head'),
     commits: jsonb('commits'),
     estimatedUsageUsd: doublePrecision('estimated_usage_usd'),
-    /** Summary written by the agent at the end (lot 2 step K). */
+    /** Summary written by the agent: its submission's summary, or why it gave up. */
     outcome: text('outcome'),
+    /** "Max tickets an agent may create per run" when the run started (04, section 8). */
+    maxAgentTickets: integer('max_agent_tickets'),
+    /** An accepted `ticket_submit` or `ticket_give_up`: no other decision after it. */
+    decision: text('decision'),
+    /** The agent's latest progress line, and the one shown (06, section 4.2). */
+    progress: text('progress'),
+    progressAt: timestamp('progress_at', { withTimezone: true }),
+    progressShown: text('progress_shown'),
+    progressShownAt: timestamp('progress_shown_at', { withTimezone: true }),
+    /** The `run.input` carrying the owner's answer, until the daemon acknowledges it. */
+    answerInputId: uuid('answer_input_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
@@ -508,6 +532,7 @@ export const runs = pgTable(
       sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'cancelled')`,
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
+    check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),
     // At most one active run per ticket (01, invariant 2).
     uniqueIndex('runs_one_active_per_ticket')
       .on(table.ticketId)

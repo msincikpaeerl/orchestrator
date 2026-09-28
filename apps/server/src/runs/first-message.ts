@@ -32,8 +32,9 @@ export async function implementTicket(
     .where(eq(schema.ticketDependencies.ticketId, ticket.id))
     .orderBy(asc(schema.tickets.number));
   const comments = await executor
-    .select()
+    .select({ comment: schema.comments, agentName: schema.agentProfiles.name })
     .from(schema.comments)
+    .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.comments.authorProfileId))
     .where(eq(schema.comments.ticketId, ticket.id))
     .orderBy(asc(schema.comments.createdAt));
   return {
@@ -49,8 +50,13 @@ export async function implementTicket(
       title: link.title,
       status: TicketStatus.parse(link.status),
     })),
-    comments: comments.map((comment) => ({
-      author: comment.author === 'owner' ? { kind: 'owner' as const } : { kind: 'system' as const },
+    comments: comments.map(({ comment, agentName }) => ({
+      author:
+        comment.author === 'owner'
+          ? { kind: 'owner' as const }
+          : comment.author === 'agent'
+            ? { kind: 'agent' as const, name: agentName ?? 'unknown' }
+            : { kind: 'system' as const },
       kind: CommentKind.parse(comment.kind),
       at: comment.createdAt,
       body: comment.body,
