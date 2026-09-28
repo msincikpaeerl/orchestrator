@@ -146,6 +146,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     runRefusal ? runRefusalText(runRefusal) : 'The run cannot start now. Reload the page.',
   run_not_found: () => 'This run no longer exists. Reload the page.',
   run_not_active: () => 'This run already ended. Reload the page.',
+  no_open_question: () =>
+    'This ticket has no question waiting for an answer: it may have been answered already. Reload the page.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */

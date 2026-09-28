@@ -117,7 +117,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | pr_number | Pull request on GitHub, once opened. |
 | attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline`, `machine_revoked` or `claude_code_unsupported` and a run cancelled because the machine did not acknowledge it are never counted (owner's decisions, lot 2 steps A, C and J). The attempt number a run's first message states is different: it counts every earlier run a machine acknowledged (07, section 3). |
 | dod_report | Latest Definition of Done report submitted by the agent (see 04). |
-| created_by | `owner`, or the agent profile and the run that created it (shown as "created by agent"). |
+| created_by | `owner`, or the agent profile and the run that created it (shown as "created by agent"). A ticket an agent created starts `proposed`, and the owner **Accepts** or **Rejects** it (04, section 2). |
 | created_at, updated_at | Timestamps. |
 
 **Derived states** (computed, not stored):
@@ -246,7 +246,7 @@ There is no email address. A forgotten password is reset with a command run insi
 
 1. A project always has a repository, on the owner's personal GitHub account.
 2. A ticket has at most one active run (`queued` to `waiting_human`) at any time.
-3. A Claude account never has more active runs than `max_concurrent_runs`.
+3. A Claude account never has more active runs than `max_concurrent_runs`, with one exception: the owner's answer resumes a waiting run at once, whatever the account's state, so the account can be one run above its maximum until a run ends (04, section 6; owner's decision, lot 2 step K). New runs and **Resume** still respect the maximum.
 4. A run's machine must have every capability required by the project and by the agent profile.
 5. Ticket status changes happen only through the transitions defined in 04.
 6. Every change of state is recorded as an event.

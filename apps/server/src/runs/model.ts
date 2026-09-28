@@ -136,6 +136,10 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     sessionAlive: row.sessionAlive,
     branch: { name: row.branchName, head: row.branchHead, commits: reportedCommits(row) ?? [] },
     estimatedUsageUsd: row.estimatedUsageUsd,
+    progress:
+      row.progressShown === null || row.progressShownAt === null
+        ? null
+        : { text: row.progressShown, at: row.progressShownAt.toISOString() },
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,

@@ -7,6 +7,7 @@ import {
   TicketPriority,
   TicketStatus,
   TicketType,
+  type AgentAuthorship,
   type AgentLink,
   type Comment,
   type EventPayload,
@@ -14,6 +15,7 @@ import {
   type TicketSummary,
 } from '@orchestrator/protocol';
 import { z } from 'zod';
+import type { Executor } from '../database.js';
 
 export type TicketRow = typeof schema.tickets.$inferSelect;
 export type CommentRow = typeof schema.comments.$inferSelect;
@@ -31,12 +33,35 @@ export function ticketEntity(row: Pick<TicketRow, 'id' | 'projectId'>) {
   return { entityType: 'ticket', entityId: row.id, projectId: row.projectId } as const;
 }
 
+/** Every agent profile by id, as tickets and comments name them. */
+export async function profileLinks(executor: Executor): Promise<Map<string, AgentLink>> {
+  const rows = await executor
+    .select({
+      id: schema.agentProfiles.id,
+      key: schema.agentProfiles.key,
+      name: schema.agentProfiles.name,
+    })
+    .from(schema.agentProfiles);
+  return new Map(rows.map((row) => [row.id, { key: row.key, name: row.name }]));
+}
+
+/** The agent and run behind a ticket or comment, when an agent wrote it. */
+function authorship(
+  profileId: string | null,
+  runId: string | null,
+  profiles: ReadonlyMap<string, AgentLink>,
+): AgentAuthorship | null {
+  const profile = profileId === null ? undefined : profiles.get(profileId);
+  return profile && runId !== null ? { profile, runId } : null;
+}
+
 /** The API's view of a ticket. Parsing the text columns catches a value no code should write. */
 export function toTicketSummary(
   row: TicketRow,
   projectKey: string,
   blocked: boolean,
   assignee: AgentLink | null,
+  profiles: ReadonlyMap<string, AgentLink>,
 ): TicketSummary {
   return {
     id: row.id,
@@ -49,6 +74,7 @@ export function toTicketSummary(
     blocked,
     assignee,
     createdBy: TicketCreator.parse(row.createdBy),
+    createdByAgent: authorship(row.createdByProfileId, row.createdByRunId, profiles),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -58,12 +84,14 @@ export function toTicketLink(row: Pick<TicketRow, 'number' | 'title' | 'status'>
   return { number: row.number, title: row.title, status: TicketStatus.parse(row.status) };
 }
 
-export function toComment(row: CommentRow): Comment {
+export function toComment(row: CommentRow, profiles: ReadonlyMap<string, AgentLink>): Comment {
   return {
     id: row.id,
     author: CommentAuthor.parse(row.author),
+    agent: authorship(row.authorProfileId, row.runId, profiles),
     kind: CommentKind.parse(row.kind),
     body: row.body,
+    answers: row.answersCommentId,
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -537,7 +537,7 @@ Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.
 - Run events belong to the run's project; the event log's migration test compares only the event types a lot 1 database could hold.
 - The clone URL is `https://github.com/<owner>/<name>.git` (`gitBaseUrl` of `buildApp`, for tests).
 
-### [ ] K. MCP backend and questions
+### [x] K. MCP backend and questions
 
 - Run tokens (random, scoped to one run, expired at run end; 06 section 2).
 - MCP backend for the lot 2 tools, with permissions by role and every refusal of 06 section 3:
@@ -571,6 +571,29 @@ Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.
 - the reduced submission passing and failing;
 - `ticket.ask` answered live and after the lifetime (with a long question cut before a long answer, each at a line boundary with its marker), and the offline case;
 - an expired run token refused.
+
+Owner's decisions before the step (2026-09-28), written into 01 section 5, 04 sections 2, 6 and 8, 05 sections 2, 4.3, 4.4 and 4.11, 06 sections 4.1, 4.2 and 7, and `docs/dev/testing.md`:
+
+- **An answer the machine does not confirm**: a `run.resume` carrying the owner's answer that the machine does not acknowledge within the dispatch acknowledgement timeout, or refuses, fails the run with `machine_offline` as when the machine is offline: not counted, the ticket back to `todo`, the answer kept in the comments for the next run's first message.
+- **The answer and the account**: the answer is delivered at once whatever the Claude account's state; the run counts against the account again from then on, so the account can be one run above its maximum until a run ends (the exception is written into 01, invariant 3); on a limited account the usual detection pauses the run.
+- **`ticket_give_up`**: the reason and what was tried are posted as the agent's `note`, and the reason is kept as the run's outcome; the run's end adds the usual `system` comment.
+- **Reading tools' output**: at most `MCP_OUTPUT_MAX_CHARACTERS` (40,000 characters, a code constant in `packages/protocol`); pages hold whole items while they fit, at least one, and `ticket_list` at most 50; a single text above it is cut at a line boundary with a marker giving the characters left out. The default settings never cut.
+- **Events of MCP calls**: not every call is an event. Calls that change something write the events of that change (`ticket_comment`, `ticket_ask`, `ticket_create`, an accepted `ticket_submit`, `ticket_give_up`, and `ticket_progress` when a new line is shown); reading calls and refusals appear in the run's log only.
+- **Sweep grace period**: 5 seconds, a code constant (`SWEEP_GRACE_MS`), listed among the exceptions of 04 section 8 with its reason.
+- **systemd tests**: they run only with `ORCHESTRATOR_TEST_SYSTEMD=1` and a systemd user session; their units are named `od-test-<hash>-…` from the test home, never `orchestrator-tmux` or `orchestrator-daemon`; every `od-test-*` unit is stopped after each test and before the first one; `docs/dev/testing.md` says what they create and how to run them.
+
+*Done 2026-09-28.* Choices within the step:
+
+- The setting "Progress update interval" (`progressUpdateIntervalSeconds`, Runs group, 60 seconds, 0 to 3,600), listed in the lot's decisions, is added here. The latest line is stored at every call; it is shown at once when the interval has passed since the last line shown, else by a timer at the end of the interval (restored at server start), with its `run.progress` event.
+- "Max tickets an agent may create per run" is read with the project's override when the run starts and kept on the run (`runs.max_agent_tickets`), since runs keep the values they started with (04, section 8).
+- A second `ticket_ask`, and any decision tool after an accepted `ticket_submit` or `ticket_give_up`, are refused with `INVALID_TRANSITION` (06, section 4.2).
+- Agent events carry the new actor `agent`, with the profile's key and name and the run in the payload; `ticket.submitted` and `run.progress` are new event types.
+- Tickets and comments name the agent and run behind them (`createdByAgent`, `agent` in the API); the ticket page shows "Agent <name>" for an agent's comment. The API gains `POST …/answer`, `POST …/accept` and `POST …/reject`, and the ticket's `dodReport`.
+- A live answer's `run.input` may hold the question and the answer whole, each up to the longest comment: its text ceiling is derived from that setting's range. A `run.resume` message is checked against `FIRST_MESSAGE_MAX_BYTES`.
+- An answer to a run paused on a usage limit is stored and moves the ticket back to `in_progress`; **Resume** then sends the "please continue" message, which points to `ticket_comments`.
+- The systemd scopes are used when `systemctl --user show-environment` answers the daemon; unit names get the `od-test-<hash>-` prefix whenever `ORCHESTRATOR_HOME` is not `~/.orchestrator`. New tmux sessions are started one at a time, so two runs never both start the server in its scope.
+- Found by the tests: tmux gives a new session the `PATH` of its client, not the one passed with `-e`. It changes nothing for the daemon, whose own `PATH` is the one it passes; the runner harness gained `addSystemPath()`.
+- `apps/server/test/run-harness.ts` gathers the run set-up for the MCP tests; `apps/daemon/test/scripted-server.ts` is the scripted server shared by `daemon-runs.test.ts` and `systemd.test.ts`.
 
 ### [ ] L. Realtime, live screens and user documentation
 

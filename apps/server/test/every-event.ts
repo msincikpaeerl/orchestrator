@@ -7,6 +7,9 @@ import {
   PROTOCOL_VERSION,
   Project,
   Run,
+  TicketDetail,
+  type McpCall,
+  type RunStart,
   type RunState,
 } from '@orchestrator/protocol';
 import { expect } from 'vitest';
@@ -155,6 +158,37 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     } as RunState);
   await runState({ state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION });
   await runState({ state: 'working' });
+  // The agent's progress line (shown at once, the first one) and an accepted submission.
+  const tool = async (payload: McpCall['payload']) => {
+    const result = await daemon.request({ type: 'mcp.call', id: randomUUID(), payload });
+    expect(result).toMatchObject({ type: 'mcp.result', payload: { ok: true } });
+  };
+  const runToken = (start as RunStart).payload.runToken;
+  await tool({ tool: 'ticket_progress', runToken, input: { text: 'Writing the tests' } });
+  const shop2 = TicketDetail.parse((await call('GET', '/api/projects/SHOP/tickets/2')).json());
+  await tool({
+    tool: 'ticket_submit',
+    runToken,
+    input: {
+      criteria: shop2.acceptanceCriteria.map((_, index) => ({
+        index,
+        status: 'met',
+        justification: 'Checked by its test',
+      })),
+      tests: { paths: ['src/app.test.ts'], justification: null },
+      docs: { paths: [], justification: 'Nothing user-facing' },
+      adrs: [],
+      summary: 'Everything done',
+    },
+    workspace: {
+      clean: true,
+      branch: {
+        name: 't/2-work',
+        head: 'a'.repeat(40),
+        commitsAhead: [{ hash: 'a'.repeat(40), subject: 'Do the work' }],
+      },
+    },
+  });
   await daemon.request({
     type: 'run.quota_limited',
     id: randomUUID(),

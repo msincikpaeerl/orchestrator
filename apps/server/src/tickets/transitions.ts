@@ -64,7 +64,7 @@ export function refusal(action: OwnerTicketAction, status: TicketStatus): string
   if (transition.from.includes(status)) return null;
   if (status === transition.to) return `The ticket is already ${status}`;
   if (action === 'mark_done' && status === 'proposed') {
-    return 'A proposed ticket belongs to a plan that is not approved yet: it cannot be marked as done';
+    return 'A proposed ticket is not accepted yet: it cannot be marked as done';
   }
   return `${transition.label} is not possible for a ticket in ${status}: only from ${transition.from.join(', ')}`;
 }
@@ -73,7 +73,10 @@ export interface OwnerAction {
   projectKey: string;
   ticket: TicketRow;
   action: OwnerTicketAction;
-  /** Mandatory for `mark_done`, posted as a `status_change` comment. Ignored otherwise. */
+  /**
+   * Mandatory for `mark_done`, optional for `reject`, posted as a `status_change` comment. Ignored
+   * otherwise.
+   */
   comment?: string;
   now: Date;
 }
@@ -85,13 +88,20 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
   const refused = refusal(action, from);
   if (refused !== null) throw new HttpError(409, 'ticket_transition_not_allowed', refused);
   const { to } = OWNER_TRANSITIONS[action];
+  if ((action === 'accept' || action === 'reject') && ticket.createdBy !== 'agent') {
+    throw new HttpError(
+      409,
+      'ticket_transition_not_allowed',
+      `${OWNER_TRANSITIONS[action].label} is only for a ticket an agent proposed`,
+    );
+  }
 
   let commentId: string | null = null;
-  if (action === 'mark_done') {
-    const body = input.comment?.trim() ?? '';
-    if (body === '') {
-      throw new HttpError(400, 'invalid_request', 'comment: a comment explaining why is required');
-    }
+  const body = input.comment?.trim() ?? '';
+  if (action === 'mark_done' && body === '') {
+    throw new HttpError(400, 'invalid_request', 'comment: a comment explaining why is required');
+  }
+  if ((action === 'mark_done' || action === 'reject') && body !== '') {
     const [comment] = await tx
       .insert(schema.comments)
       .values({ ticketId: ticket.id, author: 'owner', kind: 'status_change', body, createdAt: now })
@@ -134,14 +144,20 @@ const RUN_TRANSITIONS: Readonly<
   stop_run: { from: ['in_progress', 'waiting_human'], to: 'todo' },
   run_submitted: { from: ['in_progress'], to: 'in_review' },
   run_ended: { from: ['in_progress', 'waiting_human'], to: 'todo' },
+  question_asked: { from: ['in_progress'], to: 'waiting_human' },
+  answered: { from: ['waiting_human'], to: 'in_progress' },
 };
 
 export interface RunAction {
   projectKey: string;
   ticket: TicketRow;
   action: RunTicketAction;
-  actor: 'owner' | 'system';
+  actor: 'owner' | 'system' | 'agent';
   runId: string;
+  /** The comment behind the change, already written (a question, an answer). */
+  commentId?: string;
+  /** For the `agent` actor: the profile's key and name (01, section 3.10). */
+  agent?: { key: string; name: string };
   /** For `run_ended`: why, and whether it counts as a failed attempt (04, section 5). */
   failureReason?: FailureReason;
   attemptCounted?: boolean;
@@ -162,7 +178,7 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
   const transition = RUN_TRANSITIONS[action];
   if (!transition.from.includes(from)) return null;
 
-  let commentId: string | null = null;
+  let commentId: string | null = input.commentId ?? null;
   if (input.comment !== undefined) {
     const [comment] = await tx
       .insert(schema.comments)
@@ -200,6 +216,7 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
     runId: input.runId,
     ...(input.failureReason === undefined ? {} : { failureReason: input.failureReason }),
     ...(input.attemptCounted === undefined ? {} : { attemptCounted: input.attemptCounted }),
+    ...(input.agent ? { agent: input.agent.key, agentName: input.agent.name } : {}),
   };
   await recordEvent(tx, {
     actor: input.actor,

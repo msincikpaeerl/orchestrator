@@ -78,6 +78,8 @@ An agent can read anything in its own project. It can only change **its own tick
 | `agent.list` | Available agent profiles with their role and description, so tickets can be assigned. |
 | `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). *(Lot 3.)* |
 
+**Output size** (owner's decision, lot 2 step K). Claude Code refuses an MCP output above 25,000 tokens (`MAX_MCP_OUTPUT_TOKENS`), and a description or a comment can be up to 100,000 characters within the settings' ranges. A reading tool's output is therefore at most `MCP_OUTPUT_MAX_CHARACTERS`, 40,000 characters of JSON (about 10,000 tokens of English, with room for denser text), a constant in `packages/protocol` (04, section 8). A page holds whole items while they fit, always at least one; `ticket.list` returns at most 50 tickets per page. A single text above the budget (a description, a comment) is cut at a line boundary and followed by a marker saying how many characters were left out. With the default settings nothing is ever cut: the largest `ticket.get` (a 20,000-character description and 20 criteria of 500 characters) is about 32,000 characters.
+
 ### 4.2 Working on the run's ticket
 
 | Tool | Description |
@@ -86,7 +88,9 @@ An agent can read anything in its own project. It can only change **its own tick
 | `ticket.comment` | Adds a `note` comment: findings, decisions, anything the owner or the next agent should know. |
 | `ticket.ask` | Asks the owner a question. The ticket moves to `waiting_human`. The agent should end its turn after calling it; the answer arrives as the next message. |
 | `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |
-| `ticket.give_up` | Declares that the ticket cannot be completed, with the reason (`reason`) and what was tried (`tried`). The run ends as failed and the retry policy applies (04, section 5). |
+| `ticket.give_up` | Declares that the ticket cannot be completed, with the reason (`reason`) and what was tried (`tried`). Both are posted as the agent's `note` on the ticket, so the owner and the next attempt read them, and the reason is kept as the run's outcome; when the turn ends, the run ends as failed, its `system` comment follows and the retry policy applies (04, section 5) (owner's decision, lot 2 step K). |
+
+Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
 
 `ticket.submit` input:
 
@@ -169,4 +173,8 @@ The template for each purpose is versioned with the application and documented i
 
 ## 7. Audit
 
-Every call is recorded as an event (01, section 3.10) with the run, the tool, a summary of the input, and the result code. The UI shows them in the run history.
+The event log is for changes, and agents call the reading tools dozens of times per run, so not every call is an event (owner's decision, lot 2 step K):
+
+- a call that changes something writes the events of that change, in its transaction, with the actor `agent` and the profile and run in the payload: `ticket.comment` (`ticket.commented`), `ticket.ask` (`ticket.commented` and `ticket.status_changed`), `ticket.create` (`ticket.created`), `ticket.submit` when accepted (`ticket.submitted`), `ticket.give_up` (`ticket.commented`), and `ticket.progress` when a new line is shown (`run.progress`);
+- a reading call (`project.get`, `ticket.get`, `ticket.list`, `ticket.comments`, `agent.list`) and a refused call write no event: they appear in the run's log, which shows every tool call and its result from the transcript (02, section 7);
+- the server logs every call (run, ticket, machine, tool, result code) in its own log.

@@ -322,6 +322,18 @@ const definitions = {
     perProject: false,
     usedFrom: '0.3.0',
   },
+  progressUpdateIntervalSeconds: {
+    group: 'runs',
+    label: 'Progress update interval',
+    description:
+      "Shortest time between two new progress lines shown for a run. The agent's updates are never refused: the latest one is shown when this time has passed.",
+    unit: 'seconds',
+    min: 0,
+    max: 3600,
+    default: 60,
+    perProject: false,
+    usedFrom: '0.3.0',
+  },
   logEntryMaxLength: {
     group: 'runs',
     label: 'Longest stored log entry',

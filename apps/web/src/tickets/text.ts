@@ -94,7 +94,8 @@ export function markDoneWarning(
 
 /** A status change of the timeline, in words. */
 export function statusChangeText(entry: Extract<TimelineEntry, { type: 'status_change' }>): string {
-  const who = entry.actor === 'owner' ? 'You' : 'The Orchestrator';
+  const who =
+    entry.actor === 'owner' ? 'You' : entry.actor === 'agent' ? 'The agent' : 'The Orchestrator';
   if (entry.to === 'done' && entry.actor === 'owner') {
     return `${who} marked it as done manually (it was ${statusLabel[entry.from]}).`;
   }

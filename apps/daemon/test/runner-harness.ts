@@ -15,6 +15,7 @@ import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
 import { TMUX_SOCKET_NAME } from '../src/paths.js';
 import { RunManager } from '../src/runs.js';
+import { tmuxScopeName, unitPrefix, type UserSystemd } from '../src/systemd.js';
 import { Tmux } from '../src/tmux.js';
 import { TrustRegistry } from '../src/trust.js';
 import { Workspaces } from '../src/workspace.js';
@@ -72,14 +73,34 @@ export function useRunnerHarness(): void {
   });
 }
 
-/** A daemon's run manager; `secondMs` shortens the run limits. */
-export function daemon(options: { secondMs?: number; acknowledge?: boolean } = {}): RunManager {
+/**
+ * Adds the system folders to the sessions' `PATH`, for scenarios running `sleep`, `nohup` or
+ * `setsid`. tmux gives a new session the `PATH` of its client, so the client is made again.
+ */
+export function addSystemPath(): void {
+  home.env.PATH = `${home.env.PATH ?? ''}:/usr/bin:/bin`;
+  tmux = new Tmux(join(home.bin, 'tmux'), home.env);
+}
+
+/**
+ * A daemon's run manager; `secondMs` shortens the run limits. With `systemd` (the systemd tests
+ * only), the tmux server and each run get their scopes, named with the test home's prefix.
+ */
+export function daemon(
+  options: { secondMs?: number; acknowledge?: boolean; systemd?: UserSystemd } = {},
+): RunManager {
   const { log } = captureLogger();
   const trust = new TrustRegistry(join(home.paths.claudeConfig, '.claude.json'));
+  const prefix = unitPrefix(home.paths);
   const manager = new RunManager({
     paths: home.paths,
     log,
-    tmux,
+    tmux: options.systemd
+      ? new Tmux(join(home.bin, 'tmux'), home.env, {
+          systemd: options.systemd,
+          unit: tmuxScopeName(prefix),
+        })
+      : tmux,
     trust,
     workspaces: new Workspaces({
       paths: home.paths,
@@ -97,6 +118,8 @@ export function daemon(options: { secondMs?: number; acknowledge?: boolean } = {
     toolPath: home.env.PATH ?? '',
     envCommand: findExecutable('env', process.env.PATH) ?? '/usr/bin/env',
     secondMs: options.secondMs ?? 1000,
+    systemd: options.systemd ?? null,
+    unitPrefix: prefix,
   });
   manager.outbox.connect((message) => {
     sent.push(message);

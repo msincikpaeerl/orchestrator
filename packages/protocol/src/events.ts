@@ -24,8 +24,11 @@ import {
   TicketType,
 } from './api/tickets.js';
 
-/** Who caused an event (01, section 3.10). `cli` is a command run in the server container. */
-export const EventActor = z.enum(['owner', 'system', 'cli']);
+/**
+ * Who caused an event (01, section 3.10). `cli` is a command run in the server container; `agent`
+ * an agent's MCP tool call, whose payload names the profile and the run.
+ */
+export const EventActor = z.enum(['owner', 'system', 'cli', 'agent']);
 export type EventActor = z.infer<typeof EventActor>;
 
 export const EventEntityType = z.enum([
@@ -69,6 +72,7 @@ export const EventType = z.enum([
   'ticket.dependency_added',
   'ticket.dependency_removed',
   'ticket.commented',
+  'ticket.submitted',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -91,6 +95,7 @@ export const EventType = z.enum([
   'agent_profile.updated',
   'run.created',
   'run.status_changed',
+  'run.progress',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -99,6 +104,12 @@ const ProjectFacts = { key: z.string() };
 const TicketFacts = { project: z.string(), ticket: z.string() };
 /** The machine's name when the event happened. */
 const MachineFacts = { name: z.string() };
+/** The agent behind an event with the `agent` actor: its profile's key and name, and its run. */
+const AgentFacts = {
+  agent: z.string().optional(),
+  agentName: z.string().optional(),
+  runId: z.uuid().optional(),
+};
 const SettingFacts = {
   name: SettingName,
   scope: z.enum(['global', 'project']),
@@ -167,6 +178,8 @@ export const EventPayloads = {
     /** The assignee's key and name; absent in events written before 0.3.0. */
     assignee: z.string().nullable().optional(),
     assigneeName: z.string().optional(),
+    /** For a ticket an agent created: its profile's key and name, and its run. */
+    ...AgentFacts,
   }),
   /** `fields` names the fields changed; type, title and priority are copied when changed. */
   'ticket.updated': z.object({
@@ -190,10 +203,20 @@ export const EventPayloads = {
     runId: z.uuid().optional(),
     failureReason: FailureReason.optional(),
     attemptCounted: z.boolean().optional(),
+    /** For a change an agent made (`question_asked`): its profile's key and name. */
+    agent: z.string().optional(),
+    agentName: z.string().optional(),
   }),
   'ticket.dependency_added': z.object({ ...TicketFacts, blockedBy: z.string() }),
   'ticket.dependency_removed': z.object({ ...TicketFacts, blockedBy: z.string() }),
-  'ticket.commented': z.object({ ...TicketFacts, commentId: z.uuid(), kind: CommentKind }),
+  'ticket.commented': z.object({
+    ...TicketFacts,
+    commentId: z.uuid(),
+    kind: CommentKind,
+    ...AgentFacts,
+  }),
+  /** An agent's submission was accepted and its report stored (04, section 3.1). */
+  'ticket.submitted': z.object({ ...TicketFacts, ...AgentFacts, criteria: z.int() }),
   'setting.changed': z.object({
     ...SettingFacts,
     previous: z.int().nullable(),
@@ -294,6 +317,8 @@ export const EventPayloads = {
     /** Plain-words detail from the daemon or the server. */
     detail: z.string().optional(),
   }),
+  /** A new progress line shown for the run (06, section 4.2). */
+  'run.progress': z.object({ ...TicketFacts, ...AgentFacts, text: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;

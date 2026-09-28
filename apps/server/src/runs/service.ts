@@ -35,6 +35,8 @@ import { z } from 'zod';
 import { loadShippedAgents, loadTemplates, type Templates } from '../agents/files.js';
 import {
   FirstMessageTooLarge,
+  answerMessage,
+  answerResumeMessage,
   continueMessage,
   implementFirstMessage,
   nudgeMessage,
@@ -47,6 +49,7 @@ import { loadToken } from '../github/connection.js';
 import { inspectToken } from '../github/token-check.js';
 import { HttpError } from '../http.js';
 import { hashCredential } from '../machines/credentials.js';
+import { McpBackend } from '../mcp/backend.js';
 import {
   capabilityLists,
   effectiveCapabilities,
@@ -57,7 +60,12 @@ import {
 import type { ProjectRow } from '../projects/model.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { resolveSettings } from '../settings/store.js';
-import { ticketEntity, ticketReference, type TicketRow } from '../tickets/model.js';
+import {
+  ticketEntity,
+  ticketReference,
+  type CommentRow,
+  type TicketRow,
+} from '../tickets/model.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
 import {
@@ -129,11 +137,18 @@ export class RunService {
   private gateway: RunGateway | undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private agentFiles: Promise<{ templates: Templates; commonRules: string }> | undefined;
+  private readonly mcp: McpBackend;
 
   constructor(private readonly options: RunServiceOptions) {
     this.db = options.db;
     this.log = options.log;
     this.secondMs = options.secondMs ?? 1000;
+    this.mcp = new McpBackend({
+      db: options.db,
+      log: options.log,
+      now: () => this.now(),
+      secondMs: this.secondMs,
+    });
   }
 
   /** The gateway is created with the service; the two know each other. */
@@ -342,11 +357,13 @@ export class RunService {
         this.armTimer(run.id, run.dispatchMessageId, run.ackDeadline);
       }
     }
+    await this.mcp.restoreTimers();
   }
 
   close(): void {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    this.mcp.close();
   }
 
   /**
@@ -364,6 +381,11 @@ export class RunService {
         detail,
         set: { dispatchMessageId: null, ackDeadline: null },
       });
+      return;
+    }
+    if (locked.run.dispatchKind === 'answer') {
+      // As when the machine is offline at the answer (owner's decision, lot 2 step K).
+      await this.answerUndelivered(tx, locked, cause, detail);
       return;
     }
     const why =
@@ -391,8 +413,8 @@ export class RunService {
       { run: runId, ticket: this.reference(undone), machine: undone.machine.name },
       'dispatch not acknowledged in time',
     );
-    // A late `run.start` reaching the daemon is stopped at once, or at its next `hello`.
-    if (undone.run.dispatchKind === 'start') {
+    // A late `run.start` or answer reaching the daemon is stopped at once, or at its next `hello`.
+    if (undone.run.dispatchKind === 'start' || undone.run.dispatchKind === 'answer') {
       this.send(undone.machine.id, stopMessage(runId, 'not_active'));
     }
   }
@@ -589,6 +611,12 @@ export class RunService {
         .where(eq(schema.agentProfiles.id, ticket.assigneeProfileId));
       if (!profile) throw new Error(`profile ${ticket.assigneeProfileId} not found`);
       const required = z.array(Capability).parse(profile.requiredCapabilities);
+      // Kept for the whole run: a later change of the setting applies to later runs (04, 8).
+      const { maxAgentTicketsPerRun } = await resolveSettings(
+        tx,
+        ['maxAgentTicketsPerRun'],
+        project.id,
+      );
 
       // The ticket's earlier runs, newest first, and the machine holding its commits (07, 3).
       const earlier = await tx
@@ -723,6 +751,7 @@ export class RunService {
           accountId: account.id,
           status: 'queued',
           attempt,
+          maxAgentTickets: maxAgentTicketsPerRun,
           runTokenHash: hashCredential(runToken),
           dispatchMessageId,
           dispatchKind: 'start',
@@ -878,6 +907,283 @@ export class RunService {
         a.name.localeCompare(b.name),
     );
     return sorted[0] as MachineRow;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The owner's answer (04, section 6)
+
+  /** The ticket's latest question and the answer to it, if any. */
+  private async lastQuestion(
+    tx: Executor,
+    ticketId: string,
+  ): Promise<{ question: CommentRow; answer: CommentRow | null } | null> {
+    const [question] = await tx
+      .select()
+      .from(schema.comments)
+      .where(and(eq(schema.comments.ticketId, ticketId), eq(schema.comments.kind, 'question')))
+      .orderBy(desc(schema.comments.createdAt))
+      .limit(1);
+    if (!question) return null;
+    const [answer] = await tx
+      .select()
+      .from(schema.comments)
+      .where(
+        and(
+          eq(schema.comments.ticketId, ticketId),
+          eq(schema.comments.answersCommentId, question.id),
+        ),
+      )
+      .orderBy(desc(schema.comments.createdAt))
+      .limit(1);
+    return { question, answer: answer ?? null };
+  }
+
+  /**
+   * The owner's **answer** to the ticket's open question: the ticket moves back to `in_progress`
+   * and the waiting run receives it live (`run.input`), or, after the waiting run lifetime,
+   * resumes on its machine at once with the answer cut to the byte budget (`run.resume`, 03
+   * section 3.2), whatever the account's state (owner's decision, lot 2 step K). With its machine
+   * offline, the run fails with `machine_offline` and the ticket returns to `todo`.
+   */
+  async answer(projectKey: string, ticketNumber: number, body: string): Promise<void> {
+    const { templates } = await this.files();
+    const { dispatchAckTimeoutSeconds } = await resolveSettings(this.db, [
+      'dispatchAckTimeoutSeconds',
+    ]);
+    const after: (() => Promise<void>)[] = [];
+    await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const project = await this.lockProject(tx, eq(schema.projects.key, projectKey));
+      if (project.status === 'archived') {
+        throw new HttpError(
+          409,
+          'project_archived',
+          'This project is archived and read-only: unarchive it first',
+        );
+      }
+      const [ticket] = await tx
+        .select()
+        .from(schema.tickets)
+        .where(
+          and(eq(schema.tickets.projectId, project.id), eq(schema.tickets.number, ticketNumber)),
+        )
+        .for('update');
+      if (!ticket) {
+        throw new HttpError(404, 'ticket_not_found', 'No ticket with this number in this project');
+      }
+      const asked =
+        ticket.status === 'waiting_human' ? await this.lastQuestion(tx, ticket.id) : null;
+      if (!asked || asked.answer !== null) {
+        throw new HttpError(
+          409,
+          'no_open_question',
+          `The ticket has no question waiting for an answer: it is ${ticket.status}`,
+        );
+      }
+      const [run] = await tx
+        .select()
+        .from(schema.runs)
+        .where(
+          and(
+            eq(schema.runs.ticketId, ticket.id),
+            inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+          ),
+        )
+        .for('update');
+      if (!run) throw new Error(`waiting ticket ${ticket.id} has no active run`);
+      const [machine] = await tx
+        .select()
+        .from(schema.machines)
+        .where(eq(schema.machines.id, run.machineId));
+      if (!machine) throw new Error('machine not found');
+
+      const [answer] = await tx
+        .insert(schema.comments)
+        .values({
+          ticketId: ticket.id,
+          author: 'owner',
+          kind: 'answer',
+          body,
+          answersCommentId: asked.question.id,
+          createdAt: now,
+        })
+        .returning();
+      if (!answer) throw new Error('comment not inserted');
+      const reference = ticketReference(project.key, ticket.number);
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...ticketEntity(ticket),
+        type: 'ticket.commented',
+        payload: { project: project.key, ticket: reference, commentId: answer.id, kind: 'answer' },
+        at: now,
+      });
+      const updated = await applyRunAction(tx, {
+        projectKey: project.key,
+        ticket,
+        action: 'answered',
+        actor: 'owner',
+        runId: run.id,
+        commentId: answer.id,
+        now,
+      });
+      if (!updated) throw new Error('ticket left waiting_human during the answer');
+      const locked: Locked = { run, project, ticket: updated, machine };
+
+      if (run.status === 'paused_quota') {
+        // Its session is closed on a usage limit: Resume sends the "please continue" message,
+        // which points the agent to ticket_comments, where the answer is.
+        this.log.info({ run: run.id, ticket: reference }, 'answer kept for a paused run');
+        return;
+      }
+      if (!(this.gateway?.isConnected(machine.id) ?? false)) {
+        await this.answerUndelivered(tx, locked, 'machine_offline');
+        return;
+      }
+      if (run.sessionAlive) {
+        const inputId = randomUUID();
+        await tx
+          .update(schema.runs)
+          .set({ answerInputId: inputId, updatedAt: now })
+          .where(eq(schema.runs.id, run.id));
+        const text = answerMessage(templates, asked.question.body, body);
+        after.push(async () => {
+          const sent = this.send(machine.id, {
+            type: 'run.input',
+            id: inputId,
+            payload: { runId: run.id, text },
+          });
+          if (!sent) {
+            await this.withRun(run.id, async (inner, again) => {
+              if (again.run.answerInputId !== inputId || !ACTIVE.has(again.run.status)) return;
+              await this.answerUndelivered(inner, again, 'machine_offline');
+            });
+          }
+        });
+        return;
+      }
+      const prepared = await this.prepareAnswerResume(
+        tx,
+        locked,
+        templates,
+        asked.question.body,
+        body,
+        dispatchAckTimeoutSeconds,
+      );
+      after.push(() => this.deliverResume(prepared));
+    });
+    for (const action of after) await action();
+  }
+
+  /**
+   * The answer could not reach the run's machine (offline, no confirmation in time, or a
+   * refusal): the run fails with `machine_offline`, not counted, and the ticket returns to `todo`;
+   * the answer stays in the comments for the next run (04, section 6; owner's decision, lot 2
+   * step K).
+   */
+  private async answerUndelivered(
+    tx: Executor,
+    locked: Locked,
+    cause: 'machine_offline' | 'dispatch_timeout' | 'dispatch_refused',
+    detail?: string,
+  ): Promise<void> {
+    const name = locked.machine.name;
+    const why =
+      cause === 'machine_offline'
+        ? `machine ${name} is offline`
+        : cause === 'dispatch_timeout'
+          ? `machine ${name} did not confirm it in time`
+          : `machine ${name} refused it${detail ? ` (${detail})` : ''}`;
+    await this.fail(tx, locked, 'machine_offline', cause, {
+      detail,
+      comment: `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
+    });
+  }
+
+  /** The answer after the waiting run lifetime: `run.resume` on the run's machine (04, 6). */
+  private async prepareAnswerResume(
+    tx: Executor,
+    locked: Locked,
+    templates: Templates,
+    question: string,
+    answer: string,
+    ackTimeoutSeconds: number,
+  ): Promise<{ runId: string; machineId: string; message: ServerMessage; ackDeadline: Date }> {
+    const { run } = locked;
+    if (run.claudeSessionId === null) {
+      throw new Error(`waiting run ${run.id} has no Claude session to resume`);
+    }
+    const dispatchMessageId = randomUUID();
+    const ackDeadline = new Date(Date.now() + ackTimeoutSeconds * this.secondMs);
+    await this.setStatus(tx, locked, 'dispatched', 'answer', {
+      set: {
+        dispatchMessageId,
+        dispatchKind: 'answer',
+        ackDeadline,
+        acknowledgedAt: null,
+        answerInputId: null,
+      },
+    });
+    return {
+      runId: run.id,
+      machineId: locked.machine.id,
+      ackDeadline,
+      message: {
+        type: 'run.resume',
+        id: dispatchMessageId,
+        payload: {
+          runId: run.id,
+          claudeSessionId: run.claudeSessionId,
+          message: answerResumeMessage(templates, question, answer),
+        },
+      },
+    };
+  }
+
+  private async deliverResume(prepared: {
+    runId: string;
+    machineId: string;
+    message: ServerMessage;
+    ackDeadline: Date;
+  }): Promise<void> {
+    this.armTimer(prepared.runId, prepared.message.id, prepared.ackDeadline);
+    if (this.send(prepared.machineId, prepared.message)) return;
+    await this.withRun(prepared.runId, async (tx, locked) => {
+      if (locked.run.status === 'dispatched' && locked.run.acknowledgedAt === null) {
+        await this.undoDispatch(tx, locked, 'machine_offline');
+      }
+    });
+  }
+
+  /**
+   * The daemon's answer to the `run.input` carrying the owner's answer. A refusal means the
+   * session closed meanwhile (the waiting run lifetime): the answer then resumes it (05, 4.4).
+   */
+  private async answerInputAcknowledged(runId: string, ack: Ack): Promise<void> {
+    const { templates } = await this.files();
+    const { dispatchAckTimeoutSeconds } = await resolveSettings(this.db, [
+      'dispatchAckTimeoutSeconds',
+    ]);
+    const prepared = await this.withRun(runId, async (tx, locked) => {
+      if (locked.run.answerInputId !== ack.id) return null;
+      await tx
+        .update(schema.runs)
+        .set({ answerInputId: null, updatedAt: this.now() })
+        .where(eq(schema.runs.id, runId));
+      locked.run.answerInputId = null;
+      if (ack.payload.ok || !ACTIVE.has(locked.run.status) || !locked.ticket) return null;
+      const asked = await this.lastQuestion(tx, locked.ticket.id);
+      if (!asked?.answer) return null;
+      this.log.info({ run: runId, reason: ack.payload.message }, 'answer refused live: resuming');
+      return this.prepareAnswerResume(
+        tx,
+        locked,
+        templates,
+        asked.question.body,
+        asked.answer.body,
+        dispatchAckTimeoutSeconds,
+      );
+    });
+    if (prepared) await this.deliverResume(prepared);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1120,6 +1426,14 @@ export class RunService {
 
   /** The daemon acknowledged a command: a `run.start` or `run.resume` is then dispatched. */
   async acknowledged(machineId: string, ack: Ack): Promise<void> {
+    const [answered] = await this.db
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(and(eq(schema.runs.answerInputId, ack.id), eq(schema.runs.machineId, machineId)));
+    if (answered) {
+      await this.answerInputAcknowledged(answered.id, ack);
+      return;
+    }
     const [run] = await this.db
       .select({ id: schema.runs.id })
       .from(schema.runs)
@@ -1395,40 +1709,9 @@ export class RunService {
     return { ok: true };
   }
 
-  /**
-   * `mcp.call`: the run token decides (06, section 2). A revoked or unknown token is refused with
-   * `FORBIDDEN`. The tools themselves come with lot 2 step K.
-   */
-  async mcpCall(machineId: string, message: McpCall): Promise<McpResult['payload']> {
-    const [run] = await this.db
-      .select({
-        id: schema.runs.id,
-        machineId: schema.runs.machineId,
-        revokedAt: schema.runs.runTokenRevokedAt,
-      })
-      .from(schema.runs)
-      .where(eq(schema.runs.runTokenHash, hashCredential(message.payload.runToken)));
-    if (!run || run.machineId !== machineId || run.revokedAt !== null) {
-      this.log.warn(
-        { machine: machineId, tool: message.payload.tool, run: run?.id },
-        'MCP call refused: run token not valid',
-      );
-      return {
-        ok: false,
-        error: {
-          code: 'FORBIDDEN',
-          message:
-            'This run has ended (it was stopped, or its time is over): its token is no longer valid. Stop working: nothing you do now will be recorded.',
-        },
-      };
-    }
-    return {
-      ok: false,
-      error: {
-        code: 'UNAVAILABLE',
-        message: 'The Orchestrator does not answer this tool yet. Try again later.',
-      },
-    };
+  /** `mcp.call`: the MCP backend answers (06; lot 2 step K). */
+  mcpCall(machineId: string, message: McpCall): Promise<McpResult['payload']> {
+    return this.mcp.call(machineId, message);
   }
 
   /**

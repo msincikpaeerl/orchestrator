@@ -35,6 +35,7 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `pnpm format` | Rewrite files with Prettier (Markdown is excluded, ADR 0007). |
 | `pnpm typecheck` | `tsc` on the root config files and every package. |
 | `pnpm test` | Vitest, all packages. |
+| `ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts` | The daemon's systemd scope tests, on a host with a systemd user session (WSL with systemd): they create transient `od-test-*` units only and stop them (`docs/dev/testing.md`). Skipped otherwise, and in CI. |
 | `pnpm build` | Build every package into its `dist/`; the daemon's is its package, `orchestrator-daemon-<version>.tgz` (ADR 0026). |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
 | `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the development database. |

@@ -145,6 +145,22 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     failureReason: 'timeout',
     endReason: 'idle_timeout',
   },
+  'run.progress': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    agent: 'web_dev',
+    agentName: 'Web Developer',
+    runId: '00000000-0000-4000-8000-000000000001',
+    text: 'Writing tests for the contact form',
+  },
+  'ticket.submitted': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    agent: 'web_dev',
+    agentName: 'Web Developer',
+    runId: '00000000-0000-4000-8000-000000000001',
+    criteria: 3,
+  },
   'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
   'agent_profile.updated': {
     key: 'web_dev',

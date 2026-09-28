@@ -747,8 +747,9 @@ describe('Stop run (04, section 2)', () => {
     const { daemon, token } = await laptop();
     const { run: created, start: message } = await started(daemon);
     await working(daemon, created.id);
+    // Valid while the run is active (step K answers the tools), refused once it is stopped.
     const call1 = await mcp(daemon, message.payload.runToken);
-    expect(call1.ok ? null : call1.error.code).toBe('UNAVAILABLE');
+    expect(call1.ok).toBe(true);
 
     const stopped = await call('POST', `/api/runs/${created.id}/stop`);
     expect(stopped.statusCode, stopped.body).toBe(200);

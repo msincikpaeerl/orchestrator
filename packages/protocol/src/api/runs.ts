@@ -85,6 +85,8 @@ export const RunChangeCause = z.enum([
   'machine_revoked',
   /** The Claude Code version reported at the run's start is missing or too old (05, section 4.3). */
   'claude_code_unsupported',
+  /** The owner answered the run's question: it resumes (04, section 6). */
+  'answer',
 ]);
 export type RunChangeCause = z.infer<typeof RunChangeCause>;
 
@@ -121,6 +123,11 @@ export const Run = z.object({
   branch: RunBranch,
   /** US dollars as Claude Code estimates them (05, section 4.5); null when unknown. */
   estimatedUsageUsd: z.number().nullable(),
+  /**
+   * The agent's progress line as shown: its latest `ticket_progress`, at most one new line per
+   * "Progress update interval" (06, section 4.2); null before the first.
+   */
+  progress: z.object({ text: z.string(), at: z.iso.datetime() }).nullable(),
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   endedAt: z.iso.datetime().nullable(),
@@ -233,5 +240,9 @@ export const RunTicketAction = z.enum([
   'run_submitted',
   /** → `todo`: the run failed or was cancelled (`attemptCounted` says whether it counts). */
   'run_ended',
+  /** `in_progress` → `waiting_human`: the agent asked a question with `ticket_ask`. */
+  'question_asked',
+  /** `waiting_human` → `in_progress`: the owner answered. */
+  'answered',
 ]);
 export type RunTicketAction = z.infer<typeof RunTicketAction>;

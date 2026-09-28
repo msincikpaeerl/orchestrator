@@ -69,7 +69,9 @@ Agents may also search the web and read web pages, to look up how a library work
 
 Claude Code itself tells every agent the e-mail address of the Claude account it runs with and your Git user name and e-mail address (from your global Git settings), as it does in your own sessions. They are not secrets, but an agent sees them.
 
-For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never touch another ticket or another project.
+For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never change another ticket or touch another project. It can only propose new tickets in its project, which wait for you to accept or reject them.
+
+When a run's session closes (the run ends, or a run waiting for your answer is paused), the Orchestrator stops every program the agent left running, even one started to keep running on its own (with `nohup` or `setsid`), so nothing goes on working in a folder that is then removed.
 
 Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents.
 
@@ -159,6 +161,8 @@ The daemon checks the machine each time it connects. So after fixing a problem, 
 ```sh
 systemctl --user restart orchestrator-daemon
 ```
+
+Restarting the service does not interrupt the agents at work: their sessions keep running and the daemon finds them again when it is back.
 
 If you run the daemon yourself in a terminal (`orchestrator-daemon start`) instead of as a service, stop it with Ctrl+C and start it again.
 
