@@ -33,6 +33,7 @@ import {
   writeRunFiles,
 } from './run-files.js';
 import { checkToolCall, type PermissionScope } from './permissions.js';
+import { RUN_MARKER, sweepRun } from './processes.js';
 import {
   denyAnswer,
   runSocketPath,
@@ -40,6 +41,7 @@ import {
   type McpAnswer,
   type RunSocketAnswer,
 } from './run-socket.js';
+import { runScopeName, type UserSystemd } from './systemd.js';
 import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
@@ -72,6 +74,10 @@ export interface RunContext {
   envCommand: string;
   /** How long one second of a setting lasts: 1000, shorter in tests. */
   secondMs: number;
+  /** The user's systemd, where it runs: each Claude Code then gets a scope of its own. */
+  systemd: UserSystemd | null;
+  /** Start of the systemd unit names (`systemd.ts`). */
+  unitPrefix: string;
   /** Called once a run has ended and its folder may go when its reports are acknowledged. */
   onEnded: (run: Run) => void;
 }
@@ -310,9 +316,11 @@ export class Run {
           // No Git command of the agent prompts or opens Git Credential Manager (05, section 7).
           GIT_TERMINAL_PROMPT: '0',
           GCM_INTERACTIVE: 'never',
+          // Inherited by every process of the run, found again by the sweep (05, section 4.11).
+          [RUN_MARKER]: this.runId,
         },
         envCommand: this.context.envCommand,
-        command: [
+        command: this.scoped([
           claude,
           ...claudeArguments({
             mcpConfig: files.mcpConfig,
@@ -322,7 +330,7 @@ export class Run {
             resumeSessionId,
             message,
           }),
-        ],
+        ]),
       });
     } catch (error) {
       this.log.error({ err: error }, 'session not launched');
@@ -335,6 +343,31 @@ export class Run {
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text: message });
     this.startTimer();
     this.log.info({ session: this.name, version }, 'session launched');
+  }
+
+  /** The run's systemd scope (05, section 4.11). */
+  private get scopeUnit(): string {
+    return runScopeName(this.context.unitPrefix, this.runId);
+  }
+
+  /** Claude Code in the run's own scope, where the user's systemd runs. */
+  private scoped(command: string[]): string[] {
+    return this.context.systemd
+      ? this.context.systemd.scopeCommand(this.scopeUnit, command)
+      : command;
+  }
+
+  /**
+   * After the tmux session closed: the run's scope stopped, then the processes still carrying
+   * the run's marker (05, section 4.11; lot 2 plan step K).
+   */
+  private async stopProcesses(): Promise<void> {
+    try {
+      await this.context.systemd?.stopScope(this.scopeUnit);
+      await sweepRun(this.runId, this.log);
+    } catch (error) {
+      this.log.error({ err: error }, 'processes of the run not stopped');
+    }
   }
 
   private startTimer(): void {
@@ -601,6 +634,7 @@ export class Run {
       this.sessionAlive = false;
       await this.context.tmux.killSession(this.name);
     }
+    await this.stopProcesses();
     await this.readTranscript().catch(() => undefined);
     this.flushEvents();
     await this.closeSocket();
@@ -739,6 +773,8 @@ export class Run {
         this.sessionAlive = false;
         await this.context.tmux.killSession(this.name);
       }
+      // Before the worktree is removed: nothing of the run may still work in it.
+      await this.stopProcesses();
       await this.readTranscript().catch(() => undefined);
       let branch: BranchReport | null = null;
       const { bare, worktree } = this.data;
@@ -790,7 +826,11 @@ export class Run {
 
   /** Finds the session of a run loaded from `state.json` after a daemon restart. */
   async recover(): Promise<void> {
-    if (this.ended) return;
+    if (this.ended) {
+      // The daemon may have stopped during the end: what the session left is stopped now.
+      await this.stopProcesses();
+      return;
+    }
     const alive = await this.context.tmux.hasSession(this.name);
     if (this.data.state === 'preparing') {
       await this.end('crashed', 'The daemon stopped while it prepared the workspace.');
@@ -800,7 +840,9 @@ export class Run {
       if (WORKING.includes(this.data.state)) {
         await this.end('crashed', "Claude Code's session ended while the daemon was stopped.");
       }
-      // A waiting or paused run keeps its closed session until run.resume (05, section 4.11).
+      // A waiting or paused run keeps its closed session until run.resume (05, section 4.11);
+      // what the closed session left is stopped, in case the daemon stopped while closing it.
+      await this.stopProcesses();
       return;
     }
     this.sessionAlive = true;

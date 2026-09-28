@@ -24,6 +24,7 @@ import { RunManager } from './runs.js';
 import { selfCommand } from './self.js';
 import { ServerCalls } from './server-calls.js';
 import { parseServerUrl, webSocketUrl } from './server-url.js';
+import { UserSystemd, tmuxScopeName, unitPrefix } from './systemd.js';
 import { Tmux } from './tmux.js';
 import { TrustRegistry } from './trust.js';
 import { DAEMON_VERSION } from './version.js';
@@ -101,10 +102,18 @@ export async function startDaemon(options: StartOptions): Promise<number> {
   const tools = environment.toolPath;
   const trust = new TrustRegistry(join(paths.claudeConfig, '.claude.json'));
   const self = selfCommand();
+  // Where the user's systemd runs (the service's normal case), the tmux server and each run get
+  // scopes of their own (05, sections 2 and 4.11).
+  const systemd = await UserSystemd.detect(tools, process.env);
+  const prefix = unitPrefix(paths);
   const runs = new RunManager({
     paths,
     log,
-    tmux: new Tmux(findExecutable('tmux', tools) ?? 'tmux', process.env),
+    tmux: new Tmux(
+      findExecutable('tmux', tools) ?? 'tmux',
+      process.env,
+      systemd ? { systemd, unit: tmuxScopeName(prefix) } : null,
+    ),
     trust,
     workspaces: new Workspaces({
       paths,
@@ -119,7 +128,10 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     toolPath: tools,
     envCommand: findExecutable('env', tools) ?? '/usr/bin/env',
     secondMs: 1000,
+    systemd,
+    unitPrefix: prefix,
   });
+  log.info({ systemdScopes: systemd !== null }, 'process scopes');
   await runs.recover();
 
   const buildHello = async (): Promise<Hello['payload']> => {

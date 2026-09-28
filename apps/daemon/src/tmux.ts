@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { TMUX_SOCKET_NAME } from './paths.js';
+import type { UserSystemd } from './systemd.js';
 
 /** The tmux session of a run (05, section 4.3). */
 export function sessionName(runId: string): string {
@@ -13,19 +14,31 @@ export function sessionName(runId: string): string {
  */
 export class Tmux {
   private readonly env: NodeJS.ProcessEnv;
+  /** New sessions one at a time: the first one starts the server, in its scope. */
+  private starting: Promise<unknown> = Promise.resolve();
 
+  /**
+   * `serverScope`: where a systemd user session runs, the server is started inside this transient
+   * scope, outside the service's cgroup, so a restart of the service keeps it (05, section 2).
+   */
   constructor(
     private readonly file: string,
     env: NodeJS.ProcessEnv,
+    private readonly serverScope: { systemd: UserSystemd; unit: string } | null = null,
   ) {
     this.env = Object.fromEntries(
       Object.entries(env).filter(([name]) => name !== 'TMUX' && name !== 'TMUX_PANE'),
     );
   }
 
-  private run(args: string[], input?: string): Promise<{ code: number; stderr: string }> {
+  private run(
+    args: string[],
+    input?: string,
+    wrap: (command: string[]) => string[] = (command) => command,
+  ): Promise<{ code: number; stderr: string }> {
+    const [file, ...rest] = wrap([this.file, '-L', TMUX_SOCKET_NAME, ...args]);
     return new Promise((resolve, reject) => {
-      const child = spawn(this.file, ['-L', TMUX_SOCKET_NAME, ...args], {
+      const child = spawn(file ?? this.file, rest, {
         env: this.env,
         stdio: ['pipe', 'ignore', 'pipe'],
       });
@@ -40,8 +53,12 @@ export class Tmux {
     });
   }
 
-  private async check(args: string[], input?: string): Promise<void> {
-    const result = await this.run(args, input);
+  private async check(
+    args: string[],
+    input?: string,
+    wrap?: (command: string[]) => string[],
+  ): Promise<void> {
+    const result = await this.run(args, input, wrap);
     if (result.code !== 0) {
       throw new Error(`tmux ${args[0] ?? ''} failed: ${result.stderr.trim()}`);
     }
@@ -59,7 +76,29 @@ export class Tmux {
     envCommand: string;
     command: string[];
   }): Promise<void> {
-    await this.check([
+    const next = this.starting.then(() => this.startSession(options));
+    this.starting = next.catch(() => undefined);
+    await next;
+  }
+
+  /** Whether the daemon's tmux server runs. */
+  async serverRunning(): Promise<boolean> {
+    return (await this.run(['list-sessions'])).code === 0;
+  }
+
+  private async startSession(options: {
+    name: string;
+    cwd: string;
+    env: Record<string, string>;
+    envCommand: string;
+    command: string[];
+  }): Promise<void> {
+    const scope = this.serverScope;
+    const wrap =
+      scope && !(await this.serverRunning())
+        ? (command: string[]) => scope.systemd.scopeCommand(scope.unit, command)
+        : undefined;
+    const args = [
       'new-session',
       '-d',
       '-s',
@@ -78,7 +117,15 @@ export class Tmux {
       '-u',
       'TMUX_PANE',
       ...options.command,
-    ]);
+    ];
+    try {
+      await this.check(args, undefined, wrap);
+    } catch (error) {
+      if (!wrap) throw error;
+      // The scope of a server that just exited may still be collected: once more, a moment later.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await this.check(args, undefined, (await this.serverRunning()) ? undefined : wrap);
+    }
   }
 
   async hasSession(name: string): Promise<boolean> {
