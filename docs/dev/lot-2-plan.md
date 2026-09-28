@@ -514,6 +514,16 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - a suspected limit leaving the account available and resumable at once;
 - log masking and truncation.
 
+Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.7 and 3.9, 03 section 3.2, 04 sections 2 and 5, 05 sections 4.3 and 6, 06 section 2 and 07 sections 3 and 4:
+
+- **The machine holding the work**: until branches are pushed, Run now uses only the machine whose run last reported commits ahead of the base branch, and refuses naming it when it cannot take the run. When that machine was revoked, the run starts from the base branch elsewhere and a `system` comment says the earlier work on machine <name> is no longer available, with the number of commits lost.
+- **Attempt number** in the first message: the ticket's earlier runs a machine acknowledged, plus one; `attempt_count` still counts failed attempts only. The first message points to the earlier commits when the chosen machine's latest run of the ticket reported some.
+- **`claude_code_unsupported`** is a new failure reason, never counted, ticket back to `todo`.
+- **Resume** goes only to the run's own machine and is refused with the named reason when it cannot take it (the run stays paused); `run.resume` not acknowledged in time puts the run back to `paused_quota` with an event, no attempt counted.
+- **Stop run** cancels at once in one transaction (run, ticket, comment, events, revocation of the run token), then sends `run.stop`; the daemon's later end report only adds the branch. A session never reported ended is stopped at the next `hello`. A test makes an MCP call after Stop run (refused with `FORBIDDEN`).
+- **Run now refusals** also name: project archived or not ready, GitHub token missing, unreadable or invalid, GitHub account id unreadable at the first run; "no machine" lists each machine with why it cannot take the run.
+- Confirmed choices: a `submitted` end marks the run `succeeded` and moves the ticket to `in_review` together (step K stores the report when it accepts the submission); the run token is created here with its hash stored and checked on `mcp.call` (step K implements the tools); acknowledgement timers are set again at server start; an account past `limited_until` is treated as available by Run now, Resume and the screens at once, the first action writing the change and its event; "Needs you" gains "machine offline with active work" (left from step C).
+
 ### [ ] K. MCP backend and questions
 
 - Run tokens (random, scoped to one run, expired at run end; 06 section 2).

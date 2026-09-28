@@ -47,6 +47,14 @@ The owner can use **Run now** on a ticket to move it to the front. Run now ignor
 
 **Lot 2, before the loop exists.** Run now is the only way a run starts. It checks the ticket is eligible and its account can start a run (section 2, step 1, without schedule windows and budget), picks a machine (section 4), creates and dispatches the run (section 2, steps 4 and 5). When it cannot start, the owner sees why: no assignee, blocked, no compatible machine online, account limited (until when), account already running its maximum, or the ticket too large for a run's first message even with its description cut (03 section 3.2; the message says to shorten the ticket, for example its dependencies or acceptance criteria; owner's decision, review of lot 2 step I). An owner's answer to a question whose session was closed resumes the same run through the same path (04, section 6), and so does **Resume** on a paused run (owner's decision, lot 2 step A).
 
+Run now in lot 2, precisely (owner's decisions, lot 2 step J):
+
+- **Refusals**, each with a named reason in the answer and plain words on screen: the ticket is not `todo`, has no assignee, or is blocked (naming the tickets it waits for); the project is archived or not ready; the GitHub token is missing, unreadable or invalid; the GitHub account id, needed for the commit author (04, section 4), cannot be read at the first run; the ticket is too large for its first message; the ticket's branch holds commits on a machine that cannot take the run (below); no machine can take the run. The last one lists every machine with why it cannot: offline, disabled, unusable (with its reason), a missing capability, its account limited (until when) or already running its maximum (stating the account's maximum concurrent runs). A refusal tied to a setting or an account value states its current value.
+- **The machine holding the ticket's work.** Until branches are pushed (lot 3), a ticket's commits exist only in the bare clone of the machine that made them. When the ticket's latest run that reported commits ahead of the base branch ran on a machine not revoked, Run now uses only that machine; if it cannot take the run, Run now refuses, naming the machine and why. When that machine was revoked, the run starts from the base branch on another machine, and the server posts a `system` comment on the ticket saying that the earlier work on machine <name> is no longer available, with the number of commits lost.
+- **Attempt number.** The first message states the run's attempt at the ticket: the ticket's earlier runs that a machine acknowledged, plus one. Runs stopped by the owner or failed with `machine_offline` count here; `attempt_count` (01, section 3.4) still counts only failed attempts, for the retry policy. When the chosen machine's latest run of the ticket reported commits ahead of the base branch, the first message says so and tells the agent to read them and continue that work (03, section 3.2).
+- **Resume** of a paused run is sent only to the run's own machine. When that machine is offline, disabled or unusable, Resume is refused with the named reason and the run stays `paused_quota`; **Stop run** still works. The run is `dispatched` while `run.resume` waits for its acknowledgement; without one within the dispatch acknowledgement timeout, the run returns to `paused_quota` with an event, no attempt is counted, and Resume can be tried again.
+- An account whose `limited_until` has passed is treated as `available` by Run now, Resume and the screens at once; the first action that reads it writes the change and its event (`account.available`).
+
 ## 4. Machine selection
 
 A machine can take a run when it is:
@@ -56,7 +64,7 @@ A machine can take a run when it is:
 - holding every capability required by the project and the agent profile;
 - running a daemon version compatible with the server (09, section 6).
 
-Among suitable machines, prefer the one that already has the repository cloned, then the one that ran the ticket last (warm worktree for resumes; required for `quota_paused` runs, which resume on their own machine), then the one with the fewest runs today.
+Among suitable machines, prefer the one that already has the repository cloned, then the one that ran the ticket last (warm worktree for resumes; required for `quota_paused` runs, which resume on their own machine, and, until branches are pushed in lot 3, for a ticket whose branch holds commits on that machine: section 3), then the one with the fewest runs today.
 
 ## 5. Quota management
 

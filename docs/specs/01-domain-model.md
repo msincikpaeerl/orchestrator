@@ -115,7 +115,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | blocked_by | List of tickets that must be `done` before this one can start. |
 | branch_name | Set at first run: `t/<number>-<slug>`. Until pushing exists (lot 3), the branch lives only in the machine's bare clone; the daemon reports its head and the commits ahead of the base branch (hash and subject) at the end of each run, and the ticket page shows them with the machine's name. |
 | pr_number | Pull request on GitHub, once opened. |
-| attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline` or `machine_revoked` and a run cancelled because the machine did not acknowledge it are never counted (owner's decisions, lot 2 steps A and C). |
+| attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline`, `machine_revoked` or `claude_code_unsupported` and a run cancelled because the machine did not acknowledge it are never counted (owner's decisions, lot 2 steps A, C and J). The attempt number a run's first message states is different: it counts every earlier run a machine acknowledged (07, section 3). |
 | dod_report | Latest Definition of Done report submitted by the agent (see 04). |
 | created_by | `owner`, or the agent profile and the run that created it (shown as "created by agent"). |
 | created_at, updated_at | Timestamps. |
@@ -178,7 +178,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | outcome | Summary written by the agent at the end. |
 | branch_head, commits | Reported by the daemon at the end of the run: the ticket branch's head and the commits ahead of the base branch (hash, subject). |
 | estimated_usage | Equivalent cost of the run in US dollars, as estimated by Claude Code (05, section 4.5). Informational. |
-| failure_reason | `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `machine_revoked`, `cancelled`. A usage limit is never a failure (`paused_quota`). `cancelled` covers a run stopped by the owner, a cancelled ticket and a dispatch not acknowledged in time. `machine_revoked` is a run still active when the owner revokes its machine (owner's decision, lot 2 step C). Like `machine_offline`, `machine_revoked` and `cancelled` never count as a failed attempt. |
+| failure_reason | `timeout`, `crash`, `agent_gave_up`, `dod_failed`, `machine_offline`, `machine_revoked`, `claude_code_unsupported`, `cancelled`. A usage limit is never a failure (`paused_quota`). `cancelled` covers a run stopped by the owner, a cancelled ticket and a dispatch not acknowledged in time. `machine_revoked` is a run still active when the owner revokes its machine (owner's decision, lot 2 step C). `claude_code_unsupported` is a start refused because the machine's Claude Code was missing or below the minimum (05, section 4.3; owner's decision, lot 2 step J). Like `machine_offline`, `machine_revoked`, `claude_code_unsupported` and `cancelled` never count as a failed attempt. |
 
 A run in `paused_quota` keeps its session and worktree. It resumes on the same machine when the account becomes available again.
 
@@ -213,7 +213,7 @@ A machine is created by the owner, with its account, and is waiting for enrollme
 | max_concurrent_runs | Default 1, from 1 to 10. A field of the account, not a global setting (owner's decision, lot 2 step C). |
 | schedule | Time windows during which runs may start (for example weekdays 00:00–08:00). Empty means always. |
 | state | `available`, `paused_manual`, `limited`. Only a usage limit detected with certainty makes an account `limited`, never a suspected one (05, section 4.10). `paused_manual` comes with lot 4. |
-| limited_until | When `limited`, the expected reset time, if known. |
+| limited_until | When `limited`, the expected reset time, if known. Once it has passed, the account is treated as `available` everywhere, even before the change and its event are written (07, section 3; owner's decision, lot 2 step J). |
 
 ### 3.10 Event
 
