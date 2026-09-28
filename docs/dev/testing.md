@@ -48,6 +48,28 @@ Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it 
 
 `apps/server/test/runs.test.ts` (lot 2 step J) drives runs with the scripted daemon: `find` waits for a message the server sends (a `run.start`, a `run.stop`), `request` sends a report and returns its answer (`ack`, `mcp.result`, `git.credential`). Each Run now refusal, the settings budget of the acceptance criteria, the dispatch acknowledgement timeout (shortened with `daemonSecondMs`, the daemons then sending heartbeats; also across a restart of the test application), a run through to `succeeded` and a counted failure, Stop run (with an MCP call after it, refused), `machine_offline`, `machine_revoked`, the machine holding the ticket's commits, credentials, detected and suspected limits with Resume, and the log's masking and cut. Waits on timers use `eventually` with a deadline naming what it waited for.
 
+## MCP backend and questions
+
+`apps/server/test/mcp.test.ts` (lot 2 step K) drives the tools as a daemon relays them, with `run-harness.ts`: the application, a ready project `WEB`, machines with their accounts, a run brought to `running`, `tool` (a tool call and its result) and `ok` (the output of an accepted call). It covers each tool with its refusals and their setting values, the role permissions (a reviewer profile inserted for the test), the paging and cut of the reading tools under `MCP_OUTPUT_MAX_CHARACTERS`, the progress line shown once per interval (the interval shortened with `daemonSecondMs`), `ticket_create` with its per-run limit fixed at the start, **Accept** and **Reject**, the reduced submission, and the owner's answer: live, refused live and resumed, after the waiting run lifetime with the question and the answer cut at line boundaries, with the machine offline or not confirming, and on an account at its maximum.
+
+The runner's cleanup of processes a session leaves is tested in `apps/daemon/test/processes.test.ts`, without systemd: a fake `claude` scenario (`left-behind.ts`) leaves a plain background process, a `nohup` one, a `setsid` one and a double-forked one, and the test waits with a deadline until none of them carries the run's marker in `/proc`, after the run's end and after a waiting run's session is closed. Such scenarios need `addSystemPath()` of `runner-harness.ts`: tmux gives a new session the `PATH` of its client, not the one passed with `-e`.
+
+## systemd tests
+
+`apps/daemon/test/systemd.test.ts` checks the scopes of lot 2 step K with the host's **real** systemd user session, which CI's runner does not have. It runs only when `ORCHESTRATOR_TEST_SYSTEMD=1` is set; it fails (rather than skip) when that is set and `systemctl --user show-environment` does not answer. On WSL with systemd:
+
+```sh
+ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts
+```
+
+What it creates, all transient units of the user's systemd (nothing is written in the home folder, and no unit file is installed):
+
+- `od-test-<hash>-orchestrator-tmux.scope`: the test's tmux server, started by the daemon code as for the real service;
+- `od-test-<hash>-orch-run-<run id>.scope`: each run's fake `claude`;
+- `od-test-<hash>-daemon.service`: the daemon started with `systemd-run --user`, stopped and started again to play a restart of the service (a transient service is killed by cgroup like the installed unit).
+
+`<hash>` comes from the test's throw-away `ORCHESTRATOR_HOME` (`unitPrefix` in `apps/daemon/src/systemd.ts`): a real `orchestrator-tmux` scope or `orchestrator-daemon` service is never named, stopped or touched. Every `od-test-*` unit is stopped (and its failed state reset) after each test and before the first one, so an interrupted run's leftovers go at the next run. To remove them by hand: `systemctl --user list-units --all 'od-test-*'`, then `systemctl --user stop <units>`.
+
 ## Owner's Claude Code probe
 
 `tools/smoke/claude-code-probe.sh` (lot 2 plan, step H) checks with the **real** Claude Code the documented behaviour the daemon relies on: `--setting-sources user` ignoring the repository's settings, `--strict-mcp-config` ignoring `.mcp.json`, a deny rule refusing `cat`, the status line input, and `autoContinueAtUsageLimit`. Only the owner runs it (working rule 10). Its helper `apps/daemon/scripts/claude-code-probe.ts` builds everything from the daemon's own code (`login`, `runSettings`, `runMcpConfig`, `writeUserSettings`, `claudeArguments`, `TrustRegistry`); the daemon's hook, status line and MCP commands are replaced by `claude-code-probe-recorder.ts`, which records and decides nothing. It works in a scratch folder under `$TMPDIR` with its own Claude configuration folder (deleted at the end with the credentials, unless `--keep`), uses `haiku` and one prompt, prints `PASS`, `FAIL`, `NOT ATTEMPTED` or `INFO` per check, and writes sanitised fixtures to `apps/daemon/test/fixtures/claude-code-<version>/`: only the transcript entries the daemon reads, paths, e-mail addresses and credentials masked, and nothing at all when the owner's e-mail, Git user, organisation id or home folder path still appears (`claude-code-probe-fixtures.ts`, unit-tested with planted values). `pnpm lint` checks it with `bash -n`, and `apps/daemon/test/claude-code-probe.test.ts` runs it against the fake `claude` (`--dry-run`, no login).
