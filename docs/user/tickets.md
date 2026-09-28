@@ -2,7 +2,7 @@
 
 A ticket is one piece of work on a project: a feature to add, a bug to fix, a page to write. Each ticket has a number made of the project's key and a count, for example `WEB-12`. Numbers are never reused.
 
-In this version you create and manage tickets yourself. From the next version, agents will pick up tickets and do the work.
+You create tickets, and an agent does the work when you click **Run now** (see [Runs](runs.md)). Agents can also propose new tickets they found while working (see [Tickets proposed by agents](#tickets-proposed-by-agents)).
 
 ## The board
 
@@ -10,8 +10,9 @@ Open **Projects**, then a project: its tickets are on the project page, under **
 
 - Tickets are grouped by state: **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**. See [Ticket states](#ticket-states).
 - **Done** and **Cancelled** are closed at the bottom. Click one to open it.
-- **Proposed** tickets are not shown on the board. They come with plans, in a later version.
-- Each card shows the ticket's number, title, type and assignee, and **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)).
+- **Proposed** shows the tickets agents proposed, while there is at least one (see [Tickets proposed by agents](#tickets-proposed-by-agents)).
+- Each card shows the ticket's number, title, type and assignee, **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)), **created by agent** for a ticket an agent proposed, and the run in progress with the agent's latest progress line (see [Watch a run](runs.md#watch-a-run)).
+- The board updates on its own while you look at it.
 - **Type** shows only tickets of one type. **Assignee** shows only the tickets of one agent, or the **Unassigned** ones. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
 
 On a computer the states sit side by side. On a phone they are one below the other: scroll down to see them all.
@@ -43,7 +44,7 @@ The assignee is the agent expected to do the work of a ticket: the **Architect**
 
 Choose it when you create the ticket, or later with **Edit**, while the ticket is **To do** (or **Proposed**). Choose **No assignee** to remove it. Any agent can be assigned to any ticket in this version; the Orchestrator will check that an agent suits the ticket in a later version.
 
-An agent will only start work on a ticket that has an assignee.
+A run starts only on a ticket that has an assignee (see [Start a run](runs.md#start-a-run)).
 
 ## Formatting descriptions and comments
 
@@ -106,26 +107,35 @@ Use **Mark as done manually** when the result exists but was done another way, f
 
 If the ticket still waits for tickets that are not done, the dialog warns you and names them with their states, for example "WEB-4 still waits for WEB-2 (Cancelled) and WEB-3 (To do)". You can still mark it as done: the button becomes **Mark as done anyway**. Do it only if its work no longer needs them; the tickets it waits for do not change.
 
-The ticket moves to **Done**, and tickets waiting for it are no longer blocked by it. This is possible from **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**, but not from **Proposed**: a proposed ticket belongs to a plan that is not approved yet.
+The ticket moves to **Done**, and tickets waiting for it are no longer blocked by it. This is possible from **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**, but not from **Proposed**: accept or reject a proposed ticket instead.
 
 ## Reopen a cancelled ticket
 
 Open the cancelled ticket and click **Reopen**. It goes back to **To do** with its number, history and dependencies.
 
+## Tickets proposed by agents
+
+While working, an agent may find more work outside its ticket, for example a bug it noticed. It then proposes a ticket: the ticket is **Proposed**, shows **created by agent** on the board, and its page says which agent created it. An agent can propose only a few tickets per run (**Most tickets an agent creates per run**, 3 by default, in [Settings](settings.md#runs)).
+
+Open the ticket and:
+
+- click **Accept** to keep it: it moves to **To do**, ready for **Run now**. You can **Edit** it before or after accepting it;
+- or click **Reject**, write why if you like, and confirm: the ticket is **Cancelled** with its history. You can reopen it later.
+
 ## Ticket states
 
 | State | Meaning |
 |---|---|
-| **Proposed** | Part of a plan not approved yet. Not shown on the board. Plans come in a later version. |
+| **Proposed** | Proposed by an agent and waiting for you to accept or reject it. From a later version, also part of a plan not approved yet. |
 | **To do** | Waiting for work. |
-| **In progress** | An agent is working on it. |
-| **Waiting for you** | An agent asked you a question. |
-| **In review** | The work is on GitHub and being reviewed. |
+| **In progress** | An agent is working on it (see [Runs](runs.md)). |
+| **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
+| **In review** | In this version: the agent finished its work, on a branch of your machine, and it waits for you to check it. From a later version: the work is on GitHub and being reviewed. |
 | **Awaiting merge** | The review approved the work: you merge the pull request on GitHub. |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 
-Agents move tickets through **In progress**, **Waiting for you**, **In review** and **Awaiting merge** from the next versions. In this version, your tickets are **To do**, **Done** or **Cancelled**.
+In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, use [Mark as done manually](#mark-as-done-manually). **Awaiting merge** comes with pull requests, in a later version.
 
 ## If an action is refused
 

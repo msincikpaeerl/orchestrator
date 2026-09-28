@@ -606,7 +606,7 @@ Step L (realtime, live screens and user documentation) was too large for one ses
 - **`orchestrator-daemon status`**: a local ticket branch's commits are those not on any branch fetched from GitHub ("not on GitHub yet"), the same list the run reported, since nothing is pushed in lot 2.
 - **Stream keep-alive and reconnection**: every 20 seconds and 3 seconds, code constants listed among the exceptions of 04 section 8.
 
-### [ ] L1. Live stream, ticket page and run page
+### [x] L1. Live stream, ticket page and run page
 
 - **SSE**:
   - `GET /api/stream` (authenticated): "changed" messages and run log notices, closed at logout;
@@ -633,6 +633,15 @@ Step L (realtime, live screens and user documentation) was too large for one ses
   - a run finishing with the branch and commits shown;
   - a paused run resumed;
 - integration tests cover the stream refused without a session, a "changed" message after a ticket change, a log notice after `run.events`, the stream closed at logout, and the removed setting and endpoint.
+
+*Done 2026-09-29.* Choices within the step:
+
+- How changes reach the stream: `recordEvent` and the run log storage send PostgreSQL `NOTIFY` in their own transaction, delivered only at commit; one pool connection holds `LISTEN`, is replaced after 3 seconds when lost, and the streams then send `resync` (ADR 0029, 09 section 4). No SSE library. The stream checks its session at each keep-alive and each session change.
+- The run page is `/activity/runs/:id`; **Run now** opens it. **Stop run** asks for a confirmation saying what happens to the ticket and the branch. On a ticket an agent proposed, **Reject** replaces **Cancel**.
+- `Run` gains `outcome`, `workingMs`, `waitingMs` and `statusSince`; board tickets carry their active run (`activeRun`, with the progress line shown). The run statuses moved to `packages/protocol/src/api/run-status.ts`, shared by tickets and runs. Display constant `PROGRESS_CARD_MAX_LENGTH` (120 characters) for the card's progress line.
+- The "Projects" group of Settings > Limits is removed with its only setting.
+- The e2e server's scripted daemon acknowledges the server's commands itself, and two controls (`/daemon/run`, `/daemon/request`) play runs; `runs.e2e.ts` was checked to fail with the stream turned off.
+- Found by the tests: `daemon-package.test.ts` left a downloaded package unread, which kept a connection busy and the test server from closing once the change feed was added; the test now reads it.
 
 ### [ ] L2. Needs you, Activity, Machines and daemon status
 
