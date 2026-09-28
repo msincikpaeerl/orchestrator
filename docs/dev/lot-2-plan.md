@@ -477,7 +477,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - step J: a cross-setting rule, maximum acceptance criteria × longest acceptance criterion ≤ 20,000 characters (`FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS`: 80,000 bytes at 4 bytes per character, 20,000 bytes left for the rest of the first message), refused with a message naming both settings and the budget; **Run now** still refuses, with a clear message, a ticket whose first message cannot be built (`FirstMessageTooLarge`);
 - step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; the quoted question is cut the same way with its own marker, and the answer has priority (the question is cut first); a live answer (`run.input`) is never cut.
 
-### [ ] J. Runs (server) and Run now
+### [x] J. Runs (server) and Run now
 
 - Migration: table `runs` (01 section 3.7, with `pause_reason`, `branch_head`, `commits`, `estimated_usage`) and `run_log_entries`; `tickets.branch_name`, `attempt_count`.
 - **Run now** (07 section 3, lot 2):
@@ -523,6 +523,19 @@ Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.
 - **Stop run** cancels at once in one transaction (run, ticket, comment, events, revocation of the run token), then sends `run.stop`; the daemon's later end report only adds the branch. A session never reported ended is stopped at the next `hello`. A test makes an MCP call after Stop run (refused with `FORBIDDEN`).
 - **Run now refusals** also name: project archived or not ready, GitHub token missing, unreadable or invalid, GitHub account id unreadable at the first run; "no machine" lists each machine with why it cannot take the run.
 - Confirmed choices: a `submitted` end marks the run `succeeded` and moves the ticket to `in_review` together (step K stores the report when it accepts the submission); the run token is created here with its hash stored and checked on `mcp.call` (step K implements the tools); acknowledgement timers are set again at server start; an account past `limited_until` is treated as available by Run now, Resume and the screens at once, the first action writing the change and its event; "Needs you" gains "machine offline with active work" (left from step C).
+
+*Done 2026-09-28.* Choices within the step:
+
+- The setting "Longest stored log entry" (`logEntryMaxLength`, Runs group, 2,000 characters, 100 to 100,000), listed in the lot's decisions, is added here with the log storage; a cut entry ends with a marker giving the characters not kept.
+- The run token is `ort_` and 256 random bits, stored as its hash; `mcp.call` checks it (`FORBIDDEN` when revoked, unknown or from another machine) and answers `UNAVAILABLE` for a valid token until step K implements the tools.
+- Reports are handled once per message id through a `daemon_messages` table written in the report's transaction; log entries are stored once per position.
+- A machine that disconnects between the checks and the sending of `run.start` cancels the run at once (not counted); an `ack` refusing `run.start` or `run.resume` is handled like the timeout, with the daemon's reason in the event.
+- A run's pause reason is kept until it runs again, so a resume not acknowledged in time returns to the same pause.
+- Resume is refused while the account is limited, also for a suspected pause (a limit detected by another run): no run starts on a limited account (07, section 5.2).
+- The "work lost" comment is posted once: when a run is created on another machine after the run holding the commits.
+- Among machines equally preferred (07, section 4), the name decides, so the choice is stable.
+- Run events belong to the run's project; the event log's migration test compares only the event types a lot 1 database could hold.
+- The clone URL is `https://github.com/<owner>/<name>.git` (`gitBaseUrl` of `buildApp`, for tests).
 
 ### [ ] K. MCP backend and questions
 
