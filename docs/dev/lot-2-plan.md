@@ -553,6 +553,13 @@ Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.
   - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the question, then the answer, are cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, each with its marker from the answer template pointing to `ticket_comments`; the answer has priority over the question (03 section 3.2; owner's decisions, review of step I);
   - that machine offline → `machine_offline`, ticket back to `todo`.
 - Every MCP call recorded as an event (06 section 7).
+- **Processes left by a session** (owner's review of step J). Closing a run's tmux session (`kill-session`, at the end and when a waiting or paused run's session is closed) sends `SIGHUP` to the session's terminal only: a check with the real tmux 3.6 on 2026-09-28 showed a plain background process stopped, but a `nohup` and a `setsid` process still running afterwards, with the worktree removed under them. The Web Developer's text forbids long-running and background processes, but the daemon must not rely on that. Fix:
+  - every process of a run carries a marker in its environment, `ORCHESTRATOR_RUN_ID=<run id>`, set on the tmux session's command (the environment is inherited through `nohup`, `setsid` and double forks);
+  - where the systemd user session runs (the service's normal case, 05 section 2), Claude Code is started inside its own transient scope, `systemd-run --user --scope --unit orch-run-<run id> --collect`, and closing the session also stops that scope (`systemctl --user stop`), which ends every process in its cgroup whatever it did to its session or process group;
+  - in every case, after `kill-session` the daemon sweeps `/proc` for processes of its own user whose environment holds the marker, sends `SIGTERM`, then `SIGKILL` to those left after a short grace period (a constant, like the backoff), and logs what it stopped; a process that cleared its environment escapes only the sweep, not the scope;
+  - the same cleanup runs for a run found ended at a daemon restart (recovery from `state.json`), and before the worktree is removed.
+
+  **Done when** a fake `claude` scenario starts a plain background process, a `nohup` one, a `setsid` one and a double-forked one, the run ends (and, in a second case, a waiting run's session is closed), and the test waits with a deadline until none of them is left (checked through `/proc` and the marker); the sweep is tested without systemd, and the scope where a systemd user session is available (as CI's runner has none, that case is marked and run by the owner's machine or the daemon test on WSL).
 
 **Done when** integration tests with a scripted daemon cover:
 
