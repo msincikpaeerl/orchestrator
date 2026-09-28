@@ -560,6 +560,9 @@ Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.
   - the same cleanup runs for a run found ended at a daemon restart (recovery from `state.json`), and before the worktree is removed.
 
   **Done when** a fake `claude` scenario starts a plain background process, a `nohup` one, a `setsid` one and a double-forked one, the run ends (and, in a second case, a waiting run's session is closed), and the test waits with a deadline until none of them is left (checked through `/proc` and the marker); the sweep is tested without systemd, and the scope where a systemd user session is available (as CI's runner has none, that case is marked and run by the owner's machine or the daemon test on WSL).
+- **Sessions surviving a restart of the service** (owner's review of step J). The unit written by `install-service` (`apps/daemon/src/unit.ts`) sets no `KillMode`, so systemd's default `control-group` applies: stopping or restarting the service kills every process in its cgroup, including the tmux server (`tmux -L orchestrator`) the daemon started and every agent session in it. A `systemctl --user restart orchestrator-daemon`, which Help asks for after every fix, would then end all running runs, contradicting 05 section 6, where a restarted daemon finds its sessions again; step F's test restarted the daemon process without systemd. Fix, recommended: start the tmux server outside the service's cgroup, in its own transient scope (`systemd-run --user --scope --unit orchestrator-tmux --collect`, wrapping the command that starts the server), like the run scopes above, so the service's cgroup holds only the daemon; `KillMode=process` is not chosen, since it leaves every other child of the daemon (a `git` command, for example) behind on a stop, and systemd warns about such processes. Without a systemd user session (the daemon in a terminal), nothing changes. The choice and its reason are written into 05 sections 2 and 4.3.
+
+  **Done when** a test on a machine with a systemd user session (run by the owner, or the daemon test on WSL; CI's runner has none) installs the service, starts a run with the fake `claude`, restarts the service, and sees the run's tmux session still alive and found again by the restarted daemon.
 
 **Done when** integration tests with a scripted daemon cover:
 
@@ -625,7 +628,8 @@ A daemon test shows `orchestrator-daemon status` listing a ticket branch kept af
 - The owner:
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
-  3. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
+  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service");
+  4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
 - If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
