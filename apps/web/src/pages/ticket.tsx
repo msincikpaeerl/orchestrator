@@ -36,6 +36,7 @@ import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
   markDoneWarning,
+  assigneeLabel,
   priorityLabel,
   showsBlocked,
   statusChangeText,
@@ -534,6 +535,8 @@ function TicketContent({ project, number }: { project: Project; number: number }
             <dd>{typeLabel[data.type]}</dd>
             <dt className="text-slate-600">Priority</dt>
             <dd>{priorityLabel[data.priority]}</dd>
+            <dt className="text-slate-600">Assignee</dt>
+            <dd>{assigneeLabel(data.assignee)}</dd>
             <dt className="text-slate-600">Created</dt>
             <dd>{formatDateTime(data.createdAt)} by you</dd>
           </dl>

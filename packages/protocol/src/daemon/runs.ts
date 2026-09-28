@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentKey } from '../api/agents.js';
+import { AgentKey, FIRST_MESSAGE_MAX_BYTES } from '../api/agents.js';
 import { RepositoryName } from '../api/projects.js';
 import { TicketReference } from '../api/tickets.js';
 import { boundedText, requiredText } from '../text-limits.js';
@@ -111,8 +111,14 @@ export const RunStart = message(
     }),
     /** Scoped to this run; carried by every `mcp.call` (06, section 2). */
     runToken: requiredText(),
-    /** First message, built by the server (06, section 6). */
-    initialPrompt: requiredText(),
+    /**
+     * First message, built by the server (06, section 6). Passed as one command-line argument, so
+     * it fits `FIRST_MESSAGE_MAX_BYTES` (03, section 3.2).
+     */
+    initialPrompt: requiredText().refine(
+      (text) => new TextEncoder().encode(text).length <= FIRST_MESSAGE_MAX_BYTES,
+      `at most ${String(FIRST_MESSAGE_MAX_BYTES)} bytes`,
+    ),
     /**
      * Sent by the daemon when a turn ends without a decision (05, section 4.8). Filled in by the
      * server from its run message template: the daemon holds no agent-facing text (03, section 3.2).

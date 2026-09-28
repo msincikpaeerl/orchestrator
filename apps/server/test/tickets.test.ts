@@ -138,6 +138,7 @@ describe('creating tickets', () => {
       priority: 'high',
       status: 'todo',
       blocked: false,
+      assignee: null,
       createdBy: 'owner',
       blockedBy: [],
       blocks: [],
@@ -150,7 +151,7 @@ describe('creating tickets', () => {
     expect(created[0]).toMatchObject({
       actor: 'owner',
       entityId: first.id,
-      payload: { project: 'WEB', ticket: 'WEB-1', status: 'todo', blockedBy: [] },
+      payload: { project: 'WEB', ticket: 'WEB-1', status: 'todo', blockedBy: [], assignee: null },
     });
   });
 
@@ -538,6 +539,106 @@ describe('editing tickets', () => {
     expect(errorCode(await call('PATCH', 'WEB/tickets/1', { title: 'New' }))).toBe(
       'project_archived',
     );
+  });
+});
+
+describe('assignee (01, section 3.4)', () => {
+  const webDev = { key: 'web_dev', name: 'Web Developer' };
+  const architect = { key: 'architect', name: 'Architect' };
+
+  it('creates a ticket with an assignee, shown on the board and the ticket, with its event', async () => {
+    const created = await create({ assignee: 'web_dev' });
+    expect(created.assignee).toEqual(webDev);
+    expect((await board())[0]?.assignee).toEqual(webDev);
+    expect((await ticket(1)).assignee).toEqual(webDev);
+    const [event] = await events('ticket.created');
+    expect(event?.payload).toMatchObject({ assignee: 'web_dev', assigneeName: 'Web Developer' });
+  });
+
+  it.each(['proposed', 'todo'] as const)(
+    'changes and removes the assignee of a ticket in %s, with its events',
+    async (status) => {
+      await create({ assignee: 'web_dev' });
+      await seedStatus(1, status);
+      const changed = await call('PATCH', 'WEB/tickets/1', { assignee: 'architect' });
+      expect(changed.statusCode, changed.body).toBe(200);
+      expect(TicketDetail.parse(changed.json()).assignee).toEqual(architect);
+      const removed = await call('PATCH', 'WEB/tickets/1', { assignee: null });
+      expect(TicketDetail.parse(removed.json()).assignee).toBeNull();
+      expect((await events('ticket.updated')).map((event) => event.payload)).toEqual([
+        {
+          project: 'WEB',
+          ticket: 'WEB-1',
+          fields: ['assignee'],
+          assignee: 'architect',
+          assigneeName: 'Architect',
+        },
+        { project: 'WEB', ticket: 'WEB-1', fields: ['assignee'], assignee: null },
+      ]);
+    },
+  );
+
+  it('writes no event when the assignee does not change', async () => {
+    await create({ assignee: 'web_dev' });
+    expect((await call('PATCH', 'WEB/tickets/1', { assignee: 'web_dev' })).statusCode).toBe(200);
+    await create();
+    expect((await call('PATCH', 'WEB/tickets/2', { assignee: null })).statusCode).toBe(200);
+    expect(await events('ticket.updated')).toEqual([]);
+  });
+
+  it('names the other fields changed with the assignee in one event', async () => {
+    await create({ title: 'Old' });
+    await call('PATCH', 'WEB/tickets/1', { title: 'New', assignee: 'web_dev' });
+    const [event] = await events('ticket.updated');
+    expect(event?.payload).toEqual({
+      project: 'WEB',
+      ticket: 'WEB-1',
+      fields: ['title', 'assignee'],
+      title: 'New',
+      assignee: 'web_dev',
+      assigneeName: 'Web Developer',
+    });
+  });
+
+  it.each([
+    'in_progress',
+    'waiting_human',
+    'in_review',
+    'awaiting_merge',
+    'done',
+    'cancelled',
+  ] as const)('refuses to change the assignee of a ticket in %s', async (status) => {
+    await create({ assignee: 'web_dev' });
+    await seedStatus(1, status);
+    for (const assignee of ['architect', null]) {
+      const response = await call('PATCH', 'WEB/tickets/1', { assignee });
+      expect(response.statusCode).toBe(409);
+      expect(errorCode(response)).toBe('ticket_not_editable');
+    }
+    expect((await ticket(1)).assignee).toEqual(webDev);
+    expect(await events('ticket.updated')).toEqual([]);
+  });
+
+  it('refuses an unknown profile, when creating and when editing, and changes nothing', async () => {
+    const refused = await call('POST', 'WEB/tickets', {
+      type: 'feature',
+      title: 'A ticket',
+      assignee: 'designer',
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(errorCode(refused)).toBe('agent_not_found');
+    expect(errorMessage(refused)).toBe('No agent profile with the key designer');
+    expect(await board()).toEqual([]);
+
+    await create({ title: 'Old', assignee: 'web_dev' });
+    const edit = await call('PATCH', 'WEB/tickets/1', { title: 'New', assignee: 'designer' });
+    expect(edit.statusCode).toBe(422);
+    expect(errorCode(edit)).toBe('agent_not_found');
+    expect(await ticket(1)).toMatchObject({ title: 'Old', assignee: webDev });
+    expect(await events('ticket.updated')).toEqual([]);
+
+    const malformed = await call('PATCH', 'WEB/tickets/1', { assignee: 'Web Developer' });
+    expect(malformed.statusCode).toBe(400);
   });
 });
 

@@ -29,6 +29,7 @@ export const EventEntityType = z.enum([
   'setting',
   'claude_account',
   'machine',
+  'agent_profile',
 ]);
 export type EventEntityType = z.infer<typeof EventEntityType>;
 
@@ -74,6 +75,8 @@ export const EventType = z.enum([
   'machine.enabled',
   'machine.revoked',
   'machine.capabilities_changed',
+  'agent_profile.created',
+  'agent_profile.updated',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -147,6 +150,9 @@ export const EventPayloads = {
     priority: TicketPriority,
     status: TicketStatus,
     blockedBy: z.array(z.string()),
+    /** The assignee's key and name; absent in events written before 0.3.0. */
+    assignee: z.string().nullable().optional(),
+    assigneeName: z.string().optional(),
   }),
   /** `fields` names the fields changed; type, title and priority are copied when changed. */
   'ticket.updated': z.object({
@@ -155,6 +161,9 @@ export const EventPayloads = {
     type: TicketType.optional(),
     title: z.string().optional(),
     priority: TicketPriority.optional(),
+    /** The new assignee's key and name when it changed; the key is null when it was removed. */
+    assignee: z.string().nullable().optional(),
+    assigneeName: z.string().optional(),
   }),
   'ticket.status_changed': z.object({
     ...TicketFacts,
@@ -218,6 +227,15 @@ export const EventPayloads = {
   'machine.capabilities_changed': z.object({
     ...MachineFacts,
     capabilities: z.array(z.string()),
+  }),
+  /** A default profile seeded from `agents/` at the server's start (03, section 3). */
+  'agent_profile.created': z.object({ key: z.string(), name: z.string(), version: z.int() }),
+  /** A shipped file of the profile, or the common rules, changed: the version went up. */
+  'agent_profile.updated': z.object({
+    key: z.string(),
+    name: z.string(),
+    previousVersion: z.int(),
+    version: z.int(),
   }),
 } satisfies Record<EventType, z.ZodType>;
 

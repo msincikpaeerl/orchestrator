@@ -1,0 +1,173 @@
+import { FIRST_MESSAGE_MAX_BYTES } from '@orchestrator/protocol';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { loadShippedAgents, loadTemplates, type ShippedAgents, type Templates } from './files.js';
+import {
+  FirstMessageTooLarge,
+  answerMessage,
+  continueMessage,
+  implementFirstMessage,
+  nudgeMessage,
+  runInstructions,
+  type ImplementTicket,
+} from './messages.js';
+
+let templates: Templates;
+let shipped: ShippedAgents;
+
+beforeAll(async () => {
+  templates = await loadTemplates();
+  shipped = await loadShippedAgents();
+});
+
+const sample: ImplementTicket = {
+  projectName: 'Bakery website',
+  reference: 'WEB-12',
+  title: 'Contact form',
+  type: 'feature',
+  priority: 'high',
+  description:
+    'Visitors need a way to write to the bakery.\n\nThe form sends an e-mail to the owner.',
+  acceptanceCriteria: [
+    'The contact page has a form with name, e-mail address and message',
+    'An invalid e-mail address is refused with a message next to the field',
+  ],
+  dependencies: [{ reference: 'WEB-3', title: 'Bootstrap project harness', status: 'done' }],
+  comments: [
+    {
+      author: { kind: 'owner' },
+      kind: 'note',
+      at: new Date('2026-09-26T09:30:00Z'),
+      body: 'Keep the form short: no phone number.',
+    },
+    {
+      author: { kind: 'agent', name: 'Web Developer' },
+      kind: 'question',
+      at: new Date('2026-09-26T10:02:00Z'),
+      body: 'Should the form also send a copy to the visitor?',
+    },
+    {
+      author: { kind: 'owner' },
+      kind: 'answer',
+      at: new Date('2026-09-26T11:15:00Z'),
+      body: 'No copy.',
+    },
+    {
+      author: { kind: 'system' },
+      kind: 'status_change',
+      at: new Date('2026-09-26T11:20:00Z'),
+      body: 'The run failed: timeout.',
+    },
+  ],
+};
+
+const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
+
+describe('run instructions and messages for a sample ticket (snapshot)', () => {
+  it('renders the appended instructions, the first message and the other templates', async () => {
+    const webDev = shipped.profiles.find((profile) => profile.key === 'web_dev');
+    const sections = [
+      '<!-- Rendered by apps/server/src/agents/messages.test.ts: review it with the templates. -->',
+      '# Appended to the system prompt (Web Developer)',
+      runInstructions(shipped.commonRules, webDev?.instructions ?? ''),
+      '# First message (implement)',
+      implementFirstMessage(templates.implement, sample),
+      '# Owner answer',
+      answerMessage(templates, 'Should the form also send a copy?', 'No copy.'),
+      '# Continue after a usage-limit pause',
+      continueMessage(templates),
+      '# Nudge',
+      nudgeMessage(templates),
+    ];
+    await expect(sections.join('\n\n')).toMatchFileSnapshot(
+      './__snapshots__/run-messages.snapshot.md',
+    );
+  });
+
+  it('shows the empty cases in the words of the template', () => {
+    const message = implementFirstMessage(templates.implement, {
+      ...sample,
+      description: ' ',
+      acceptanceCriteria: [],
+      dependencies: [],
+      comments: [],
+    });
+    for (const name of ['empty-description', 'no-criteria', 'no-dependencies', 'no-comments']) {
+      expect(message).toContain(templates.implement.parts.get(name));
+    }
+  });
+
+  it('keeps a text containing a placeholder as written', () => {
+    const message = implementFirstMessage(templates.implement, {
+      ...sample,
+      description: 'Show {{title}} and {{unknown}} literally.',
+    });
+    expect(message).toContain('Show {{title}} and {{unknown}} literally.');
+  });
+});
+
+describe('the byte budget of the first message (03, section 3.2)', () => {
+  const full = () => implementFirstMessage(templates.implement, sample);
+
+  it('uses the protocol constant by default', () => {
+    expect(bytes(full())).toBeLessThan(FIRST_MESSAGE_MAX_BYTES);
+    const big = implementFirstMessage(templates.implement, {
+      ...sample,
+      comments: Array.from({ length: 40 }, (_, index) => ({
+        ...sample.comments[0],
+        author: { kind: 'owner' as const },
+        kind: 'note' as const,
+        at: new Date(Date.UTC(2026, 8, 1, 0, index)),
+        body: `Comment ${String(index)}: ${'€'.repeat(3_000)}`,
+      })),
+    });
+    expect(bytes(big)).toBeLessThanOrEqual(FIRST_MESSAGE_MAX_BYTES);
+    expect(big).toContain('Comment 39:');
+    expect(big).not.toContain('Comment 0:');
+  });
+
+  it('keeps the newest comments that fit and says how many were left out', () => {
+    const withoutOldest = implementFirstMessage(templates.implement, {
+      ...sample,
+      comments: sample.comments.slice(2),
+    });
+    const budget = bytes(withoutOldest) + 100;
+    const message = implementFirstMessage(templates.implement, sample, budget);
+    expect(bytes(message)).toBeLessThanOrEqual(budget);
+    expect(message).toContain('No copy.');
+    expect(message).toContain('The run failed: timeout.');
+    expect(message).not.toContain('no phone number');
+    expect(message).not.toContain('send a copy to the visitor');
+    expect(message).toContain(
+      '(2 earlier comments are not shown here: read them with `ticket_comments`.)',
+    );
+    // Always the whole ticket.
+    for (const criterion of sample.acceptanceCriteria) expect(message).toContain(criterion);
+    expect(message).toContain(sample.description);
+  });
+
+  it('cuts a description too long at a line boundary, with the marker pointing to ticket_get', () => {
+    const lines = Array.from({ length: 200 }, (_, index) => `Line ${String(index)} of the spec.`);
+    const ticket = { ...sample, description: lines.join('\n') };
+    const budget = bytes(implementFirstMessage(templates.implement, { ...sample, comments: [] }));
+    const message = implementFirstMessage(templates.implement, ticket, budget + 500);
+    expect(bytes(message)).toBeLessThanOrEqual(budget + 500);
+    expect(message).toContain('Line 0 of the spec.');
+    expect(message).not.toContain('Line 199 of the spec.');
+    expect(message).toMatch(
+      /Line \d+ of the spec\.\n\n\[The description is cut here because it is too long for this message\. Read the rest with `ticket_get` before you start\.\]/,
+    );
+    // Whole lines only, and the comments are left out and counted.
+    const kept = [...message.matchAll(/^Line (\d+) of the spec\.$/gm)].map((match) =>
+      Number(match[1]),
+    );
+    expect(kept).toEqual(kept.map((_, index) => index));
+    expect(message).toContain('(4 earlier comments are not shown here');
+    for (const criterion of sample.acceptanceCriteria) expect(message).toContain(criterion);
+  });
+
+  it('throws when the ticket does not fit even without its description', () => {
+    expect(() => implementFirstMessage(templates.implement, sample, 200)).toThrow(
+      FirstMessageTooLarge,
+    );
+  });
+});

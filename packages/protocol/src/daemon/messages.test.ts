@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FIRST_MESSAGE_MAX_BYTES } from '../api/agents.js';
 import { TEXT_CEILING } from '../text-limits.js';
 import { DaemonMessage, ServerMessage } from './messages.js';
 
@@ -319,6 +320,12 @@ describe('payload checks', () => {
       'run.start with an oversized first message',
       serverExamples['run.start'],
       (p) => (p.initialPrompt = 'x'.repeat(TEXT_CEILING + 1)),
+    ],
+    [
+      'run.start with a first message over the byte budget of one argument',
+      serverExamples['run.start'],
+      // Fewer characters than the text ceiling, but three bytes each in UTF-8.
+      (p) => (p.initialPrompt = '€'.repeat(Math.floor(FIRST_MESSAGE_MAX_BYTES / 3) + 1)),
     ],
     ['run.input with a number as text', serverExamples['run.input'], (p) => (p.text = 42)],
     [

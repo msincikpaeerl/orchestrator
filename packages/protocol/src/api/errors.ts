@@ -39,6 +39,8 @@ export const ApiErrorCode = z.enum([
   'ticket_not_found',
   /** Tickets can be edited only in `proposed` and `todo`. */
   'ticket_not_editable',
+  /** No agent profile with this key: the assignee of a ticket (01, section 3.4). */
+  'agent_not_found',
   /** The action is not possible from the ticket's status (04, section 2); the message says why. */
   'ticket_transition_not_allowed',
   'dependency_on_itself',

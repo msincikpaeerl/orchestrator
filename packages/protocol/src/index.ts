@@ -138,7 +138,16 @@ export {
 } from './api/settings.js';
 export { HIDDEN, maskSecrets } from './secrets.js';
 export { TEXT_CEILING, boundedText, requiredText, settingCeiling } from './text-limits.js';
-export { AgentKey, AgentRole } from './api/agents.js';
+export {
+  AgentKey,
+  AgentLink,
+  AgentListResponse,
+  AgentProfileSummary,
+  AgentRole,
+  FIRST_MESSAGE_MAX_BYTES,
+} from './api/agents.js';
+export { McpPermission, ROLE_MCP_PERMISSIONS } from './mcp/permissions.js';
+export { parseAgentProfileFile, type AgentProfileFile } from './api/agent-profile-file.js';
 export { Ack, DAEMON_MESSAGE_MAX_BYTES, MessageId, message } from './daemon/envelope.js';
 export {
   BranchReport,

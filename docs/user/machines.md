@@ -63,6 +63,10 @@ In this version, the daemon runs under your own Linux user, so agents work with 
 
 An agent may still read public GitHub pages in its web browsing tool. The checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly, while text that only looks like a path, such as a web route in `grep "/api/users"`, is not refused: something counts as a path only when its first folder exists on the computer (`/home`, `/mnt`, `/usr`, …). Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
 
+The list of commands an agent may run (see [Agents](agents.md)) saves time, since a command outside it is refused at once, but it does not protect your computer: the tools it allows, such as `node`, `npx` and `pnpm`, can run any program. The protection comes from the refusals above.
+
+Agents may also search the web and read web pages, to look up how a library works. A web page can hide instructions meant for an agent, hoping it follows them. The refusals above limit what such instructions could make it do: no access to your files outside the project, to the Orchestrator's folder or to GitHub.
+
 Claude Code itself tells every agent the e-mail address of the Claude account it runs with and your Git user name and e-mail address (from your global Git settings), as it does in your own sessions. They are not secrets, but an agent sees them.
 
 For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never touch another ticket or another project.

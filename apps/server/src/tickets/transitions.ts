@@ -34,6 +34,8 @@ export interface NewOwnerTicket {
   description: string;
   acceptanceCriteria: string[];
   priority: TicketPriority;
+  /** The assignee's profile; null when unassigned. */
+  assigneeProfileId: string | null;
   now: Date;
 }
 

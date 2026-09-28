@@ -43,6 +43,7 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
 | `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
 | `pnpm --filter @orchestrator/daemon dev <command>` | The daemon from its sources, for example `... dev doctor` or `... dev start`. It uses `~/.orchestrator/`; set `ORCHESTRATOR_HOME` to another folder to keep a development daemon apart. Tests never use it. |
+| `tools/smoke/claude-code-probe.sh`, `tools/smoke/allowlist-smoke.sh` | The owner's checks with the real Claude Code (lot 2 steps H and N; `--help`). Sessions never run them (working rule 10); CI runs their dry runs against the fake `claude` (`docs/dev/testing.md`). |
 | `pnpm --filter <package> <script>` | Run a script in one package. |
 
 Do not use `pnpm ci`: it is a built-in pnpm command (clean install), not our CI script (ADR 0005).

@@ -11,8 +11,8 @@ Open **Projects**, then a project: its tickets are on the project page, under **
 - Tickets are grouped by state: **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**. See [Ticket states](#ticket-states).
 - **Done** and **Cancelled** are closed at the bottom. Click one to open it.
 - **Proposed** tickets are not shown on the board. They come with plans, in a later version.
-- Each card shows the ticket's number, title and type, and **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)).
-- **Type** shows only tickets of one type. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
+- Each card shows the ticket's number, title, type and assignee, and **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)).
+- **Type** shows only tickets of one type. **Assignee** shows only the tickets of one agent, or the **Unassigned** ones. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
 
 On a computer the states sit side by side. On a phone they are one below the other: scroll down to see them all.
 
@@ -25,16 +25,25 @@ On a computer the states sit side by side. On a phone they are one below the oth
    - **Description**: what must be done and why. See [Formatting](#formatting-descriptions-and-comments).
    - **Acceptance criteria**: the statements that must be true when the work is done, one per criterion, for example "Typing a word shows only the recipes that contain it". Use **Add a criterion**, and **Move up** or **Move down** to put them in order. Empty criteria are left out.
    - **Priority**: **Low**, **Normal** or **High**. Higher priority tickets come first in their column.
+   - **Assignee**: the agent expected to do the work, for example **Web Developer** (see [Assignee](#assignee)). Optional.
    - **Blocked by**: the tickets that must be done before this one can start (see [Dependencies](#dependencies)). Optional.
 3. Click **Create the ticket**. The ticket starts in **To do** and its page opens.
 
 ## Edit a ticket
 
-Open the ticket and click **Edit**. You can change the type, title, description, acceptance criteria and priority, then click **Save**.
+Open the ticket and click **Edit**. You can change the type, title, description, acceptance criteria, priority and assignee, then click **Save**.
 
 A ticket can be edited only while it is **To do** (or **Proposed**). Once work has started, it cannot be edited: add a comment instead.
 
 The tickets it waits for are not in this form: change them on the ticket's page (see [Dependencies](#dependencies)).
+
+## Assignee
+
+The assignee is the agent expected to do the work of a ticket: the **Architect** for the project's structure and tools, the **Web Developer** for features and fixes of a web app or website (see [Agents](agents.md)). The ticket page shows it under **Assignee**, and each card of the board shows it too.
+
+Choose it when you create the ticket, or later with **Edit**, while the ticket is **To do** (or **Proposed**). Choose **No assignee** to remove it. Any agent can be assigned to any ticket in this version; the Orchestrator will check that an agent suits the ticket in a later version.
+
+An agent will only start work on a ticket that has an assignee.
 
 ## Formatting descriptions and comments
 

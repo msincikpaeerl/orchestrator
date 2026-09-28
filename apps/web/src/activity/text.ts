@@ -63,6 +63,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'machine.enabled': 'Machine enabled',
   'machine.revoked': 'Machine revoked',
   'machine.capabilities_changed': 'Machine capabilities edited',
+  'agent_profile.created': 'Agent profile added',
+  'agent_profile.updated': 'Agent profile updated',
 };
 
 /** Kinds of entity, for the filter. */
@@ -75,6 +77,7 @@ export const entityLabel: Record<EventEntityType, string> = {
   setting: 'Settings',
   claude_account: 'Claude accounts',
   machine: 'Machines',
+  agent_profile: 'Agent profiles',
 };
 
 /** Who caused the event. */
@@ -90,6 +93,7 @@ const ticketFieldLabel: Record<string, string> = {
   description: 'description',
   acceptanceCriteria: 'acceptance criteria',
   priority: 'priority',
+  assignee: 'assignee',
 };
 
 function projectPath(key: string): string {
@@ -223,6 +227,7 @@ const describe: { [T in EventType]: Describe<T> } = {
     p.blockedBy.forEach((reference, index) => {
       pieces.push(index === 0 ? ', waits for ' : ', ', ticketRefLink(reference));
     });
+    if (p.assigneeName !== undefined) pieces.push(', assigned to ', quote(p.assigneeName, null));
     return pieces;
   },
   'ticket.updated': (p, c) => {
@@ -231,6 +236,10 @@ const describe: { [T in EventType]: Describe<T> } = {
       ` edited: ${list(p.fields.map((field) => ticketFieldLabel[field] ?? field))}`,
     ];
     if (p.title !== undefined) pieces.push('; new title ', quote(p.title, c.ticketTo));
+    if (p.assignee === null) pieces.push('; no assignee now');
+    else if (p.assigneeName !== undefined) {
+      pieces.push('; now assigned to ', quote(p.assigneeName, null));
+    }
     return pieces;
   },
   'ticket.status_changed': (p, c) => {
@@ -350,6 +359,16 @@ const describe: { [T in EventType]: Describe<T> } = {
     'Capabilities of the machine ',
     quote(p.name, null),
     ` set to ${p.capabilities.length === 0 ? 'none' : list(p.capabilities)}`,
+  ],
+  'agent_profile.created': (p) => [
+    'Agent profile ',
+    quote(p.name, null),
+    ` added, version ${String(p.version)}`,
+  ],
+  'agent_profile.updated': (p) => [
+    'Agent profile ',
+    quote(p.name, null),
+    ` updated with the Orchestrator: version ${String(p.previousVersion)} to ${String(p.version)}`,
   ],
 };
 

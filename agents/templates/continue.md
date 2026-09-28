@@ -1,0 +1,1 @@
+Your session was paused on a Claude usage limit, or what looked like one, and has now been resumed. Continue your ticket where you left off. If you are not sure what was already done, check with `git status`, `git log` and `ticket_comments` first. End the turn with `ticket_submit`, `ticket_ask` or `ticket_give_up`, as usual.

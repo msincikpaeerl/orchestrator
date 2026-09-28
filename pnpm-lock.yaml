@@ -203,6 +203,8 @@ importers:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  agents: {}
+
   apps/daemon:
     devDependencies:
       '@modelcontextprotocol/server':
@@ -247,6 +249,9 @@ importers:
       '@node-rs/argon2':
         specifier: 2.2.1
         version: 2.2.1
+      '@orchestrator/agents':
+        specifier: workspace:*
+        version: link:../../agents
       '@orchestrator/daemon':
         specifier: workspace:*
         version: link:../daemon

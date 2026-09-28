@@ -42,6 +42,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Reset the owner password (dev) | `pnpm --filter server orchestrator reset-password` |
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Claude Code probe (owner only, real Claude Code, lot 2 step H) | `tools/smoke/claude-code-probe.sh` (`--help`) |
+| Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
 Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
@@ -54,7 +55,7 @@ apps/web/        React UI (Vite, TanStack Query, Tailwind)
 apps/daemon/     Daemon, tmux runner, hooks endpoint, MCP relay
 packages/protocol/  Zod schemas shared by all apps: daemon messages, MCP tools, API types
 packages/db/     Drizzle schema and SQL migrations
-agents/          Default agent instructions and run message templates
+agents/          Default agent profiles, common rules and run message templates (seeded at start)
 templates/       Files written to GitHub: project-skeleton/ for new repositories (ADR 0023)
 docs/specs/      Specifications (00 to 10)
 docs/user/       User documentation, shown in the app's Help section

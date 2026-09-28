@@ -445,7 +445,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 
 *Done 2026-09-27.* Checks 1 to 4 `PASS` and check 5 `INFO` on Claude Code 2.1.283 with the owner's grading; the sanitised fixtures are in `apps/daemon/test/fixtures/claude-code-2.1.283/`.
 
-### [ ] I. Agent profiles and assignee
+### [x] I. Agent profiles and assignee
 
 - `agents/`:
   - common rules (06 section 6, including "read `CLAUDE.md` first" and the lot 2 ending with `ticket_submit`);
@@ -463,6 +463,20 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - Playwright assigns a ticket and filters by assignee on both viewports;
 - the smoke script passes a dry run with the fake `claude`.
 
+**Owner's answers** (2026-09-27, written into the specs):
+
+1. Profile files: a `---` header (`name`, `description`, `role`, `model`, `allowed_tools`) then the role instructions; the model is the alias `sonnet` (03 section 3, 01 section 3.6).
+2. The profile version covers the common rules and the profile's file: a change of either raises it at the next start; the four templates are versioned with the application (03 section 3).
+3. The Architect and the Web Developer share one allowlist: file tools, `WebFetch`, `WebSearch`, `ToolSearch`, package managers and `node`, local Git commands and basic file commands (03 section 2.2). The allowlist limits wasted turns and is not a security boundary; web access exposes agents to prompt injection, limited by the deny rules. Both points are in 03 section 2.2 and Help > Machines > "Agents on your own user".
+4. The first message has a byte budget (`FIRST_MESSAGE_MAX_BYTES`, a protocol constant from Linux's 128 KiB argument limit): the ticket in full, comments newest first while they fit with a pointer to `ticket_comments`; a description too long is cut at a line boundary with a visible marker pointing to `ticket_get` (03 section 3.2). The first message is visible to the user's other processes (`ps`) at launch and never holds a secret (05 section 2).
+5. `allowlist-smoke.sh` is built like the step H probe (recorder instead of the hook), one session per profile on `haiku` by default, `PASS`, `FAIL` or `NOT ATTEMPTED` per command, its own throw-away Claude configuration deleted with its credentials unless `--keep`, a dry run with the fake `claude` in CI, no personal data in its output or recorded files. The owner runs it in step N (03 section 6).
+6. The board's assignee filter has an "Unassigned" option; a new ticket starts with no assignee; the API names profiles by key.
+
+*Done 2026-09-27.* The server seeds `agent_profiles` at start from `agents/` and fills in the four templates (`apps/server/src/agents/`); the snapshot of the appended instructions and the messages for a sample ticket is `apps/server/src/agents/__snapshots__/run-messages.snapshot.md`. Two points for the steps that send these messages, settled by the owner at the review (2026-09-27, written into 03 section 3.2, 04 section 8, 07 section 3 and 02 section 6.4):
+
+- step J: a cross-setting rule, maximum acceptance criteria × longest acceptance criterion ≤ 20,000 characters (`FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS`: 80,000 bytes at 4 bytes per character, 20,000 bytes left for the rest of the first message), refused with a message naming both settings and the budget; **Run now** still refuses, with a clear message, a ticket whose first message cannot be built (`FirstMessageTooLarge`);
+- step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; the quoted question is cut the same way with its own marker, and the answer has priority (the question is cut first); a live answer (`run.input`) is never cut.
+
 ### [ ] J. Runs (server) and Run now
 
 - Migration: table `runs` (01 section 3.7, with `pause_reason`, `branch_head`, `commits`, `estimated_usage`) and `run_log_entries`; `tickets.branch_name`, `attempt_count`.
@@ -479,6 +493,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - `git.credential_request`: the token is sent only for a fetch of the run's own repository while the run is active.
 - Commit author (04 section 4): a GitHub token saved before 0.3.0 whose account id is still unknown gets it at the first run (02 section 3.2; step C stores it at the save and at each check).
 - **Stop run**, cancel stopping the run, the failure path (ticket back to `todo`, `attempt_count` raised, `system` comment), `machine_offline` (not counted), reconnection stopping runs the server no longer considers active.
+- First message size (03 section 3.2; owner's decision, review of step I): the cross-setting rule `ticketMaxAcceptanceCriteria` × `acceptanceCriterionMaxLength` ≤ `FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS` (20,000) in `SETTING_ORDER`'s checks, refused naming both settings and the budget; Run now refuses a ticket whose first message cannot be built (`FirstMessageTooLarge`), in plain words.
 - Revoking a machine fails its active runs with `machine_revoked` (not counted); disabling it lets them finish (01 sections 3.7 and 3.8, step C).
 - Run now refuses an unusable, disabled, revoked or offline machine. The Claude Code version the daemon reports at run start is checked again as at `hello`: missing or below the minimum marks the machine unusable and fails that start (05 section 4.3).
 - **Usage limits** on the server:
@@ -489,7 +504,8 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 
 **Done when** integration tests with a scripted daemon cover:
 
-- every Run now refusal;
+- every Run now refusal, the ticket too large for its first message included;
+- the criteria cross-setting rule refused with both settings and the budget named;
 - the acknowledgement timeout without an attempt counted;
 - a run through to `succeeded` via `run.state`, and a failure raising `attempt_count` with its comment;
 - Stop run, a `machine_offline` failure and a `machine_revoked` failure, none counted;
@@ -511,7 +527,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - **Questions**:
   - `ticket.ask` → `waiting_human`;
   - the owner's answer sent with `run.input` to a live session;
-  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine;
+  - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the question, then the answer, are cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, each with its marker from the answer template pointing to `ticket_comments`; the answer has priority over the question (03 section 3.2; owner's decisions, review of step I);
   - that machine offline → `machine_offline`, ticket back to `todo`.
 - Every MCP call recorded as an event (06 section 7).
 
@@ -520,7 +536,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - each tool with each of its refusals, and the role permissions;
 - the `ticket.create` limit and its `proposed` result, then Accept and Reject;
 - the reduced submission passing and failing;
-- `ticket.ask` answered live and after the lifetime, and the offline case;
+- `ticket.ask` answered live and after the lifetime (with a long question cut before a long answer, each at a line boundary with its marker), and the offline case;
 - an expired run token refused.
 
 ### [ ] L. Realtime, live screens and user documentation

@@ -57,6 +57,13 @@
       "when": 1790357506848,
       "tag": "0007_machines",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790544113862,
+      "tag": "0008_agent_profiles",
+      "breakpoints": true
     }
   ]
 }

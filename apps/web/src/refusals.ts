@@ -84,6 +84,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   ticket_not_found: () => 'This ticket does not exist in this project. Reload the page.',
   ticket_not_editable: () =>
     'This ticket can be changed only while it is Proposed or To do. The page now shows its current state.',
+  agent_not_found: () =>
+    'This agent profile does not exist. Reload the page and choose another assignee.',
   ticket_transition_not_allowed: () =>
     'This action is not possible in the ticket’s current state. The page now shows its current state and the actions it allows.',
   dependency_on_itself: () => 'A ticket cannot wait for itself. Choose another ticket.',

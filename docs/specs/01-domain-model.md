@@ -151,12 +151,12 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | name, description | Display information. |
 | role | `planner`, `builder`, `reviewer`, `writer`. Drives the default MCP permissions. |
 | instructions | Role instructions injected into Claude Code at the start of a run. Default profiles are shipped as files in `agents/` (03, section 6). |
-| model | Claude model to use. Default: Sonnet. |
+| model | Claude model to use. Default: Sonnet, as Claude Code's alias `sonnet` (03, section 3). |
 | allowed_tools | Claude Code tool allowlist applied to the run. |
 | mcp_permissions | Set of MCP tools this agent may call (see 06). |
 | required_capabilities | Capabilities needed on the machine. |
 | is_default | True for the six built-in profiles. Defaults can be edited and reset. |
-| version | Incremented on each change. Each run records the version it used. Until profiles can be edited (lot 6), the version of a default profile goes up when the server starts with a changed shipped file. |
+| version | Incremented on each change. Each run records the version it used. Until profiles can be edited (lot 6), the version of a default profile goes up when the server starts with a changed shipped file: its own file or the common rules (03, section 3; owner's decision, lot 2 step I). |
 
 ### 3.7 Run
 

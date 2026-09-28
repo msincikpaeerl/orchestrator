@@ -6,6 +6,7 @@ import {
 } from '@orchestrator/protocol';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 import type { Pool } from 'pg';
+import { registerAgentRoutes } from './agents/routes.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { createDatabase } from './database.js';
 import { GITHUB_API_URL } from './github/client.js';
@@ -89,6 +90,7 @@ export function buildApp(dependencies: AppDependencies) {
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
     registerTicketRoutes(scope, { db, now: dependencies.now });
+    registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl });
     registerUiSettingsRoutes(scope, { db });
     registerSettingRoutes(scope, { db });

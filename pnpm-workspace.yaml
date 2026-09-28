@@ -2,5 +2,6 @@ packages:
   - apps/*
   - packages/*
   - templates
+  - agents
 allowBuilds:
   esbuild: false

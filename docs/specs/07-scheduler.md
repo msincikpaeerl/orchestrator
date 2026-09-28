@@ -45,7 +45,7 @@ Within a category: ticket priority (`high` first), then tickets that block the m
 
 The owner can use **Run now** on a ticket to move it to the front. Run now ignores schedule windows but never ignores the quota state or the concurrency limit.
 
-**Lot 2, before the loop exists.** Run now is the only way a run starts. It checks the ticket is eligible and its account can start a run (section 2, step 1, without schedule windows and budget), picks a machine (section 4), creates and dispatches the run (section 2, steps 4 and 5). When it cannot start, the owner sees why: no assignee, blocked, no compatible machine online, account limited (until when), account already running its maximum. An owner's answer to a question whose session was closed resumes the same run through the same path (04, section 6), and so does **Resume** on a paused run (owner's decision, lot 2 step A).
+**Lot 2, before the loop exists.** Run now is the only way a run starts. It checks the ticket is eligible and its account can start a run (section 2, step 1, without schedule windows and budget), picks a machine (section 4), creates and dispatches the run (section 2, steps 4 and 5). When it cannot start, the owner sees why: no assignee, blocked, no compatible machine online, account limited (until when), account already running its maximum, or the ticket too large for a run's first message even with its description cut (03 section 3.2; the message says to shorten the ticket, for example its dependencies or acceptance criteria; owner's decision, review of lot 2 step I). An owner's answer to a question whose session was closed resumes the same run through the same path (04, section 6), and so does **Resume** on a paused run (owner's decision, lot 2 step A).
 
 ## 4. Machine selection
 

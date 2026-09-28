@@ -1,6 +1,8 @@
 import { Writable } from 'node:stream';
 import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing';
 import pg from 'pg';
+import { loadShippedAgents } from '../src/agents/files.js';
+import { seedAgentProfiles } from '../src/agents/seed.js';
 import { buildApp, type App } from '../src/app.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
@@ -59,6 +61,8 @@ export async function startTestApp(
   const pool = new pg.Pool({ connectionString: database.url });
   await runMigrations(pool);
   const db = createDatabase(pool);
+  // As the server's start does (`startServer`).
+  await seedAgentProfiles(db, await loadShippedAgents());
   const values = Object.entries(options.settings ?? {}).map(([name, value]) => ({
     name: name as SettingName,
     value,
