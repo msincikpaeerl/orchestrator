@@ -353,7 +353,7 @@ In v1 the GitHub credential is the owner's fine-grained personal token. A GitHub
 | `orchestrator-daemon login` | Open Claude Code once with the dedicated configuration folder to log in. |
 | `orchestrator-daemon start` | Run in the foreground. Refused when another daemon of this user answers on the control socket. |
 | `orchestrator-daemon install-service` | Install and enable the systemd user service, with lingering (section 2). Refused while a daemon runs in a terminal. |
-| `orchestrator-daemon status` | Whether a daemon runs, as the service or in a terminal; connection state, versions, capabilities, live runs; the last stop reason when none runs. |
+| `orchestrator-daemon status` | Whether a daemon runs, as the service or in a terminal; connection state, versions, capabilities, live runs; the last stop reason when none runs. It also lists the local ticket branches of the machine's bare clones, each with its head and its commits not on any branch fetched from GitHub ("not on GitHub yet"): nothing is pushed in lot 2, so these are the commits the run reported (owner's decision, lot 2 step L). |
 | `orchestrator-daemon attach <run-id> [--write]` | Attach to a run's tmux session to watch it live. Read-only by default; `--write` asks for confirmation and warns that typing in the session interferes with the agent. |
 | `orchestrator-daemon doctor` | Check the machine (grading below) and show the last stop reason. What it cannot read, such as `instanceIdleTimeout` in the Windows `.wslconfig`, it prints as "check this yourself" with the link to the documentation. |
 | `orchestrator-daemon mcp --run <id>` | MCP server started by Claude Code for a run (internal). |

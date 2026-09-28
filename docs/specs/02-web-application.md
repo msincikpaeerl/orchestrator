@@ -8,7 +8,7 @@ This document describes the screens of the web application and what the owner ca
 ## 1. General rules
 
 - **Responsive.** Every screen works on a phone, so the owner can answer questions and approve plans away from the computer. Complex editing (agent instructions) may be more comfortable on desktop but must remain possible on mobile.
-- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading. The server keeps one Server-Sent Events stream per logged-in browser (09, section 4) carrying "changed" messages (kind of entity, id, project) and the log lines of the runs the screen shows; the screen then reloads what changed. Screens also reload everything after the stream reconnects, after each action and when the window regains focus. The project page's polling during a repository setup, and its `projectSetupPollSeconds` setting, are removed in favour of the stream (owner's decision, lot 2 step A).
+- **Live.** Screens update in real time (ticket changes, run logs, new questions) without reloading. The server keeps one Server-Sent Events stream per logged-in browser (09, section 4) carrying "changed" messages (kind of entity, id, project) and, for run logs, a notice that a run has new log entries up to a given entry number; the screen then reloads what changed, and fetches a run's entries after the last one it holds, so nothing is lost across a reconnection (owner's decision, lot 2 step L). Screens also reload everything after the stream reconnects, after each action and when the window regains focus. The stream sends a keep-alive every 20 seconds and asks the browser to reconnect after 3 seconds (code constants, 04 section 8). Logging out closes the stream. The project page's polling during a repository setup, and its `projectSetupPollSeconds` setting, are removed in favour of the stream (owner's decision, lot 2 step A).
 - **Help everywhere.** Each screen has a help link to the matching page of the user documentation.
 - **English only** for all text.
 - **Confirmation** for destructive actions (cancel ticket, mark as done manually, archive project, revoke machine, delete agent).
@@ -91,7 +91,9 @@ The owner's task list, ordered by age:
 - setup still to do: steps added after the owner went through the wizard (section 3): "No Claude account yet" while no account exists, "No machine enrolled yet" while no machine is enrolled and not revoked (a machine that enrolled and is now offline does not bring it back; owner's decision, lot 2 step C);
 - GitHub token expiring within 14 days or expired (by its stored date), rejected by GitHub as invalid, missing a permission (sections 3.1 and 3.2), or unreadable because `ORCHESTRATOR_SECRET_KEY` changed (enter the token again).
 
-Also shows a compact status line per Claude account (available, limited until, paused, next window).
+Also shows a compact status line per Claude account (available, limited until, paused, next window). In lot 2 it reads "Available" or "Limited until <time>"; a limit whose time has passed shows "Available"; a manually paused account (lot 4) shows "Paused"; the next window comes with lot 4 (owner's decision, lot 2 step L).
+
+A question is answered with the same answer box on "Needs you", the ticket page and the run page (section 7).
 
 ## 5. Requests
 
@@ -161,7 +163,7 @@ Name, description, required capabilities, per-project overrides of settings (04,
 - **Live runs**: what each agent is doing now: ticket, last progress line, live log from the transcript, elapsed time, estimated usage. Actions: stop run, attach command (for `orchestrator-daemon attach`).
 - **Queue**: next candidates and why they are not running (07, section 7). *(Lot 4.)*
 - **History**: past runs with filters (project, agent, outcome, date).
-- **Run page**: purpose, ticket, agent and profile version, machine, status (with the pause reason), times working and waiting, estimated usage, outcome, branch and commits, and the log: one entry per transcript event (the agent's text, each tool with a short input, tool results cut to the "Longest stored log entry" setting), with credentials masked as in the event log. Logs are kept for as long as the run (owner's decision, lot 2 step A).
+- **Run page**: purpose, ticket, agent and profile version, machine, status (with the pause reason), times working and waiting (01, section 3.7), estimated usage, the progress line, outcome, branch and commits, the answer box while the run waits for the owner's answer (owner's decision, lot 2 step L), and the log: one entry per transcript event (the agent's text, each tool with a short input, tool results cut to the "Longest stored log entry" setting), with credentials masked as in the event log. Logs are kept for as long as the run (owner's decision, lot 2 step A).
 - **Event log**: filterable list of events, newest first, each in plain words with links to its project or ticket ("WEB-12 marked as done manually: “…”"), its time and who caused it. Filters: project (events about no project are shown only without this filter), ticket, kind of entity, event type, and a range of days. A page shows a fixed number of events, with a button for the older ones; pages follow a cursor (time and id of the last event shown), so events written meanwhile never shift them. Titles, names and comments are quoted as plain text (never Markdown or HTML), on one line and shortened, each quote linking to the page with the full text. Credentials are never shown, even if a payload held one (lot 1 step H).
 
 ## 8. Agents

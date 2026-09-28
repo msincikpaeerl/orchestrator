@@ -175,6 +175,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | claude_session_id | Claude Code session, used to resume after a pause. |
 | worktree_path | Git worktree used by the run. |
 | started_at, ended_at | Timestamps. |
+| working_time, waiting_time | Totals kept by the server at each status change (owner's decision, lot 2 step L): working counts the time in `starting` and `running`, waiting the time in `waiting_human` and `paused_quota`; `queued` and `dispatched` count in neither. With `status_since` (when the current status began), a screen adds the current period of an active run when it shows it. |
 | outcome | Summary written by the agent at the end. |
 | branch_head, commits | Reported by the daemon at the end of the run: the ticket branch's head and the commits ahead of the base branch (hash, subject). |
 | estimated_usage | Equivalent cost of the run in US dollars, as estimated by Claude Code (05, section 4.5). Informational. |
