@@ -94,7 +94,6 @@ describe('Settings > Limits', () => {
       githubTokenExpiryWarningDays: 14,
       githubRequestTimeoutSeconds: 15,
       githubClockToleranceSeconds: 120,
-      projectSetupPollSeconds: 2,
       ticketTitleMaxLength: 200,
       ticketDescriptionMaxLength: 20_000,
       ticketMaxAcceptanceCriteria: 20,

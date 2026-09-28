@@ -33,6 +33,7 @@ import { resolveSettings } from '../settings/store.js';
 import {
   StatusChangedPayload,
   acceptanceCriteria,
+  activeRuns,
   boardOrder,
   profileLinks,
   ticketEntity,
@@ -327,6 +328,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         blockedByLinks.some((link) => link.status !== 'done'),
         await assigneeOf(executor, ticket),
         profiles,
+        (await activeRuns(executor, [ticket.id])).get(ticket.id) ?? null,
       ),
       description: ticket.description,
       acceptanceCriteria: acceptanceCriteria(ticket),
@@ -365,9 +367,20 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.tickets.assigneeProfileId))
       .where(eq(schema.tickets.projectId, project.id));
     const profiles = await profileLinks(db);
+    const active = await activeRuns(
+      db,
+      rows.map((row) => row.ticket.id),
+    );
     const tickets = rows
       .map((row) =>
-        toTicketSummary(row.ticket, project.key, row.blocked, assigneeLink(row.assignee), profiles),
+        toTicketSummary(
+          row.ticket,
+          project.key,
+          row.blocked,
+          assigneeLink(row.assignee),
+          profiles,
+          active.get(row.ticket.id) ?? null,
+        ),
       )
       .sort(boardOrder);
     return { tickets } satisfies TicketListResponse;

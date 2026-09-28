@@ -3,49 +3,15 @@ import { CommitSummary, GitHash } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
+import { PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
 
-/** Status of a run on the server (01, section 3.7; 05, section 4.7 for the daemon's states). */
-export const RunStatus = z.enum([
-  'queued',
-  'dispatched',
-  'starting',
-  'running',
-  'waiting_human',
-  'paused_quota',
-  'succeeded',
-  'failed',
-  'cancelled',
-]);
-export type RunStatus = z.infer<typeof RunStatus>;
-
-/**
- * A run not ended yet: at most one per ticket (01, invariant 2). A paused run keeps its session
- * and worktree on its machine, so it counts too.
- */
-export const ACTIVE_RUN_STATUSES: readonly RunStatus[] = [
-  'queued',
-  'dispatched',
-  'starting',
-  'running',
-  'waiting_human',
-  'paused_quota',
-];
-
-/**
- * Runs using their Claude account now, counted against its maximum concurrent runs (01,
- * invariant 3): waiting and paused runs do not count (04, section 6; 07, section 5.2).
- */
-export const ACCOUNT_BUSY_RUN_STATUSES: readonly RunStatus[] = [
-  'queued',
-  'dispatched',
-  'starting',
-  'running',
-];
-
-/** Why a run is `paused_quota` (01, section 3.7; 05, section 4.10). */
-export const PauseReason = z.enum(['usage_limit', 'suspected_usage_limit']);
-export type PauseReason = z.infer<typeof PauseReason>;
+export {
+  ACCOUNT_BUSY_RUN_STATUSES,
+  ACTIVE_RUN_STATUSES,
+  PauseReason,
+  RunStatus,
+} from './run-status.js';
 
 /** Why a run failed or was cancelled (01, section 3.7). */
 export const FailureReason = z.enum([
@@ -128,15 +94,32 @@ export const Run = z.object({
    * "Progress update interval" (06, section 4.2); null before the first.
    */
   progress: z.object({ text: z.string(), at: z.iso.datetime() }).nullable(),
+  /** The agent's summary at the end: its submission's summary, or why it gave up. */
+  outcome: z.string().nullable(),
+  /**
+   * Time spent in `starting` and `running`, and in `waiting_human` and `paused_quota`, up to
+   * `statusSince` (01, section 3.7): a screen adds the current period of an active run.
+   */
+  workingMs: z.int().min(0),
+  waitingMs: z.int().min(0),
+  /** When the current status began. */
+  statusSince: z.iso.datetime(),
   createdAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
   endedAt: z.iso.datetime().nullable(),
 });
 export type Run = z.infer<typeof Run>;
 
+/** Statuses whose time counts as working, and as waiting (01, section 3.7). */
+export const WORKING_RUN_STATUSES: readonly RunStatus[] = ['starting', 'running'];
+export const WAITING_RUN_STATUSES: readonly RunStatus[] = ['waiting_human', 'paused_quota'];
+
 /** `GET /api/projects/:key/tickets/:number/runs`: newest first. */
 export const RunListResponse = z.object({ runs: z.array(Run) });
 export type RunListResponse = z.infer<typeof RunListResponse>;
+
+/** Display constant: longest progress line shown on a board card; the ticket and run pages show it whole. */
+export const PROGRESS_CARD_MAX_LENGTH = 120;
 
 /** Display constant: log entries per page of a run's log (not a setting, 04 section 8). */
 export const RUN_LOG_PAGE_SIZE = 200;

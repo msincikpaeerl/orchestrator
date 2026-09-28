@@ -44,6 +44,7 @@ import {
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
+import { notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
 import { inspectToken } from '../github/token-check.js';
@@ -75,6 +76,7 @@ import {
   isLimited,
   reportedCommits,
   statusOfDaemonState,
+  statusTimes,
   ticketBranchName,
   toRun,
   type AccountRow,
@@ -238,6 +240,7 @@ export class RunService {
       .set({
         status: to,
         updatedAt: now,
+        ...(from === to ? {} : statusTimes(locked.run, now)),
         ...(facts.pauseReason === undefined ? {} : { pauseReason: facts.pauseReason }),
         ...(facts.failureReason === undefined ? {} : { failureReason: facts.failureReason }),
         ...(facts.endReason === undefined ? {} : { endReason: facts.endReason }),
@@ -758,6 +761,7 @@ export class RunService {
           ackDeadline,
           branchName,
           baseBranch,
+          statusSince: now,
           createdAt: now,
           updatedAt: now,
         })
@@ -1699,6 +1703,7 @@ export class RunService {
           }),
         )
         .onConflictDoNothing();
+      await notifyRunLog(tx, run.id, Math.max(...payload.events.map((event) => event.seq)));
       if (payload.estimatedUsageUsd !== null) {
         await tx
           .update(schema.runs)

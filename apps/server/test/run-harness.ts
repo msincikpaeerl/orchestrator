@@ -32,13 +32,20 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export class RunHarness {
   t!: TestApp;
   private github!: FakeGitHub;
-  private cookie = '';
+  /** The owner's session cookie, `name=value`. */
+  cookie = '';
   private readonly daemons: ScriptedDaemon[] = [];
   private readonly heartbeats: NodeJS.Timeout[] = [];
   private started = false;
 
   /** `daemonSecondMs` shortens the dispatch timeout and the progress interval; daemons beat. */
-  async start(options: { settings?: Partial<SettingValues>; daemonSecondMs?: number } = {}) {
+  async start(
+    options: {
+      settings?: Partial<SettingValues>;
+      daemonSecondMs?: number;
+      streamKeepAliveMs?: number;
+    } = {},
+  ) {
     this.started = true;
     this.github = await startFakeGitHub();
     this.github.accounts.set(TOKEN, fullAccount());
@@ -47,6 +54,7 @@ export class RunHarness {
       listen: true,
       settings: options.settings,
       daemonSecondMs: options.daemonSecondMs,
+      streamKeepAliveMs: options.streamKeepAliveMs,
     });
     this.cookie = await createOwner(this.t.app);
     const saved = await this.call('PUT', '/api/github/token', { token: TOKEN, expiresOn: null });

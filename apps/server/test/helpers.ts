@@ -55,6 +55,8 @@ export async function startTestApp(
     daemonSecondMs?: number;
     /** Folder of the daemon package served at `/downloads/`. */
     daemonPackageDir?: string;
+    /** Interval of the realtime stream's keep-alive and session check. */
+    streamKeepAliveMs?: number;
   } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
@@ -79,6 +81,7 @@ export async function startTestApp(
       now: options.now,
       daemonSecondMs: options.daemonSecondMs,
       daemonPackageDir: options.daemonPackageDir,
+      streamKeepAliveMs: options.streamKeepAliveMs,
     });
   const app = build();
   await app.ready();

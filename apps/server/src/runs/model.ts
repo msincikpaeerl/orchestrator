@@ -8,6 +8,8 @@ import {
   RunPurpose,
   RunStatus,
   UNCOUNTED_FAILURES,
+  WAITING_RUN_STATUSES,
+  WORKING_RUN_STATUSES,
   type DaemonRunState,
   type Run,
 } from '@orchestrator/protocol';
@@ -140,9 +142,30 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
       row.progressShown === null || row.progressShownAt === null
         ? null
         : { text: row.progressShown, at: row.progressShownAt.toISOString() },
+    outcome: row.outcome,
+    workingMs: row.workingMs,
+    waitingMs: row.waitingMs,
+    statusSince: row.statusSince.toISOString(),
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * The run's working and waiting totals when its status changes at `now` (01, section 3.7): the
+ * time since `statusSince` goes to the total of the status it leaves, if any.
+ */
+export function statusTimes(
+  row: Pick<RunRow, 'status' | 'statusSince' | 'workingMs' | 'waitingMs'>,
+  now: Date,
+): Pick<RunRow, 'statusSince' | 'workingMs' | 'waitingMs'> {
+  const status = RunStatus.parse(row.status);
+  const spent = Math.max(0, now.getTime() - row.statusSince.getTime());
+  return {
+    statusSince: now,
+    workingMs: row.workingMs + (WORKING_RUN_STATUSES.includes(status) ? spent : 0),
+    waitingMs: row.waitingMs + (WAITING_RUN_STATUSES.includes(status) ? spent : 0),
   };
 }
 

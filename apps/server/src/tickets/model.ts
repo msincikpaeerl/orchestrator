@@ -1,8 +1,11 @@
 import { schema } from '@orchestrator/db';
 import {
+  ACTIVE_RUN_STATUSES,
   CommentAuthor,
   CommentKind,
   EventPayloads,
+  PauseReason,
+  RunStatus,
   TicketCreator,
   TicketPriority,
   TicketStatus,
@@ -14,6 +17,7 @@ import {
   type TicketLink,
   type TicketSummary,
 } from '@orchestrator/protocol';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Executor } from '../database.js';
 
@@ -55,6 +59,56 @@ function authorship(
   return profile && runId !== null ? { profile, runId } : null;
 }
 
+export type ActiveRun = NonNullable<TicketSummary['activeRun']>;
+
+/** The active run of each of these tickets that has one (01, invariant 2), by ticket id. */
+export async function activeRuns(
+  executor: Executor,
+  ticketIds: string[],
+): Promise<Map<string, ActiveRun>> {
+  if (ticketIds.length === 0) return new Map();
+  const rows = await executor
+    .select({
+      run: {
+        id: schema.runs.id,
+        ticketId: schema.runs.ticketId,
+        status: schema.runs.status,
+        pauseReason: schema.runs.pauseReason,
+        progressShown: schema.runs.progressShown,
+        progressShownAt: schema.runs.progressShownAt,
+      },
+      machine: {
+        id: schema.machines.id,
+        name: schema.machines.name,
+        status: schema.machines.status,
+      },
+    })
+    .from(schema.runs)
+    .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+    .where(
+      and(
+        inArray(schema.runs.ticketId, ticketIds),
+        inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+      ),
+    );
+  const active = new Map<string, ActiveRun>();
+  for (const { run, machine } of rows) {
+    if (run.ticketId === null) continue;
+    const status = RunStatus.parse(run.status);
+    active.set(run.ticketId, {
+      id: run.id,
+      status,
+      pauseReason: run.pauseReason === null ? null : PauseReason.parse(run.pauseReason),
+      machine: { id: machine.id, name: machine.name, online: machine.status === 'online' },
+      progress:
+        run.progressShown === null || run.progressShownAt === null
+          ? null
+          : { text: run.progressShown, at: run.progressShownAt.toISOString() },
+    });
+  }
+  return active;
+}
+
 /** The API's view of a ticket. Parsing the text columns catches a value no code should write. */
 export function toTicketSummary(
   row: TicketRow,
@@ -62,6 +116,7 @@ export function toTicketSummary(
   blocked: boolean,
   assignee: AgentLink | null,
   profiles: ReadonlyMap<string, AgentLink>,
+  activeRun: ActiveRun | null,
 ): TicketSummary {
   return {
     id: row.id,
@@ -75,6 +130,7 @@ export function toTicketSummary(
     assignee,
     createdBy: TicketCreator.parse(row.createdBy),
     createdByAgent: authorship(row.createdByProfileId, row.createdByRunId, profiles),
+    activeRun,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
