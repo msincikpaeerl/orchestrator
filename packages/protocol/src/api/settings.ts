@@ -322,6 +322,18 @@ const definitions = {
     perProject: false,
     usedFrom: '0.3.0',
   },
+  logEntryMaxLength: {
+    group: 'runs',
+    label: 'Longest stored log entry',
+    description:
+      "Most characters kept of one entry of a run's log, such as a command's output; the rest is cut and the cut is marked.",
+    unit: 'characters',
+    min: 100,
+    max: 100_000,
+    default: 2000,
+    perProject: false,
+    usedFrom: '0.3.0',
+  },
   enrollmentCodeLifetimeMinutes: {
     group: 'machines',
     label: 'Enrollment code lifetime',
@@ -376,7 +388,7 @@ const definitions = {
     max: 1440,
     default: 60,
     perProject: false,
-    usedFrom: '0.5.0',
+    usedFrom: '0.3.0',
   },
   quotaFallbackMaxDelayMinutes: {
     group: 'scheduler',
@@ -431,6 +443,37 @@ export const SETTING_ORDER: readonly SettingOrder[] = [
     larger: 'claudeCodeMcpToolTimeoutSeconds',
     factor: 1,
     strict: true,
+  },
+];
+
+/**
+ * Most characters the acceptance criteria of one ticket can take (03, section 3.2): counting 4
+ * bytes per character (UTF-8's largest), 80,000 of the `FIRST_MESSAGE_MAX_BYTES` of a run's first
+ * message, leaving 20,000 bytes for the rest of it.
+ */
+export const FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS = 20_000;
+
+/**
+ * Pairs of settings whose product has a ceiling (04, section 8): `first` times `second` is never
+ * above `max`. A change or reset breaking it is refused with `setting_product_invalid`, naming
+ * both settings, their values and the ceiling. Both settings are global only.
+ */
+export interface SettingProduct {
+  first: SettingName;
+  second: SettingName;
+  max: number;
+  /** Unit of the product, as the refusal states it. */
+  unit: string;
+}
+
+export const SETTING_PRODUCTS: readonly SettingProduct[] = [
+  // The criteria of any valid ticket fit in a run's first message (owner's decision, review of
+  // lot 2 step I).
+  {
+    first: 'ticketMaxAcceptanceCriteria',
+    second: 'acceptanceCriterionMaxLength',
+    max: FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS,
+    unit: 'characters',
   },
 ];
 

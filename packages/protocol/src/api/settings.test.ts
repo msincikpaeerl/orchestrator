@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { FIRST_MESSAGE_MAX_BYTES } from './agents.js';
 import {
+  FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS,
   inOrder,
   PROJECT_SETTINGS,
   SETTING_ORDER,
+  SETTING_PRODUCTS,
   SETTINGS,
   SettingName,
   settingValue,
@@ -67,5 +70,15 @@ describe('SETTINGS', () => {
     expect(schema.safeParse(366).success).toBe(false);
     expect(schema.safeParse(1.5).success).toBe(false);
     expect(schema.safeParse(1).success).toBe(true);
+  });
+});
+
+describe('SETTING_PRODUCTS', () => {
+  it('fits the defaults, and keeps the criteria within the first message budget', () => {
+    for (const { first, second, max } of SETTING_PRODUCTS) {
+      expect(SETTINGS[first].default * SETTINGS[second].default).toBeLessThanOrEqual(max);
+    }
+    // 4 bytes per character at most in UTF-8, and 20,000 bytes left for the rest (03, 3.2).
+    expect(4 * FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS).toBe(FIRST_MESSAGE_MAX_BYTES - 20_000);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RunRefusal } from './runs.js';
 import { SettingName } from './settings.js';
 
 /** Machine-readable reason of an API refusal; the UI chooses its message from it. */
@@ -53,6 +54,8 @@ export const ApiErrorCode = z.enum([
   'setting_not_per_project',
   /** The value would put two settings of `SETTING_ORDER` in the wrong order; see `settingOrder`. */
   'setting_order_invalid',
+  /** The value would put a pair of `SETTING_PRODUCTS` above its ceiling; see `settingProduct`. */
+  'setting_product_invalid',
   'account_not_found',
   /** Another account has this label (without regard to case). */
   'account_label_taken',
@@ -70,6 +73,11 @@ export const ApiErrorCode = z.enum([
   'enrollment_code_used',
   /** The code is older than its lifetime; `setting` holds the current lifetime. */
   'enrollment_code_expired',
+  /** **Run now** or **Resume** cannot start: `runRefusal` names the reason (07, section 3). */
+  'run_not_possible',
+  'run_not_found',
+  /** **Stop run** on a run that already ended. */
+  'run_not_active',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
@@ -116,6 +124,19 @@ export const ApiError = z.object({
         strict: z.boolean(),
       })
       .optional(),
+    /** `setting_product_invalid`: the two settings, the values they would have and the ceiling. */
+    settingProduct: z
+      .object({
+        first: SettingName,
+        second: SettingName,
+        firstValue: z.int(),
+        secondValue: z.int(),
+        max: z.int().positive(),
+        unit: z.string(),
+      })
+      .optional(),
+    /** `run_not_possible`: why **Run now** or **Resume** cannot start. */
+    runRefusal: RunRefusal.optional(),
     /**
      * A refusal caused by a setting (06, section 3): the setting and its current value, so the
      * message can state it. For example `enrollment_code_expired` and its lifetime.

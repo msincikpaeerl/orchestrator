@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CommitSummary, GitHash } from '../daemon/git.js';
 import { AgentKey, AgentLink } from './agents.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
@@ -151,6 +152,21 @@ export const TicketDetail = TicketSummary.extend({
   /** Tickets waiting for this one. */
   blocks: z.array(TicketLink),
   timeline: z.array(TimelineEntry),
+  /** Failed attempts, for the retry policy (01, section 3.4; 04, section 5). */
+  attemptCount: z.int().min(0),
+  /**
+   * The ticket branch, set at the first run. Until pushing exists (lot 3) it lives only on the
+   * machine of the last run that reported it, with its head and the commits ahead of the base
+   * branch (01, section 3.4); `machine` is null before any report.
+   */
+  branch: z
+    .object({
+      name: z.string(),
+      machine: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+      head: GitHash.nullable(),
+      commits: z.array(CommitSummary),
+    })
+    .nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 

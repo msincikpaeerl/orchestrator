@@ -97,6 +97,25 @@ export {
 } from './api/tickets.js';
 export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
 export {
+  ACCOUNT_BUSY_RUN_STATUSES,
+  ACTIVE_RUN_STATUSES,
+  FailureReason,
+  MachineUnavailable,
+  PauseReason,
+  RUN_LOG_PAGE_SIZE,
+  Run,
+  RunBranch,
+  RunChangeCause,
+  RunListResponse,
+  RunLogEntry,
+  RunLogQuery,
+  RunLogResponse,
+  RunRefusal,
+  RunStatus,
+  RunTicketAction,
+  UNCOUNTED_FAILURES,
+} from './api/runs.js';
+export {
   AccountListResponse,
   AccountPlan,
   AccountState,
@@ -126,8 +145,11 @@ export {
   ProjectSetting,
   ProjectSettingsResponse,
   SETTINGS,
+  FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS,
   SETTING_ORDER,
+  SETTING_PRODUCTS,
   inOrder,
+  type SettingProduct,
   type SettingOrder,
   SetSettingRequest,
   SettingGroup,

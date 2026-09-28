@@ -7,6 +7,14 @@ import {
   SetupStep,
 } from './api/projects.js';
 import { AccountPlan } from './api/machines.js';
+import {
+  FailureReason,
+  PauseReason,
+  RunChangeCause,
+  RunStatus,
+  RunTicketAction,
+} from './api/runs.js';
+import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
 import {
   CommentKind,
@@ -30,6 +38,7 @@ export const EventEntityType = z.enum([
   'claude_account',
   'machine',
   'agent_profile',
+  'run',
 ]);
 export type EventEntityType = z.infer<typeof EventEntityType>;
 
@@ -64,6 +73,8 @@ export const EventType = z.enum([
   'setting.reset',
   'account.created',
   'account.updated',
+  'account.limited',
+  'account.available',
   'machine.created',
   'machine.enrollment_code_created',
   'machine.enrolled',
@@ -75,8 +86,11 @@ export const EventType = z.enum([
   'machine.enabled',
   'machine.revoked',
   'machine.capabilities_changed',
+  'machine.claude_code_unsupported',
   'agent_profile.created',
   'agent_profile.updated',
+  'run.created',
+  'run.status_changed',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -169,9 +183,13 @@ export const EventPayloads = {
     ...TicketFacts,
     from: TicketStatus,
     to: TicketStatus,
-    action: OwnerTicketAction,
-    /** The comment explaining a **Mark as done manually**. */
+    action: z.union([OwnerTicketAction, RunTicketAction]),
+    /** The comment explaining a **Mark as done manually**, or the `system` comment of a run. */
     commentId: z.uuid().nullable(),
+    /** For the run actions: the run, and for `run_ended`, why and whether it counts. */
+    runId: z.uuid().optional(),
+    failureReason: FailureReason.optional(),
+    attemptCounted: z.boolean().optional(),
   }),
   'ticket.dependency_added': z.object({ ...TicketFacts, blockedBy: z.string() }),
   'ticket.dependency_removed': z.object({ ...TicketFacts, blockedBy: z.string() }),
@@ -195,6 +213,16 @@ export const EventPayloads = {
     plan: AccountPlan.optional(),
     maxConcurrentRuns: z.int().optional(),
   }),
+  /** A usage limit detected with certainty (05, section 4.10): no run starts before `until`. */
+  'account.limited': z.object({
+    label: z.string(),
+    until: z.iso.datetime(),
+    /** `reset_time`: reported by Claude Code; `fallback`: now plus the fallback delay. */
+    source: z.enum(['reset_time', 'fallback']),
+    fallbackMinutes: z.int().optional(),
+  }),
+  /** `limited_until` passed: written by the first action that reads the account after it. */
+  'account.available': z.object({ label: z.string() }),
   'machine.created': z.object({ ...MachineFacts, account: z.string() }),
   'machine.enrollment_code_created': z.object({ ...MachineFacts, expiresAt: z.iso.datetime() }),
   'machine.enrolled': z.object(MachineFacts),
@@ -228,6 +256,12 @@ export const EventPayloads = {
     ...MachineFacts,
     capabilities: z.array(z.string()),
   }),
+  /** The Claude Code version a run's start reported is missing or too old (05, section 4.3). */
+  'machine.claude_code_unsupported': z.object({
+    ...MachineFacts,
+    version: z.string().nullable(),
+    minimum: z.string(),
+  }),
   /** A default profile seeded from `agents/` at the server's start (03, section 3). */
   'agent_profile.created': z.object({ key: z.string(), name: z.string(), version: z.int() }),
   /** A shipped file of the profile, or the common rules, changed: the version went up. */
@@ -236,6 +270,29 @@ export const EventPayloads = {
     name: z.string(),
     previousVersion: z.int(),
     version: z.int(),
+  }),
+  'run.created': z.object({
+    ...TicketFacts,
+    purpose: RunPurpose,
+    machine: z.string(),
+    account: z.string(),
+    /** The agent profile's key and name. */
+    profile: z.string(),
+    profileName: z.string(),
+    profileVersion: z.int(),
+    attempt: z.int(),
+  }),
+  'run.status_changed': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    from: RunStatus,
+    to: RunStatus,
+    cause: RunChangeCause,
+    pauseReason: PauseReason.optional(),
+    failureReason: FailureReason.optional(),
+    endReason: RunEndReason.optional(),
+    /** Plain-words detail from the daemon or the server. */
+    detail: z.string().optional(),
   }),
 } satisfies Record<EventType, z.ZodType>;
 
