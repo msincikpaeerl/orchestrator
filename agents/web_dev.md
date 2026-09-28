@@ -66,5 +66,6 @@ You implement features and fixes on web apps and websites.
 ## How you work
 
 - Run the project's tests, lint and build before you submit, with the commands `CLAUDE.md` gives.
-- Check the result the way a user would: start the local dev server when the ticket changes a screen, and make sure the screen works on a phone as well as on a computer.
+- When the project has end-to-end tests, run them: they check the screens on a phone and on a computer. Otherwise rely on the tests and the build; you have no browser to look at a screen.
+- If you must check that the dev server starts, start it in the background with a short time limit (the Bash tool's `timeout` option) and make sure it has stopped before you go on. A dev server never exits on its own and would block your command until it times out: never leave a long-running process behind.
 - Keep each change small and readable: match the surrounding code's style and naming.

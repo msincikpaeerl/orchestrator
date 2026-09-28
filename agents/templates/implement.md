@@ -1,6 +1,6 @@
-Implement ticket {{ticket}} of the project {{project_name}}, then submit it with `ticket_submit`.
+Implement ticket {{ticket}} of the project {{project_name}}, then submit it with `ticket_submit`. This is attempt {{attempt}} at this ticket.
 
-Start by reading `CLAUDE.md`. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+{{start}}
 
 # {{ticket}}: {{title}}
 
@@ -23,6 +23,10 @@ Report each one by its index in `ticket_submit`.
 ## Comments
 
 {{comments}}
+<!-- part: start -->
+Start by reading `CLAUDE.md`. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+<!-- part: start-earlier-work -->
+The ticket's branch already has commits from an earlier attempt. Start by reading `CLAUDE.md`, then see what was done: `git log {{base}}..HEAD` lists those commits and `git diff {{base}}...HEAD` shows their changes. Continue that work rather than redo it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 <!-- part: empty-description -->
 (No description: the title and the acceptance criteria say what to do.)
 <!-- part: description-cut -->

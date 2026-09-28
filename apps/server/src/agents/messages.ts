@@ -56,6 +56,13 @@ export interface ImplementTicket {
   dependencies: readonly { reference: string; title: string; status: TicketStatus }[];
   /** Oldest first. */
   comments: readonly FirstMessageComment[];
+  /** This run's attempt at the ticket, from 1. */
+  attempt: number;
+  /**
+   * The base branch as the worktree names it (`origin/main`) when the ticket branch already holds
+   * commits from an earlier attempt: the agent reads them and continues. Null otherwise.
+   */
+  earlierWorkBase: string | null;
 }
 
 /** The ticket alone does not fit, even with its description cut to nothing (03, section 3.2). */
@@ -104,6 +111,10 @@ export function implementFirstMessage(
             }),
           )
           .join('\n');
+  const start =
+    ticket.earlierWorkBase === null
+      ? part(template, 'start')
+      : part(template, 'start-earlier-work', { base: ticket.earlierWorkBase });
   const renderedComments = ticket.comments.map((comment) =>
     part(template, 'comment', {
       author:
@@ -132,6 +143,8 @@ export function implementFirstMessage(
     return `${fill(template, template.main, {
       ticket: ticket.reference,
       project_name: ticket.projectName,
+      attempt: String(ticket.attempt),
+      start,
       title: ticket.title,
       type: ticket.type,
       priority: ticket.priority,
