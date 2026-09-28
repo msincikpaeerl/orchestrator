@@ -88,6 +88,7 @@ describe('events of every type', () => {
       const concernsProject =
         event.entityType === 'project' ||
         event.entityType === 'ticket' ||
+        event.entityType === 'run' ||
         (event.entityType === 'setting' && event.payload?.scope === 'project');
       expect(event.project !== null, `${event.type} ${String(event.id)}`).toBe(concernsProject);
       if (event.entityType === 'ticket') expect(event.ticket).not.toBeNull();
@@ -126,6 +127,9 @@ describe('events of every type', () => {
       'ticket.updated',
       'ticket.dependency_added',
       'ticket.dependency_removed',
+      // Run now, then the run's end (a Claude Code too old at its start).
+      'ticket.status_changed',
+      'ticket.status_changed',
     ]);
 
     const settings = await readAll(t, cookie, 'entity=setting');
@@ -197,8 +201,9 @@ describe('migration of the events written before the project reference', () => {
           [JSON.stringify(rows[0]?.rows)],
         );
       }
+      // Runs came after this migration (lot 2): a database of lot 1 never held their events.
       const { rows } = await t.pool.query<{ rows: unknown }>(
-        `SELECT json_agg(e) AS rows FROM events e`,
+        `SELECT json_agg(e) AS rows FROM events e WHERE e.entity_type <> 'run'`,
       );
       await oldPool.query(
         `INSERT INTO events (id, created_at, actor, entity_type, entity_id, type, payload)
@@ -211,7 +216,7 @@ describe('migration of the events written before the project reference', () => {
       await runMigrations(oldPool);
 
       const expected = await t.pool.query<{ id: string; project_id: string | null }>(
-        'SELECT id, project_id FROM events ORDER BY id',
+        "SELECT id, project_id FROM events WHERE entity_type <> 'run' ORDER BY id",
       );
       const migrated = await oldPool.query<{ id: string; project_id: string | null }>(
         'SELECT id, project_id FROM events ORDER BY id',

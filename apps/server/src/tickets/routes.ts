@@ -16,7 +16,7 @@ import {
   type TicketListResponse,
   type TimelineEntry,
 } from '@orchestrator/protocol';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
@@ -24,6 +24,8 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
+import { reportedCommits } from '../runs/model.js';
+import type { RunService } from '../runs/service.js';
 import { resolveSettings } from '../settings/store.js';
 import {
   StatusChangedPayload,
@@ -36,10 +38,12 @@ import {
   toTicketSummary,
   type TicketRow,
 } from './model.js';
-import { applyOwnerAction, insertOwnerTicket } from './transitions.js';
+import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
 export interface TicketRoutesOptions {
   db: Database;
+  /** Cancel and Mark as done manually stop the ticket's active run (04, section 2). */
+  runs: RunService;
   now?: () => Date;
 }
 
@@ -285,6 +289,26 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       }),
     ].sort((a, b) => a.at.localeCompare(b.at));
 
+    // The branch as the last run that reported it saw it, on that run's machine (01, section 3.4).
+    const [reported] = await executor
+      .select({ run: schema.runs, machineName: schema.machines.name })
+      .from(schema.runs)
+      .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+      .where(and(eq(schema.runs.ticketId, ticket.id), isNotNull(schema.runs.commits)))
+      .orderBy(desc(schema.runs.createdAt))
+      .limit(1);
+    const branch =
+      ticket.branchName === null
+        ? null
+        : reported
+          ? {
+              name: ticket.branchName,
+              machine: { id: reported.run.machineId, name: reported.machineName },
+              head: reported.run.branchHead,
+              commits: reportedCommits(reported.run) ?? [],
+            }
+          : { name: ticket.branchName, machine: null, head: null, commits: [] };
+
     const blockedByLinks = blockedBy.map(toTicketLink);
     return {
       ...toTicketSummary(
@@ -298,6 +322,8 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       blockedBy: blockedByLinks,
       blocks: blocks.map(toTicketLink),
       timeline,
+      attemptCount: ticket.attemptCount,
+      branch,
     };
   }
 
@@ -648,8 +674,17 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       await requireSession(db, request);
       const text = comment(request.body);
       if (text !== undefined) await checkCommentLength(text, 'comment');
+      let afterCommit: () => void = () => undefined;
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
+        if (action !== 'reopen' && refusal(action, TicketStatus.parse(ticket.status)) === null) {
+          afterCommit = await options.runs.endForTicket(
+            tx,
+            project,
+            ticket,
+            action === 'cancel' ? 'ticket_cancelled' : 'ticket_done',
+          );
+        }
         const updated = await applyOwnerAction(tx, {
           projectKey: project.key,
           ticket,
@@ -659,6 +694,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         });
         return detail(tx, project, updated);
       });
+      afterCommit();
       request.log.info(
         { project: result.projectKey, ticket: result.number, action, status: result.status },
         'ticket status changed by the owner',

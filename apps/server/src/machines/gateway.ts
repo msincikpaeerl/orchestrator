@@ -19,6 +19,7 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { resolveSettings } from '../settings/store.js';
 import { hashCredential } from './credentials.js';
+import type { RunService } from '../runs/service.js';
 import { daemonInstallCommand, doctorErrors, type MachineRow } from './model.js';
 
 /** The protocol versions the server accepts, for the refusal message: `1`, or `1 or 2`. */
@@ -99,10 +100,11 @@ export async function markAllOffline(db: Database): Promise<number> {
 
 /**
  * The daemon gateway (05, section 3.2; 09, section 4): one WebSocket per connected machine,
- * authenticated by its token, with `hello`/`welcome`, heartbeats and offline detection. Run
- * messages are handled from step J on.
+ * authenticated by its token, with `hello`/`welcome`, heartbeats and offline detection. Run, MCP
+ * and Git messages go to the run service (lot 2 step J), and each is answered on the connection.
  */
 export class DaemonGateway {
+  private runs: RunService | undefined;
   private readonly connections = new Map<string, Connection>();
   /** Work on one machine's status runs one at a time, in order of arrival. */
   private readonly queues = new Map<string, Promise<void>>();
@@ -115,6 +117,26 @@ export class DaemonGateway {
     this.db = options.db;
     this.log = options.log;
     this.secondMs = options.secondMs ?? 1000;
+  }
+
+  /** The run service handles the run messages; the two know each other. */
+  attachRuns(runs: RunService): void {
+    this.runs = runs;
+  }
+
+  /** Sends to the machine's current connection, once welcomed; false when there is none. */
+  send(machineId: string, message: ServerMessage): boolean {
+    const connection = this.connections.get(machineId);
+    if (!connection?.welcomed || connection.ended || connection.closed) return false;
+    this.sendOn(connection, message);
+    return true;
+  }
+
+  isConnected(machineId: string): boolean {
+    const connection = this.connections.get(machineId);
+    return (
+      connection !== undefined && connection.welcomed && !connection.ended && !connection.closed
+    );
   }
 
   /** Registers the WebSocket plugin and the `/daemon` route. */
@@ -278,7 +300,7 @@ export class DaemonGateway {
     connection.socket.close(code, reason);
   }
 
-  private send(connection: Connection, message: ServerMessage): void {
+  private sendOn(connection: Connection, message: ServerMessage): void {
     connection.socket.send(JSON.stringify(message));
   }
 
@@ -301,14 +323,51 @@ export class DaemonGateway {
       .update(schema.machines)
       .set({ lastHeartbeatAt: new Date() })
       .where(eq(schema.machines.id, connection.machineId));
-    if (message.type === 'heartbeat') return;
-    // Run, MCP and Git messages are handled from lot 2 step J on.
-    log.warn({ type: message.type }, 'daemon message not handled by this server version');
+    const runs = this.runs;
+    const machineId = connection.machineId;
+    switch (message.type) {
+      case 'heartbeat':
+        return;
+      case 'hello':
+        log.warn('second hello on a connection: ignored');
+        return;
+      case 'ack':
+        await runs?.acknowledged(machineId, message);
+        return;
+      case 'run.state':
+      case 'run.quota_limited':
+      case 'run.events': {
+        const payload = !runs
+          ? { ok: false as const, message: 'runs are not handled' }
+          : message.type === 'run.state'
+            ? await runs.runState(machineId, message)
+            : message.type === 'run.quota_limited'
+              ? await runs.quotaLimited(machineId, message)
+              : await runs.runEvents(machineId, message);
+        if (!connection.closed) this.sendOn(connection, { type: 'ack', id: message.id, payload });
+        return;
+      }
+      case 'mcp.call': {
+        if (!runs) return;
+        const payload = await runs.mcpCall(machineId, message);
+        if (!connection.closed)
+          this.sendOn(connection, { type: 'mcp.result', id: message.id, payload });
+        return;
+      }
+      case 'git.credential_request': {
+        if (!runs) return;
+        const payload = await runs.credential(machineId, message);
+        if (!connection.closed) {
+          this.sendOn(connection, { type: 'git.credential', id: message.id, payload });
+        }
+        return;
+      }
+    }
   }
 
   private refuseRevoked(connection: Connection, hello: Hello, log: FastifyBaseLogger): void {
     log.warn('hello with a revoked token: connection closed');
-    this.send(connection, {
+    this.sendOn(connection, {
       type: 'welcome',
       id: hello.id,
       payload: {
@@ -366,7 +425,7 @@ export class DaemonGateway {
         { daemonVersion: payload.daemonVersion, protocolVersion: payload.protocolVersion },
         'daemon protocol not compatible: connection closed',
       );
-      this.send(connection, {
+      this.sendOn(connection, {
         type: 'welcome',
         id: hello.id,
         payload: {
@@ -446,11 +505,12 @@ export class DaemonGateway {
     if (connection.closed) return;
     this.connections.set(machine.id, connection);
     await this.watchSilence(connection);
-    this.send(connection, {
+    this.sendOn(connection, {
       type: 'welcome',
       id: hello.id,
       payload: { accepted: true, protocolVersion: PROTOCOL_VERSION, heartbeatIntervalSeconds },
     });
+    await this.runs?.reconcile(machine.id, payload.runs);
     log.info(
       {
         daemonVersion: payload.daemonVersion,

@@ -45,6 +45,18 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     checks: z.array(DoctorCheck),
     since: z.iso.datetime(),
   }),
+  /**
+   * A machine offline while runs are active on it (02, section 4): they show "machine offline",
+   * and **Stop run** fails them with `machine_offline` (05, section 6).
+   */
+  z.object({
+    type: z.literal('machine_offline_with_runs'),
+    machine: MachineRef,
+    /** The tickets of its active runs (`WEB-12`). */
+    tickets: z.array(z.string()),
+    /** The last message received from it. */
+    since: z.iso.datetime(),
+  }),
 ]);
 export type NeedsYouItem = z.infer<typeof NeedsYouItem>;
 

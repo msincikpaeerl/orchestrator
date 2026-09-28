@@ -1,8 +1,13 @@
+import { randomUUID } from 'node:crypto';
+import { schema } from '@orchestrator/db';
 import {
+  CLAUDE_CODE_VALIDATED_VERSION,
   ClaudeAccount,
   EnrollmentResponse,
   PROTOCOL_VERSION,
   Project,
+  Run,
+  type RunState,
 } from '@orchestrator/protocol';
 import { expect } from 'vitest';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
@@ -14,6 +19,7 @@ import { fullAccount, type FakeGitHub } from './fake-github.js';
 import { createOwner, OWNER, startTestApp, type TestApp } from './helpers.js';
 
 const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
+const SESSION = '0f7a3c52-9d7e-4e8f-a4b1-222222222222';
 
 /**
  * The application with every setting the scenario needs; login and enrollment throttling start
@@ -130,6 +136,39 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   const token = await enrollToken(t.url, enrollment.code);
   const daemon = await ScriptedDaemon.connect(t.url, token);
   expect((await daemon.hello()).accepted).toBe(true);
+  // A run of SHOP-2: a usage limit without a reset time, a Resume once the limit time has passed,
+  // then a start with a Claude Code too old.
+  const created = Run.parse((await call('POST', '/api/projects/SHOP/tickets/2/run')).json());
+  const start = await daemon.find((message) => message.type === 'run.start', 'run.start');
+  daemon.send({ type: 'ack', id: start.id, payload: { ok: true } });
+  const runState = (payload: object) =>
+    daemon.request({
+      type: 'run.state',
+      id: randomUUID(),
+      payload: {
+        runId: created.id,
+        at: new Date().toISOString(),
+        claudeSessionId: SESSION,
+        sessionAlive: true,
+        ...payload,
+      },
+    } as RunState);
+  await runState({ state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION });
+  await runState({ state: 'working' });
+  await daemon.request({
+    type: 'run.quota_limited',
+    id: randomUUID(),
+    payload: {
+      runId: created.id,
+      kind: 'detected',
+      resetsAt: null,
+      evidence: { signal: 'stop_failure', error: 'rate_limit', message: null, statusLine: null },
+    },
+  });
+  await t.db.update(schema.claudeAccounts).set({ limitedUntil: new Date(Date.now() - 1000) });
+  await call('POST', `/api/runs/${created.id}/resume`);
+  await runState({ state: 'starting', claudeCodeVersion: '2.1.100' });
+
   await call('PUT', `/api/machines/${machine.id}/capabilities`, { capabilities: ['git'] });
   await call('POST', `/api/machines/${machine.id}/disable`);
   await call('POST', `/api/machines/${machine.id}/enable`);

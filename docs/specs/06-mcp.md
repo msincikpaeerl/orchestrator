@@ -40,6 +40,8 @@ Every call carries the run token. From it the server knows, without trusting any
 - the ticket (implementation and review runs) or the request (planning runs);
 - the permission set of the profile.
 
+A run's token is revoked when the run ends, and at once when the owner stops it (04, section 2): a call with a revoked or unknown token is refused with `FORBIDDEN`, telling the agent its run has ended (owner's decision, lot 2 step J).
+
 An agent can read anything in its own project. It can only change **its own ticket**, unless its permissions say otherwise. It cannot see or change other projects.
 
 ## 3. Conventions

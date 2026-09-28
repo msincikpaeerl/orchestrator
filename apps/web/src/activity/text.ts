@@ -12,6 +12,7 @@ import { formatDate, formatDateTime, permissionLabel } from '../github/text';
 import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
+import { causeText, failureText, pauseText, runStatusLabel } from '../runs/text';
 import { priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
 /**
@@ -52,6 +53,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
   'account.updated': 'Claude account edited',
+  'account.limited': 'Claude usage limit reached',
+  'account.available': 'Claude account available again',
   'machine.created': 'Machine added',
   'machine.enrollment_code_created': 'Enrollment code created',
   'machine.enrolled': 'Machine enrolled',
@@ -63,8 +66,11 @@ export const eventTypeLabel: Record<EventType, string> = {
   'machine.enabled': 'Machine enabled',
   'machine.revoked': 'Machine revoked',
   'machine.capabilities_changed': 'Machine capabilities edited',
+  'machine.claude_code_unsupported': 'Claude Code too old at a run start',
   'agent_profile.created': 'Agent profile added',
   'agent_profile.updated': 'Agent profile updated',
+  'run.created': 'Run started',
+  'run.status_changed': 'Run status changed',
 };
 
 /** Kinds of entity, for the filter. */
@@ -78,6 +84,7 @@ export const entityLabel: Record<EventEntityType, string> = {
   claude_account: 'Claude accounts',
   machine: 'Machines',
   agent_profile: 'Agent profiles',
+  run: 'Runs',
 };
 
 /** Who caused the event. */
@@ -251,6 +258,20 @@ const describe: { [T in EventType]: Describe<T> } = {
         return [c.ticket, ' cancelled'];
       case 'reopen':
         return [c.ticket, ` reopened: back to ${statusLabel[p.to].toLowerCase()}`];
+      case 'run_now':
+        return [c.ticket, ' in progress: Run now started a run'];
+      case 'stop_run':
+        return [c.ticket, ' back to to do: you stopped its run'];
+      case 'run_submitted':
+        return [c.ticket, ' in review: the agent finished and submitted its work'];
+      case 'run_ended':
+        return [
+          c.ticket,
+          ` back to to do: its run ended, ${p.failureReason ? failureText[p.failureReason] : 'without finishing'}`,
+          p.attemptCounted === true
+            ? ' (counted as a failed attempt)'
+            : ' (not counted as a failed attempt)',
+        ];
     }
   },
   'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
@@ -298,6 +319,19 @@ const describe: { [T in EventType]: Describe<T> } = {
     if (p.maxConcurrentRuns !== undefined) changes.push(concurrentRuns(p.maxConcurrentRuns));
     return ['Claude account ', quote(p.label, null), ` edited: ${list(changes)}`];
   },
+  'account.limited': (p) => [
+    'Claude account ',
+    quote(p.label, null),
+    ` reached its usage limit: no run starts on it until ${formatDateTime(p.until)}`,
+    p.source === 'fallback'
+      ? ` (the reset time was not known: ${duration((p.fallbackMinutes ?? 0) * 60)} from then)`
+      : '',
+  ],
+  'account.available': (p) => [
+    'Claude account ',
+    quote(p.label, null),
+    ' available again: its usage limit time has passed',
+  ],
   'machine.created': (p) => [
     'Machine ',
     quote(p.name, null),
@@ -355,6 +389,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     quote(p.name, null),
     ' revoked: its daemon was disconnected and its token no longer works',
   ],
+  'machine.claude_code_unsupported': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    ` cannot receive runs: a run found ${
+      p.version === null ? 'no Claude Code' : `Claude Code ${p.version}`
+    }, and ${p.minimum} or later is needed`,
+  ],
   'machine.capabilities_changed': (p) => [
     'Capabilities of the machine ',
     quote(p.name, null),
@@ -370,6 +411,32 @@ const describe: { [T in EventType]: Describe<T> } = {
     quote(p.name, null),
     ` updated with the Orchestrator: version ${String(p.previousVersion)} to ${String(p.version)}`,
   ],
+  'run.created': (p, c) => [
+    `Attempt ${String(p.attempt)} at `,
+    c.ticket,
+    ' started by ',
+    quote(p.profileName, null),
+    ` (version ${String(p.profileVersion)}) on machine `,
+    quote(p.machine, null),
+    ', Claude account ',
+    quote(p.account, null),
+  ],
+  'run.status_changed': (p, c) => {
+    const why =
+      p.failureReason !== undefined
+        ? `: ${failureText[p.failureReason]}`
+        : p.pauseReason !== undefined
+          ? `: ${pauseText[p.pauseReason]}`
+          : '';
+    return [
+      'Run of ',
+      c.ticket,
+      ` on `,
+      quote(p.machine, null),
+      `: ${runStatusLabel[p.from].toLowerCase()} to ${runStatusLabel[p.to].toLowerCase()} (${causeText[p.cause]})${why}`,
+      p.detail === undefined ? '' : ` — ${shorten(p.detail)}`,
+    ];
+  },
 };
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {

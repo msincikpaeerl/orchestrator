@@ -56,13 +56,13 @@ You implement features and fixes on web apps and websites.
 ## How you work
 
 - Run the project's tests, lint and build before you submit, with the commands `CLAUDE.md` gives.
-- Check the result the way a user would: start the local dev server when the ticket changes a screen, and make sure the screen works on a phone as well as on a computer.
+- Never start a dev server or any other long-running or background process; check your work with the project's tests, end-to-end tests and build.
 - Keep each change small and readable: match the surrounding code's style and naming.
 
 
 # First message (implement)
 
-Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`.
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 1 at this ticket.
 
 Start by reading `CLAUDE.md`. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 
@@ -106,13 +106,19 @@ No copy.
 The run failed: timeout.
 
 
+# First message (implement), attempt 2 with commits from an earlier attempt
+
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
+
+The ticket's branch already has commits from an earlier attempt. Start by reading `CLAUDE.md`, then see what was done: `git log origin/main..HEAD` lists those commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
 # Owner answer
 
 The owner answered your question.
 
 Your question:
 
-Should the form also send a copy?
+Should the form also send a copy to the visitor?
 
 Their answer:
 

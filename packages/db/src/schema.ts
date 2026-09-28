@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  doublePrecision,
   check,
   customType,
   date,
@@ -254,6 +255,10 @@ export const tickets = pgTable(
     createdBy: text('created_by').notNull(),
     /** The agent profile expected to do the work (01, section 3.4); null when unassigned. */
     assigneeProfileId: uuid('assignee_profile_id').references(() => agentProfiles.id),
+    /** `t/<number>-<slug>`, set at the first run (01, section 3.4; 04, section 4). */
+    branchName: text('branch_name'),
+    /** Failed runs, for the retry policy; uncounted ends never change it (04, section 5). */
+    attemptCount: integer('attempt_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -263,6 +268,7 @@ export const tickets = pgTable(
     // Target of the dependencies' foreign keys, which keep both tickets in one project.
     unique('tickets_project_id').on(table.projectId, table.id),
     check('tickets_number', sql`${table.number} >= 1`),
+    check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
     check('tickets_type', sql`${table.type} IN ('feature', 'bug', 'chore', 'docs', 'spike')`),
     check('tickets_priority', sql`${table.priority} IN ('low', 'normal', 'high')`),
     check(
@@ -424,3 +430,125 @@ export const machines = pgTable(
     index('machines_account_id').on(table.accountId),
   ],
 );
+
+/**
+ * Runs (01, section 3.7). Allowed values of the text columns are the enums of
+ * `@orchestrator/protocol` (`RunStatus`, `PauseReason`, `FailureReason`, `RunEndReason`, ...).
+ * `status` is written only by the server's run module, in the transaction of its event.
+ */
+export const runs = pgTable(
+  'runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    /** Empty for planning runs (lot 5). */
+    ticketId: uuid('ticket_id').references(() => tickets.id),
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => agentProfiles.id),
+    profileVersion: integer('profile_version').notNull(),
+    purpose: text('purpose').notNull(),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machines.id),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => claudeAccounts.id),
+    status: text('status').notNull(),
+    pauseReason: text('pause_reason'),
+    failureReason: text('failure_reason'),
+    /** The daemon's fact at the end (`RunEndReason`), when it reported one. */
+    endReason: text('end_reason'),
+    endDetail: text('end_detail'),
+    /** The run's attempt at the ticket, stated in its first message (07, section 3). */
+    attempt: integer('attempt').notNull(),
+    /** SHA-256 of the run token (06, section 2); the token itself is never stored. */
+    runTokenHash: text('run_token_hash').notNull().unique(),
+    /** Set when the run ends or is stopped: calls with the token are refused. */
+    runTokenRevokedAt: timestamp('run_token_revoked_at', { withTimezone: true }),
+    /** Id of the last `run.start` or `run.resume`, matched by its `ack`. */
+    dispatchMessageId: uuid('dispatch_message_id'),
+    /** `start` or `resume`: what a missing acknowledgement undoes. */
+    dispatchKind: text('dispatch_kind'),
+    /** Without an acknowledgement by then, the dispatch is undone (07, section 2). */
+    ackDeadline: timestamp('ack_deadline', { withTimezone: true }),
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    claudeSessionId: text('claude_session_id'),
+    sessionAlive: boolean('session_alive').notNull().default(false),
+    branchName: text('branch_name').notNull(),
+    baseBranch: text('base_branch').notNull(),
+    /** Reported at the end: the branch head and the commits ahead of the base (`CommitSummary[]`). */
+    branchHead: text('branch_head'),
+    commits: jsonb('commits'),
+    estimatedUsageUsd: doublePrecision('estimated_usage_usd'),
+    /** Summary written by the agent at the end (lot 2 step K). */
+    outcome: text('outcome'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'runs_status',
+      sql`${table.status} IN ('queued', 'dispatched', 'starting', 'running', 'waiting_human', 'paused_quota', 'succeeded', 'failed', 'cancelled')`,
+    ),
+    check(
+      'runs_purpose',
+      sql`${table.purpose} IN ('implement', 'review', 'plan', 'document', 'fix_review')`,
+    ),
+    check(
+      'runs_pause_reason',
+      sql`${table.pauseReason} IN ('usage_limit', 'suspected_usage_limit')`,
+    ),
+    check(
+      'runs_failure_reason',
+      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'cancelled')`,
+    ),
+    check('runs_attempt', sql`${table.attempt} >= 1`),
+    // At most one active run per ticket (01, invariant 2).
+    uniqueIndex('runs_one_active_per_ticket')
+      .on(table.ticketId)
+      .where(
+        sql`${table.status} IN ('queued', 'dispatched', 'starting', 'running', 'waiting_human', 'paused_quota')`,
+      ),
+    index('runs_ticket_id').on(table.ticketId, table.createdAt),
+    index('runs_machine_id').on(table.machineId, table.status),
+    index('runs_account_id').on(table.accountId, table.status),
+  ],
+);
+
+/**
+ * A run's live log (02, section 7): one entry per transcript event, stored once per position,
+ * masked and cut to "Longest stored log entry". Kept as long as the run.
+ */
+export const runLogEntries = pgTable(
+  'run_log_entries',
+  {
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => runs.id),
+    seq: integer('seq').notNull(),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+    kind: text('kind').notNull(),
+    tool: text('tool'),
+    text: text('text').notNull(),
+    cut: boolean('cut').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.runId, table.seq] })],
+);
+
+/**
+ * Reports and acknowledgements already handled, by message id (05, section 3.3): a duplicate is
+ * acknowledged again and changes nothing. Written in the transaction of the report's effect.
+ */
+export const daemonMessages = pgTable('daemon_messages', {
+  id: uuid('id').primaryKey(),
+  machineId: uuid('machine_id')
+    .notNull()
+    .references(() => machines.id),
+  type: text('type').notNull(),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+});

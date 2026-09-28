@@ -2,7 +2,7 @@
 
 **Needs you** is the home page of the Orchestrator. It lists everything waiting for you; when it is empty, nothing needs you. The number next to "Needs you" in the menu counts the items.
 
-In this version, it shows problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine) and machines that cannot work. Later versions add questions from agents, plans to approve and pull requests to merge.
+In this version, it shows problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them. Later versions add questions from agents, plans to approve and pull requests to merge.
 
 ## GitHub items
 
@@ -34,7 +34,8 @@ The item disappears once the setup is ready. An archived project is not listed, 
 | No Claude account yet | No Claude account exists yet. | Click **Open Machines**, then **Add a Claude account**. See [Add a Claude account](machines.md#add-a-claude-account). |
 | No machine enrolled yet | No machine has enrolled yet, or every machine is revoked. | Click **Add machine**. See [Add a machine](machines.md#add-a-machine). |
 | Update the daemon on … | The machine's daemon does not match this version of the Orchestrator. | On the machine, type the two commands the item shows: the install command, then the restart. |
-| Claude Code not supported on … | Claude Code is missing on the machine, or too old. | Install or update Claude Code, then type the restart command the item shows. |
+| Claude Code not supported on … | Claude Code is missing on the machine, or too old: found when the daemon connects, or when a run starts (Claude Code updates itself, so its version can change while the daemon runs). A run that could not start for this reason does not count as a failed attempt. | Install or update Claude Code, then type the restart command the item shows. |
 | Problem on … | A check on the machine found an error; the item lists it. | Fix it on the machine, then type the restart command. |
+| … is offline with work on it | The machine is offline while agents' runs are on it; the item names their tickets. The runs wait: their Claude Code sessions keep running on the machine if it is still on. | Start the machine, or its daemon, so it connects again. |
 
 Each machine item opens the machine's page. Details: [When a machine has a problem](machines.md#when-a-machine-has-a-problem). The item disappears once the daemon connects again without the problem.

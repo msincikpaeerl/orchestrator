@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 /** GitHub's REST API; tests point the server at a local fake instead. */
 export const GITHUB_API_URL = 'https://api.github.com';
+/** Where repositories are cloned from: `https://github.com/<owner>/<name>.git`. */
+export const GITHUB_WEB_URL = 'https://github.com';
 const API_VERSION = '2026-03-10';
 
 /** GitHub could not be reached, timed out or answered with a server error. */

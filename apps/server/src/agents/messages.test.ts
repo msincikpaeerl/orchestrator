@@ -58,7 +58,13 @@ const sample: ImplementTicket = {
       body: 'The run failed: timeout.',
     },
   ],
+  attempt: 1,
+  earlierWorkBase: null,
 };
+
+/** The sample's question and its answer, as the answer message quotes them. */
+const question = sample.comments[1]?.body ?? '';
+const answer = sample.comments[2]?.body ?? '';
 
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
 
@@ -71,8 +77,16 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
       runInstructions(shipped.commonRules, webDev?.instructions ?? ''),
       '# First message (implement)',
       implementFirstMessage(templates.implement, sample),
+      '# First message (implement), attempt 2 with commits from an earlier attempt',
+      implementFirstMessage(templates.implement, {
+        ...sample,
+        attempt: 2,
+        earlierWorkBase: 'origin/main',
+      })
+        .split('\n# WEB-12')[0]
+        ?.trimEnd() ?? '',
       '# Owner answer',
-      answerMessage(templates, 'Should the form also send a copy?', 'No copy.'),
+      answerMessage(templates, question, answer),
       '# Continue after a usage-limit pause',
       continueMessage(templates),
       '# Nudge',
@@ -94,6 +108,30 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
     for (const name of ['empty-description', 'no-criteria', 'no-dependencies', 'no-comments']) {
       expect(message).toContain(templates.implement.parts.get(name));
     }
+  });
+
+  it('states the attempt, and points to the earlier commits only when there are some', () => {
+    const first = implementFirstMessage(templates.implement, sample);
+    expect(first).toContain('This is attempt 1 at this ticket.');
+    expect(first).toContain(templates.implement.parts.get('start'));
+    expect(first).not.toContain('earlier attempt');
+    const again = implementFirstMessage(templates.implement, {
+      ...sample,
+      attempt: 3,
+      earlierWorkBase: 'origin/trunk',
+    });
+    expect(again).toContain('This is attempt 3 at this ticket.');
+    expect(again).toContain('already has commits from an earlier attempt');
+    expect(again).toContain('`git log origin/trunk..HEAD`');
+    expect(again).toContain('`git diff origin/trunk...HEAD`');
+    expect(again).not.toContain(templates.implement.parts.get('start'));
+  });
+
+  it('quotes the question of the sample ticket in full in the answer', () => {
+    expect(question).toBe('Should the form also send a copy to the visitor?');
+    const message = answerMessage(templates, question, answer);
+    expect(message).toContain(`Your question:\n\n${question}\n`);
+    expect(message).toContain(`Their answer:\n\n${answer}\n`);
   });
 
   it('keeps a text containing a placeholder as written', () => {

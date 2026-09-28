@@ -133,6 +133,41 @@ export class ScriptedDaemon {
     }
   }
 
+  /** Waits for the first message received that `match` accepts (up to `timeoutMs`). */
+  async find<T extends ServerMessage = ServerMessage>(
+    match: (message: ServerMessage) => boolean,
+    what: string,
+    timeoutMs = 5000,
+  ): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const found = this.received.find(match);
+      if (found) return found as T;
+      if (this.socket.readyState === WebSocket.CLOSED) throw new Error(`closed before ${what}`);
+      const left = deadline - Date.now();
+      if (left <= 0) throw new Error(`no ${what} within ${String(timeoutMs)} ms`);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, left);
+        this.waiters.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    }
+  }
+
+  /**
+   * Sends a report or request and returns the server's answer with the same id: `ack`,
+   * `mcp.result` or `git.credential`.
+   */
+  async request(message: DaemonMessage): Promise<ServerMessage> {
+    this.send(message);
+    return this.find(
+      (received) => received.id === message.id && received.type !== 'welcome',
+      `answer to ${message.type}`,
+    );
+  }
+
   /** Sends `hello` and returns the server's `welcome`. */
   async hello(payload: Partial<Hello['payload']> = {}) {
     const message = helloMessage(payload);

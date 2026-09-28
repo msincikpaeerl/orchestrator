@@ -477,7 +477,7 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - step J: a cross-setting rule, maximum acceptance criteria × longest acceptance criterion ≤ 20,000 characters (`FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS`: 80,000 bytes at 4 bytes per character, 20,000 bytes left for the rest of the first message), refused with a message naming both settings and the budget; **Run now** still refuses, with a clear message, a ticket whose first message cannot be built (`FirstMessageTooLarge`);
 - step K: an answer delivered with `run.resume` is cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, with a visible marker (a part of the answer template) telling the agent to read the full answer with `ticket_comments`; the quoted question is cut the same way with its own marker, and the answer has priority (the question is cut first); a live answer (`run.input`) is never cut.
 
-### [ ] J. Runs (server) and Run now
+### [x] J. Runs (server) and Run now
 
 - Migration: table `runs` (01 section 3.7, with `pause_reason`, `branch_head`, `commits`, `estimated_usage`) and `run_log_entries`; `tickets.branch_name`, `attempt_count`.
 - **Run now** (07 section 3, lot 2):
@@ -514,6 +514,29 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
 - a suspected limit leaving the account available and resumable at once;
 - log masking and truncation.
 
+Owner's decisions before the step (2026-09-28), written into 01 sections 3.4, 3.7 and 3.9, 03 section 3.2, 04 sections 2 and 5, 05 sections 4.3 and 6, 06 section 2 and 07 sections 3 and 4:
+
+- **The machine holding the work**: until branches are pushed, Run now uses only the machine whose run last reported commits ahead of the base branch, and refuses naming it when it cannot take the run. When that machine was revoked, the run starts from the base branch elsewhere and a `system` comment says the earlier work on machine <name> is no longer available, with the number of commits lost.
+- **Attempt number** in the first message: the ticket's earlier runs a machine acknowledged, plus one; `attempt_count` still counts failed attempts only. The first message points to the earlier commits when the chosen machine's latest run of the ticket reported some.
+- **`claude_code_unsupported`** is a new failure reason, never counted, ticket back to `todo`.
+- **Resume** goes only to the run's own machine and is refused with the named reason when it cannot take it (the run stays paused); `run.resume` not acknowledged in time puts the run back to `paused_quota` with an event, no attempt counted.
+- **Stop run** cancels at once in one transaction (run, ticket, comment, events, revocation of the run token), then sends `run.stop`; the daemon's later end report only adds the branch. A session never reported ended is stopped at the next `hello`. A test makes an MCP call after Stop run (refused with `FORBIDDEN`).
+- **Run now refusals** also name: project archived or not ready, GitHub token missing, unreadable or invalid, GitHub account id unreadable at the first run; "no machine" lists each machine with why it cannot take the run.
+- Confirmed choices: a `submitted` end marks the run `succeeded` and moves the ticket to `in_review` together (step K stores the report when it accepts the submission); the run token is created here with its hash stored and checked on `mcp.call` (step K implements the tools); acknowledgement timers are set again at server start; an account past `limited_until` is treated as available by Run now, Resume and the screens at once, the first action writing the change and its event; "Needs you" gains "machine offline with active work" (left from step C).
+
+*Done 2026-09-28.* Choices within the step:
+
+- The setting "Longest stored log entry" (`logEntryMaxLength`, Runs group, 2,000 characters, 100 to 100,000), listed in the lot's decisions, is added here with the log storage; a cut entry ends with a marker giving the characters not kept.
+- The run token is `ort_` and 256 random bits, stored as its hash; `mcp.call` checks it (`FORBIDDEN` when revoked, unknown or from another machine) and answers `UNAVAILABLE` for a valid token until step K implements the tools.
+- Reports are handled once per message id through a `daemon_messages` table written in the report's transaction; log entries are stored once per position.
+- A machine that disconnects between the checks and the sending of `run.start` cancels the run at once (not counted); an `ack` refusing `run.start` or `run.resume` is handled like the timeout, with the daemon's reason in the event.
+- A run's pause reason is kept until it runs again, so a resume not acknowledged in time returns to the same pause.
+- Resume is refused while the account is limited, also for a suspected pause (a limit detected by another run): no run starts on a limited account (07, section 5.2).
+- The "work lost" comment is posted once: when a run is created on another machine after the run holding the commits.
+- Among machines equally preferred (07, section 4), the name decides, so the choice is stable.
+- Run events belong to the run's project; the event log's migration test compares only the event types a lot 1 database could hold.
+- The clone URL is `https://github.com/<owner>/<name>.git` (`gitBaseUrl` of `buildApp`, for tests).
+
 ### [ ] K. MCP backend and questions
 
 - Run tokens (random, scoped to one run, expired at run end; 06 section 2).
@@ -530,6 +553,16 @@ Owner's decisions after the run, written into 05 sections 4.3, 4.6 and 4.10, ADR
   - after the waiting run lifetime, the session is closed and the answer resumes the same run on the same machine; the question, then the answer, are cut at a line boundary within `FIRST_MESSAGE_MAX_BYTES`, each with its marker from the answer template pointing to `ticket_comments`; the answer has priority over the question (03 section 3.2; owner's decisions, review of step I);
   - that machine offline → `machine_offline`, ticket back to `todo`.
 - Every MCP call recorded as an event (06 section 7).
+- **Processes left by a session** (owner's review of step J). Closing a run's tmux session (`kill-session`, at the end and when a waiting or paused run's session is closed) sends `SIGHUP` to the session's terminal only: a check with the real tmux 3.6 on 2026-09-28 showed a plain background process stopped, but a `nohup` and a `setsid` process still running afterwards, with the worktree removed under them. The Web Developer's text forbids long-running and background processes, but the daemon must not rely on that. Fix:
+  - every process of a run carries a marker in its environment, `ORCHESTRATOR_RUN_ID=<run id>`, set on the tmux session's command (the environment is inherited through `nohup`, `setsid` and double forks);
+  - where the systemd user session runs (the service's normal case, 05 section 2), Claude Code is started inside its own transient scope, `systemd-run --user --scope --unit orch-run-<run id> --collect`, and closing the session also stops that scope (`systemctl --user stop`), which ends every process in its cgroup whatever it did to its session or process group;
+  - in every case, after `kill-session` the daemon sweeps `/proc` for processes of its own user whose environment holds the marker, sends `SIGTERM`, then `SIGKILL` to those left after a short grace period (a constant, like the backoff), and logs what it stopped; a process that cleared its environment escapes only the sweep, not the scope;
+  - the same cleanup runs for a run found ended at a daemon restart (recovery from `state.json`), and before the worktree is removed.
+
+  **Done when** a fake `claude` scenario starts a plain background process, a `nohup` one, a `setsid` one and a double-forked one, the run ends (and, in a second case, a waiting run's session is closed), and the test waits with a deadline until none of them is left (checked through `/proc` and the marker); the sweep is tested without systemd, and the scope where a systemd user session is available (as CI's runner has none, that case is marked and run by the owner's machine or the daemon test on WSL).
+- **Sessions surviving a restart of the service** (owner's review of step J). The unit written by `install-service` (`apps/daemon/src/unit.ts`) sets no `KillMode`, so systemd's default `control-group` applies: stopping or restarting the service kills every process in its cgroup, including the tmux server (`tmux -L orchestrator`) the daemon started and every agent session in it. A `systemctl --user restart orchestrator-daemon`, which Help asks for after every fix, would then end all running runs, contradicting 05 section 6, where a restarted daemon finds its sessions again; step F's test restarted the daemon process without systemd. Fix, recommended: start the tmux server outside the service's cgroup, in its own transient scope (`systemd-run --user --scope --unit orchestrator-tmux --collect`, wrapping the command that starts the server), like the run scopes above, so the service's cgroup holds only the daemon; `KillMode=process` is not chosen, since it leaves every other child of the daemon (a `git` command, for example) behind on a stop, and systemd warns about such processes. Without a systemd user session (the daemon in a terminal), nothing changes. The choice and its reason are written into 05 sections 2 and 4.3.
+
+  **Done when** a test on a machine with a systemd user session (run by the owner, or the daemon test on WSL; CI's runner has none) installs the service, starts a run with the fake `claude`, restarts the service, and sees the run's tmux session still alive and found again by the restarted daemon.
 
 **Done when** integration tests with a scripted daemon cover:
 
@@ -595,7 +628,8 @@ A daemon test shows `orchestrator-daemon status` listing a ticket branch kept af
 - The owner:
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
-  3. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
+  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service");
+  4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
 - If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.

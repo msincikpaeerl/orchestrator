@@ -74,6 +74,12 @@ describe('needsYouText', () => {
       checks: [{ name: 'tmux', status: 'error', message: 'tmux not found', link: null }],
       since,
     },
+    machine_offline_with_runs: {
+      type: 'machine_offline_with_runs',
+      machine: ref,
+      tickets: ['WEB-12', 'WEB-14'],
+      since,
+    },
   };
 
   it.each(items)('has a title and an explanation for %s', (type) => {

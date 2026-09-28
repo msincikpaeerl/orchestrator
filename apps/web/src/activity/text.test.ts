@@ -116,6 +116,35 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   'machine.enabled': { name: 'Laptop' },
   'machine.revoked': { name: 'Laptop' },
   'machine.capabilities_changed': { name: 'Laptop', capabilities: ['git', 'node'] },
+  'machine.claude_code_unsupported': { name: 'Laptop', version: '2.1.100', minimum: '2.1.280' },
+  'account.limited': {
+    label: 'Personal',
+    until: '2026-09-24T15:45:00.000Z',
+    source: 'fallback',
+    fallbackMinutes: 60,
+  },
+  'account.available': { label: 'Personal' },
+  'run.created': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    purpose: 'implement',
+    machine: 'Laptop',
+    account: 'Personal',
+    profile: 'web_dev',
+    profileName: 'Web Developer',
+    profileVersion: 2,
+    attempt: 1,
+  },
+  'run.status_changed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    machine: 'Laptop',
+    from: 'running',
+    to: 'failed',
+    cause: 'daemon',
+    failureReason: 'timeout',
+    endReason: 'idle_timeout',
+  },
   'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
   'agent_profile.updated': {
     key: 'web_dev',
@@ -189,6 +218,22 @@ describe('eventText', () => {
       { text: 'WEB-12', to: '/projects/WEB/tickets/12' },
       { text: '“Works now”', to: '/projects/WEB/tickets/12' },
     ]);
+  });
+
+  it('says whether a run that ended counts as a failed attempt', () => {
+    const payload = {
+      project: 'WEB',
+      ticket: 'WEB-12',
+      from: 'in_progress',
+      to: 'todo',
+      action: 'run_ended',
+      commentId: null,
+      failureReason: 'machine_offline',
+      attemptCounted: false,
+    };
+    expect(plainText(eventText(entry('ticket.status_changed', { payload, comment: null })))).toBe(
+      'WEB-12 back to to do: its run ended, its machine was offline (not counted as a failed attempt)',
+    );
   });
 
   it('shortens quoted content to one line, linking to the full text', () => {
