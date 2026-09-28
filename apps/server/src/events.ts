@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import type { EventActor, EventEntityType, EventType } from '@orchestrator/protocol';
 import type { Executor } from './database.js';
+import { notifyChange } from './realtime/changes.js';
 
 export interface NewEvent {
   actor: EventActor;
@@ -25,5 +26,10 @@ export async function recordEvent(db: Executor, event: NewEvent): Promise<void> 
     type: event.type,
     payload: event.payload ?? {},
     ...(event.at ? { createdAt: event.at } : {}),
+  });
+  await notifyChange(db, {
+    entity: event.entityType,
+    id: event.entityId ?? null,
+    projectId: event.projectId ?? null,
   });
 }

@@ -1,16 +1,26 @@
-import type {
-  FailureReason,
-  MachineUnavailable,
-  PauseReason,
-  RunChangeCause,
-  RunRefusal,
-  RunStatus,
+import {
+  ACTIVE_RUN_STATUSES,
+  PROGRESS_CARD_MAX_LENGTH,
+  WAITING_RUN_STATUSES,
+  WORKING_RUN_STATUSES,
+  type Comment,
+  type FailureReason,
+  type MachineUnavailable,
+  type PauseReason,
+  type Run,
+  type RunChangeCause,
+  type RunLogEntry,
+  type RunPurpose,
+  type RunRefusal,
+  type RunStatus,
+  type TicketDetail,
+  type TicketSummary,
 } from '@orchestrator/protocol';
 import { formatDateTime } from '../github/text';
 import { statusLabel } from '../tickets/text';
 
-// Runs in plain words (02, section 1: the owner never reads codes). The run screens come with
-// lot 2 step L; the refusals and the event log use these texts from step J.
+// Runs in plain words (02, section 1: the owner never reads codes), for the run screens, the
+// refusals and the event log.
 
 export const runStatusLabel: Record<RunStatus, string> = {
   queued: 'Queued',
@@ -119,4 +129,135 @@ export function runRefusalText(refusal: RunRefusal): string {
     case 'account_busy':
       return `The Claude account ${refusal.account.label} already runs its maximum of ${String(refusal.maxConcurrentRuns)} run${refusal.maxConcurrentRuns === 1 ? '' : 's'} at a time. Try again when one finishes.`;
   }
+}
+
+export const purposeLabel: Record<RunPurpose, string> = {
+  implement: 'Implement the ticket',
+  review: 'Review',
+  plan: 'Plan',
+  document: 'Document',
+  fix_review: 'Fix after review',
+};
+
+export const logKindLabel: Record<RunLogEntry['kind'], string> = {
+  agent_text: 'Agent',
+  tool_call: 'Tool',
+  tool_result: 'Result',
+  input: 'Message sent to the agent',
+  warning: 'Warning',
+};
+
+export function isActive(status: RunStatus): boolean {
+  return ACTIVE_RUN_STATUSES.includes(status);
+}
+
+/** "1 h 5 min", "3 min", "45 s": a run's working or waiting time. */
+export function durationText(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${String(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${String(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
+}
+
+/**
+ * The run's working and waiting times at `now`: the stored totals, plus the current period of an
+ * active run (01, section 3.7).
+ */
+export function runTimes(
+  run: Pick<Run, 'status' | 'workingMs' | 'waitingMs' | 'statusSince'>,
+  now: number,
+): { workingMs: number; waitingMs: number } {
+  const current = Math.max(0, now - new Date(run.statusSince).getTime());
+  return {
+    workingMs: run.workingMs + (WORKING_RUN_STATUSES.includes(run.status) ? current : 0),
+    waitingMs: run.waitingMs + (WAITING_RUN_STATUSES.includes(run.status) ? current : 0),
+  };
+}
+
+/** "$0.42 (estimated by Claude Code)", or "Not known yet". */
+export function usageText(usd: number | null): string {
+  return usd === null
+    ? 'Not known yet'
+    : `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (estimated by Claude Code)`;
+}
+
+/** Why a run is paused, with what the owner can do (02, section 4). */
+export function pausedText(reason: PauseReason | null): string {
+  return reason === 'suspected_usage_limit'
+    ? 'Run paused: possible Claude usage limit. You can resume it now.'
+    : 'Claude usage limit reached: the run can resume after the limit resets.';
+}
+
+/** The run's status in one sentence, for the run page and the lists of runs. */
+export function runStateText(
+  run: Pick<Run, 'status' | 'pauseReason' | 'failureReason' | 'machine'>,
+): string {
+  const offline = isActive(run.status) && !run.machine.online ? ' (machine offline)' : '';
+  switch (run.status) {
+    case 'paused_quota':
+      return `Paused: ${run.pauseReason ? pauseText[run.pauseReason] : 'usage limit'}${offline}`;
+    case 'failed':
+    case 'cancelled':
+      return `${runStatusLabel[run.status]}: ${run.failureReason ? failureText[run.failureReason] : 'no reason given'}`;
+    default:
+      return `${runStatusLabel[run.status]}${offline}`;
+  }
+}
+
+/** The board card's run indicator: its status, and its progress line cut to the card's length. */
+export function cardRunText(run: NonNullable<TicketSummary['activeRun']>): {
+  status: string;
+  progress: string | null;
+} {
+  const where = run.machine.online ? `on ${run.machine.name}` : `on ${run.machine.name}, offline`;
+  const status =
+    run.status === 'paused_quota'
+      ? `Paused ${where}`
+      : run.status === 'waiting_human'
+        ? `Waiting for your answer (${run.machine.name})`
+        : `${runStatusLabel[run.status]} ${where}`;
+  const text = run.progress?.text ?? null;
+  return {
+    status,
+    progress:
+      text === null || text.length <= PROGRESS_CARD_MAX_LENGTH
+        ? text
+        : `${text.slice(0, PROGRESS_CARD_MAX_LENGTH - 1).trimEnd()}…`,
+  };
+}
+
+/** The first 7 characters of a commit hash, as Git shows it. */
+export function shortHash(hash: string): string {
+  return hash.slice(0, 7);
+}
+
+/**
+ * The question waiting for the owner's answer: the ticket is `waiting_human` and its last
+ * question has no answer yet (04, section 6).
+ */
+export function openQuestion(ticket: Pick<TicketDetail, 'status' | 'timeline'>): Comment | null {
+  if (ticket.status !== 'waiting_human') return null;
+  const comments = ticket.timeline.flatMap((entry) =>
+    entry.type === 'comment' ? [entry.comment] : [],
+  );
+  const question = comments.filter((comment) => comment.kind === 'question').at(-1);
+  if (!question) return null;
+  return comments.some((comment) => comment.answers === question.id) ? null : question;
+}
+
+/** The time of a log entry, to the second: entries often come within one minute. */
+export function logTime(at: string): string {
+  return new Date(at).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+/** The run page (02, section 7). */
+export function runPath(id: string): string {
+  return `/activity/runs/${encodeURIComponent(id)}`;
 }

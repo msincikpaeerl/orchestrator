@@ -62,6 +62,8 @@ export class ScriptedDaemon {
   readonly received: ServerMessage[] = [];
   /** Resolves when the connection closes, with the close code the server gave. */
   readonly closed: Promise<Closed>;
+  /** Called with each message received, after it is recorded (the e2e server acknowledges). */
+  onMessage: ((message: ServerMessage) => void) | undefined;
   private waiters: (() => void)[] = [];
 
   private constructor(private readonly socket: WebSocket) {
@@ -72,8 +74,10 @@ export class ScriptedDaemon {
       });
     });
     socket.on('message', (data: Buffer) => {
-      this.received.push(ServerMessage.parse(JSON.parse(data.toString('utf8'))));
+      const message = ServerMessage.parse(JSON.parse(data.toString('utf8')));
+      this.received.push(message);
       this.wake();
+      this.onMessage?.(message);
     });
   }
 

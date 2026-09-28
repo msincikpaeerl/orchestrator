@@ -1,6 +1,7 @@
 import cookie from '@fastify/cookie';
 import {
   PROTOCOL_VERSION,
+  STREAM_RETRY_MS,
   type HealthResponse,
   type VersionResponse,
 } from '@orchestrator/protocol';
@@ -19,12 +20,13 @@ import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
+import { ChangeFeed } from './realtime/changes.js';
+import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
 import { RunService } from './runs/service.js';
 import { deriveSecretKey } from './secrets.js';
 import { registerSettingRoutes } from './settings/routes.js';
 import { registerTicketRoutes } from './tickets/routes.js';
-import { registerUiSettingsRoutes } from './ui-settings.js';
 import { SERVER_VERSION } from './version.js';
 import { registerWeb } from './web.js';
 
@@ -46,6 +48,8 @@ export interface AppDependencies {
   daemonSecondMs?: number;
   /** Folder of the daemon package served at `/downloads/`; tests build their own. */
   daemonPackageDir?: string;
+  /** Interval of the realtime stream's keep-alive and session check; tests shorten it. */
+  streamKeepAliveMs?: number;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -81,8 +85,14 @@ export function buildApp(dependencies: AppDependencies) {
       logger.error({ err: error }, 'dispatch timers not restored');
     });
   });
+  // The realtime stream's change feed (02, section 1; ADR 0029).
+  const feed = new ChangeFeed({ pool, log: logger, retryMs: STREAM_RETRY_MS });
+  app.addHook('onReady', async () => {
+    await feed.start();
+  });
   app.addHook('onClose', () => {
     runs.close();
+    feed.close();
   });
 
   // Polled by Docker every few seconds: only failures are logged.
@@ -103,6 +113,7 @@ export function buildApp(dependencies: AppDependencies) {
   });
 
   void app.register((scope, _options, done) => {
+    registerStreamRoute(scope, { db, feed, keepAliveMs: dependencies.streamKeepAliveMs });
     registerAuthRoutes(scope, {
       db,
       secureCookies: new URL(dependencies.publicUrl).protocol === 'https:',
@@ -119,7 +130,6 @@ export function buildApp(dependencies: AppDependencies) {
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl });
-    registerUiSettingsRoutes(scope, { db });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
     registerAccountRoutes(scope, { db });

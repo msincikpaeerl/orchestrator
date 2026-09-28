@@ -78,6 +78,8 @@ describe('the daemon package', { timeout: 120_000 }, () => {
     const served = await fetch(`${String(t?.url)}/downloads/${daemonPackageFile()}`);
     expect(served.status).toBe(200);
     expect(served.headers.get('content-type')).toBe('application/gzip');
+    // Read to the end: an unread body keeps the connection busy, and the server's close waits.
+    expect((await served.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
   it('answers not found when the package was not built', async () => {

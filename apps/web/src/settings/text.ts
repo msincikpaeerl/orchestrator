@@ -9,7 +9,6 @@ import {
 export const groupTitle: Record<SettingGroup, string> = {
   sessions: 'Login and sessions',
   github: 'GitHub',
-  projects: 'Projects',
   tickets: 'Tickets',
   runs: 'Runs',
   machines: 'Machines',

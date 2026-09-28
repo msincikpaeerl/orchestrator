@@ -48,6 +48,10 @@ Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it 
 
 `apps/server/test/runs.test.ts` (lot 2 step J) drives runs with the scripted daemon: `find` waits for a message the server sends (a `run.start`, a `run.stop`), `request` sends a report and returns its answer (`ack`, `mcp.result`, `git.credential`). Each Run now refusal, the settings budget of the acceptance criteria, the dispatch acknowledgement timeout (shortened with `daemonSecondMs`, the daemons then sending heartbeats; also across a restart of the test application), a run through to `succeeded` and a counted failure, Stop run (with an MCP call after it, refused), `machine_offline`, `machine_revoked`, the machine holding the ticket's commits, credentials, detected and suspected limits with Resume, and the log's masking and cut. Waits on timers use `eventually` with a deadline naming what it waited for.
 
+## Realtime stream
+
+`apps/server/test/stream.test.ts` (lot 2 step L1, ADR 0029) opens `GET /api/stream` with `StreamClient` (`stream-client.ts`), which reads the Server-Sent Events as a browser would and waits for a message with a deadline naming it. It covers the refusal without a session, a `changed` message after a ticket change, a rolled-back event sending nothing (checked after a committed one arrives), a log notice after `run.events`, the end of the stream at logout and at the keep-alive after the session is gone (`streamKeepAliveMs` shortens the keep-alive), and `resync` after the database listener's connection is terminated with `pg_terminate_backend`. `shutdown.test.ts` runs the server as its own process (`src/main.ts` through `tsx`, as `docker stop` finds it) and checks that SIGTERM ends open streams and the process exits long before Docker's 10-second kill timeout.
+
 ## MCP backend and questions
 
 `apps/server/test/mcp.test.ts` (lot 2 step K) drives the tools as a daemon relays them, with `run-harness.ts`: the application, a ready project `WEB`, machines with their accounts, a run brought to `running`, `tool` (a tool call and its result) and `ok` (the output of an accepted call). It covers each tool with its refusals and their setting values, the role permissions (a reviewer profile inserted for the test), the paging and cut of the reading tools under `MCP_OUTPUT_MAX_CHARACTERS`, the progress line shown once per interval (the interval shortened with `daemonSecondMs`), `ticket_create` with its per-run limit fixed at the start, **Accept** and **Reject**, the reduced submission, and the owner's answer: live, refused live and resumed, after the waiting run lifetime with the question and the answer cut at line boundaries, with the machine offline or not confirming, and on an account at its maximum.
@@ -107,7 +111,7 @@ pnpm test:e2e setup.e2e.ts            # one file
 
 `pnpm test:e2e` builds the UI, then runs `playwright test` in the image with the repository mounted at the same path, the host network (the tests use the development PostgreSQL on `localhost:5432`) and your user, so the files it writes are yours. The first run pulls the image. Results are in `apps/web/test-results/` (a trace for each failed test: `apps/web/node_modules/.bin/playwright show-trace <file>`) and, with `CI` set, a report in `apps/web/playwright-report/`.
 
-Playwright starts `apps/server/test/e2e-server.ts` on port 8095 (`E2E_PORT`), with the built UI, a throw-away database and the fake GitHub, whose tokens are in `apps/web/e2e/fixtures.ts`. Before each test, the `fresh` fixture empties the database and resets the fake GitHub through a control address on the next port, so every test starts from the first launch. The fake account has repositories to link (`notes`, `legacy-site`, and `old-archive`, archived). The `failNextGitHubRequest` fixture uses the same control address to make the next GitHub request with a given method and path ending fail (for example a 503 on `POST .../git/trees` for a failed setup); this control exists only in the test server, never in the Orchestrator. For machines, `connectDaemon` makes the test server enroll the scripted daemon of `apps/server/test/daemon-client.ts` with the code shown on the screen, connect it and say `hello` (with fields to change, such as an old Claude Code), sending heartbeats until the next reset; `comeBack` tells the page it is visible again, as when the owner returns from the terminal, so the screens read their data again. Tests run one at a time.
+Playwright starts `apps/server/test/e2e-server.ts` on port 8095 (`E2E_PORT`), with the built UI, a throw-away database and the fake GitHub, whose tokens are in `apps/web/e2e/fixtures.ts`. Before each test, the `fresh` fixture empties the database and resets the fake GitHub through a control address on the next port, so every test starts from the first launch. The fake account has repositories to link (`notes`, `legacy-site`, and `old-archive`, archived). The `failNextGitHubRequest` fixture uses the same control address to make the next GitHub request with a given method and path ending fail (for example a 503 on `POST .../git/trees` for a failed setup); this control exists only in the test server, never in the Orchestrator. For machines, `connectDaemon` makes the test server enroll the scripted daemon of `apps/server/test/daemon-client.ts` with the code shown on the screen, connect it and say `hello` (with fields to change, such as an old Claude Code), sending heartbeats until the next reset; `comeBack` tells the page it is visible again, as when the owner returns from the terminal, so the screens read their data again. The scripted daemon acknowledges the server's commands by itself, as a real daemon does; runs are played with the controls `POST /daemon/run` (waits for a run's `run.start` or `run.resume`, answering its run token) and `POST /daemon/request` (sends a report or a tool call and answers the server's reply), through the fixtures `runNow`, `startRun`, `reportState`, `sendLog`, `callTool` and `daemonRequest`; `readyForRuns` prepares a ready project, a connected machine and an assigned ticket. A test of a live screen first waits until the page shows its data, then makes the change from outside the page, so only the realtime stream can bring it (`runs.e2e.ts` was checked to fail with the stream turned off). Tests run one at a time.
 
 ### Run them on the host
 
@@ -119,14 +123,14 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0008):
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0030). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
 
-- Job `verify`, with a PostgreSQL service (same image as `docker/compose.dev.yml`):
-  1. `pnpm install --frozen-lockfile`
-  2. `pnpm verify` (lint, format check, `bash -n` of `tools/smoke/*.sh`, type check, tests, build, link check)
-  3. `pnpm audit --audit-level critical`
+- Job `checks`: `pnpm lint` (lint, format check, `bash -n` of `tools/smoke/*.sh`), `pnpm typecheck`, `pnpm docs:links` and `pnpm audit --audit-level critical`.
+- Job `test`, with a PostgreSQL service (same image as `docker/compose.dev.yml`) and tmux from apt: `pnpm test`.
+- Job `build`: `pnpm build`.
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.
+- Job `ci`: needs every other job and fails when any of them failed, was cancelled or was skipped. Branch protection of `main` requires only this check, so jobs can be added or renamed without changing it; list every new job in its `needs` (a test checks it) and never rename or remove `ci`.
 
 To check the workflow file locally:
 
@@ -134,4 +138,4 @@ To check the workflow file locally:
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
 ```
 
-CI must stay under 10 minutes (08, section 4).
+CI must stay under 10 minutes (08, section 4): the timeouts are a safety net, not a target. When a job grows too long, split it further (for example test shards) rather than raising its timeout.

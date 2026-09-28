@@ -8,11 +8,13 @@ import { useId, useState } from 'react';
 import { Link } from 'react-router';
 import { buttonLinkClass, ErrorMessage, Loading, SelectField, TextField } from '../components/ui';
 import { useAgents, useTickets } from '../queries';
+import { cardRunText } from '../runs/text';
 import { assigneeLabel, showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
 
 /**
- * Columns shown open, in the order of 04, section 1. `proposed` is hidden (02, section 6.3): its
- * toggle comes with plans (lot 5), no proposed ticket exists before.
+ * Columns shown open, in the order of 04, section 1. `proposed` is hidden (02, section 6.3),
+ * except for the tickets agents proposed, shown in a "Proposed" column whenever there is one; the
+ * toggle for plan tickets comes with plans (lot 5).
  */
 const OPEN_COLUMNS: readonly TicketStatus[] = [
   'todo',
@@ -43,8 +45,29 @@ function TicketCard({ ticket }: { ticket: TicketSummary }) {
           · {assigneeLabel(ticket.assignee)}
         </span>
         {showsBlocked(ticket) && <BlockedBadge />}
+        {ticket.createdByAgent && (
+          <span className="rounded bg-violet-100 px-2 py-0.5 text-sm text-violet-900">
+            created by agent
+          </span>
+        )}
       </div>
+      {ticket.activeRun && <RunIndicator run={ticket.activeRun} />}
     </li>
+  );
+}
+
+/** The card's active run indicator, with the last progress line (02, section 6.3). */
+function RunIndicator({ run }: { run: NonNullable<TicketSummary['activeRun']> }) {
+  const { status, progress } = cardRunText(run);
+  const look =
+    run.status === 'paused_quota' || run.status === 'waiting_human'
+      ? 'bg-amber-50 text-amber-900'
+      : 'bg-green-50 text-green-900';
+  return (
+    <div className={`mt-2 rounded px-2 py-1 text-sm ${look}`} aria-label="Active run">
+      <p className="font-medium">{status}</p>
+      {progress && <p className="break-words">{progress}</p>}
+    </div>
   );
 }
 
@@ -133,6 +156,13 @@ export function Board({ project }: { project: Project }) {
       matches(ticket, text),
   );
   const inState = (status: TicketStatus) => shown.filter((ticket) => ticket.status === status);
+  // Tickets proposed by agents: the column shows whenever one exists, even filtered out.
+  const proposedByAgents = all.some(
+    (ticket) => ticket.status === 'proposed' && ticket.createdByAgent !== null,
+  );
+  const openColumns: readonly TicketStatus[] = proposedByAgents
+    ? ['proposed', ...OPEN_COLUMNS]
+    : OPEN_COLUMNS;
 
   return (
     <div className="space-y-4">
@@ -203,9 +233,17 @@ export function Board({ project }: { project: Project }) {
         </p>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {OPEN_COLUMNS.map((status) => (
-              <Column key={status} status={status} tickets={inState(status)} />
+          <div
+            className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 ${proposedByAgents ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}
+          >
+            {openColumns.map((status) => (
+              <Column
+                key={status}
+                status={status}
+                tickets={inState(status).filter(
+                  (ticket) => status !== 'proposed' || ticket.createdByAgent !== null,
+                )}
+              />
             ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">

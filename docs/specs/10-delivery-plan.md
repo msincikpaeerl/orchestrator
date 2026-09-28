@@ -121,6 +121,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Browser notifications.
 - Secret masking in transcripts, audit of permissions, dependency audit in CI.
 - Trust the forwarded client address from a configured reverse proxy, for login throttling (see ADR 0015).
+- Point to settle: whether the server's shutdown forces busy HTTP connections closed after a grace period. Since lot 2 step L1, SIGTERM ends the realtime streams at once and the server exits in milliseconds, but a response still being sent (for example a daemon package download the client stops reading) keeps the close waiting until Docker kills the process, 10 seconds by default; PostgreSQL rolls back any write interrupted by the kill. Left unchanged in lot 2 (owner's decision, review of step L1).
 
 **Done when** the Orchestrator runs on its final host with backups, and the user documentation covers installation to daily use.
 

@@ -15,7 +15,14 @@ import { LogCapture, TEST_SECRET_KEY } from './helpers.js';
 const serverRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Every control of test/e2e-server.ts. */
-const CONTROLS = ['/reset', '/github/fail-next', '/daemon/connect', '/daemon/disconnect'];
+const CONTROLS = [
+  '/reset',
+  '/github/fail-next',
+  '/daemon/connect',
+  '/daemon/run',
+  '/daemon/request',
+  '/daemon/disconnect',
+];
 
 // A 404 needs no database: the pool is never used.
 const pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });

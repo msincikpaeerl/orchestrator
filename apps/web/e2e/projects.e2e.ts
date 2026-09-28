@@ -12,8 +12,9 @@ async function openNewProjectForm(page: Page) {
 }
 
 /**
- * Requests for the project made by the page during a bit more than the polling interval
- * (`projectSetupPollSeconds`, 2 seconds by default): none once the setup is ready or failed.
+ * Requests for the project made by the page during 3 seconds: none once the setup is ready or
+ * failed. The page no longer polls (lot 2 step L): it reads the project again only when the
+ * realtime stream says it changed.
  */
 async function projectRequestsWhileWaiting(page: Page, key: string): Promise<number> {
   let count = 0;

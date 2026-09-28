@@ -509,6 +509,14 @@ export const runs = pgTable(
     progressShownAt: timestamp('progress_shown_at', { withTimezone: true }),
     /** The `run.input` carrying the owner's answer, until the daemon acknowledges it. */
     answerInputId: uuid('answer_input_id'),
+    /**
+     * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
+     * up to `status_since` (01, section 3.7), added at each status change.
+     */
+    workingMs: bigint('working_ms', { mode: 'number' }).notNull().default(0),
+    waitingMs: bigint('waiting_ms', { mode: 'number' }).notNull().default(0),
+    /** When the current status began. */
+    statusSince: timestamp('status_since', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),

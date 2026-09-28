@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { findPage } from '../help/content';
 import { harnessElement } from './text';
 
-/** The help sections the project and ticket screens link to, as `page#section`. */
+/** The help sections the project, ticket and run screens link to, as `page#section`. */
 const linked = [
   'tickets#blocked-tickets',
   'tickets#create-a-ticket',
@@ -16,6 +16,10 @@ const linked = [
   'projects#if-the-setup-fails',
   'settings#change-a-limit',
   'settings#override-a-limit-for-one-project',
+  'runs#questions',
+  'runs#where-the-work-is',
+  'runs#usage-limits',
+  'tickets#tickets-proposed-by-agents',
   ...Object.values(harnessElement).map((element) => element.help),
 ];
 

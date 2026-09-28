@@ -12,6 +12,7 @@ import { NeedsYouPage } from './pages/needs-you';
 import { NewProjectPage } from './pages/new-project';
 import { ProjectPage, ProjectSettingsPage } from './pages/project';
 import { ProjectsPage } from './pages/projects';
+import { RunPage } from './pages/run';
 import { EditTicketPage, NewTicketPage } from './pages/ticket-form';
 import { LimitsPage } from './pages/limits';
 import { GitHubSettingsPage, SettingsPage } from './pages/settings';
@@ -82,6 +83,7 @@ export function App() {
               />
             ))}
           <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/activity/runs/:id" element={<RunPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/projects/:key" element={<ProjectPage />} />

@@ -155,3 +155,136 @@ export async function createMachine(
   };
   return { id: body.machine.id, code: body.enrollment.code };
 }
+
+// Runs played by the scripted daemon (lot 2 step L), through the test server's controls: the
+// daemon acknowledges the server's commands by itself; the test sends its reports and tool calls.
+
+export const BRANCH_HEAD = 'a'.repeat(40);
+export const COMMITS = [
+  { hash: 'c'.repeat(40), subject: 'Add the contact form' },
+  { hash: 'b'.repeat(40), subject: 'Check the e-mail address' },
+];
+
+/** Waits for the run's `run.start` (or `run.resume`) sent to the scripted daemon. */
+export async function runSent(
+  page: Page,
+  runId: string,
+): Promise<{ type: 'run.start' | 'run.resume'; runToken: string }> {
+  const response = await page.request.post(`${controlUrl}/daemon/run`, { data: { runId } });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as { type: 'run.start' | 'run.resume'; runToken: string };
+}
+
+/** Sends a message of the scripted daemon; returns the server's answer. */
+export async function daemonRequest(
+  page: Page,
+  type: string,
+  payload: Record<string, unknown>,
+): Promise<{ type: string; payload: Record<string, unknown> }> {
+  const response = await page.request.post(`${controlUrl}/daemon/request`, {
+    data: { message: { type, id: crypto.randomUUID(), payload } },
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as { type: string; payload: Record<string, unknown> };
+}
+
+/** A `run.state` report, which the server must accept. */
+export async function reportState(
+  page: Page,
+  runId: string,
+  state: 'preparing' | 'starting' | 'working' | 'idle' | 'waiting_human' | 'quota_paused' | 'ended',
+  extra: Record<string, unknown> = {},
+) {
+  const base = {
+    runId,
+    at: new Date().toISOString(),
+    claudeSessionId: '0f7a3c52-9d7e-4e8f-a4b1-111111111111',
+    sessionAlive: state !== 'ended',
+    state,
+  };
+  const fields =
+    state === 'starting'
+      ? { claudeCodeVersion: '2.1.283' }
+      : state === 'ended'
+        ? {
+            reason: 'submitted',
+            detail: null,
+            branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+          }
+        : {};
+  const answer = await daemonRequest(page, 'run.state', { ...base, ...fields, ...extra });
+  expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
+}
+
+/** The run's log entries, as the daemon reads them from the transcript. */
+export async function sendLog(page: Page, runId: string, from: number, texts: string[]) {
+  const answer = await daemonRequest(page, 'run.events', {
+    runId,
+    estimatedUsageUsd: 0.42,
+    events: texts.map((text, index) => ({
+      seq: from + index,
+      at: new Date().toISOString(),
+      kind: 'agent_text',
+      tool: null,
+      text,
+    })),
+  });
+  expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
+}
+
+/** A tool call of the agent, relayed by the daemon; returns the tool's output. */
+export async function callTool(
+  page: Page,
+  runToken: string,
+  tool: string,
+  input: Record<string, unknown>,
+  workspace?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const answer = await daemonRequest(page, 'mcp.call', {
+    tool,
+    runToken,
+    input,
+    ...(workspace ? { workspace } : {}),
+  });
+  expect(answer.type).toBe('mcp.result');
+  expect(answer.payload, JSON.stringify(answer.payload)).toMatchObject({ ok: true });
+  return answer.payload.output as Record<string, unknown>;
+}
+
+/**
+ * A ready project `WEB`, a machine `Laptop` connected with its account, and a ticket assigned to
+ * the Web Developer; returns the ticket's page address.
+ */
+export async function readyForRuns(page: Page): Promise<string> {
+  await completeSetup(page);
+  await createReadyProject(page, { key: 'WEB', name: 'Bakery website', repository: 'bakery' });
+  const { code } = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(await connectDaemon(page, code)).toBe(204);
+  const ticket = await page.request.post('/api/projects/WEB/tickets', {
+    data: {
+      type: 'feature',
+      title: 'Contact form',
+      description: 'Visitors write to the bakery.',
+      acceptanceCriteria: ['The contact page has a form', 'The e-mail address is checked'],
+      assignee: 'web_dev',
+    },
+  });
+  expect(ticket.status()).toBe(201);
+  return '/projects/WEB/tickets/1';
+}
+
+/** **Run now** from the ticket page; returns the run's id, from the run page it opens. */
+export async function runNow(page: Page): Promise<string> {
+  await page.getByRole('button', { name: 'Run now' }).click();
+  await expect(page).toHaveURL(/\/activity\/runs\/[0-9a-f-]{36}$/);
+  return page.url().split('/').at(-1) ?? '';
+}
+
+/** Plays the daemon's side of a start: preparing, starting, then working; returns the run token. */
+export async function startRun(page: Page, runId: string): Promise<string> {
+  const { runToken } = await runSent(page, runId);
+  await reportState(page, runId, 'preparing');
+  await reportState(page, runId, 'starting');
+  await reportState(page, runId, 'working');
+  return runToken;
+}

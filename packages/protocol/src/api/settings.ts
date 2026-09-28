@@ -4,7 +4,6 @@ import { z } from 'zod';
 export const SettingGroup = z.enum([
   'sessions',
   'github',
-  'projects',
   'tickets',
   'runs',
   'machines',
@@ -119,16 +118,6 @@ const definitions = {
     min: 0,
     max: 3600,
     default: 120,
-    perProject: false,
-  },
-  projectSetupPollSeconds: {
-    group: 'projects',
-    label: 'Setup progress refresh',
-    description: 'How often the project page refreshes while its repository is being set up.',
-    unit: 'seconds',
-    min: 1,
-    max: 60,
-    default: 2,
     perProject: false,
   },
   ticketTitleMaxLength: {

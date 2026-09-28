@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CommitSummary, GitHash } from '../daemon/git.js';
 import { DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
+import { PauseReason, RunStatus } from './run-status.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
 export const TicketType = z.enum(['feature', 'bug', 'chore', 'docs', 'spike']);
@@ -119,6 +120,17 @@ export const TicketSummary = z.object({
   createdBy: TicketCreator,
   /** For a ticket created by an agent ("created by agent"): its profile and run. */
   createdByAgent: AgentAuthorship.nullable(),
+  /** The ticket's active run, for the board's indicator (02, section 6.3); null without one. */
+  activeRun: z
+    .object({
+      id: z.uuid(),
+      status: RunStatus,
+      pauseReason: PauseReason.nullable(),
+      machine: z.object({ id: z.uuid(), name: z.string(), online: z.boolean() }),
+      /** The progress line as shown (06, section 4.2); null before the first. */
+      progress: z.object({ text: z.string(), at: z.iso.datetime() }).nullable(),
+    })
+    .nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

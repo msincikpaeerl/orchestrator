@@ -105,6 +105,7 @@ export {
   FailureReason,
   MachineUnavailable,
   PauseReason,
+  PROGRESS_CARD_MAX_LENGTH,
   RUN_LOG_PAGE_SIZE,
   Run,
   RunBranch,
@@ -115,6 +116,8 @@ export {
   RunLogResponse,
   RunRefusal,
   RunStatus,
+  WAITING_RUN_STATUSES,
+  WORKING_RUN_STATUSES,
   RunTicketAction,
   UNCOUNTED_FAILURES,
 } from './api/runs.js';
@@ -140,7 +143,7 @@ export {
   UnusableReason,
   UpdateAccountRequest,
 } from './api/machines.js';
-export { UiSettingsResponse } from './api/ui-settings.js';
+export { STREAM_KEEP_ALIVE_MS, STREAM_PATH, STREAM_RETRY_MS, StreamMessage } from './api/stream.js';
 export {
   GlobalSetting,
   GlobalSettingsResponse,

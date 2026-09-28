@@ -595,39 +595,77 @@ Owner's decisions before the step (2026-09-28), written into 01 section 5, 04 se
 - Found by the tests: tmux gives a new session the `PATH` of its client, not the one passed with `-e`. It changes nothing for the daemon, whose own `PATH` is the one it passes; the runner harness gained `addSystemPath()`.
 - `apps/server/test/run-harness.ts` gathers the run set-up for the MCP tests; `apps/daemon/test/scripted-server.ts` is the scripted server shared by `daemon-runs.test.ts` and `systemd.test.ts`.
 
-### [ ] L. Realtime, live screens and user documentation
+### Step L, split in two
+
+Step L (realtime, live screens and user documentation) was too large for one session. The owner split it into L1 and L2 before any code was written (2026-09-29), and answered the points the specs left open, written into 01 section 3.7, 02 sections 1, 4 and 7, 04 section 8, 05 section 8 and 09 section 4:
+
+- **Log lines over the stream**: the stream carries a notice that a run has new log entries up to an entry number; the screen fetches the entries after the last one it holds (existing log endpoint), so nothing is lost across a reconnection and the server keeps no record of what each screen shows.
+- **Working and waiting times**: two totals kept on the run at each status change, working for `starting` and `running`, waiting for `waiting_human` and `paused_quota`, neither for `queued` and `dispatched`; an active run's current period is added when shown.
+- **Account status line**: "Available" or "Limited until <time>"; a passed limit time shows "Available"; `paused_manual` (lot 4) shows "Paused"; no next window before lot 4.
+- **Answer box**: the same on the ticket page, the run page (while its run waits) and "Needs you".
+- **`orchestrator-daemon status`**: a local ticket branch's commits are those not on any branch fetched from GitHub ("not on GitHub yet"), the same list the run reported, since nothing is pushed in lot 2.
+- **Stream keep-alive and reconnection**: every 20 seconds and 3 seconds, code constants listed among the exceptions of 04 section 8.
+
+### [x] L1. Live stream, ticket page and run page
 
 - **SSE**:
-  - `GET /api/stream` (authenticated): "changed" messages and log lines;
+  - `GET /api/stream` (authenticated): "changed" messages and run log notices, closed at logout;
   - TanStack Query invalidation;
   - reload on reconnection and on focus;
-  - the project setup polling, `projectSetupPollSeconds` and `GET /api/ui-settings` removed (with a CHANGELOG line). ADR if a library is used.
+  - the project setup polling, `projectSetupPollSeconds` and `GET /api/ui-settings` removed (with a CHANGELOG line). ADR for how changes reach the stream.
+- **Runs**: working and waiting times stored (01 section 3.7).
 - **Ticket page**:
   - **Run now** with its refusal reasons, **Stop run**, **Resume**, **Accept**/**Reject**;
   - the answer box;
   - branch "on machine X, not on GitHub yet" with commits, attempt count;
   - the runs list and the report summary.
-- Machines: active runs on the machine list and detail (02 section 9.2; left out of step D).
-- `orchestrator-daemon status` lists the local ticket branches of the machine's bare clones, with their head and commits ahead of the base branch, as the ticket page shows them (decisions above, "The local branch"; owner's decision, review of step F).
-- Machines: **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
 - Board: "Proposed" column, "created by agent", active run indicator with the progress line.
-- **Run page** with the live log and estimated usage.
-- Activity > Live runs and History (Queue stays "Coming in a later version").
-- Machines: each Claude account's state (`available`, or `limited` until a time) on the account list (02 section 9.1; left out of step D, since it is always `available` before step J).
-- "Needs you": the compact status line per Claude account (02 section 4; left out of step D), questions answerable inline, tickets proposed by agents, work finished to check, paused runs (detected or suspected), machine offline with active work.
-- `docs/user/`: a Runs page (Run now, watching, stopping, resuming, usage limits, what "suspected" means, where the commits are), a Questions section, the Tickets page (Accept and Reject, `in_review` in 0.3.0), Needs you, Activity, and the Settings reference.
+- **Run page**: status with the pause reason, times working and waiting, estimated usage, progress line, branch and commits, the answer box while the run waits, and the live log.
+- `docs/user/`: a Runs page (Run now, watching, stopping, resuming, usage limits, what "suspected" means, where the commits are), a Questions section, the Tickets page (Accept and Reject, `in_review` in 0.3.0), and the Settings reference.
 
-**Done when** Playwright on both viewports, with a fake daemon, covers:
+**Done when**:
 
-- Run now and its refusal reason;
-- the Add machine warning for a plain `http://` address outside `localhost`;
-- log lines appearing without reload;
-- a question answered from "Needs you";
-- an agent's ticket accepted;
-- a run finishing with the branch and commits shown;
-- a paused run resumed.
+- Playwright on both viewports, with the scripted daemon, covers:
+  - Run now and its refusal reason;
+  - log lines appearing without reload;
+  - an agent's ticket accepted;
+  - a question answered on the ticket page;
+  - a run finishing with the branch and commits shown;
+  - a paused run resumed;
+- integration tests cover the stream refused without a session, a "changed" message after a ticket change, a log notice after `run.events`, the stream closed at logout, and the removed setting and endpoint.
 
-A daemon test shows `orchestrator-daemon status` listing a ticket branch kept after a run, with its commits.
+*Done 2026-09-29.* Choices within the step:
+
+- How changes reach the stream: `recordEvent` and the run log storage send PostgreSQL `NOTIFY` in their own transaction, delivered only at commit; one pool connection holds `LISTEN`, is replaced after 3 seconds when lost, and the streams then send `resync` (ADR 0029, 09 section 4). No SSE library. The stream checks its session at each keep-alive and each session change.
+- The run page is `/activity/runs/:id`; **Run now** opens it. **Stop run** asks for a confirmation saying what happens to the ticket and the branch. On a ticket an agent proposed, **Reject** replaces **Cancel**.
+- `Run` gains `outcome`, `workingMs`, `waitingMs` and `statusSince`; board tickets carry their active run (`activeRun`, with the progress line shown). The run statuses moved to `packages/protocol/src/api/run-status.ts`, shared by tickets and runs. Display constant `PROGRESS_CARD_MAX_LENGTH` (120 characters) for the card's progress line.
+- The "Projects" group of Settings > Limits is removed with its only setting.
+- The e2e server's scripted daemon acknowledges the server's commands itself, and two controls (`/daemon/run`, `/daemon/request`) play runs; `runs.e2e.ts` was checked to fail with the stream turned off.
+- Found by the tests: `daemon-package.test.ts` left a downloaded package unread, which kept a connection busy and the test server from closing; the test now reads it. Whether it hung depended on timing: it also hangs without the change feed (checked at the owner's review), so it was not caused by the stream.
+- Shutdown with open streams (owner's review): SIGTERM ends every open stream at once (the stream route's `preClose` hook) and the process exits in about 50 milliseconds, far from Docker's 10-second kill timeout. `apps/server/test/shutdown.test.ts` starts `src/main.ts` as its own process, opens two streams, sends SIGTERM and checks both streams end and the process exits with code 0 in under 3 seconds; it was checked to fail with the hook removed.
+
+### [ ] L2. Needs you, Activity, Machines and daemon status
+
+- "Needs you": the compact status line per Claude account (02 section 4), questions answerable inline, tickets proposed by agents with **Accept** and **Reject**, work finished to check with **Mark as done manually**, paused runs (detected or suspected) with **Resume** and **Stop run**, machine offline with active work.
+- Activity > Live runs (with **Stop run** and the attach command) and History with filters and paging (Queue stays "Coming in a later version").
+- Machines:
+  - each Claude account's state on the account list (02 section 9.1; left out of step D);
+  - active runs on the machine list and detail (02 section 9.2; left out of step D);
+  - **Add machine** warns when `PUBLIC_URL` is plain `http://` and not `localhost` (`127.0.0.0/8`, `::1`), since the daemon refuses that address (05 section 3.2), and links to Help > Machines > Orchestrator on another computer (owner's decision, review of step E).
+- `orchestrator-daemon status` lists the local ticket branches of the machine's bare clones, with their head and commits not on GitHub yet (05 section 8; owner's decision, review of step F).
+- `docs/user/`: Needs you, Activity and Machines pages.
+
+**Done when**:
+
+- Playwright on both viewports, with the scripted daemon, covers:
+  - a question answered from "Needs you";
+  - a proposed ticket accepted from "Needs you";
+  - a paused run resumed from "Needs you";
+  - the Add machine warning for a plain `http://` address outside `localhost`;
+  - a limited account shown as limited, then as available once its time has passed;
+  - an active run on the machine page;
+  - Live runs and History;
+- a daemon test shows `orchestrator-daemon status` listing a ticket branch kept after a run, with its commits.
 
 ### [ ] M. End-to-end daemon test and limit capture tooling
 

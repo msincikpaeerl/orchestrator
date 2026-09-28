@@ -70,7 +70,7 @@ docker/        Dockerfile and compose files
 | Component | Responsibility |
 |---|---|
 | **API** | REST endpoints used by the UI. All inputs validated by schema. |
-| **Realtime** | SSE stream pushing ticket changes, run logs, questions and quota state to the UI: one stream per logged-in browser, carrying "changed" messages (kind of entity, id, project) and log lines; the UI reloads what changed (02, section 1). |
+| **Realtime** | SSE stream pushing ticket changes, run logs, questions and quota state to the UI: one stream per logged-in browser, carrying "changed" messages (kind of entity, id, project) and notices of new run log entries (the run and its last entry number); the UI reloads what changed and fetches the log entries after the last one it holds (02, section 1; owner's decision, lot 2 step L). Changes reach the stream from the events they write, through PostgreSQL `LISTEN`/`NOTIFY`, so only saved changes are sent ([ADR 0029](../adr/0029-realtime-stream.md)). |
 | **Downloads** | Serves the daemon package of the server's own version (`/downloads/orchestrator-daemon-<version>.tgz`, 05 section 2). |
 | **Daemon gateway** | WebSocket endpoint for daemons: authentication, heartbeats, message routing, reconciliation (05, section 6). |
 | **MCP backend** | Executes MCP tool calls relayed by daemons: permission checks, transitions, DoD checks (06). |

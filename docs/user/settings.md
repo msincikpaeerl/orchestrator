@@ -50,12 +50,6 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | GitHub request timeout | 15 seconds | 1 to 300 | No | How long the Orchestrator waits for GitHub to answer one request. |
 | GitHub clock tolerance | 120 seconds | 0 to 3,600 | No | Allowed difference between this computer's clock and GitHub's, when Try again checks whether a repository was created by an earlier attempt. |
 
-### Projects
-
-| Setting | Default | Allowed | Per project | What it does |
-|---|---|---|---|---|
-| Setup progress refresh | 2 seconds | 1 to 60 | No | How often the project page refreshes while its repository is being set up. |
-
 ### Tickets
 
 | Setting | Default | Allowed | Per project | What it does |
