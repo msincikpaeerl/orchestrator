@@ -1,5 +1,6 @@
 import { SETTINGS, type ApiErrorCode, type LimitExceeded } from '@orchestrator/protocol';
 import { ApiRequestError } from './api';
+import { runRefusalText } from './runs/text';
 import { amount } from './settings/text';
 
 /** Shown when the refusal is not one of the API's: a bug or a network problem. */
@@ -113,6 +114,15 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
           : `must be at least ${String(order.factor)} times `;
     return `${larger} ${rule}${smaller}. Change the other one first, or choose another value.`;
   },
+  setting_product_invalid: ({ settingProduct: product }) => {
+    if (!product) {
+      return 'This value would make two related limits too large together. Check both and try again.';
+    }
+    const first = `${SETTINGS[product.first].label} (${amount(product.first, product.firstValue)})`;
+    const second = `${SETTINGS[product.second].label} (${amount(product.second, product.secondValue)})`;
+    const total = count(product.firstValue * product.secondValue);
+    return `${first} times ${second} is ${total} ${product.unit}, above the ${count(product.max)} ${product.unit} a run's first message has room for. Lower one of them.`;
+  },
   account_not_found: () => 'This Claude account no longer exists. Reload the page.',
   account_label_taken: () =>
     'Another Claude account already has this label. Choose a different label.',
@@ -132,6 +142,10 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     setting
       ? `This enrollment code expired: codes are valid for ${amount(setting.name, setting.value)} (${SETTINGS[setting.name].label}). Generate a new code in Machines.`
       : 'This enrollment code expired. Generate a new code in Machines.',
+  run_not_possible: ({ runRefusal }) =>
+    runRefusal ? runRefusalText(runRefusal) : 'The run cannot start now. Reload the page.',
+  run_not_found: () => 'This run no longer exists. Reload the page.',
+  run_not_active: () => 'This run already ended. Reload the page.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */

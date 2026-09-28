@@ -136,5 +136,10 @@ export function needsYouText(item: Exclude<NeedsYouItem, { type: 'project_setup_
           item.checks.length === 1 ? 'a problem' : `${String(item.checks.length)} problems`
         }. Fix ${item.checks.length === 1 ? 'it' : 'them'} on that machine, then restart the daemon. Until then, the machine receives no runs.`,
       };
+    case 'machine_offline_with_runs':
+      return {
+        title: `${item.machine.name} is offline with work on it`,
+        detail: `The runs of ${item.tickets.join(', ')} are on this machine and wait for it. Start the machine and its daemon so they can go on.`,
+      };
   }
 }

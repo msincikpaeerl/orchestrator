@@ -16,6 +16,10 @@ export class ApiRequestError extends Error {
     readonly settingOrder?: ApiError['error']['settingOrder'],
     /** The setting behind the refusal and its current value. */
     readonly setting?: ApiError['error']['setting'],
+    /** The two settings whose product is too large, for `setting_product_invalid`. */
+    readonly settingProduct?: ApiError['error']['settingProduct'],
+    /** Why **Run now** or **Resume** cannot start, for `run_not_possible`. */
+    readonly runRefusal?: ApiError['error']['runRefusal'],
   ) {
     super(message);
   }
@@ -53,8 +57,17 @@ export async function api<T>(
     if (!parsed.success) {
       throw new ApiRequestError(response.status, 'unexpected', `Error ${String(response.status)}`);
     }
-    const { code, message, retryAfterSeconds, limits, cycle, settingOrder, setting } =
-      parsed.data.error;
+    const {
+      code,
+      message,
+      retryAfterSeconds,
+      limits,
+      cycle,
+      settingOrder,
+      setting,
+      settingProduct,
+      runRefusal,
+    } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
     throw new ApiRequestError(
       response.status,
@@ -65,6 +78,8 @@ export async function api<T>(
       cycle,
       settingOrder,
       setting,
+      settingProduct,
+      runRefusal,
     );
   }
   if (schema === null) return undefined as T;
