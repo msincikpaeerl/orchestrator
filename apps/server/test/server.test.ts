@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { endPool, runMigrations } from '@orchestrator/db';
+import { endPool } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
 import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
@@ -19,7 +19,7 @@ describe('server started on a new database', () => {
   let baseUrl: string;
 
   beforeAll(async () => {
-    database = await createTestDatabase();
+    database = await createTestDatabase({ empty: true });
     server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, logger);
     const address = server.app.server.address();
     if (address === null || typeof address === 'string') throw new Error('no TCP address');
@@ -93,7 +93,6 @@ describe('start after a restart during a project setup', () => {
     const database = await createTestDatabase();
     const pool = new pg.Pool({ connectionString: database.url });
     try {
-      await runMigrations(pool);
       await pool.query(
         `INSERT INTO projects (key, name, slug, description, kind, repo_owner, repo_name,
            repo_origin, repo_private, setup_status, setup_step)

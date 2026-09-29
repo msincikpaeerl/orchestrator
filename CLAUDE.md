@@ -29,7 +29,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Task | Command |
 |---|---|
 | Install | `pnpm install` |
-| Start database | `docker compose -f docker/compose.dev.yml up -d postgres` |
+| Start databases (development on 5432, tests on 5433) | `docker compose -f docker/compose.dev.yml up -d --wait` |
 | Run server and UI in dev (UI on port 5173) | `pnpm dev` |
 | Run daemon in dev (a command: `start`, `doctor`, ...) | `pnpm --filter @orchestrator/daemon dev <command>` |
 | Unit and integration tests | `pnpm test` |
@@ -46,7 +46,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
+Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the test database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
 
 ## Repository map
 
