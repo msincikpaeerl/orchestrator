@@ -74,8 +74,8 @@ export interface OwnerAction {
   ticket: TicketRow;
   action: OwnerTicketAction;
   /**
-   * Mandatory for `mark_done`, optional for `reject`, posted as a `status_change` comment. Ignored
-   * otherwise.
+   * Mandatory for `mark_done` and `request_changes`, optional for `reject`, posted as a
+   * `status_change` comment. Ignored otherwise.
    */
   comment?: string;
   now: Date;
@@ -98,10 +98,13 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
 
   let commentId: string | null = null;
   const body = input.comment?.trim() ?? '';
-  if (action === 'mark_done' && body === '') {
+  if ((action === 'mark_done' || action === 'request_changes') && body === '') {
     throw new HttpError(400, 'invalid_request', 'comment: a comment explaining why is required');
   }
-  if ((action === 'mark_done' || action === 'reject') && body !== '') {
+  if (
+    (action === 'mark_done' || action === 'reject' || action === 'request_changes') &&
+    body !== ''
+  ) {
     const [comment] = await tx
       .insert(schema.comments)
       .values({ ticketId: ticket.id, author: 'owner', kind: 'status_change', body, createdAt: now })

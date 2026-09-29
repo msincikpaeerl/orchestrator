@@ -129,7 +129,7 @@ export function buildApp(dependencies: AppDependencies) {
     registerTicketRoutes(scope, { db, runs, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
-    registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl });
+    registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl, runs });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
     registerAccountRoutes(scope, { db });

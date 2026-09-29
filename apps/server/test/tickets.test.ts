@@ -111,13 +111,14 @@ const actionPath: Record<OwnerTicketAction, string> = {
   reopen: 'reopen',
   accept: 'accept',
   reject: 'reject',
+  request_changes: 'request-changes',
 };
 
 function act(number: number, action: OwnerTicketAction, comment = 'Done outside the Orchestrator') {
   return call(
     'POST',
     `WEB/tickets/${String(number)}/${actionPath[action]}`,
-    action === 'mark_done' ? { comment } : undefined,
+    action === 'mark_done' || action === 'request_changes' ? { comment } : undefined,
   );
 }
 
@@ -349,6 +350,7 @@ describe('owner actions on the status (04, section 2)', () => {
         'reopen:cancelled',
         'accept:proposed',
         'reject:proposed',
+        'request_changes:in_review',
       ].sort(),
     );
   });
@@ -374,7 +376,7 @@ describe('owner actions on the status (04, section 2)', () => {
       expect(change).toMatchObject({ actor: 'owner', from, to });
 
       const comments = await t.db.select().from(schema.comments);
-      if (action === 'mark_done') {
+      if (action === 'mark_done' || action === 'request_changes') {
         expect(comments).toMatchObject([
           { author: 'owner', kind: 'status_change', body: 'Done outside the Orchestrator' },
         ]);
@@ -421,6 +423,21 @@ describe('owner actions on the status (04, section 2)', () => {
     }
     expect((await ticket(1)).status).toBe('todo');
     expect(await events('ticket.status_changed')).toEqual([]);
+  });
+
+  it('refuses to request changes without a comment, and keeps the attempt count', async () => {
+    await create();
+    await seedStatus(1, 'in_review');
+    await t.db.update(schema.tickets).set({ attemptCount: 1 }).where(eq(schema.tickets.number, 1));
+    for (const payload of [undefined, {}, { comment: '   ' }]) {
+      const response = await call('POST', 'WEB/tickets/1/request-changes', payload);
+      expect(response.statusCode).toBe(400);
+      expect(errorCode(response)).toBe('invalid_request');
+    }
+    expect((await ticket(1)).status).toBe('in_review');
+    const response = await act(1, 'request_changes', 'The button is still blue');
+    expect(response.statusCode, response.body).toBe(200);
+    expect(TicketDetail.parse(response.json())).toMatchObject({ status: 'todo', attemptCount: 1 });
   });
 
   it('writes nothing when a part of mark as done fails', async () => {
