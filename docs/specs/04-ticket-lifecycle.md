@@ -13,7 +13,7 @@ This document defines the ticket states, who may move a ticket between them, and
 | `todo` | Approved and waiting for work. May be blocked or not assigned yet. |
 | `in_progress` | A run is working on it. |
 | `waiting_human` | An agent asked the owner a question. Work is paused until it is answered. |
-| `in_review` | A pull request is open, CI is green, and the Quality agent is reviewing it. **In lot 2**, before pull requests and Quality exist, it means "work finished, the owner checks it": the agent submitted its report, no Quality run exists, and the ticket waits for the owner to mark it as done manually, cancel it, or leave it (owner's decision, lot 2 step A). |
+| `in_review` | A pull request is open, CI is green, and the Quality agent is reviewing it. **In lot 2**, before pull requests and Quality exist, it means "work finished, the owner checks it": the agent submitted its report, no Quality run exists, and the ticket waits for the owner to mark it as done manually, send it back with **Request changes**, cancel it, or leave it (owner's decisions, lot 2 steps A and L2). |
 | `awaiting_merge` | Review approved. The owner must merge the pull request on GitHub. |
 | `done` | Pull request merged, or marked as done manually by the owner. Terminal. |
 | `cancelled` | Abandoned. Terminal, except that the owner can reopen it. |
@@ -33,7 +33,7 @@ stateDiagram-v2
     in_progress --> todo: run fails (retry), or owner stops the run
     waiting_human --> todo: owner stops the run, or its machine is lost
     in_review --> awaiting_merge: Quality approves
-    in_review --> todo: Quality requests changes
+    in_review --> todo: Quality requests changes (lot 2: the owner requests changes)
     awaiting_merge --> done: PR merged on GitHub
     awaiting_merge --> todo: owner requests changes
     todo --> cancelled
@@ -72,6 +72,7 @@ stateDiagram-v2
 | `in_progress` → `todo` | System | Run failed; retry policy applies (section 5). A dispatch the machine did not acknowledge in time (07, section 8) returns the ticket to `todo` too, without counting an attempt. |
 | `in_review` → `awaiting_merge` | Quality agent, by approving | Review checks pass (section 3.2). |
 | `in_review` → `todo` | Quality agent, by requesting changes | At least one `review` comment explaining what to change. Next run has purpose `fix_review`. |
+| `in_review` → `todo` | Owner, with **Request changes** (lot 2, while no Quality run exists) | A comment explaining what to change is mandatory, posted as a `status_change` comment. `attempt_count` is unchanged (the run succeeded, it is not a failed attempt) and the branch is kept. Nothing starts by itself: the owner starts the next run with **Run now**, which the confirmation offers directly with its usual refusals; it runs on the machine holding the ticket's commits (07, section 3), with purpose `implement`, and its first message holds the comment and says to continue the earlier commits (03, section 3.2). Whether it stays once Quality reviews `in_review` tickets is decided in lot 3 (owner's decision, lot 2 step L2). |
 | `awaiting_merge` → `done` | System | GitHub reports the pull request merged into the default branch. |
 | `awaiting_merge` → `todo` | Owner | Owner comment explaining the requested change. |
 | any non-terminal → `cancelled` | Owner; Project Manager with owner approval | Active run is stopped; the branch and pull request are closed but kept. |

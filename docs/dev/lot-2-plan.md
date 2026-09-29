@@ -672,6 +672,16 @@ Sharding (owner's decision: not now): if the CI test job exceeds 10 minutes, run
   - Live runs and History;
 - a daemon test shows `orchestrator-daemon status` listing a ticket branch kept after a run, with its commits.
 
+Owner's decisions before the step (2026-09-29), written into 02 sections 4, 6.4, 7 and 9.2, 04 sections 1 and 2, 05 section 8 and 10 (lot 3):
+
+1. **No "account limited" item** of its own: the account status line shows it, the runs it paused are listed, and **Run now** says why it refuses with the time (already so since step J).
+2. **Paused run items**: a detected limit reads "you can resume after <time>", marked "estimated" when the time comes from the fallback delay; **Resume** is refused until then (05 section 4.10 and 07 section 5.2 already give a detected limit a time in every case). A suspected limit allows **Resume** at once, with the note "the run may pause again if it was the limit". The account stores whether its limit time is estimated.
+3. **`orchestrator-daemon status`** lists the branches whether a daemon runs or not, strictly read-only: no fetch, no lock, no write (Git's optional locks off), never interfering with a daemon starting at the same time.
+4. **History**: the outcome filter is the end state (succeeded, failed, cancelled); each failed run's row shows its failure reason.
+5. **Live runs**: each live run shows only its latest log entry (its current activity), updated live, with a link to the run page for the full log. No new setting or constant.
+6. Live runs lists every active run, waiting and paused ones marked; items of "Needs you" are ordered by when their reason began.
+7. **Request changes from `in_review`** (lot 2, while no Quality run exists): the owner's comment is required and posted as a `status_change` comment, `attempt_count` is unchanged, the branch is kept, and the ticket returns to `todo`. The confirmation then offers **Run now** directly (the existing action, one click, with its usual refusals); no combined server action. Whether it stays in lot 3 is noted in 10 (lot 3).
+
 ### [ ] M. End-to-end daemon test and limit capture tooling
 
 - One integration test running the real server, the real daemon, tmux and the fake `claude` through the whole acceptance scenario:
