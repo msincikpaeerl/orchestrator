@@ -649,7 +649,7 @@ Follow-up before L2: test database speed (template database, test-only PostgreSQ
 
 Sharding (owner's decision: not now): if the CI test job exceeds 10 minutes, run `pnpm exec vitest run --shard=1/2` and `--shard=2/2` (or 3 shards) as a matrix of the `test` job, each shard listed in the needs of `ci` through the matrix job; each shard runs about half the test files plus about 1 min of setup. Branch protection is unchanged, since it requires only `ci`.
 
-### [ ] L2. Needs you, Activity, Machines and daemon status
+### [x] L2. Needs you, Activity, Machines and daemon status
 
 - "Needs you": the compact status line per Claude account (02 section 4), questions answerable inline, tickets proposed by agents with **Accept** and **Reject**, work finished to check with **Mark as done manually**, paused runs (detected or suspected) with **Resume** and **Stop run**, machine offline with active work.
 - Activity > Live runs (with **Stop run** and the attach command) and History with filters and paging (Queue stays "Coming in a later version").
@@ -681,6 +681,16 @@ Owner's decisions before the step (2026-09-29), written into 02 sections 4, 6.4,
 5. **Live runs**: each live run shows only its latest log entry (its current activity), updated live, with a link to the run page for the full log. No new setting or constant.
 6. Live runs lists every active run, waiting and paused ones marked; items of "Needs you" are ordered by when their reason began.
 7. **Request changes from `in_review`** (lot 2, while no Quality run exists): the owner's comment is required and posted as a `status_change` comment, `attempt_count` is unchanged, the branch is kept, and the ticket returns to `todo`. The confirmation then offers **Run now** directly (the existing action, one click, with its usual refusals); no combined server action. Whether it stays in lot 3 is noted in 10 (lot 3).
+
+*Done 2026-09-29.* Choices within the step:
+
+- The account stores whether its limit time is estimated (`claude_accounts.limited_until_estimated`, migration `0012`, filled for an account already limited from its latest `account.limited` event). A run gains `resumeAfter` (its account's limit time and whether it is estimated), so the ticket page, the run page, Live runs and "Needs you" say the same thing; **Resume** is disabled until that time and becomes available by itself on the owner's clock (the server still refuses it before).
+- "Needs you" items `question`, `ticket_proposed`, `work_to_check` (the submission's summary and the run) and `run_paused` (the whole run), on active projects only; `GET /api/needs-you` also returns the account status lines. The cards reuse the ticket page's answer box and actions, now in `apps/web/src/tickets/actions.tsx`. After **Request changes** the ticket leaves `in_review`, so the button is gone: the page itself shows the **Run now** offer (`RunNowOffer`), and the offer is triggered in the mutation's own `onSuccess`, before the screens are read again (a callback given to `mutate` never ran; found by the Playwright test).
+- `GET /api/runs/live` (optional `machine`) and `GET /api/runs/history` (filters, and a cursor of end time and id); `RUN_HISTORY_PAGE_SIZE` (50) is a display constant. The run service's `view` became `list`, one query for any number of runs. The machine list and page use the Live runs endpoint (no change to the machine API). A run log notice also reloads Live runs, so the latest entry follows the agent.
+- History's filters are kept in the address under their own names (`runProject`, …), apart from the event log's.
+- The loopback rule of the daemon's address check moved to `packages/protocol` (`isLoopback`, `isRefusedPlainHttp`), shared by the daemon and `GET /api/machines/server-address`, which the Add machine warning reads. The e2e test server runs on `localhost`, so its Playwright test stubs that endpoint's answer; the server's rule is covered by the integration test with `startTestApp`'s new `publicUrl` option.
+- `orchestrator-daemon status` reads the bare clones itself with `git for-each-ref` and `git log <branch> --not --remotes=origin`, with `GIT_OPTIONAL_LOCKS=0`; a Git error on one clone is printed and the others are still listed. The control socket's runs gain their ticket, repository and branch, so a branch a live run uses says so; `hello` still sends only its three fields.
+- Existing tests changed with the behaviour: the Activity page is no longer "coming in a later version" (only its Queue is), the event log test reads its fields in its own section (History also has a **Project** field), and the suspected-limit text gained the note the owner asked for.
 
 ### [ ] M. End-to-end daemon test and limit capture tooling
 
