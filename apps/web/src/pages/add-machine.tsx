@@ -2,9 +2,10 @@ import {
   CreateMachineRequest,
   EnrollmentResponse,
   NAME_MAX_LENGTH,
+  ServerAddressResponse,
   type Enrollment,
 } from '@orchestrator/protocol';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { Link } from 'react-router';
 import { api, ApiRequestError } from '../api';
@@ -12,10 +13,12 @@ import {
   Button,
   Card,
   ErrorMessage,
+  HelpLink,
   Loading,
   PageHeader,
   SelectField,
   TextField,
+  WarningMessage,
 } from '../components/ui';
 import { EnrollmentSteps } from '../machines/enrollment';
 import { machinesChanged, useAccounts, useMachine } from '../queries';
@@ -29,6 +32,31 @@ function Connect({ machineId, enrollment }: { machineId: string; enrollment: Enr
     return <ErrorMessage>The machine could not be loaded. Reload the page.</ErrorMessage>;
   }
   return <EnrollmentSteps enrollment={enrollment} machine={machine.data} />;
+}
+
+/**
+ * A warning when the address machines would use is plain `http://` on another computer: the daemon
+ * refuses it, since the machine's key and the GitHub token would travel unencrypted (05, section
+ * 3.2; owner's decision, lot 2 step E).
+ */
+function PlainHttpWarning() {
+  const address = useQuery({
+    queryKey: ['machines', 'server-address'],
+    queryFn: () => api('GET', '/api/machines/server-address', ServerAddressResponse),
+  });
+  if (!address.data?.refusedPlainHttp) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      <WarningMessage>
+        This Orchestrator's address, {address.data.address}, starts with http:// and is not this
+        computer. The daemon refuses it: the machine's key and your GitHub token would travel
+        unencrypted. Give the Orchestrator an https:// address first.
+      </WarningMessage>
+      <HelpLink page="machines#orchestrator-on-another-computer">
+        Orchestrator on another computer
+      </HelpLink>
+    </div>
+  );
 }
 
 /**
@@ -67,6 +95,7 @@ export function AddMachinePage() {
   return (
     <>
       <PageHeader title="Add machine" help="machines#add-a-machine" />
+      <PlainHttpWarning />
       {create.data ? (
         <Connect machineId={create.data.machine.id} enrollment={create.data.enrollment} />
       ) : list.length === 0 ? (

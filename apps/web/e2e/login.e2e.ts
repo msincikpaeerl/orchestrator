@@ -46,12 +46,15 @@ test('the login page links to the password reset help, in a new tab', async ({ p
 test('every section of the navigation opens, later ones say so', async ({ page }) => {
   await completeSetup(page);
   await page.goto('/');
-  for (const section of ['Requests', 'Activity', 'Agents']) {
+  for (const section of ['Requests', 'Agents']) {
     await openSection(page, section);
     await expect(page.getByRole('heading', { name: section, level: 1 })).toBeVisible();
     await expect(page.getByText('Coming in a later version.')).toBeVisible();
     await expectFitsScreen(page);
   }
+  await openSection(page, 'Activity');
+  await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible();
+  await expectFitsScreen(page);
   await openSection(page, 'Projects');
   await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
   await expectFitsScreen(page);

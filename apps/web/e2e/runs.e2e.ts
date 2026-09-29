@@ -240,7 +240,9 @@ test('a run paused on a suspected usage limit is resumed', async ({ page }) => {
   });
   expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
   await expect(
-    page.getByText('Run paused: possible Claude usage limit. You can resume it now.'),
+    page.getByText(
+      'Run paused: possible Claude usage limit. You can resume it now; the run may pause again if it was the limit.',
+    ),
   ).toBeVisible();
   await expectFitsScreen(page);
 

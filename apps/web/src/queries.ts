@@ -3,6 +3,8 @@ import {
   AgentListResponse,
   EventListResponse,
   GitHubStatusResponse,
+  LiveRunsResponse,
+  RunHistoryResponse,
   GlobalSettingsResponse,
   Machine,
   MachineListResponse,
@@ -45,6 +47,9 @@ export const keys = {
   agents: ['agents'],
   runs: ['runs'],
   run: (id: string) => ['runs', id] as const,
+  liveRuns: ['runs', 'live'],
+  liveRunsOf: (machine: string) => ['runs', 'live', machine] as const,
+  runHistory: (query: string) => ['runs', 'history', query] as const,
   ticketRuns: (key: string, number: number) => ['runs', 'ticket', key, number] as const,
 } as const;
 
@@ -206,6 +211,37 @@ export function useRun(id: string, enabled = true) {
     queryKey: keys.run(id),
     queryFn: () => api('GET', `/api/runs/${encodeURIComponent(id)}`, Run),
     enabled: enabled && id !== '',
+  });
+}
+
+/**
+ * Activity > Live runs (02, section 7): every active run with its latest log entry; with
+ * `machine`, that machine's runs only (02, section 9.2).
+ */
+export function useLiveRuns(machine?: string) {
+  return useQuery({
+    queryKey: machine === undefined ? keys.liveRuns : keys.liveRunsOf(machine),
+    queryFn: () =>
+      api(
+        'GET',
+        `/api/runs/live${machine === undefined ? '' : `?machine=${encodeURIComponent(machine)}`}`,
+        LiveRunsResponse,
+      ),
+  });
+}
+
+/** Activity > History: ended runs matching `query`, newest first, a page at a time. */
+export function useRunHistory(query: string) {
+  return useInfiniteQuery({
+    queryKey: keys.runHistory(query),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams(query);
+      if (pageParam !== null) params.set('before', pageParam);
+      const search = params.toString();
+      return api('GET', `/api/runs/history${search ? `?${search}` : ''}`, RunHistoryResponse);
+    },
+    getNextPageParam: (last) => last.next,
   });
 }
 

@@ -101,5 +101,8 @@ export function statusChangeText(entry: Extract<TimelineEntry, { type: 'status_c
   }
   if (entry.to === 'cancelled') return `${who} cancelled it (it was ${statusLabel[entry.from]}).`;
   if (entry.from === 'cancelled' && entry.to === 'todo') return `${who} reopened it.`;
+  if (entry.from === 'in_review' && entry.to === 'todo' && entry.actor === 'owner') {
+    return `${who} requested changes: it went back to ${statusLabel.todo}.`;
+  }
   return `${who} moved it from ${statusLabel[entry.from]} to ${statusLabel[entry.to]}.`;
 }

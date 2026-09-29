@@ -280,6 +280,8 @@ const describe: { [T in EventType]: Describe<T> } = {
         return [c.ticket, ' accepted: the ticket an agent proposed is now to do'];
       case 'reject':
         return [c.ticket, ' rejected: the ticket an agent proposed is cancelled', ...said];
+      case 'request_changes':
+        return [c.ticket, ' sent back to to do: you requested changes', ...said];
       case 'question_asked':
         return [
           c.ticket,

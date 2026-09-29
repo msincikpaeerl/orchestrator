@@ -3,6 +3,7 @@ import {
   PROGRESS_CARD_MAX_LENGTH,
   WAITING_RUN_STATUSES,
   WORKING_RUN_STATUSES,
+  type AccountStatus,
   type Comment,
   type FailureReason,
   type MachineUnavailable,
@@ -184,11 +185,39 @@ export function usageText(usd: number | null): string {
     : `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (estimated by Claude Code)`;
 }
 
-/** Why a run is paused, with what the owner can do (02, section 4). */
-export function pausedText(reason: PauseReason | null): string {
-  return reason === 'suspected_usage_limit'
-    ? 'Run paused: possible Claude usage limit. You can resume it now.'
-    : 'Claude usage limit reached: the run can resume after the limit resets.';
+/**
+ * Why a run is paused, with what the owner can do (02, section 4): after a detected limit, from
+ * when it can be resumed, "estimated" when that time comes from the fallback delay.
+ */
+export function pausedText(run: Pick<Run, 'pauseReason' | 'resumeAfter'>): string {
+  if (run.pauseReason === 'suspected_usage_limit') {
+    return 'Run paused: possible Claude usage limit. You can resume it now; the run may pause again if it was the limit.';
+  }
+  if (run.resumeAfter === null) {
+    return 'Claude usage limit reached. Its time has passed: you can resume the run now.';
+  }
+  return `Claude usage limit reached: you can resume after ${formatDateTime(run.resumeAfter.at)}${
+    run.resumeAfter.estimated ? ' (estimated)' : ''
+  }.`;
+}
+
+/**
+ * A Claude account's compact status line (02, section 4): "Available" or "Limited until <time>",
+ * "estimated" when that time comes from the fallback delay; "Paused" comes with lot 4.
+ */
+export function accountStatusText(
+  account: Pick<AccountStatus, 'state' | 'limitedUntil' | 'limitedUntilEstimated'>,
+): string {
+  switch (account.state) {
+    case 'available':
+      return 'Available';
+    case 'paused_manual':
+      return 'Paused';
+    case 'limited':
+      return account.limitedUntil === null
+        ? 'Limited'
+        : `Limited until ${formatDateTime(account.limitedUntil)}${account.limitedUntilEstimated ? ' (estimated)' : ''}`;
+  }
 }
 
 /** The run's status in one sentence, for the run page and the lists of runs. */

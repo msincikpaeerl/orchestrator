@@ -1,7 +1,9 @@
 import {
   Run,
   TicketDetail,
+  type AccountStatus,
   type AnswerRequest,
+  type Comment,
   type CommitSummary,
   type RunLogEntry,
 } from '@orchestrator/protocol';
@@ -14,6 +16,7 @@ import { formatDateTime } from '../github/text';
 import { ticketsChanged } from '../queries';
 import { refusalText } from '../refusals';
 import {
+  accountStatusText,
   durationText,
   isActive,
   logKindLabel,
@@ -37,6 +40,23 @@ export function useNow(ticking: boolean): number {
     };
   }, [ticking]);
   return now;
+}
+
+/**
+ * A Claude account's state in plain words (02, sections 4 and 9.1): a limit whose time has passed
+ * is shown available at once, without waiting for the server.
+ */
+export function AccountStatusText({
+  account,
+}: {
+  account: Pick<AccountStatus, 'state' | 'limitedUntil' | 'limitedUntilEstimated'>;
+}) {
+  const now = useNow(account.state === 'limited');
+  const passed =
+    account.state === 'limited' &&
+    account.limitedUntil !== null &&
+    new Date(account.limitedUntil).getTime() <= now;
+  return <>{accountStatusText(passed ? { ...account, state: 'available' } : account)}</>;
 }
 
 /** "Working 12 min · waiting 3 min" (01, section 3.7). */
@@ -79,16 +99,21 @@ export function RunActions({ run }: { run: Run }) {
     mutationFn: () => api('POST', `/api/runs/${run.id}/resume`, Run),
     onSettled: () => ticketsChanged(),
   });
+  // A detected limit: Resume becomes possible by itself once the limit time has passed.
+  const now = useNow(run.status === 'paused_quota' && run.resumeAfter !== null);
+  const waiting = run.resumeAfter !== null && now < new Date(run.resumeAfter.at).getTime();
   if (!isActive(run.status)) return null;
   return (
     <div className="space-y-2">
       {run.status === 'paused_quota' && (
-        <p className="text-slate-800">{pausedText(run.pauseReason)}</p>
+        <p className="text-slate-800">
+          {pausedText(waiting ? run : { ...run, resumeAfter: null })}
+        </p>
       )}
       <div className="flex flex-wrap gap-2">
         {run.status === 'paused_quota' && (
           <Button
-            disabled={resume.isPending}
+            disabled={resume.isPending || waiting}
             onClick={() => {
               stop.reset();
               resume.mutate();
@@ -150,6 +175,18 @@ export function RunActions({ run }: { run: Run }) {
  */
 export function AnswerBox({ ticket }: { ticket: TicketDetail }) {
   const question = openQuestion(ticket);
+  if (!question) return null;
+  return <QuestionAnswer ticket={ticket} question={question} />;
+}
+
+/** The answer box for one open question of a ticket. */
+export function QuestionAnswer({
+  ticket,
+  question,
+}: {
+  ticket: { projectKey: string; number: number };
+  question: Comment;
+}) {
   const [body, setBody] = useState('');
   const [missing, setMissing] = useState(false);
   const answer = useMutation({
@@ -163,7 +200,6 @@ export function AnswerBox({ ticket }: { ticket: TicketDetail }) {
     onSuccess: (changed) => ticketsChanged(changed),
     onError: () => ticketsChanged(),
   });
-  if (!question) return null;
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
