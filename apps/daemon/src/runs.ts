@@ -100,10 +100,22 @@ export class RunManager {
   }
 
   /** Runs whose session or workspace is still on the machine, for `hello` and `status`. */
-  list(): { runId: string; state: DaemonRunState; claudeSessionId: string | null }[] {
+  list(): {
+    runId: string;
+    state: DaemonRunState;
+    claudeSessionId: string | null;
+    ticket: string | null;
+    repository: string;
+    branch: string;
+  }[] {
     return [...this.runs.values()]
       .filter((run) => !run.ended)
-      .map((run) => ({ runId: run.runId, state: run.state, claudeSessionId: run.claudeSessionId }));
+      .map((run) => ({
+        runId: run.runId,
+        state: run.state,
+        claudeSessionId: run.claudeSessionId,
+        ...run.where,
+      }));
   }
 
   get(runId: string): Run | undefined {

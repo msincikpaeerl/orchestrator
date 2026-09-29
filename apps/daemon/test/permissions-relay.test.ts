@@ -346,7 +346,14 @@ describe('decision tools', () => {
       expect(await tmux.hasSession(sessionName(run.runId))).toBe(false);
       await stat(join(home.paths.home, 'worktrees', run.runId));
       expect(manager.list()).toEqual([
-        { runId: run.runId, state: 'waiting_human', claudeSessionId: waiting?.claudeSessionId },
+        {
+          runId: run.runId,
+          state: 'waiting_human',
+          claudeSessionId: waiting?.claudeSessionId,
+          ticket: 'NOTES-1',
+          repository: 'owner/notes',
+          branch: 't/1-add-notes',
+        },
       ]);
       expect(
         await manager.handle({

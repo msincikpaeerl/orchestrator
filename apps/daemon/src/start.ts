@@ -143,7 +143,11 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       os: machineOs(environment.wsl),
       capabilities: detectCapabilities(environment.toolPath),
       doctor: doctor.checks,
-      runs: runs.list(),
+      runs: runs.list().map(({ runId, state, claudeSessionId }) => ({
+        runId,
+        state,
+        claudeSessionId,
+      })),
     };
     const problems = doctor.checks.filter((check) => check.status === 'error');
     if (problems.length > 0) {
@@ -232,7 +236,13 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     claudeCodeVersion: lastHello?.claudeCodeVersion ?? null,
     os: lastHello?.os ?? machineOs(environment.wsl),
     capabilities: lastHello?.capabilities ?? [],
-    runs: runs.list().map(({ runId, state }) => ({ runId, state })),
+    runs: runs.list().map(({ runId, state, ticket, repository, branch }) => ({
+      runId,
+      state,
+      ticket,
+      repository,
+      branch,
+    })),
   }));
 
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {

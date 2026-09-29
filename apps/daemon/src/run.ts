@@ -160,6 +160,16 @@ export class Run {
     return this.data.claudeSessionId;
   }
 
+  /** Its ticket, and the repository and branch it works on, for `status`. */
+  get where(): { ticket: string | null; repository: string; branch: string } {
+    const { repository } = this.data.start;
+    return {
+      ticket: ticketOf(this.data.start) ?? null,
+      repository: `${repository.owner}/${repository.name}`,
+      branch: repository.ticketBranch,
+    };
+  }
+
   get limits(): RunStart['payload']['limits'] {
     return this.data.start.limits;
   }

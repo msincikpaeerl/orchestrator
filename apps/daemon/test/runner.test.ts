@@ -54,7 +54,14 @@ describe('runner', () => {
       expect(working?.sessionAlive).toBe(true);
       expect(working?.claudeSessionId).toMatch(/^[0-9a-f-]{36}$/);
       expect(manager.list()).toEqual([
-        { runId: run.runId, state: 'working', claudeSessionId: working?.claudeSessionId },
+        {
+          runId: run.runId,
+          state: 'working',
+          claudeSessionId: working?.claudeSessionId,
+          ticket: 'NOTES-1',
+          repository: 'owner/notes',
+          branch: 't/1-add-notes',
+        },
       ]);
 
       const [launch] = (await fake.log()).filter((entry) => entry.event === 'start');
@@ -297,7 +304,14 @@ describe('runner', () => {
       const second = daemon();
       await second.recover();
       expect(second.list()).toEqual([
-        { runId: run.runId, state: 'working', claudeSessionId: expect.any(String) as unknown },
+        {
+          runId: run.runId,
+          state: 'working',
+          claudeSessionId: expect.any(String) as unknown,
+          ticket: 'NOTES-1',
+          repository: 'owner/notes',
+          branch: 't/1-add-notes',
+        },
       ]);
       // Reports the first daemon never had acknowledged are sent again, in order.
       second.outbox.resend();
