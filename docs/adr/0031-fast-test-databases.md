@@ -17,20 +17,21 @@ Measured locally on 2026-09-29, whole suite, same method as in L1 (the time of e
 
 ## Decision
 
-- The tests use their own PostgreSQL, service `postgres-test` of `docker/compose.dev.yml` on `127.0.0.1:5433` (the default of `createTestDatabase`, `TEST_DATABASE_URL` still overrides it), with `fsync=off`, `synchronous_commit=off` and `full_page_writes=off`. A crash can corrupt its data, which only throw-away databases hold. The development PostgreSQL keeps safe settings, and `docker/compose.yml` never gets these. CI's `test` job starts the same service with the same command.
+- The tests use their own PostgreSQL, service `postgres-test` of `docker/compose.dev.yml` on `127.0.0.1:5433` (the default of `createTestDatabase`, `TEST_DATABASE_URL` still overrides it), with `fsync=off`, `synchronous_commit=off` and `full_page_writes=off`. Its data directory is in memory (`tmpfs`, no volume): after a crash (of WSL, for example) these settings could leave a corrupted data directory and make tests fail in confusing ways, while in memory every start of the container is a clean server, on which the template is rebuilt automatically. Stopping or restarting the service deletes everything, which is intended. The development PostgreSQL keeps safe settings and its volume, and `docker/compose.yml` never gets these settings. CI's `test` job starts the same service with the same command and prints the three settings and the data folder's file system in its log.
 - `createTestDatabase()` copies a template database, `test_template_<first 12 digits of the SHA-256 of the migration files>`, with `CREATE DATABASE … TEMPLATE`. The first test process that needs it builds it under a PostgreSQL advisory lock: created under a `_building` name, migrated, renamed, then marked as a template that accepts no connection (copying requires that). Each process checks it once. Templates of other migration files and interrupted builds are dropped at that check. `createTestDatabase({ empty: true })` gives an empty database, for tests of the migrations themselves.
 - The default agent profiles are not part of the template: seeding them belongs to the server application, not to `@orchestrator/db`, and costs about 4 % of the test file time.
 
 ## Alternatives considered
 
 - Changing the settings of the development PostgreSQL: it holds the data of `pnpm dev`, which a crash could then corrupt.
-- Keeping the test data in memory (`tmpfs`): its write-ahead log could grow to about 1 GB of memory, while the settings already remove most disk waits.
+- Keeping the test server's data in a volume: no faster than memory with these settings (measured, 44 s either way), and a crash could leave it corrupted until the volume is deleted by hand.
 - One database per Vitest worker, emptied between test files: faster still, but tests would no longer be isolated by construction, and emptying must follow every schema change.
 - Skipping drops in CI: after the settings, drops cost 15 s in total.
 
 ## Consequences
 
 - `docker compose -f docker/compose.dev.yml up -d --wait` starts both servers; the tests fail with that command if the test server is not running.
+- The test server uses memory: 188 MB at the peak of a full test run (measured), growing over repeated runs up to about 1 GB more, the default limit of PostgreSQL's write-ahead log, until the service is restarted.
 - A new migration builds a new template once; the old one is dropped by the next run.
 - Two test runs with different migration files (two checkouts) cannot share the test server at the same time: the second one drops the first one's template.
 - The e2e job in CI keeps its PostgreSQL service with the default settings: it creates one database per run.

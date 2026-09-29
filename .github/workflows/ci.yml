@@ -70,8 +70,13 @@ jobs:
           tmux -V
           git --version
 
+      # Prints its durability settings (all "off") and where its data is (tmpfs), for the log.
       - name: Wait for the test PostgreSQL
-        run: docker compose -f docker/compose.dev.yml up --detach --wait postgres-test
+        run: |
+          docker compose -f docker/compose.dev.yml up --detach --wait postgres-test
+          docker compose -f docker/compose.dev.yml exec -T postgres-test psql -U orchestrator \
+            -c "SELECT name, setting FROM pg_settings WHERE name IN ('fsync', 'synchronous_commit', 'full_page_writes')"
+          docker compose -f docker/compose.dev.yml exec -T postgres-test df -h /var/lib/postgresql
 
       - run: pnpm test
 

@@ -30,7 +30,7 @@ They need the test PostgreSQL, `postgres-test` in `docker/compose.dev.yml` (`127
 docker compose -f docker/compose.dev.yml up -d --wait postgres-test
 ```
 
-It runs with `fsync`, `synchronous_commit` and `full_page_writes` turned off (ADR 0031): a crash can corrupt its data, which only throw-away databases hold. Never use these settings elsewhere, and never in `docker/compose.yml`.
+It runs with `fsync`, `synchronous_commit` and `full_page_writes` turned off, and keeps its data in memory (`tmpfs`, ADR 0031): every start is a clean server, and stopping or restarting it (`docker compose -f docker/compose.dev.yml restart postgres-test`) deletes everything, which is intended; the template is rebuilt by the next test run. Restart it if tests fail in a way that points at the database itself. Never use these settings elsewhere, and never in `docker/compose.yml`.
 
 A test ends its pools with `endPool(pool)` from `@orchestrator/db`, never `pool.end()` alone, before dropping its database: `pool.end()` resolves while connections are still closing, and `DROP DATABASE … WITH (FORCE)` would terminate them, an unhandled 57P01 error in the test process (seen on a slow CI runner in lot 2 step H).
 
@@ -128,7 +128,7 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0030). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
 
 - Job `checks`: `pnpm lint` (lint, format check, `bash -n` of `tools/smoke/*.sh`), `pnpm typecheck`, `pnpm docs:links` and `pnpm audit --audit-level critical`.
-- Job `test`: starts `postgres-test` from `docker/compose.dev.yml`, as developers do, installs tmux from apt and runs `pnpm test`.
+- Job `test`: starts `postgres-test` from `docker/compose.dev.yml`, as developers do (its log shows `fsync`, `synchronous_commit` and `full_page_writes` off and its data on `tmpfs`), installs tmux from apt and runs `pnpm test`.
 - Job `build`: `pnpm build`.
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.

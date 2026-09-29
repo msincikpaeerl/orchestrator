@@ -28,9 +28,9 @@ pnpm verify
 | Service | Address | For | Data |
 |---|---|---|---|
 | `postgres` | `127.0.0.1:5432` | `pnpm dev` | `orchestrator-dev_postgres-data` volume |
-| `postgres-test` | `127.0.0.1:5433` | the tests' throw-away databases | `orchestrator-dev_postgres-test-data` volume; durability turned off for speed (ADR 0031), so a crash can corrupt it: never keep data there |
+| `postgres-test` | `127.0.0.1:5433` | the tests' throw-away databases | in memory, durability turned off for speed (ADR 0031): deleted at every stop or restart, never keep data there |
 
-Stop them with `docker compose -f docker/compose.dev.yml down`; add `-v` to delete their data.
+Stop them with `docker compose -f docker/compose.dev.yml down`; add `-v` to delete the development data too.
 
 ## Commands
 
