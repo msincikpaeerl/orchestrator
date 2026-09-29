@@ -39,7 +39,14 @@ export type CommentAuthor = z.infer<typeof CommentAuthor>;
  * What the owner can do to a ticket's status (04, section 2). Every other transition is made by
  * the system, the scheduler or an agent, from later lots.
  */
-export const OwnerTicketAction = z.enum(['cancel', 'mark_done', 'reopen', 'accept', 'reject']);
+export const OwnerTicketAction = z.enum([
+  'cancel',
+  'mark_done',
+  'reopen',
+  'accept',
+  'reject',
+  'request_changes',
+]);
 export type OwnerTicketAction = z.infer<typeof OwnerTicketAction>;
 
 const NON_TERMINAL = TicketStatus.options.filter(
@@ -63,6 +70,11 @@ export const OWNER_TRANSITIONS: Readonly<
   /** Only for a ticket an agent created (04, section 2). */
   accept: { label: 'Accept', from: ['proposed'], to: 'todo' },
   reject: { label: 'Reject', from: ['proposed'], to: 'cancelled' },
+  /**
+   * Lot 2, while no Quality run exists: the owner sends finished work back, with a comment (owner's
+   * decision, lot 2 step L2). From `awaiting_merge` it comes with lot 3.
+   */
+  request_changes: { label: 'Request changes', from: ['in_review'], to: 'todo' },
 };
 
 /** The agent that created a ticket or wrote a comment, with its run. */
@@ -240,6 +252,10 @@ export type AddCommentRequest = z.infer<typeof AddCommentRequest>;
 /** **Mark as done manually**: the comment explaining why is mandatory (04, section 2). */
 export const MarkDoneRequest = z.strictObject({ comment: CommentBody });
 export type MarkDoneRequest = z.infer<typeof MarkDoneRequest>;
+
+/** **Request changes**: the comment saying what to change is mandatory (04, section 2). */
+export const RequestChangesRequest = z.strictObject({ comment: CommentBody });
+export type RequestChangesRequest = z.infer<typeof RequestChangesRequest>;
 
 /** The owner's answer to the ticket's open question (04, section 6). */
 export const AnswerRequest = z.strictObject({ body: CommentBody });

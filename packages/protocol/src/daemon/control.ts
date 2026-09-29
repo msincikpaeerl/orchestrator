@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { Capability, MachineOs } from './connection.js';
+import { TicketReference } from '../api/tickets.js';
+import { GitBranchName } from './git.js';
 import { DaemonRunState, RunId } from './runs.js';
 
 /**
@@ -40,6 +42,18 @@ export const ControlStatus = z.object({
   claudeCodeVersion: z.string().nullable(),
   os: MachineOs,
   capabilities: z.array(Capability),
-  runs: z.array(z.object({ runId: RunId, state: DaemonRunState })),
+  /**
+   * Live runs, each with its ticket (null for a planning run), its repository (`owner/name`) and
+   * its ticket branch, so `status` says which local branch a live run uses.
+   */
+  runs: z.array(
+    z.object({
+      runId: RunId,
+      state: DaemonRunState,
+      ticket: TicketReference.nullable(),
+      repository: z.string(),
+      branch: GitBranchName,
+    }),
+  ),
 });
 export type ControlStatus = z.infer<typeof ControlStatus>;

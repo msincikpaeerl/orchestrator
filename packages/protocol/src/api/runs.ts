@@ -77,6 +77,11 @@ export const Run = z.object({
   account: z.object({ id: z.uuid(), label: z.string() }),
   status: RunStatus,
   pauseReason: PauseReason.nullable(),
+  /**
+   * A run paused on a detected limit: **Resume** is refused before `at`, its account's limit time,
+   * `estimated` when it comes from the fallback delay (02, section 4). Null otherwise.
+   */
+  resumeAfter: z.object({ at: z.iso.datetime(), estimated: z.boolean() }).nullable(),
   failureReason: FailureReason.nullable(),
   /** The daemon's fact at the end, when it reported one. */
   endReason: RunEndReason.nullable(),

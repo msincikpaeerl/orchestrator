@@ -82,6 +82,7 @@ export {
   CreateTicketRequest,
   EDITABLE_STATUSES,
   MarkDoneRequest,
+  RequestChangesRequest,
   OWNER_TRANSITIONS,
   OwnerTicketAction,
   RejectRequest,
@@ -98,7 +99,18 @@ export {
   TimelineEntry,
   UpdateTicketRequest,
 } from './api/tickets.js';
-export { NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export { AccountStatus, NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
+export {
+  LiveRun,
+  LiveRunsQuery,
+  LiveRunsResponse,
+  RUN_HISTORY_PAGE_SIZE,
+  RunEndState,
+  RunHistoryCursor,
+  RunHistoryQuery,
+  RunHistoryResponse,
+} from './api/activity.js';
 export {
   ACCOUNT_BUSY_RUN_STATUSES,
   ACTIVE_RUN_STATUSES,
@@ -139,6 +151,7 @@ export {
   MachineState,
   MaxConcurrentRuns,
   NAME_MAX_LENGTH,
+  ServerAddressResponse,
   SetCapabilitiesRequest,
   UnusableReason,
   UpdateAccountRequest,
