@@ -645,7 +645,7 @@ Step L (realtime, live screens and user documentation) was too large for one ses
 - Shutdown with open streams (owner's review): SIGTERM ends every open stream at once (the stream route's `preClose` hook) and the process exits in about 50 milliseconds, far from Docker's 10-second kill timeout. `apps/server/test/shutdown.test.ts` starts `src/main.ts` as its own process, opens two streams, sends SIGTERM and checks both streams end and the process exits with code 0 in under 3 seconds; it was checked to fail with the hook removed.
 - CI split into parallel jobs with a final `ci` job, the only check branch protection requires (ADR 0030). On PR #26: build 39 s, checks 1 min, docker 1 min, e2e 3 min, test 9 min, ci 3 s; before, the single `verify` job took 9 min 22 s and then hit its 10-minute timeout.
 
-Follow-up before L2: test database speed (template database, test-only PostgreSQL settings), chore branch `lot2/l1b-test-databases`. The CI test job takes 9 min of its 15-min timeout.
+Follow-up before L2: test database speed (template database, test-only PostgreSQL settings), chore branch `lot2/l1b-test-databases`. The CI test job takes 9 min of its 15-min timeout. *Done 2026-09-29* (ADR 0031): the tests use their own PostgreSQL (`postgres-test` in `docker/compose.dev.yml`, port 5433, durability turned off) and copy a template migrated once per version of the migration files. Locally the suite went from 71 s to 45 s, and the database work in it from about 410 s to about 53 s.
 
 ### [ ] L2. Needs you, Activity, Machines and daemon status
 
