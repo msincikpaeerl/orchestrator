@@ -141,3 +141,5 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
 ```
 
 CI must stay under 10 minutes (08, section 4): the timeouts are a safety net, not a target. When a job grows too long, split it further (for example test shards) rather than raising its timeout.
+
+If the CI test job exceeds 10 minutes (timeout 15), split it with Vitest sharding: see the proposal in the lot-2 L1 follow-up (`docs/dev/lot-2-plan.md`).
