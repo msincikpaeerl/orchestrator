@@ -715,7 +715,8 @@ Owner's decisions before the step (2026-09-29), written into 02 sections 4, 6.4,
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
   3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service");
-  4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`.
+  4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`;
+  5. with real runs: `orchestrator-daemon status` after a run, daemon running and stopped; on the phone, Needs you → Request changes → Run now, and the next run reads the comment (owner's review of step L2).
 - If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
