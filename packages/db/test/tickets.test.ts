@@ -1,6 +1,5 @@
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runMigrations } from '../src/migrate.js';
 import { endPool } from '../src/pool.js';
 import { createTestDatabase, type TestDatabase } from '../src/testing.js';
 
@@ -11,7 +10,6 @@ describe('ticket dependencies', () => {
   beforeEach(async () => {
     database = await createTestDatabase();
     pool = new pg.Pool({ connectionString: database.url });
-    await runMigrations(pool);
   });
 
   afterEach(async () => {

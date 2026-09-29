@@ -5,7 +5,7 @@
 | Level | Tool | Location | Runs with | Status |
 |---|---|---|---|---|
 | Unit | Vitest | next to the code, `*.test.ts` | `pnpm test` | in place |
-| Integration | Vitest, real PostgreSQL (dev compose database) | `apps/*/test/`, `packages/*/test/` | `pnpm test` | in place |
+| Integration | Vitest, real PostgreSQL (`postgres-test` of the dev compose file) | `apps/*/test/`, `packages/*/test/` | `pnpm test` | in place |
 | End-to-end | Playwright, in the pinned Playwright Docker image | `apps/web/e2e/*.e2e.ts` | `pnpm test:e2e` | in place |
 | Documentation links | remark-validate-links | all `*.md` | `pnpm docs:links` | in place |
 
@@ -24,11 +24,13 @@ Repeated local runs do not prove there is no race: CI is slower (a run took 352 
 
 ## Integration tests
 
-They need the development PostgreSQL:
+They need the test PostgreSQL, `postgres-test` in `docker/compose.dev.yml` (`127.0.0.1:5433`), never the development one:
 
 ```sh
-docker compose -f docker/compose.dev.yml up -d --wait postgres
+docker compose -f docker/compose.dev.yml up -d --wait postgres-test
 ```
+
+It runs with `fsync`, `synchronous_commit` and `full_page_writes` turned off, and keeps its data in memory (`tmpfs`, ADR 0031): every start is a clean server, and stopping or restarting it (`docker compose -f docker/compose.dev.yml restart postgres-test`) deletes everything, which is intended; the template is rebuilt by the next test run. Restart it if tests fail in a way that points at the database itself. Never use these settings elsewhere, and never in `docker/compose.yml`.
 
 A test ends its pools with `endPool(pool)` from `@orchestrator/db`, never `pool.end()` alone, before dropping its database: `pool.end()` resolves while connections are still closing, and `DROP DATABASE … WITH (FORCE)` would terminate them, an unhandled 57P01 error in the test process (seen on a slow CI runner in lot 2 step H).
 
@@ -42,7 +44,7 @@ The runner (lot 2 step F, ADR 0027) is tested with the host's real `tmux` and `g
 
 The real daemon is tested in two ways. In `apps/daemon`, unit tests cover the connection with fake sockets and a fake clock (`connection.test.ts`), and `test/` runs `doctor` and the commands against fake `git`, `tmux`, `claude`, `systemctl` and `loginctl` (small shell scripts). `@orchestrator/daemon/testing` gives a throw-away home folder (`HOME`, `ORCHESTRATOR_HOME` and `XDG_CONFIG_HOME` in a temporary folder, `PATH` holding only the fakes and Node.js), the fakes, and the `orchestrator-daemon` command run from its sources with `tsx`. The certificate checks use a test certificate authority made with `openssl`. In `apps/server/test/daemon.test.ts`, the real daemon runs against the real server: enrollment, connection, reconnection after `restart()` of the test application (same database and port), revocation, an unknown key and a stop by signal. `daemon-package.test.ts` builds the package, has the server serve it, installs it with npm into a temporary prefix (npm's cache and settings in the test folder) and runs it.
 
-Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates an empty database with a random name on that server, and `drop()` removes it. Tests then apply the migrations themselves or through `startServer`. `migrateUpTo(pool, tag)` applies the migrations up to one of them only, to write data as an older version did and then check a later migration (`apps/server/test/event-log.test.ts` does it with the events of `every-event.ts`, which writes every event type through the real code, machines with the scripted daemon). Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
+Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it creates a database with a random name on that server, with every migration applied, and `drop()` removes it. The database is a copy of a template, `test_template_<hash of the migration files>`, migrated once and then reused by every run until a migration file changes; the first test process that needs it builds it under an advisory lock, and templates of other migration files are dropped then. Two test runs with different migration files (two checkouts) cannot use the same server at the same time. Tests of the migrations themselves ask for `createTestDatabase({ empty: true })`: `migrateUpTo(pool, tag)` applies the migrations up to one of them only, to write data as an older version did and then check a later migration (`apps/server/test/event-log.test.ts` does it with the events of `every-event.ts`, which writes every event type through the real code, machines with the scripted daemon). Set `TEST_DATABASE_URL` to use another PostgreSQL server (the database part of the URL is replaced).
 
 ## Runs on the server
 
@@ -103,13 +105,13 @@ Playwright drives Chromium through the UI, on a desktop screen and on a phone (P
 ### Run them locally with Docker
 
 ```sh
-docker compose -f docker/compose.dev.yml up -d --wait postgres
+docker compose -f docker/compose.dev.yml up -d --wait postgres-test
 pnpm test:e2e                         # all tests, desktop and phone
 pnpm test:e2e --project=phone         # phone only
 pnpm test:e2e setup.e2e.ts            # one file
 ```
 
-`pnpm test:e2e` builds the UI, then runs `playwright test` in the image with the repository mounted at the same path, the host network (the tests use the development PostgreSQL on `localhost:5432`) and your user, so the files it writes are yours. The first run pulls the image. Results are in `apps/web/test-results/` (a trace for each failed test: `apps/web/node_modules/.bin/playwright show-trace <file>`) and, with `CI` set, a report in `apps/web/playwright-report/`.
+`pnpm test:e2e` builds the UI, then runs `playwright test` in the image with the repository mounted at the same path, the host network (the tests use the test PostgreSQL on `localhost:5433`) and your user, so the files it writes are yours. The first run pulls the image. Results are in `apps/web/test-results/` (a trace for each failed test: `apps/web/node_modules/.bin/playwright show-trace <file>`) and, with `CI` set, a report in `apps/web/playwright-report/`.
 
 Playwright starts `apps/server/test/e2e-server.ts` on port 8095 (`E2E_PORT`), with the built UI, a throw-away database and the fake GitHub, whose tokens are in `apps/web/e2e/fixtures.ts`. Before each test, the `fresh` fixture empties the database and resets the fake GitHub through a control address on the next port, so every test starts from the first launch. The fake account has repositories to link (`notes`, `legacy-site`, and `old-archive`, archived). The `failNextGitHubRequest` fixture uses the same control address to make the next GitHub request with a given method and path ending fail (for example a 503 on `POST .../git/trees` for a failed setup); this control exists only in the test server, never in the Orchestrator. For machines, `connectDaemon` makes the test server enroll the scripted daemon of `apps/server/test/daemon-client.ts` with the code shown on the screen, connect it and say `hello` (with fields to change, such as an old Claude Code), sending heartbeats until the next reset; `comeBack` tells the page it is visible again, as when the owner returns from the terminal, so the screens read their data again. The scripted daemon acknowledges the server's commands by itself, as a real daemon does; runs are played with the controls `POST /daemon/run` (waits for a run's `run.start` or `run.resume`, answering its run token) and `POST /daemon/request` (sends a report or a tool call and answers the server's reply), through the fixtures `runNow`, `startRun`, `reportState`, `sendLog`, `callTool` and `daemonRequest`; `readyForRuns` prepares a ready project, a connected machine and an assigned ticket. A test of a live screen first waits until the page shows its data, then makes the change from outside the page, so only the realtime stream can bring it (`runs.e2e.ts` was checked to fail with the stream turned off). Tests run one at a time.
 
@@ -126,7 +128,7 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0030). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
 
 - Job `checks`: `pnpm lint` (lint, format check, `bash -n` of `tools/smoke/*.sh`), `pnpm typecheck`, `pnpm docs:links` and `pnpm audit --audit-level critical`.
-- Job `test`, with a PostgreSQL service (same image as `docker/compose.dev.yml`) and tmux from apt: `pnpm test`.
+- Job `test`: starts `postgres-test` from `docker/compose.dev.yml`, as developers do (its log shows `fsync`, `synchronous_commit` and `full_page_writes` off and its data on `tmpfs`), installs tmux from apt and runs `pnpm test`.
 - Job `build`: `pnpm build`.
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.

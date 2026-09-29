@@ -43,23 +43,13 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    services:
-      # Integration tests (docs/dev/testing.md). Same image as docker/compose.dev.yml.
-      postgres:
-        image: postgres:18.6-alpine3.24
-        env:
-          POSTGRES_USER: orchestrator
-          POSTGRES_PASSWORD: orchestrator
-          POSTGRES_DB: orchestrator
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U orchestrator -d orchestrator"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 30
     steps:
       - uses: actions/checkout@v7.0.1
+
+      # The integration tests' PostgreSQL, as developers run it: durability turned off for speed
+      # (ADR 0031). Started first, so it gets ready during the next steps.
+      - name: Test PostgreSQL
+        run: docker compose -f docker/compose.dev.yml up --detach postgres-test
 
       # Reads the pnpm version from the packageManager field of package.json.
       - uses: pnpm/action-setup@v6.1.0
@@ -79,6 +69,14 @@ jobs:
           sudo apt-get install --yes --no-install-recommends tmux
           tmux -V
           git --version
+
+      # Prints its durability settings (all "off") and where its data is (tmpfs), for the log.
+      - name: Wait for the test PostgreSQL
+        run: |
+          docker compose -f docker/compose.dev.yml up --detach --wait postgres-test
+          docker compose -f docker/compose.dev.yml exec -T postgres-test psql -U orchestrator \
+            -c "SELECT name, setting FROM pg_settings WHERE name IN ('fsync', 'synchronous_commit', 'full_page_writes')"
+          docker compose -f docker/compose.dev.yml exec -T postgres-test df -h /var/lib/postgresql
 
       - run: pnpm test
 

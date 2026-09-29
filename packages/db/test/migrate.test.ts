@@ -9,7 +9,7 @@ describe('runMigrations', () => {
   let pool: pg.Pool;
 
   beforeEach(async () => {
-    database = await createTestDatabase();
+    database = await createTestDatabase({ empty: true });
     pool = new pg.Pool({ connectionString: database.url });
   });
 

@@ -172,7 +172,7 @@ describe('project setup polling removed', () => {
   });
 
   it('drops a stored value at the migration', async () => {
-    const database = await createTestDatabase();
+    const database = await createTestDatabase({ empty: true });
     const pool = new pg.Pool({ connectionString: database.url });
     try {
       await migrateUpTo(pool, '0010_mcp_questions');

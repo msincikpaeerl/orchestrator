@@ -17,13 +17,20 @@ Windows is supported through WSL 2 only. The real Claude Code is never needed fo
 
 ```sh
 pnpm install
-docker compose -f docker/compose.dev.yml up -d --wait postgres
+docker compose -f docker/compose.dev.yml up -d --wait
 pnpm verify
 ```
 
-`pnpm verify` must pass on a fresh clone. It runs lint, format check, type check, tests, build and the documentation link check. The integration tests need the development PostgreSQL; without it they fail with the command above.
+`pnpm verify` must pass on a fresh clone. It runs lint, format check, type check, tests, build and the documentation link check. The integration and end-to-end tests need the test PostgreSQL; without it they fail with the command above.
 
-The development database listens on `127.0.0.1:5432` (user, password and database `orchestrator`) and keeps its data in the `orchestrator-dev_postgres-data` volume. Stop it with `docker compose -f docker/compose.dev.yml down`; add `-v` to delete its data.
+`docker/compose.dev.yml` runs two PostgreSQL servers (user, password and database `orchestrator` on both):
+
+| Service | Address | For | Data |
+|---|---|---|---|
+| `postgres` | `127.0.0.1:5432` | `pnpm dev` | `orchestrator-dev_postgres-data` volume |
+| `postgres-test` | `127.0.0.1:5433` | the tests' throw-away databases | in memory, durability turned off for speed (ADR 0031): deleted at every stop or restart, never keep data there |
+
+Stop them with `docker compose -f docker/compose.dev.yml down`; add `-v` to delete the development data too.
 
 ## Commands
 
@@ -38,7 +45,7 @@ The development database listens on `127.0.0.1:5432` (user, password and databas
 | `ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts` | The daemon's systemd scope tests, on a host with a systemd user session (WSL with systemd): they create transient `od-test-*` units only and stop them (`docs/dev/testing.md`). Skipped otherwise, and in CI. |
 | `pnpm build` | Build every package into its `dist/`; the daemon's is its package, `orchestrator-daemon-<version>.tgz` (ADR 0026). |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
-| `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the development database. |
+| `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the test PostgreSQL. |
 | `pnpm test:e2e:host` | The same on the host, with Chromium downloaded into `.playwright-browsers/`; needs Chromium's system libraries. |
 | `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`, and the UI with Vite on `http://localhost:5173`. |
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
