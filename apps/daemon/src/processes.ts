@@ -53,8 +53,12 @@ function signal(pid: number, name: NodeJS.Signals): void {
 
 /**
  * Stops every process still carrying the run's marker: `SIGTERM`, then `SIGKILL` for those left
- * after the grace period. Returns what it stopped, for the log. A process that cleared its
- * environment escapes the sweep, not the run's systemd scope when there is one.
+ * after the grace period, and resolves once none is left, so nothing of the run can still write
+ * when it returns. `SIGKILL` is sent again until `/proc` shows no marked process: one forked
+ * between a look at `/proc` and the signal, or not yet gone after its `SIGKILL`, is caught by the
+ * next look. A process `SIGKILL` cannot end within another grace period (stuck in the kernel) is
+ * logged and left. Returns what it stopped, for the log. A process that cleared its environment
+ * escapes the sweep, not the run's systemd scope when there is one.
  */
 export async function sweepRun(
   runId: string,
@@ -64,15 +68,28 @@ export async function sweepRun(
   const terminated = markedProcesses(runId);
   if (terminated.length === 0) return { terminated, killed: [] };
   for (const pid of terminated) signal(pid, 'SIGTERM');
-  const deadline = Date.now() + graceMs;
-  while (Date.now() < deadline) {
+  const graceEnd = Date.now() + graceMs;
+  while (Date.now() < graceEnd) {
     const still = new Set(markedProcesses(runId));
     if (terminated.every((pid) => !still.has(pid))) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   // Processes started meanwhile by the ones stopping carry the marker too.
-  const killed = markedProcesses(runId);
-  for (const pid of killed) signal(pid, 'SIGKILL');
-  log.info({ terminated, killed }, 'processes left by the session stopped');
-  return { terminated, killed };
+  const killed = new Set<number>();
+  const killEnd = Date.now() + graceMs;
+  for (;;) {
+    const left = markedProcesses(runId);
+    if (left.length === 0) break;
+    if (Date.now() >= killEnd) {
+      log.error({ left }, 'processes left by the session did not end after SIGKILL');
+      break;
+    }
+    for (const pid of left) {
+      signal(pid, 'SIGKILL');
+      killed.add(pid);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  log.info({ terminated, killed: [...killed] }, 'processes left by the session stopped');
+  return { terminated, killed: [...killed] };
 }
