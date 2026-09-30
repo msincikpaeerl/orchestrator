@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { RunState } from '@orchestrator/protocol';
@@ -514,6 +514,37 @@ describe('runner', () => {
       expect((await stat(file)).mtimeMs).toBe(mtimeMs);
       expect(sent.length).toBe(count);
       expect(savedState(run.runId).state).toBe('working');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'leaves nothing of a session still writing in the test home when the test ends',
+    async () => {
+      // A command that survives tmux's hangup and rewrites files in the worktree until it is
+      // killed: the harness must stop it before it removes the test home (checked by afterEach).
+      const manager = daemon();
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              {
+                do: 'bash',
+                command: `trap '' HUP; i=0; while :; do : > "left-$i"; i=$(( (i + 1) % 20 )); done`,
+              },
+            ],
+          },
+        ],
+      });
+      const run = await start(manager);
+      await waitFor(
+        async () => {
+          const { worktree } = savedState(run.runId);
+          return worktree !== null && (await readdir(worktree)).includes('left-0');
+        },
+        20_000,
+        'the command writing',
+      );
     },
     TIMEOUT,
   );

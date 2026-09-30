@@ -15,6 +15,7 @@ import {
   linkSystemTool,
   runDaemon,
   spawnDaemon,
+  stopHomeProcesses,
   waitFor,
   type DaemonProcess,
   type TestHome,
@@ -60,6 +61,7 @@ afterEach(async () => {
     await daemon.exited;
   }
   spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env: home.env });
+  await stopHomeProcesses(home);
   await server.close();
   await git.close();
   await home.remove();

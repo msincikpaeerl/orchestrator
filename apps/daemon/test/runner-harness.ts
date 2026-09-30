@@ -28,6 +28,7 @@ import {
   captureLogger,
   createTestHome,
   linkSystemTool,
+  stopHomeProcesses,
   waitFor,
   type TestHome,
 } from './testing.js';
@@ -70,6 +71,7 @@ export function useRunnerHarness(): void {
   afterEach(async () => {
     for (const manager of managers) await manager.shutdown();
     spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env: home.env });
+    await stopHomeProcesses(home);
     await home.remove();
   });
 }
