@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { RunState } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { sessionName } from '../src/tmux.js';
+import { RunStateFile, readJson, stateFilePath } from '../src/run-files.js';
+import { Tmux, sessionName } from '../src/tmux.js';
 import { gitIn } from './remote.js';
 import {
   TIMEOUT,
@@ -21,13 +23,33 @@ import {
   useRunnerHarness,
 } from './runner-harness.js';
 import { runStartPayload } from './run-start.js';
-import { waitFor } from './testing.js';
+import { captureLogger, waitFor } from './testing.js';
 
 // The runner with the real tmux and the fake `claude` (ADR 0027): the session's start, input,
 // nudges, timeouts, the end with the branch, and a daemon restart. The server is a recorder
 // that acknowledges every report.
 
 useRunnerHarness();
+
+/** A tmux client whose `hasSession` can be held, to keep a run's tick in flight. */
+class HeldTmux extends Tmux {
+  holding = false;
+  release: (() => void) | null = null;
+
+  override async hasSession(name: string): Promise<boolean> {
+    if (this.holding) {
+      await new Promise<void>((resolve) => {
+        this.release = resolve;
+      });
+    }
+    return super.hasSession(name);
+  }
+}
+
+/** The run's `state.json`, read again. */
+function savedState(runId: string) {
+  return RunStateFile.parse(readJson(stateFilePath(home.paths, runId)));
+}
 
 describe('runner', () => {
   it(
@@ -410,6 +432,88 @@ describe('runner', () => {
           payload: { runId: randomUUID(), text: 'Hello' },
         }),
       ).toEqual({ ok: false, message: 'No such run on this machine.' });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'logs a failed state write and goes on, without an unhandled rejection',
+    async () => {
+      // An unhandled rejection stops the daemon's Node.js process: none may come from a tick.
+      const rejections: unknown[] = [];
+      const onRejection = (reason: unknown) => rejections.push(reason);
+      process.on('unhandledRejection', onRejection);
+      try {
+        const logs = captureLogger();
+        const manager = daemon({ secondMs: 100, log: logs.log });
+        await fake.play({ turns: [{ steps: [{ do: 'hang' }] }] });
+        const run = await start(manager);
+        await waitFor(() => states(run.runId).some((state) => state.state === 'working'), 20_000);
+        // A folder where the temporary file goes: every write of state.json fails.
+        const blocker = `${stateFilePath(home.paths, run.runId)}.tmp`;
+        await mkdir(blocker);
+        const workingMs = savedState(run.runId).workingMs;
+        await waitFor(
+          () => logs.lines().some((line) => line.includes('state.json not written')),
+          10_000,
+          'the failed write logged',
+        );
+        await sleep(500);
+        expect(rejections).toEqual([]);
+        expect(savedState(run.runId).workingMs).toBe(workingMs);
+
+        // The run went on: once writing works again, the next tick writes the state.
+        await rm(blocker, { recursive: true });
+        await waitFor(() => savedState(run.runId).workingMs > workingMs, 10_000, 'a new write');
+        expect(manager.list().map((each) => each.state)).toEqual(['working']);
+        await manager.handle({
+          type: 'run.stop',
+          id: randomUUID(),
+          payload: { runId: run.runId, reason: 'owner_stopped' },
+        });
+        expect((await ended(run.runId)).reason).toBe('stopped');
+        expect(rejections).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onRejection);
+      }
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'awaits a tick in flight when the daemon stops, then neither ticks nor writes',
+    async () => {
+      const held = new HeldTmux(join(home.bin, 'tmux'), home.env);
+      const manager = daemon({ secondMs: 100, tmux: held });
+      await fake.play({ turns: [{ steps: [{ do: 'hang' }] }] });
+      const run = await start(manager);
+      await waitFor(() => states(run.runId).some((state) => state.state === 'working'), 20_000);
+      // A tick waits in its liveness check, and the session is gone when the check goes on.
+      held.holding = true;
+      await waitFor(() => held.release !== null, 10_000, 'a tick in flight');
+      await tmux.killSession(sessionName(run.runId));
+
+      let stopped = false;
+      const stopping = manager.shutdown().then(() => {
+        stopped = true;
+      });
+      await sleep(500);
+      expect(stopped).toBe(false);
+      held.holding = false;
+      held.release?.();
+      await stopping;
+
+      // The stopped daemon ended nothing: the next daemon finds the run as it was.
+      expect(states(run.runId).some((state) => state.state === 'ended')).toBe(false);
+      const file = stateFilePath(home.paths, run.runId);
+      const saved = await readFile(file, 'utf8');
+      const { mtimeMs } = await stat(file);
+      const count = sent.length;
+      await sleep(1000);
+      expect(await readFile(file, 'utf8')).toBe(saved);
+      expect((await stat(file)).mtimeMs).toBe(mtimeMs);
+      expect(sent.length).toBe(count);
+      expect(savedState(run.runId).state).toBe('working');
     },
     TIMEOUT,
   );

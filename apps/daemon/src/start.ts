@@ -206,7 +206,11 @@ export async function startDaemon(options: StartOptions): Promise<number> {
         default:
           void runs
             .handle(message)
-            .then((payload) => server.sendMessage({ type: 'ack', id: message.id, payload }));
+            .then((payload) => server.sendMessage({ type: 'ack', id: message.id, payload }))
+            .catch((error: unknown) => {
+              // Never an unhandled rejection, which would stop the daemon.
+              log.error({ err: error, type: message.type, id: message.id }, 'command failed');
+            });
       }
     },
     onRefused: (refusal) => {

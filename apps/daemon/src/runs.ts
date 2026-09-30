@@ -42,7 +42,11 @@ export class RunManager {
     const run = this.runs.get(runId);
     if (run && !run.ended) return;
     this.runs.delete(runId);
-    await rm(runFolder(this.context.paths, runId), { recursive: true, force: true });
+    await rm(runFolder(this.context.paths, runId), { recursive: true, force: true }).catch(
+      (error: unknown) => {
+        this.context.log.error({ err: error, runId }, 'run folder not removed');
+      },
+    );
   }
 
   /** Loads the runs a previous daemon left and finds their sessions (05, section 6). */
@@ -79,7 +83,7 @@ export class RunManager {
         if (run) return { ok: true };
         const created = Run.create(this.context, command.payload);
         this.runs.set(runId, created);
-        void created.begin();
+        created.begin();
         return { ok: true };
       }
       case 'run.input': {

@@ -99,6 +99,8 @@ export class Run {
   private readonly toolsRunning = new Set<string>();
   private events: RunLogEvent[] = [];
   private ticking = false;
+  /** Work started from a timer or a hook's answer, awaited when the daemon stops. */
+  private readonly inFlight = new Set<Promise<void>>();
   /** Between a turn's `Stop` and `afterTurn`: messages wait for `afterTurn`. */
   private turnEnding = false;
   private ending: Promise<void> | null = null;
@@ -182,11 +184,32 @@ export class Run {
     return sessionName(this.runId);
   }
 
+  /**
+   * Writes `state.json`. A failed write (folder removed, disk full) is logged and the run goes
+   * on: the next tick writes the state again.
+   */
   private save(): void {
     this.data.transcriptOffset = this.reader.offset;
     this.data.transcriptApiError = this.reader.lastApiError;
     this.data.transcriptCostUsd = this.reader.costUsd;
-    writeJsonAtomic(stateFilePath(this.context.paths, this.runId), this.data);
+    try {
+      writeJsonAtomic(stateFilePath(this.context.paths, this.runId), this.data);
+    } catch (error) {
+      this.log.error({ err: error }, 'state.json not written: written again at the next tick');
+    }
+  }
+
+  /**
+   * Runs `work` apart from its caller: an error is logged, never left as an unhandled rejection
+   * (which stops Node.js, and with it the daemon), and `shutdown()` awaits the work in flight.
+   */
+  private background(what: string, work: () => Promise<void>): void {
+    const running = work()
+      .catch((error: unknown) => {
+        this.log.error({ err: error }, `${what} failed`);
+      })
+      .finally(() => this.inFlight.delete(running));
+    this.inFlight.add(running);
   }
 
   private report(state: Exclude<DaemonRunState, 'starting' | 'ended'>): void;
@@ -269,8 +292,12 @@ export class Run {
 
   // Launch (05, sections 4.2 and 4.3).
 
-  /** Prepares the workspace and launches the session with the first message. */
-  async begin(): Promise<void> {
+  /** Prepares the workspace and launches the session with the first message, in the background. */
+  begin(): void {
+    this.background('start', () => this.prepareAndLaunch());
+  }
+
+  private async prepareAndLaunch(): Promise<void> {
     this.report('preparing');
     const { start } = this.data;
     try {
@@ -382,7 +409,10 @@ export class Run {
 
   private startTimer(): void {
     clearInterval(this.timer);
-    this.timer = setInterval(() => void this.tick(), this.context.secondMs);
+    if (this.stopped) return;
+    this.timer = setInterval(() => {
+      this.tick();
+    }, this.context.secondMs);
   }
 
   // Hooks, the status line and the MCP relay (05, sections 4.5 and 4.6; 06, section 1).
@@ -469,7 +499,9 @@ export class Run {
               };
         // After the hook's answer, so Claude Code is idle when a message arrives.
         this.turnEnding = true;
-        setImmediate(() => void this.afterTurn(end));
+        setImmediate(() => {
+          this.background('end of turn', () => this.afterTurn(end));
+        });
         return pass;
       }
       case 'Notification':
@@ -682,7 +714,11 @@ export class Run {
     this.data.pendingInputs.push(text);
     this.save();
     // Between a turn's end and `afterTurn`, the queue waits: `afterTurn` sends it first.
-    if (this.data.state === 'waiting_human' || !this.turnEnding) void this.sendQueued();
+    if (this.data.state === 'waiting_human' || !this.turnEnding) {
+      this.background('queued message', async () => {
+        await this.sendQueued();
+      });
+    }
     return null;
   }
 
@@ -706,69 +742,84 @@ export class Run {
 
   // Timeouts and liveness (05, sections 4.2.1 and 5).
 
-  private async tick(): Promise<void> {
+  /** Starts a tick, unless one is in flight or the run is ending or stopped. */
+  private tick(): void {
     if (this.ticking || this.ending || this.stopped) return;
     this.ticking = true;
-    try {
-      const now = Date.now();
-      if (this.sessionAlive && WORKING.includes(this.data.state)) {
-        this.data.workingMs += now - this.lastTick;
+    this.background('tick', async () => {
+      try {
+        await this.checkLimits();
+      } finally {
+        this.ticking = false;
       }
-      this.lastTick = now;
-      await this.readTranscript();
-      this.flushEvents();
-      const second = this.context.secondMs;
-      const { limits } = this.data.start;
-      if (this.data.state === 'starting') {
-        if (now - this.launchedAt >= limits.sessionStartTimeoutSeconds * second) {
-          await this.end(
-            'session_start_timeout',
-            `Claude Code did not report its start within ${String(limits.sessionStartTimeoutSeconds)} seconds: workspace trust or startup dialog suspected.`,
-          );
-          return;
-        }
-      }
-      if (this.data.workingMs >= limits.maxRunDurationMinutes * 60 * second) {
+    });
+  }
+
+  /** The daemon stopped during an `await` of a tick: this object no longer acts. */
+  private stoppedMeanwhile(): boolean {
+    return this.stopped;
+  }
+
+  /** One tick: the log sent, `state.json` written, then the timeouts and liveness checked. */
+  private async checkLimits(): Promise<void> {
+    const now = Date.now();
+    if (this.sessionAlive && WORKING.includes(this.data.state)) {
+      this.data.workingMs += now - this.lastTick;
+    }
+    this.lastTick = now;
+    await this.readTranscript();
+    if (this.stoppedMeanwhile()) return;
+    this.flushEvents();
+    const second = this.context.secondMs;
+    const { limits } = this.data.start;
+    if (this.data.state === 'starting') {
+      if (now - this.launchedAt >= limits.sessionStartTimeoutSeconds * second) {
         await this.end(
-          'max_duration',
-          `The run worked for ${String(limits.maxRunDurationMinutes)} minutes, the "Longest run" setting.`,
+          'session_start_timeout',
+          `Claude Code did not report its start within ${String(limits.sessionStartTimeoutSeconds)} seconds: workspace trust or startup dialog suspected.`,
         );
         return;
       }
-      if (
-        this.data.state === 'waiting_human' &&
-        this.data.waitingSince !== null &&
-        now - this.data.waitingSince >= limits.waitingRunLifetimeMinutes * 60 * second
-      ) {
-        // The answer will come with run.resume (05, section 4.8).
-        this.log.info('waiting run lifetime reached: session closed until the answer');
-        await this.closeSession();
-        this.report('waiting_human');
+    }
+    if (this.data.workingMs >= limits.maxRunDurationMinutes * 60 * second) {
+      await this.end(
+        'max_duration',
+        `The run worked for ${String(limits.maxRunDurationMinutes)} minutes, the "Longest run" setting.`,
+      );
+      return;
+    }
+    if (
+      this.data.state === 'waiting_human' &&
+      this.data.waitingSince !== null &&
+      now - this.data.waitingSince >= limits.waitingRunLifetimeMinutes * 60 * second
+    ) {
+      // The answer will come with run.resume (05, section 4.8).
+      this.log.info('waiting run lifetime reached: session closed until the answer');
+      await this.closeSession();
+      this.report('waiting_human');
+      return;
+    }
+    if (
+      (this.data.state === 'working' || this.data.state === 'idle') &&
+      this.toolsRunning.size === 0 &&
+      now - this.lastActivity >= limits.idleTimeoutMinutes * 60 * second
+    ) {
+      // Right after an API error, the idle timeout is a suspected usage limit (05, section 4.10).
+      const limit = this.assess({ kind: 'idle_timeout' });
+      if (limit) {
+        await this.pauseForQuota(limit);
         return;
       }
-      if (
-        (this.data.state === 'working' || this.data.state === 'idle') &&
-        this.toolsRunning.size === 0 &&
-        now - this.lastActivity >= limits.idleTimeoutMinutes * 60 * second
-      ) {
-        // Right after an API error, the idle timeout is a suspected usage limit (05, section 4.10).
-        const limit = this.assess({ kind: 'idle_timeout' });
-        if (limit) {
-          await this.pauseForQuota(limit);
-          return;
-        }
-        await this.end(
-          'idle_timeout',
-          `No activity from the agent for ${String(limits.idleTimeoutMinutes)} minutes, the "Idle timeout" setting.`,
-        );
-        return;
-      }
-      if (this.sessionAlive && !(await this.context.tmux.hasSession(this.name))) {
-        this.sessionAlive = false;
-        await this.end('crashed', 'Claude Code exited before the end of the run.');
-      }
-    } finally {
-      this.ticking = false;
+      await this.end(
+        'idle_timeout',
+        `No activity from the agent for ${String(limits.idleTimeoutMinutes)} minutes, the "Idle timeout" setting.`,
+      );
+      return;
+    }
+    if (this.sessionAlive && !(await this.context.tmux.hasSession(this.name))) {
+      if (this.stoppedMeanwhile()) return;
+      this.sessionAlive = false;
+      await this.end('crashed', 'Claude Code exited before the end of the run.');
     }
   }
 
@@ -864,16 +915,29 @@ export class Run {
     this.log.info({ state: this.data.state }, 'session found again after a daemon restart');
   }
 
-  /** The daemon is stopping: timers and the socket stop, the session keeps running. */
+  /**
+   * The daemon is stopping: timers and the socket stop, the session keeps running. Resolves once
+   * the work in flight (a tick, a turn's end, the start) is over; nothing runs or writes after.
+   */
   async shutdown(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
     clearInterval(this.timer);
-    this.releaseStart?.();
+    this.releaseSession();
+    while (this.inFlight.size > 0) await Promise.all(this.inFlight);
+    // An error of the end was reported to whoever asked for it.
+    await this.ending?.catch(() => undefined);
+    // A launch in flight may have opened them again.
+    this.releaseSession();
+    // The log collected by the work above goes with the last write.
     this.flushEvents();
+  }
+
+  private releaseSession(): void {
+    this.releaseStart?.();
+    this.releaseStart = null;
     this.socket?.close();
     this.socket = null;
-    await this.ending;
   }
 }
 
