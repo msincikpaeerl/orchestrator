@@ -12,7 +12,8 @@ export const RUN_MARKER = 'ORCHESTRATOR_RUN_ID';
 /**
  * How long a process has after `SIGTERM` before `SIGKILL`: a code constant, like the reconnection
  * backoff, since it only gives a well-behaved program time to exit (04, section 8). The run scopes
- * get the same time from systemd (`TimeoutStopSec`).
+ * get the same time from systemd (`TimeoutStopSec`), and the sweep keeps sending `SIGKILL` for at
+ * most this long before it logs a process that will not die.
  */
 export const SWEEP_GRACE_MS = 5000;
 
