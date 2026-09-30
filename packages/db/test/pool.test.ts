@@ -1,11 +1,11 @@
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
-import { endPool, reportConnectionErrors } from '../src/pool.js';
+import { createPool, endPool, reportConnectionErrors } from '../src/pool.js';
 import { createTestDatabase } from '../src/testing.js';
 
-// `endPool` (CI of lot 2 step H: a test database dropped while a connection of the test's pool was
-// still closing; `DROP DATABASE … WITH (FORCE)` terminated it and the pool emitted 57P01) and
-// `reportConnectionErrors`.
+// `createPool` and `endPool` (CI of lot 2 steps H and L2: a test database dropped while a
+// connection of the test's pool was still closing; `DROP DATABASE … WITH (FORCE)` terminated it
+// and the pool emitted 57P01) and `reportConnectionErrors`.
 
 /** Waits for an effect that comes asynchronously, failing after `ms` (docs/dev/testing.md). */
 async function until(condition: () => boolean, ms: number, what: string): Promise<void> {
@@ -30,7 +30,7 @@ describe('endPool', () => {
   it('resolves only after every connection of the pool has ended', async () => {
     const database = await createTestDatabase();
     try {
-      const pool = new pg.Pool({ connectionString: database.url });
+      const pool = createPool({ connectionString: database.url });
       // Each client's own `end` event: its connection is closed.
       let open = 0;
       pool.on('connect', (client) => {
@@ -48,10 +48,35 @@ describe('endPool', () => {
     }
   });
 
+  it('waits for a connection that had already started closing', async () => {
+    // CI of lot 2 step L2: a connection closing on its own (released with an error, or idle too
+    // long) had left the pool's counts, so the teardown did not wait for it.
+    const database = await createTestDatabase();
+    try {
+      const pool = createPool({ connectionString: database.url });
+      const client = await pool.connect();
+      const ended = watchEnd(client);
+      // Closing, and already out of the pool's counts, but its connection is still open.
+      client.release(true);
+      expect(pool.totalCount).toBe(0);
+      expect(ended()).toBe(false);
+      await endPool(pool);
+      expect(ended()).toBe(true);
+    } finally {
+      await database.drop();
+    }
+  });
+
+  it('refuses a pool not made by createPool, whose connections it cannot know', async () => {
+    const pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
+    await expect(endPool(pool)).rejects.toThrow('createPool');
+    await pool.end();
+  });
+
   it('resolves at once for a pool that never connected', async () => {
     const database = await createTestDatabase();
     try {
-      const pool = new pg.Pool({ connectionString: database.url });
+      const pool = createPool({ connectionString: database.url });
       await endPool(pool);
       expect(pool.ended).toBe(true);
     } finally {
@@ -77,7 +102,7 @@ describe('reportConnectionErrors', () => {
 
   it('reports a connection lost while idle or checked out, once each, and the pool goes on', async () => {
     const database = await createTestDatabase();
-    const pool = new pg.Pool({ connectionString: database.url });
+    const pool = createPool({ connectionString: database.url });
     const reported: string[] = [];
     reportConnectionErrors(pool, (error: Error & { code?: string }) => {
       reported.push(error.code ?? error.message);

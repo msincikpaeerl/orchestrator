@@ -1,24 +1,51 @@
-import type pg from 'pg';
+import pg from 'pg';
+
+/** The clients of each pool made by `createPool` whose connection is not closed yet. */
+const openClients = new WeakMap<pg.Pool, Set<pg.Client>>();
 
 /**
- * Ends a pool and resolves once every connection it had is closed. `pool.end()` alone resolves as
- * soon as its clients are taken out of the pool, while their connections may still be closing
- * (pg-pool 3.14 starts `client.end()` without waiting for it): a database dropped just after, as
- * test teardowns do with `DROP DATABASE … WITH (FORCE)`, could still meet one and terminate it.
+ * Makes a pool that knows each of its connections from the moment the client is created until
+ * its connection is closed, so that `endPool` can wait for all of them. The pool's own counts
+ * forget a connection as soon as it starts closing (a connection released with an error, one idle
+ * too long), which is still open for a moment. Every pool is made here, never with `new pg.Pool`.
+ */
+export function createPool(config: pg.PoolConfig): pg.Pool {
+  const open = new Set<pg.Client>();
+  class TrackedClient extends pg.Client {
+    constructor(clientConfig?: string | pg.ClientConfig) {
+      super(clientConfig);
+      open.add(this);
+      // `end` comes once the connection's socket is closed, whoever closed it.
+      this.once('end', () => open.delete(this));
+    }
+  }
+  const pool = new pg.Pool({ ...config, Client: TrackedClient });
+  openClients.set(pool, open);
+  return pool;
+}
+
+/**
+ * Ends a pool made by `createPool` and resolves once every connection it ever had is closed,
+ * including one that had already started closing. `pool.end()` alone resolves as soon as its
+ * clients are taken out of the pool, while their connections may still be closing (pg-pool 3.14
+ * starts `client.end()` without waiting for it): a database dropped just after, as test teardowns
+ * do with `DROP DATABASE … WITH (FORCE)`, could still meet one and terminate it.
  */
 export async function endPool(pool: pg.Pool): Promise<void> {
-  const open = pool.totalCount;
-  let removed = 0;
-  const closed = new Promise<void>((resolve) => {
-    if (open === 0) resolve();
-    // `remove` comes after a client's connection has ended.
-    pool.on('remove', () => {
-      removed += 1;
-      if (removed >= open) resolve();
-    });
-  });
+  const open = openClients.get(pool);
+  if (!open) throw new Error('endPool needs a pool made by createPool');
   await pool.end();
-  await closed;
+  // A client leaves `open` on its `end`: each one still there has not ended yet.
+  await Promise.all(
+    [...open].map(
+      (client) =>
+        new Promise<void>((resolve) => {
+          client.once('end', () => {
+            resolve();
+          });
+        }),
+    ),
+  );
 }
 
 /**

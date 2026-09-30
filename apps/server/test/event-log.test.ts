@@ -1,4 +1,4 @@
-import { endPool, runMigrations, schema } from '@orchestrator/db';
+import { createPool, endPool, runMigrations, schema } from '@orchestrator/db';
 import { createTestDatabase, migrateUpTo } from '@orchestrator/db/testing';
 import {
   ApiError,
@@ -10,7 +10,6 @@ import {
   type EventLogEntry,
 } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
-import pg from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { recordEvent } from '../src/events.js';
 import { startEveryEventApp, writeEveryEvent } from './every-event.js';
@@ -187,7 +186,7 @@ describe('migration of the events written before the project reference', () => {
     github.accounts.clear();
     const t = await startEveryEventApp(github);
     const old = await createTestDatabase({ empty: true });
-    const oldPool = new pg.Pool({ connectionString: old.url });
+    const oldPool = createPool({ connectionString: old.url });
     try {
       await writeEveryEvent(t, github);
       await migrateUpTo(oldPool, '0005_settings');
@@ -234,7 +233,7 @@ describe('migration of the events written before the project reference', () => {
 
   it('leaves an event whose entity id is not a known id without a project', async () => {
     const old = await createTestDatabase({ empty: true });
-    const pool = new pg.Pool({ connectionString: old.url });
+    const pool = createPool({ connectionString: old.url });
     try {
       await migrateUpTo(pool, '0005_settings');
       await pool.query(

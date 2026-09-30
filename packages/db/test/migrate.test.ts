@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runMigrations } from '../src/migrate.js';
-import { endPool } from '../src/pool.js';
+import { createPool, endPool } from '../src/pool.js';
 import { createTestDatabase, type TestDatabase } from '../src/testing.js';
 
 describe('runMigrations', () => {
@@ -10,7 +10,7 @@ describe('runMigrations', () => {
 
   beforeEach(async () => {
     database = await createTestDatabase({ empty: true });
-    pool = new pg.Pool({ connectionString: database.url });
+    pool = createPool({ connectionString: database.url });
   });
 
   afterEach(async () => {

@@ -2,15 +2,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApiError } from '@orchestrator/protocol';
-import { endPool } from '@orchestrator/db';
-import pg from 'pg';
+import { createPool, endPool } from '@orchestrator/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createLogger } from '../src/logger.js';
 import { LogCapture, TEST_SECRET_KEY } from './helpers.js';
 
 // Serving the UI needs no database: the pool is never used.
-const pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
+const pool = createPool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
 let webRoot: string;
 
 function appServing(root: string | null, logs = new LogCapture()) {
