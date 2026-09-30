@@ -692,6 +692,16 @@ Owner's decisions before the step (2026-09-29), written into 02 sections 4, 6.4,
 - `orchestrator-daemon status` reads the bare clones itself with `git for-each-ref` and `git log <branch> --not --remotes=origin`, with `GIT_OPTIONAL_LOCKS=0`; a Git error on one clone is printed and the others are still listed. The control socket's runs gain their ticket, repository and branch, so a branch a live run uses says so; `hello` still sends only its three fields.
 - Existing tests changed with the behaviour: the Activity page is no longer "coming in a later version" (only its Queue is), the event log test reads its fields in its own section (History also has a **Project** field), and the suspected-limit text gained the note the owner asked for.
 
+### [x] L2b. Database pools and processes left by a session
+
+Asked by the owner after step L2's CI runs (2026-09-30), before step M:
+
+- Test pools: a connection that had started closing on its own left the pool's counts, so `endPool` did not wait for it and a test database dropped just after could terminate it (57P01 in `tickets.test.ts`, 1 run in 7). Every pool is now made by `createPool` (`packages/db`), which follows each connection from its creation to its close; `endPool` waits for all of them. Regression test in `pool.test.ts`, deterministic.
+- Production: every PostgreSQL connection of the server has an error handler (the pool, through `reportConnectionErrors`; the realtime stream's listener, which reconnects); `orchestrator reset-password` had none and now has one. `server.test.ts` terminates every connection of a running server, the realtime listener's included, and checks that each loss is logged, `/health` recovers and the listener reconnects.
+- Daemon: the sweep of a run's processes (step K) sent one `SIGKILL` and returned, so a process forked between its last look at `/proc` and the signal kept running after the run ended. It now sends `SIGKILL` until no marked process is left (05 section 4.11). Regression test in `processes.test.ts` with the fake `claude`.
+
+*Done 2026-09-30.*
+
 ### [ ] M. End-to-end daemon test and limit capture tooling
 
 - One integration test running the real server, the real daemon, tmux and the fake `claude` through the whole acceptance scenario:

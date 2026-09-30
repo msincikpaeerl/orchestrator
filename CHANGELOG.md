@@ -6,6 +6,8 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs.
 
+- Machines: when a run's session closes, the daemon now waits until every program it left has exited before it removes the run's folders or lets a resumed run use them again; a program that kept starting new ones could leave one running before.
+- Server: `orchestrator reset-password` prints its "could not be changed" message instead of stopping with an error when PostgreSQL restarts while it runs.
 - Machines: the daemon no longer stops when it cannot write a run's files (a full disk, a removed folder): it logs the error, the run goes on, and the files are written again a second later. Stopping the daemon now waits for what its runs are doing, so nothing is left half done.
 - Needs you: lists what agents' work leaves for you, oldest first: their questions, answered right there; the tickets they propose, with **Accept** and **Reject**; finished work to check (In review), with the agent's summary, **Mark as done manually** and **Request changes**; and runs paused by a usage limit, with **Resume** and **Stop run**. A line per Claude account says whether it is available or limited until when. Help: "Needs you".
 - Tickets: **Request changes** on a ticket In review sends it back to To do with your comment (required); the branch and commits are kept, it does not count as a failed attempt, and the next dialog offers **Run now**. The next run continues the earlier commits and reads your comment. Help: "Tickets" > "Request changes" and "Runs" > "Check finished work".
