@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -150,6 +151,50 @@ export function captureLogger(): { log: Logger; lines: () => string[] } {
   const lines: string[] = [];
   const log = pino({ level: 'debug' }, { write: (line: string) => lines.push(line) });
   return { log, lines: () => lines };
+}
+
+/**
+ * Processes started for a test home: they all run with its `HOME`, inherited from the test's
+ * environment through tmux, the fake `claude`, hooks and spawned daemons. A zombie has no
+ * environment left and is gone for this purpose.
+ */
+export function homeProcesses(home: TestHome): number[] {
+  const marker = `HOME=${home.env.HOME ?? ''}`;
+  const found: number[] = [];
+  for (const entry of readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry) || Number(entry) === process.pid) continue;
+    try {
+      if (readFileSync(`/proc/${entry}/environ`, 'latin1').split('\0').includes(marker)) {
+        found.push(Number(entry));
+      }
+    } catch {
+      // Gone, or not this user's process.
+    }
+  }
+  return found;
+}
+
+/**
+ * Kills every process of the test home and waits until none is left, so nothing writes in the
+ * home while it is removed: closing tmux only sends a hangup, which a process may ignore or
+ * outlive for a moment.
+ */
+export async function stopHomeProcesses(home: TestHome): Promise<void> {
+  await waitFor(
+    () => {
+      const pids = homeProcesses(home);
+      for (const pid of pids) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // Already gone.
+        }
+      }
+      return pids.length === 0;
+    },
+    10_000,
+    "the end of the test home's processes",
+  );
 }
 
 /** Polls `condition` every 50 ms until it holds, or throws after `timeoutMs`. */

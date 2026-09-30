@@ -9,6 +9,8 @@ import {
   type EnrollmentResponse,
   type Machine,
   type MachineListResponse,
+  isRefusedPlainHttp,
+  type ServerAddressResponse,
 } from '@orchestrator/protocol';
 import { asc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -65,6 +67,15 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
   const { db, gateway, runs, publicUrl } = options;
   const now = () => options.now?.() ?? new Date();
   const throttle = new Throttle(db, now);
+
+  app.get('/api/machines/server-address', async (request) => {
+    await requireSession(db, request);
+    const address = serverAddress(publicUrl);
+    return {
+      address,
+      refusedPlainHttp: isRefusedPlainHttp(address),
+    } satisfies ServerAddressResponse;
+  });
 
   async function view(executor: Executor, row: MachineRow): Promise<Machine> {
     const [account] = await executor

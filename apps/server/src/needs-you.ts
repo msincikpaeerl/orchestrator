@@ -3,15 +3,122 @@ import {
   ACTIVE_RUN_STATUSES,
   CLAUDE_CODE_MIN_VERSION,
   DoctorCheck,
+  DodReport,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
-import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
-import { daemonInstallCommand, doctorErrors } from './machines/model.js';
+import { daemonInstallCommand, doctorErrors, toAccount } from './machines/model.js';
 import { toProject } from './projects/model.js';
+import type { RunService } from './runs/service.js';
+import { profileLinks, toComment } from './tickets/model.js';
+
+type Items = NeedsYouResponse['items'];
+
+/**
+ * What agents' runs leave for the owner (02, section 4): open questions, tickets proposed by
+ * agents, finished work to check and paused runs, on active projects only (archived ones start no
+ * work and change nothing).
+ */
+async function ticketItems(db: Database, runs: RunService): Promise<Items> {
+  const items: Items = [];
+  const profiles = await profileLinks(db);
+  const tickets = await db
+    .select({ ticket: schema.tickets, projectKey: schema.projects.key })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        inArray(schema.tickets.status, ['proposed', 'waiting_human', 'in_review']),
+      ),
+    );
+  for (const { ticket, projectKey } of tickets) {
+    const ref = { projectKey, number: ticket.number, title: ticket.title };
+    if (ticket.status === 'proposed') {
+      // A plan's tickets are approved with their plan (lot 5): only those an agent created.
+      if (ticket.createdBy !== 'agent') continue;
+      const agent =
+        ticket.createdByProfileId === null ? undefined : profiles.get(ticket.createdByProfileId);
+      items.push({
+        type: 'ticket_proposed',
+        ticket: ref,
+        agent: agent ?? null,
+        since: ticket.createdAt.toISOString(),
+      });
+    } else if (ticket.status === 'waiting_human') {
+      // The latest question is the open one (04, section 6).
+      const [question] = await db
+        .select()
+        .from(schema.comments)
+        .where(and(eq(schema.comments.ticketId, ticket.id), eq(schema.comments.kind, 'question')))
+        .orderBy(desc(schema.comments.createdAt))
+        .limit(1);
+      if (!question) continue;
+      items.push({
+        type: 'question',
+        ticket: ref,
+        question: toComment(question, profiles),
+        since: question.createdAt.toISOString(),
+      });
+    } else {
+      // Submitted when its run succeeded; a ticket moved there otherwise shows its last change.
+      const [run] = await db
+        .select({ id: schema.runs.id, endedAt: schema.runs.endedAt })
+        .from(schema.runs)
+        .where(and(eq(schema.runs.ticketId, ticket.id), eq(schema.runs.status, 'succeeded')))
+        .orderBy(desc(schema.runs.endedAt))
+        .limit(1);
+      const report = DodReport.safeParse(ticket.dodReport);
+      items.push({
+        type: 'work_to_check',
+        ticket: ref,
+        summary: report.success ? report.data.summary : null,
+        runId: run?.id ?? null,
+        since: (run?.endedAt ?? ticket.updatedAt).toISOString(),
+      });
+    }
+  }
+
+  const paused = await runs.list(
+    and(
+      eq(schema.runs.status, 'paused_quota'),
+      sql`${schema.runs.projectId} IN (SELECT ${schema.projects.id} FROM ${schema.projects} WHERE ${schema.projects.status} = 'active')`,
+    ),
+    [asc(schema.runs.statusSince)],
+  );
+  const titles =
+    paused.length === 0
+      ? []
+      : await db
+          .select({
+            runId: schema.runs.id,
+            number: schema.tickets.number,
+            title: schema.tickets.title,
+          })
+          .from(schema.runs)
+          .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+          .where(
+            inArray(
+              schema.runs.id,
+              paused.map((run) => run.id),
+            ),
+          );
+  for (const run of paused) {
+    const ticket = titles.find((row) => row.runId === run.id);
+    if (!ticket) continue;
+    items.push({
+      type: 'run_paused',
+      run,
+      ticket: { projectKey: run.projectKey, number: ticket.number, title: ticket.title },
+      since: run.statusSince,
+    });
+  }
+  return items;
+}
 
 /**
  * "Needs you" items (02, section 4): setup still to do first, then the others oldest first.
@@ -19,7 +126,7 @@ import { toProject } from './projects/model.js';
  */
 export function registerNeedsYouRoutes(
   app: FastifyInstance,
-  { db, publicUrl }: { db: Database; publicUrl: string },
+  { db, publicUrl, runs }: { db: Database; publicUrl: string; runs: RunService },
 ) {
   app.get('/api/needs-you', async (request) => {
     await requireSession(db, request);
@@ -102,6 +209,7 @@ export function registerNeedsYouRoutes(
         }
       }
     }
+    items.push(...(await ticketItems(db, runs)));
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));
 
     // Setup still to do (02, section 3), before the rest.
@@ -117,6 +225,17 @@ export function registerNeedsYouRoutes(
       .where(and(isNotNull(schema.machines.enrolledAt), isNull(schema.machines.revokedAt)))
       .limit(1);
     if (!enrolled) setup.push({ type: 'no_machine' });
-    return { items: [...setup, ...items] } satisfies NeedsYouResponse;
+    const accounts = await db
+      .select()
+      .from(schema.claudeAccounts)
+      .orderBy(asc(sql`lower(${schema.claudeAccounts.label})`));
+    const now = new Date();
+    return {
+      items: [...setup, ...items],
+      accounts: accounts.map((row) => {
+        const { id, label, state, limitedUntil, limitedUntilEstimated } = toAccount(row, now);
+        return { id, label, state, limitedUntil, limitedUntilEstimated };
+      }),
+    } satisfies NeedsYouResponse;
   });
 }

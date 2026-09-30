@@ -1,11 +1,13 @@
-import type { Machine } from '@orchestrator/protocol';
+import type { Machine, Run } from '@orchestrator/protocol';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Button, buttonLinkClass, Card, ErrorMessage, Loading, PageHeader } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { AccountForm } from '../machines/account-form';
 import { concurrentRuns, osLabel, planLabel, statusText } from '../machines/text';
-import { useAccounts, useMachines } from '../queries';
+import { useAccounts, useLiveRuns, useMachines } from '../queries';
+import { AccountStatusText } from '../runs/components';
+import { runPath, runStateText } from '../runs/text';
 
 const badgeLook: Record<Machine['state'], string> = {
   online: 'bg-green-100 text-green-900',
@@ -33,6 +35,23 @@ export function MachineBadges({ machine }: { machine: Machine }) {
         </span>
       )}
     </>
+  );
+}
+
+/** A machine's active runs, each linked to its run page (02, section 9.2). */
+export function ActiveRunList({ runs }: { runs: Run[] }) {
+  if (runs.length === 0) return <p className="text-slate-700">No active run.</p>;
+  return (
+    <ul aria-label="Active runs" className="space-y-1">
+      {runs.map((run) => (
+        <li key={run.id} className="break-words">
+          <Link to={runPath(run.id)} className="text-blue-700 underline">
+            {run.ticket}
+          </Link>{' '}
+          · {run.profile.name} · {runStateText(run)}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -93,6 +112,9 @@ function Accounts() {
                       <p className="text-slate-700">
                         {planLabel[account.plan]} · {concurrentRuns(account.maxConcurrentRuns)}
                       </p>
+                      <p className="text-slate-900">
+                        State: <AccountStatusText account={account} />
+                      </p>
                     </div>
                     <Button
                       variant="secondary"
@@ -119,6 +141,7 @@ function Accounts() {
 function Machines() {
   const machines = useMachines();
   const accounts = useAccounts();
+  const live = useLiveRuns();
   const noAccount = accounts.data?.accounts.length === 0;
 
   return (
@@ -168,6 +191,9 @@ function Machines() {
                     Last heard from {formatDateTime(machine.lastHeartbeatAt)}
                   </p>
                 )}
+                <ActiveRunList
+                  runs={live.data?.runs.filter((run) => run.machine.id === machine.id) ?? []}
+                />
               </Card>
             </li>
           ))}

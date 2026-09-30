@@ -1003,6 +1003,14 @@ describe('usage limits (07, section 5.2)', () => {
       source: 'fallback',
       fallbackMinutes: 90,
     });
+    // The estimated time gates Resume on the server too, whatever a browser's clock says.
+    const refused = await call('POST', `/api/runs/${created.id}/resume`);
+    expect(refused.statusCode).toBe(409);
+    expect(ApiError.parse(refused.json()).error.runRefusal).toMatchObject({
+      reason: 'account_limited',
+      until: account?.limitedUntil?.toISOString(),
+    });
+    expect((await run(created.id)).status).toBe('paused_quota');
   });
 
   it('pauses on a suspected limit, leaving the account available and resumable at once', async () => {

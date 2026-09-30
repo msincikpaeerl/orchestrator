@@ -36,13 +36,32 @@ export function isLimited(account: Pick<AccountRow, 'state' | 'limitedUntil'>, n
 
 /** The state screens show: a limit whose time has passed is shown available, before its event. */
 export function effectiveAccountState(
-  account: Pick<AccountRow, 'state' | 'limitedUntil'>,
+  account: Pick<AccountRow, 'state' | 'limitedUntil' | 'limitedUntilEstimated'>,
   now: Date,
-): { state: AccountState; limitedUntil: Date | null } {
+): { state: AccountState; limitedUntil: Date | null; estimated: boolean } {
   if (account.state === 'limited' && !isLimited(account, now)) {
-    return { state: 'available', limitedUntil: null };
+    return { state: 'available', limitedUntil: null, estimated: false };
   }
-  return { state: AccountState.parse(account.state), limitedUntil: account.limitedUntil };
+  return {
+    state: AccountState.parse(account.state),
+    limitedUntil: account.limitedUntil,
+    estimated: account.state === 'limited' && account.limitedUntilEstimated,
+  };
+}
+
+/**
+ * When a run paused on a detected limit can be resumed: its account's limit time, marked
+ * `estimated` when it comes from the fallback delay (02, section 4). Null when it can be resumed now.
+ */
+export function resumeAfter(
+  run: Pick<RunRow, 'status' | 'pauseReason'>,
+  account: Pick<AccountRow, 'state' | 'limitedUntil' | 'limitedUntilEstimated'>,
+  now: Date,
+): { at: string; estimated: boolean } | null {
+  if (run.status !== 'paused_quota' || run.pauseReason !== 'usage_limit') return null;
+  const effective = effectiveAccountState(account, now);
+  if (effective.state !== 'limited' || effective.limitedUntil === null) return null;
+  return { at: effective.limitedUntil.toISOString(), estimated: effective.estimated };
 }
 
 /** The server's status for a daemon state that does not end the run (05, section 4.7). */
@@ -118,6 +137,8 @@ export interface RunViewContext {
   profile: { key: string; name: string };
   machine: { id: string; name: string; online: boolean };
   account: { id: string; label: string };
+  /** For a run paused on a detected limit: when it can be resumed (02, section 4). */
+  resumeAfter: { at: string; estimated: boolean } | null;
 }
 
 export function toRun(row: RunRow, context: RunViewContext): Run {
@@ -131,6 +152,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     account: context.account,
     status: RunStatus.parse(row.status),
     pauseReason: row.pauseReason === null ? null : PauseReason.parse(row.pauseReason),
+    resumeAfter: context.resumeAfter,
     failureReason: row.failureReason === null ? null : FailureReason.parse(row.failureReason),
     endReason: row.endReason === null ? null : RunEndReason.parse(row.endReason),
     endDetail: row.endDetail,

@@ -29,7 +29,7 @@ import {
   type RunState,
   type ServerMessage,
 } from '@orchestrator/protocol';
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import { loadShippedAgents, loadTemplates, type Templates } from '../agents/files.js';
@@ -75,6 +75,7 @@ import {
   isCounted,
   isLimited,
   reportedCommits,
+  resumeAfter,
   statusOfDaemonState,
   statusTimes,
   ticketBranchName,
@@ -484,7 +485,7 @@ export class RunService {
     if (account.state !== 'limited' || isLimited(account, now)) return account;
     const [updated] = await tx
       .update(schema.claudeAccounts)
-      .set({ state: 'available', limitedUntil: null, updatedAt: now })
+      .set({ state: 'available', limitedUntil: null, limitedUntilEstimated: false, updatedAt: now })
       .where(
         and(eq(schema.claudeAccounts.id, account.id), eq(schema.claudeAccounts.state, 'limited')),
       )
@@ -1391,7 +1392,14 @@ export class RunService {
   // Views
 
   async view(runId: string): Promise<Run> {
-    const [row] = await this.db
+    const [run] = await this.list(eq(schema.runs.id, runId), []);
+    if (!run) throw runNotFound();
+    return run;
+  }
+
+  /** The runs matching `where`, in `order`, at most `limit`, as the API shows them. */
+  async list(where: SQL | undefined, order: SQL[], limit?: number): Promise<Run[]> {
+    const query = this.db
       .select({
         run: schema.runs,
         projectKey: schema.projects.key,
@@ -1402,7 +1410,7 @@ export class RunService {
           name: schema.machines.name,
           status: schema.machines.status,
         },
-        account: { id: schema.claudeAccounts.id, label: schema.claudeAccounts.label },
+        account: schema.claudeAccounts,
       })
       .from(schema.runs)
       .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
@@ -1410,19 +1418,24 @@ export class RunService {
       .innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.runs.profileId))
       .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
       .innerJoin(schema.claudeAccounts, eq(schema.claudeAccounts.id, schema.runs.accountId))
-      .where(eq(schema.runs.id, runId));
-    if (!row) throw runNotFound();
-    return toRun(row.run, {
-      projectKey: row.projectKey,
-      ticketNumber: row.ticketNumber,
-      profile: row.profile,
-      machine: {
-        id: row.machine.id,
-        name: row.machine.name,
-        online: row.machine.status === 'online',
-      },
-      account: row.account,
-    });
+      .where(where)
+      .orderBy(...order);
+    const rows = await (limit === undefined ? query : query.limit(limit));
+    const now = this.now();
+    return rows.map((row) =>
+      toRun(row.run, {
+        projectKey: row.projectKey,
+        ticketNumber: row.ticketNumber,
+        profile: row.profile,
+        machine: {
+          id: row.machine.id,
+          name: row.machine.name,
+          online: row.machine.status === 'online',
+        },
+        account: { id: row.account.id, label: row.account.label },
+        resumeAfter: resumeAfter(row.run, row.account, now),
+      }),
+    );
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1648,7 +1661,12 @@ export class RunService {
         return true;
       await tx
         .update(schema.claudeAccounts)
-        .set({ state: 'limited', limitedUntil: until, updatedAt: now })
+        .set({
+          state: 'limited',
+          limitedUntil: until,
+          limitedUntilEstimated: !known,
+          updatedAt: now,
+        })
         .where(eq(schema.claudeAccounts.id, account.id));
       await recordEvent(tx, {
         actor: 'system',

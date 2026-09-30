@@ -1,13 +1,7 @@
-import { isIP } from 'node:net';
-import { DAEMON_SOCKET_PATH } from '@orchestrator/protocol';
+import { DAEMON_SOCKET_PATH, isLoopback } from '@orchestrator/protocol';
 import { UserError } from './errors.js';
 
-/** `localhost`, `127.0.0.0/8` or `::1`: the only hosts reached over plain `http://` (05, section 3.2). */
-export function isLoopback(hostname: string): boolean {
-  const host = hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase();
-  if (host === 'localhost' || host === '::1') return true;
-  return isIP(host) === 4 && host.startsWith('127.');
-}
+export { isLoopback };
 
 /**
  * The Orchestrator's address as typed in `enroll`, without a trailing `/`. Plain `http://` is

@@ -15,6 +15,9 @@ export default defineConfig({
   resolve: { conditions },
   ssr: { resolve: { conditions } },
   test: {
+    // An unhandled error or rejection fails the run, in every package (the default, kept on
+    // purpose): in the daemon one would stop the Node.js process.
+    dangerouslyIgnoreUnhandledErrors: false,
     projects: packageDirs.map((root) => ({
       extends: true,
       root,

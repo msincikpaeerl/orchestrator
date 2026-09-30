@@ -67,8 +67,9 @@ export function handleStreamMessage(message: StreamMessage) {
       return;
     case 'run_log':
       for (const listener of runLogListeners.get(message.run) ?? []) listener(message.seq);
-      // The run's estimated usage comes with its log entries.
+      // The run's estimated usage comes with its log entries, and Live runs shows the latest one.
       void queryClient.invalidateQueries({ queryKey: keys.run(message.run) });
+      void queryClient.invalidateQueries({ queryKey: keys.liveRuns });
       return;
     case 'resync':
       reloadAll();

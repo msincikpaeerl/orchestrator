@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeConfig } from '../src/config.js';
@@ -15,6 +15,7 @@ import {
   linkSystemTool,
   runDaemon,
   spawnDaemon,
+  stopHomeProcesses,
   waitFor,
   type DaemonProcess,
   type TestHome,
@@ -60,10 +61,22 @@ afterEach(async () => {
     await daemon.exited;
   }
   spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env: home.env });
+  await stopHomeProcesses(home);
   await server.close();
   await git.close();
   await home.remove();
 });
+
+/** Every file of a folder with its size and modification time, to show nothing was written. */
+async function snapshot(folder: string): Promise<Record<string, string>> {
+  const files: Record<string, string> = {};
+  for (const entry of await readdir(folder, { recursive: true, withFileTypes: true })) {
+    const path = join(entry.parentPath, entry.name);
+    const info = await stat(path);
+    files[path] = `${String(info.size)}:${String(info.mtimeMs)}`;
+  }
+  return files;
+}
 
 function startDaemon(): DaemonProcess {
   const daemon = spawnDaemon(['start'], home.env);
@@ -115,7 +128,13 @@ describe('daemon runs over the connection', () => {
       expect(git.requests.some((request) => request.authenticated)).toBe(true);
 
       const status = await runDaemon(['status'], home.env);
-      expect(status.stdout).toContain(`${payload.runId} (working)`);
+      expect(status.stdout).toContain(`NOTES-1  run ${payload.runId}  working`);
+      // The run's branch, created from the base branch: nothing on it that GitHub lacks yet.
+      expect(status.stdout).toMatch(
+        new RegExp(
+          `owner/notes\\n {4}t/1-add-notes {2}head [0-9a-f]{7} {2}used by run ${payload.runId} \\(NOTES-1\\)\\n {6}nothing that is not on GitHub`,
+        ),
+      );
 
       // Stopped while the agent works: the session goes on, the next daemon finds it.
       first.child.kill('SIGTERM');
@@ -156,6 +175,64 @@ describe('daemon runs over the connection', () => {
         return server.states(payload.runId).at(-1)?.payload;
       })();
       expect(end).toMatchObject({ state: 'ended', reason: 'nudges_exhausted' });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'lists a ticket branch kept after a run with its commits, with a daemon and without, read-only',
+    async () => {
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              {
+                do: 'bash',
+                command:
+                  'echo notes > notes.md && git add notes.md && git commit -q -m "Add notes"',
+              },
+              { do: 'text', text: 'Committed.' },
+            ],
+          },
+        ],
+      });
+      const daemon = startDaemon();
+      await waitFor(() => server.hellos().length === 1, 20_000, 'hello');
+      const payload = runStartPayload(`${git.url}/owner/notes.git`, {
+        limits: { maxNudgesPerRun: 0 },
+      });
+      server.send({ type: 'run.start', id: randomUUID(), payload });
+      await waitFor(
+        () => server.states(payload.runId).some((state) => state.payload.state === 'ended'),
+        60_000,
+        'the end of the run',
+      );
+      const end = server.states(payload.runId).at(-1)?.payload;
+      const commit = end?.state === 'ended' ? end.branch?.commitsAhead[0]?.hash : undefined;
+      if (commit === undefined) throw new Error('the run reported no commit');
+      const listed = new RegExp(
+        `owner/notes\\n {4}t/1-add-notes {2}head ${commit.slice(0, 7)}\\n {6}${commit.slice(0, 7)} Add notes`,
+      );
+
+      const running = await runDaemon(['status'], home.env);
+      expect(running.code).toBe(0);
+      expect(running.stdout).toContain('Runs: none');
+      expect(running.stdout).toMatch(listed);
+
+      daemon.child.kill('SIGTERM');
+      expect(await daemon.exited).toBe(0);
+      const bare = join(home.paths.home, 'repos', 'owner', 'notes.git');
+      const before = await snapshot(bare);
+      const stopped = await runDaemon(['status'], home.env);
+      expect(stopped.code).toBe(1);
+      expect(stopped.stdout).toContain('No daemon is running.');
+      expect(stopped.stdout).toMatch(listed);
+      // Read without a fetch, a lock or a write: nothing in the bare clone changed.
+      expect(await snapshot(bare)).toEqual(before);
+      expect(git.requests.length).toBeGreaterThan(0);
+      const fetches = git.requests.length;
+      await runDaemon(['status'], home.env);
+      expect(git.requests.length).toBe(fetches);
     },
     TIMEOUT,
   );

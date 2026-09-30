@@ -10,6 +10,7 @@ import type {
   RunStart,
   RunState,
 } from '@orchestrator/protocol';
+import type { Logger } from 'pino';
 import { afterEach, beforeEach, expect } from 'vitest';
 import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
@@ -27,6 +28,7 @@ import {
   captureLogger,
   createTestHome,
   linkSystemTool,
+  stopHomeProcesses,
   waitFor,
   type TestHome,
 } from './testing.js';
@@ -69,6 +71,7 @@ export function useRunnerHarness(): void {
   afterEach(async () => {
     for (const manager of managers) await manager.shutdown();
     spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env: home.env });
+    await stopHomeProcesses(home);
     await home.remove();
   });
 }
@@ -84,12 +87,19 @@ export function addSystemPath(): void {
 
 /**
  * A daemon's run manager; `secondMs` shortens the run limits. With `systemd` (the systemd tests
- * only), the tmux server and each run get their scopes, named with the test home's prefix.
+ * only), the tmux server and each run get their scopes, named with the test home's prefix. A
+ * test may give its own `tmux` client, and a `log` to read.
  */
 export function daemon(
-  options: { secondMs?: number; acknowledge?: boolean; systemd?: UserSystemd } = {},
+  options: {
+    secondMs?: number;
+    acknowledge?: boolean;
+    systemd?: UserSystemd;
+    tmux?: Tmux;
+    log?: Logger;
+  } = {},
 ): RunManager {
-  const { log } = captureLogger();
+  const log = options.log ?? captureLogger().log;
   const trust = new TrustRegistry(join(home.paths.claudeConfig, '.claude.json'));
   const prefix = unitPrefix(home.paths);
   const manager = new RunManager({
@@ -100,7 +110,7 @@ export function daemon(
           systemd: options.systemd,
           unit: tmuxScopeName(prefix),
         })
-      : tmux,
+      : (options.tmux ?? tmux),
     trust,
     workspaces: new Workspaces({
       paths: home.paths,

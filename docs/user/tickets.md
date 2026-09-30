@@ -109,6 +109,16 @@ If the ticket still waits for tickets that are not done, the dialog warns you an
 
 The ticket moves to **Done**, and tickets waiting for it are no longer blocked by it. This is possible from **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**, but not from **Proposed**: accept or reject a proposed ticket instead.
 
+## Request changes
+
+Use **Request changes** on a ticket **In review** when the agent's work is not right yet.
+
+1. Open the ticket, or find it in [Needs you](needs-you.md#agents-work), and click **Request changes**.
+2. Write **what should change**. This comment is required; it is added to the timeline and the next agent reads it.
+3. Click **Request changes**.
+
+The ticket goes back to **To do**. Its branch and commits are kept, and this does not count as a failed attempt. The next dialog offers **Run now** to start the next run at once; click **Later** to start it yourself later. See [Check finished work](runs.md#check-finished-work).
+
 ## Reopen a cancelled ticket
 
 Open the cancelled ticket and click **Reopen**. It goes back to **To do** with its number, history and dependencies.
@@ -135,7 +145,7 @@ Open the ticket and:
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 
-In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, use [Mark as done manually](#mark-as-done-manually). **Awaiting merge** comes with pull requests, in a later version.
+In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, use [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not. **Awaiting merge** comes with pull requests, in a later version.
 
 ## If an action is refused
 

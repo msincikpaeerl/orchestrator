@@ -2,7 +2,37 @@
 
 **Needs you** is the home page of the Orchestrator. It lists everything waiting for you; when it is empty, nothing needs you. The number next to "Needs you" in the menu counts the items.
 
-In this version, it shows problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them. Later versions add questions from agents, plans to approve and pull requests to merge.
+In this version, it shows:
+
+- what agents' work leaves for you: questions, tickets they propose, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
+- problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
+
+Later versions add plans to approve and pull requests to merge.
+
+The setup still to do comes first. Every other item is listed oldest first, by the time its reason began: when the question was asked, the ticket proposed, the work submitted or the run paused.
+
+## Claude accounts
+
+Above the items, one line per Claude account says whether agents can use it:
+
+- **Available**: runs can start on it.
+- **Limited until 3:45 PM**: the account reached its Claude usage limit; no run starts on it before that time. "(estimated)" after the time means Claude gave no reset time, so the Orchestrator waits the **Quota wait when the reset time is unknown** (see [Settings](settings.md#settings-reference)). Once the time has passed, the line shows **Available** again by itself.
+
+A limited account is not an item of its own: the runs it paused are listed below, and **Run now** says why it cannot start a run, with the time.
+
+## Agents' work
+
+Each item links to its ticket; its buttons are the same as on the ticket page.
+
+| Item | Why it appears | What to do |
+|---|---|---|
+| Question from agent … | An agent needs a decision only you can make; the ticket is **Waiting for you**. | Write your answer in **Your answer** and click **Send answer**, as on the ticket page (see [Questions](runs.md#questions)). |
+| Ticket proposed by agent … | While working, an agent found more work and proposed a ticket. | **Accept** it (it moves to **To do**) or **Reject** it (see [Tickets proposed by agents](tickets.md#tickets-proposed-by-agents)). |
+| Work finished: check it | An agent finished a ticket: it is **In review**. The item shows the agent's summary; **Open the run** shows its log. | If the work is right, **Mark as done manually**. If not, **Request changes** (see [Check finished work](runs.md#check-finished-work)). |
+| Run paused: Claude usage limit reached | The run stopped at the usage limit of its Claude account. The item says when you can resume it, "(estimated)" when Claude gave no reset time. | Wait for that time, then click **Resume**: the button becomes available by itself. Or **Stop run**. |
+| Run paused: possible Claude usage limit | The run stopped on an error that may be the usage limit, or Claude being overloaded, or a network problem. | Click **Resume** at once: the run may pause again if it was the limit. Or **Stop run**. |
+
+In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, resumed or stopped.
 
 ## GitHub items
 

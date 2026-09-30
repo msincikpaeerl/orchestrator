@@ -72,6 +72,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Quality profile, review runs, `review.approve`, `review.request_changes`, `fix_review` runs.
 - Merge detection, `done` state; "Needs you" with pull requests to merge.
 - Failure handling and retry policy (04, section 5).
+- Decide whether the owner's **Request changes** from `in_review` (added in lot 2 step L2, 04 section 2) stays once Quality reviews `in_review` tickets.
 
 **Done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 

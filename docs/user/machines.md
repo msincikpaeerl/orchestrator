@@ -15,6 +15,8 @@ Everything here is in **Machines**, in the menu. Add a Claude account first, the
 
 Click **Edit** to change its label, plan or runs at the same time.
 
+Each account also shows its **State**: **Available**, or **Limited until** a time when it reached its Claude usage limit ("(estimated)" when Claude gave no reset time). No run starts on a limited account before that time; it shows **Available** again by itself once the time has passed. See [Usage limits](runs.md#usage-limits).
+
 ## Before you start
 
 The machine is a Linux computer, or a Windows computer with WSL 2 (Ubuntu). Type every command below in its Ubuntu terminal. It needs:
@@ -88,7 +90,7 @@ Your GitHub token is never stored on the machine. The daemon receives it from th
 
 On Windows, also do [Keep WSL running](#keep-wsl-running).
 
-If the Orchestrator runs on another computer, read [Orchestrator on another computer](#orchestrator-on-another-computer) first.
+If the Orchestrator runs on another computer, read [Orchestrator on another computer](#orchestrator-on-another-computer) first. When its address starts with `http://` and is not this computer, **Add machine** warns you at the top of the page: the daemon would refuse that address.
 
 ### Orchestrator on another computer
 
@@ -134,7 +136,10 @@ Click a machine's name to open its page. It shows:
 - its **status**: **Online** (connected), **Offline** (not connected; the daemon or the computer is stopped, or WSL was shut down), **Waiting for enrollment**, **Disabled** or **Revoked**;
 - its Claude account, system, daemon and Claude Code versions, and when it was last heard from;
 - the **Checks on the machine**, done by the daemon each time it connects: **OK**, **Warning**, **Error** or **Check this yourself**. An error keeps the machine from receiving runs;
+- its **Active runs**: each run in progress on it, as [Live runs](activity.md#live-runs) shows them, with **Stop run** and the command to watch it in a terminal;
 - its **capabilities** and its actions.
+
+The machine list also shows each machine's active runs, each linking to its run page.
 
 A Claude Code newer than the latest version checked with this version of the Orchestrator shows a warning. Runs are still allowed. If runs fail to start after a Claude Code update, update the Orchestrator when a new version is out.
 
@@ -206,7 +211,7 @@ Type these commands on the machine, in its Ubuntu terminal:
 | Read the daemon's last 100 messages | `journalctl --user -u orchestrator-daemon -n 100` |
 | Follow its messages as they come (stop with Ctrl+C) | `journalctl --user -u orchestrator-daemon -f` |
 | Check the machine: tools and versions, Claude Code login, systemd, the service, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
-| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities and runs on this machine, or why it last stopped | `orchestrator-daemon status` |
+| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.

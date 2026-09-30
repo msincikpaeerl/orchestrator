@@ -379,6 +379,8 @@ export const claudeAccounts = pgTable(
     state: text('state').notNull().default('available'),
     /** When `limited`: the expected reset time, when known. */
     limitedUntil: timestamp('limited_until', { withTimezone: true }),
+    /** `limited_until` is now plus the fallback delay: no reset time was known (07, section 5.2). */
+    limitedUntilEstimated: boolean('limited_until_estimated').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -550,6 +552,8 @@ export const runs = pgTable(
     index('runs_ticket_id').on(table.ticketId, table.createdAt),
     index('runs_machine_id').on(table.machineId, table.status),
     index('runs_account_id').on(table.accountId, table.status),
+    // History pages ended runs newest first (02, section 7).
+    index('runs_ended_at').on(table.endedAt, table.id),
   ],
 );
 

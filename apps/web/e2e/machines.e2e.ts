@@ -6,6 +6,9 @@ import {
   expect,
   expectFitsScreen,
   openSection,
+  readyForRuns,
+  runNow,
+  startRun,
   test,
 } from './fixtures';
 
@@ -176,4 +179,49 @@ test('Needs you shows machines that cannot work, with what to do', async ({ page
   await page.goto(`/machines/${newer.id}`);
   await expect(page.getByText('This version is newer than')).toBeVisible();
   await expect(page.getByRole('group', { name: 'Status' })).toHaveText('Online');
+});
+
+test('the machine list and page show its active runs, and each account its state', async ({
+  page,
+}) => {
+  await page.goto(await readyForRuns(page));
+  const runId = await runNow(page);
+  await startRun(page, runId);
+
+  await openSection(page, 'Machines');
+  await expect(page.getByRole('list', { name: 'Claude accounts' })).toContainText(
+    'State: Available',
+  );
+  const machine = page.getByRole('list', { name: 'Machines' }).getByRole('listitem').first();
+  await expect(machine.getByRole('list', { name: 'Active runs' })).toContainText(
+    'WEB-1 · Web Developer · Running',
+  );
+  await expectFitsScreen(page);
+
+  await machine.getByRole('link', { name: 'Laptop' }).click();
+  const runs = page.getByRole('list', { name: 'Active runs' });
+  await expect(runs).toContainText('WEB-1 · Web Developer on Laptop');
+  await expect(runs.getByLabel('Run status')).toHaveText('Running');
+  await expectFitsScreen(page);
+});
+
+test('Add machine warns when machines would reach the Orchestrator over plain http://', async ({
+  page,
+}) => {
+  await completeSetup(page);
+  const warning = page.getByText(/starts with http:\/\/ and is not this computer/);
+  // The test server is on localhost: no warning.
+  await page.goto('/machines/new');
+  await expect(page.getByRole('heading', { name: 'Add machine' })).toBeVisible();
+  await expect(page.getByText('Each machine uses a Claude account.')).toBeVisible();
+  await expect(warning).toBeHidden();
+
+  // The server's answer for an address on another computer (checked in the server's tests).
+  await page.route('**/api/machines/server-address', (route) =>
+    route.fulfill({ json: { address: 'http://192.168.1.20:8080', refusedPlainHttp: true } }),
+  );
+  await page.reload();
+  await expect(warning).toContainText('http://192.168.1.20:8080');
+  await expect(page.getByRole('link', { name: 'Orchestrator on another computer' })).toBeVisible();
+  await expectFitsScreen(page);
 });

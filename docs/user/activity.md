@@ -1,6 +1,34 @@
 # Activity
 
-**Activity** in the menu shows what happened in the Orchestrator. In this version it holds the event log. Live runs, the queue and the run history come with agents, in a later version.
+**Activity** in the menu shows what agents are doing and what happened in the Orchestrator: [Live runs](#live-runs), the queue (coming in a later version), the run [History](#history) and the [Event log](#event-log).
+
+## Live runs
+
+Every run in progress, oldest first, including runs waiting for your answer or paused by a usage limit (their status says so). Each one shows:
+
+- its ticket, agent and machine, its status, the time spent working and waiting, and its estimated usage;
+- the agent's latest progress line;
+- **Now**: the latest entry of its log, what the agent is doing at this moment. It changes as the agent works, without reloading. **Open the run and its full log** shows everything (see [Watch a run](runs.md#watch-a-run));
+- **Stop run**, and **Resume** for a paused run (see [Runs](runs.md));
+- **Watch it in a terminal**: a command to type on that machine, `orchestrator-daemon attach <run>`, which shows the agent's Claude Code session as it works, without letting you type in it.
+
+When no run is in progress, the section says so.
+
+## Queue
+
+Coming in a later version: the tickets waiting to run, and why each one is not running yet.
+
+## History
+
+Every run that ended, newest first: its ticket and attempt, agent, machine, how it ended, when, the time spent and the estimated usage. A failed run also says why it failed, for example "Failed: it ran out of time". Click a run to open its page and its log.
+
+Filter the list with the fields above it:
+
+- **Project** and **Agent**: only the runs of one project, or of one agent.
+- **Outcome**: **Finished** (the agent submitted its work), **Failed** or **Cancelled** (stopped by you, or its ticket was cancelled or marked as done).
+- **Ended from** and **Ended to**: only the runs that ended on these days, both days included.
+
+**Clear run filters** shows every run again. The first page shows the 50 most recent runs; **Show older runs** shows the 50 before them.
 
 ## Event log
 

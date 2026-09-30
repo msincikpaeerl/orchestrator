@@ -1,7 +1,6 @@
 import {
   CLAUDE_CODE_MIN_VERSION,
   CLAUDE_CODE_VALIDATED_VERSION,
-  NeedsYouItem,
   type Machine,
 } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
@@ -11,6 +10,7 @@ import {
   needsYouText,
   statusText,
   unusableText,
+  type MachineNeedsYouItem,
 } from './text';
 
 const MACHINE_ID = '3f1e0e8c-3333-4000-8000-000000000000';
@@ -46,11 +46,7 @@ function machine(fields: Partial<Machine>): Machine {
 }
 
 describe('needsYouText', () => {
-  const items = NeedsYouItem.options
-    .map((option) => option.shape.type.value)
-    .filter((type) => type !== 'project_setup_failed');
-
-  const examples: Record<(typeof items)[number], NeedsYouItem> = {
+  const examples: Record<MachineNeedsYouItem['type'], MachineNeedsYouItem> = {
     no_claude_account: { type: 'no_claude_account' },
     no_machine: { type: 'no_machine' },
     daemon_incompatible: {
@@ -82,10 +78,10 @@ describe('needsYouText', () => {
     },
   };
 
+  const items = Object.keys(examples) as MachineNeedsYouItem['type'][];
+
   it.each(items)('has a title and an explanation for %s', (type) => {
-    const item = examples[type];
-    if (item.type === 'project_setup_failed') throw new Error('not a machine item');
-    const { title, detail } = needsYouText(item);
+    const { title, detail } = needsYouText(examples[type]);
     expect(title.length).toBeGreaterThan(0);
     expect(detail).toMatch(/\.$/);
   });

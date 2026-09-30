@@ -2,10 +2,7 @@ import {
   AddCommentRequest,
   AddDependencyRequest,
   EDITABLE_STATUSES,
-  MarkDoneRequest,
   OWNER_TRANSITIONS,
-  RejectRequest,
-  Run,
   TicketDetail,
   type OwnerTicketAction,
   type Project,
@@ -14,13 +11,12 @@ import {
 } from '@orchestrator/protocol';
 import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode, type SubmitEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { api, ApiRequestError } from '../api';
 import { UntrustedMarkdown } from '../components/markdown';
 import {
   Button,
   Card,
-  ConfirmDialog,
   ErrorMessage,
   HelpLink,
   InfoMessage,
@@ -28,7 +24,6 @@ import {
   PageHeader,
   SelectField,
   TextArea,
-  WarningMessage,
   buttonLinkClass,
   secondaryButtonLinkClass,
 } from '../components/ui';
@@ -38,7 +33,6 @@ import { BlockedBadge } from '../tickets/board';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
-  markDoneWarning,
   assigneeLabel,
   priorityLabel,
   showsBlocked,
@@ -51,11 +45,18 @@ import {
 import { ticketsChanged, useRun, useTicket, useTicketRuns, useTickets } from '../queries';
 import { AnswerBox, CommitList, RunActions, RunTimes } from '../runs/components';
 import { isActive, purposeLabel, runStateText, runPath, usageText } from '../runs/text';
+import {
+  AcceptAction,
+  CancelAction,
+  MarkDoneAction,
+  RejectAction,
+  ReopenAction,
+  RequestChangesAction,
+  RunNowAction,
+  RunNowOffer,
+  ticketApi,
+} from '../tickets/actions';
 import { WithProject } from './project';
-
-function ticketApi(ticket: TicketDetail, action = ''): string {
-  return `/api/projects/${encodeURIComponent(ticket.projectKey)}/tickets/${String(ticket.number)}${action}`;
-}
 
 /** Tickets change only on an active project whose setup is done (04, section 2). */
 function canChange(project: Project): boolean {
@@ -75,256 +76,26 @@ function useTicketAction<T>(request: (input: T) => Promise<TicketDetail>) {
   });
 }
 
-/** **Cancel**, after a confirmation saying what happens (02, section 1). */
-function CancelAction({ ticket }: { ticket: TicketDetail }) {
-  const [asking, setAsking] = useState(false);
-  const cancel = useTicketAction(() => api('POST', ticketApi(ticket, '/cancel'), TicketDetail));
-  const ref = ticketRef(ticket.projectKey, ticket.number);
-  return (
-    <>
-      <Button
-        variant="secondary"
-        onClick={() => {
-          cancel.reset();
-          setAsking(true);
-        }}
-      >
-        Cancel the ticket
-      </Button>
-      {asking && (
-        <ConfirmDialog
-          title={`Cancel ${ref}?`}
-          confirmLabel="Cancel the ticket"
-          dismissLabel="Keep it"
-          busy={cancel.isPending}
-          error={cancel.error && <ErrorMessage>{refusalText(cancel.error)}</ErrorMessage>}
-          onConfirm={() => {
-            cancel.mutate(undefined, {
-              onSuccess: () => {
-                setAsking(false);
-              },
-            });
-          }}
-          onCancel={() => {
-            setAsking(false);
-          }}
-        >
-          <p>
-            The ticket is kept with its history, and no work will be done on it. You can reopen it
-            later.
-          </p>
-          {ticket.blocks.length > 0 && (
-            <p>
-              Tickets waiting for it stay blocked: remove their dependency on {ref}, or reopen it.
-            </p>
-          )}
-        </ConfirmDialog>
-      )}
-    </>
-  );
-}
-
-/** **Mark as done manually**: the comment explaining why is mandatory (04, section 2). */
-function MarkDoneAction({ ticket }: { ticket: TicketDetail }) {
-  const [asking, setAsking] = useState(false);
-  const [comment, setComment] = useState('');
-  const [missing, setMissing] = useState(false);
-  const markDone = useTicketAction((body: MarkDoneRequest) =>
-    api('POST', ticketApi(ticket, '/mark-done'), TicketDetail, body),
-  );
-  const ref = ticketRef(ticket.projectKey, ticket.number);
-  const warning = markDoneWarning(ticket.projectKey, ticket.number, ticket.blockedBy);
-  return (
-    <>
-      <Button
-        variant="secondary"
-        onClick={() => {
-          markDone.reset();
-          setMissing(false);
-          setAsking(true);
-        }}
-      >
-        Mark as done manually
-      </Button>
-      {asking && (
-        <ConfirmDialog
-          title={`Mark ${ref} as done?`}
-          confirmLabel={warning ? 'Mark as done anyway' : 'Mark as done'}
-          busy={markDone.isPending}
-          error={markDone.error && <ErrorMessage>{refusalText(markDone.error)}</ErrorMessage>}
-          onConfirm={() => {
-            if (comment.trim() === '') {
-              setMissing(true);
-              return;
-            }
-            markDone.mutate(
-              { comment: comment.trim() },
-              {
-                onSuccess: () => {
-                  setAsking(false);
-                  setComment('');
-                },
-              },
-            );
-          }}
-          onCancel={() => {
-            setAsking(false);
-          }}
-        >
-          <p>
-            Use this when the result exists because the work was done another way. The ticket goes
-            to Done, and tickets waiting for it are no longer blocked by it. If the work is
-            abandoned, cancel the ticket instead.
-          </p>
-          {warning && <WarningMessage>{warning}</WarningMessage>}
-          <TextArea
-            label="Why is it done? (required)"
-            hint="Added to the ticket's timeline."
-            value={comment}
-            error={missing ? 'Write why the ticket is done: this comment is required.' : undefined}
-            onChange={(event) => {
-              setComment(event.target.value);
-              setMissing(false);
-            }}
-          />
-        </ConfirmDialog>
-      )}
-    </>
-  );
-}
-
-function ReopenAction({ ticket }: { ticket: TicketDetail }) {
-  const reopen = useTicketAction(() => api('POST', ticketApi(ticket, '/reopen'), TicketDetail));
-  return (
-    <>
-      <Button
-        onClick={() => {
-          reopen.mutate();
-        }}
-        disabled={reopen.isPending}
-      >
-        Reopen
-      </Button>
-      {reopen.error && <ErrorMessage>{refusalText(reopen.error)}</ErrorMessage>}
-    </>
-  );
-}
-
-/**
- * **Run now** (07, section 3): the run starts at once on a machine chosen for it, and the run
- * page opens; when it cannot start, the reason is shown (02, section 6.4).
- */
-function RunNowAction({ ticket }: { ticket: TicketDetail }) {
-  const navigate = useNavigate();
-  const runNow = useMutation({
-    mutationFn: () => api('POST', ticketApi(ticket, '/run'), Run),
-    onSettled: () => ticketsChanged(),
-    onSuccess: (run) => navigate(runPath(run.id)),
-  });
-  return (
-    <>
-      <Button
-        onClick={() => {
-          runNow.mutate();
-        }}
-        disabled={runNow.isPending}
-      >
-        Run now
-      </Button>
-      {runNow.error && (
-        <div className="w-full">
-          <ErrorMessage>{refusalText(runNow.error)}</ErrorMessage>
-        </div>
-      )}
-    </>
-  );
-}
-
-/** **Accept** a ticket an agent proposed: it goes to To do (04, section 2). */
-function AcceptAction({ ticket }: { ticket: TicketDetail }) {
-  const accept = useTicketAction(() => api('POST', ticketApi(ticket, '/accept'), TicketDetail));
-  return (
-    <>
-      <Button
-        onClick={() => {
-          accept.mutate();
-        }}
-        disabled={accept.isPending}
-      >
-        Accept
-      </Button>
-      {accept.error && (
-        <div className="w-full">
-          <ErrorMessage>{refusalText(accept.error)}</ErrorMessage>
-        </div>
-      )}
-    </>
-  );
-}
-
-/** **Reject** a ticket an agent proposed, with an optional comment: it is cancelled. */
-function RejectAction({ ticket }: { ticket: TicketDetail }) {
-  const [asking, setAsking] = useState(false);
-  const [comment, setComment] = useState('');
-  const reject = useTicketAction((body: RejectRequest) =>
-    api('POST', ticketApi(ticket, '/reject'), TicketDetail, body),
-  );
-  const ref = ticketRef(ticket.projectKey, ticket.number);
-  return (
-    <>
-      <Button
-        variant="secondary"
-        onClick={() => {
-          reject.reset();
-          setAsking(true);
-        }}
-      >
-        Reject
-      </Button>
-      {asking && (
-        <ConfirmDialog
-          title={`Reject ${ref}?`}
-          confirmLabel="Reject"
-          dismissLabel="Keep it"
-          busy={reject.isPending}
-          error={reject.error && <ErrorMessage>{refusalText(reject.error)}</ErrorMessage>}
-          onConfirm={() => {
-            reject.mutate(comment.trim() === '' ? {} : { comment: comment.trim() }, {
-              onSuccess: () => {
-                setAsking(false);
-                setComment('');
-              },
-            });
-          }}
-          onCancel={() => {
-            setAsking(false);
-          }}
-        >
-          <p>The ticket is cancelled and kept with its history. You can reopen it later.</p>
-          <TextArea
-            label="Why? (optional)"
-            hint="Added to the ticket's timeline."
-            value={comment}
-            onChange={(event) => {
-              setComment(event.target.value);
-            }}
-          />
-        </ConfirmDialog>
-      )}
-    </>
-  );
-}
-
 /** The actions of the ticket's state (02, section 6.4; 04, section 2). */
 function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }) {
+  // Shown after Request changes, once the ticket has left `in_review` (owner's decision, L2).
+  const [offerRunNow, setOfferRunNow] = useState(false);
   if (!canChange(project)) return null;
   const allowed = (action: OwnerTicketAction) =>
     OWNER_TRANSITIONS[action].from.includes(ticket.status);
   const editable = EDITABLE_STATUSES.includes(ticket.status);
   const proposedByAgent = ticket.status === 'proposed' && ticket.createdByAgent !== null;
   const runnable = ticket.status === 'todo';
+  const offer = offerRunNow && (
+    <RunNowOffer
+      ticket={ticket}
+      onClose={() => {
+        setOfferRunNow(false);
+      }}
+    />
+  );
   if (!editable && !runnable && !allowed('cancel') && !allowed('mark_done') && !allowed('reopen')) {
-    return null;
+    return offer || null;
   }
   return (
     <div className="flex flex-wrap items-start gap-2">
@@ -340,8 +111,17 @@ function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }
         </Link>
       )}
       {allowed('reopen') && <ReopenAction ticket={ticket} />}
+      {allowed('request_changes') && (
+        <RequestChangesAction
+          ticket={ticket}
+          onRequested={() => {
+            setOfferRunNow(true);
+          }}
+        />
+      )}
       {allowed('mark_done') && <MarkDoneAction ticket={ticket} />}
       {allowed('cancel') && !proposedByAgent && <CancelAction ticket={ticket} />}
+      {offer}
     </div>
   );
 }

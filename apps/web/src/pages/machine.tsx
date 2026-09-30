@@ -25,7 +25,8 @@ import {
   RESTART_COMMAND,
   unusableText,
 } from '../machines/text';
-import { machinesChanged, useMachine } from '../queries';
+import { LiveRunCard } from '../activity/runs';
+import { machinesChanged, useLiveRuns, useMachine } from '../queries';
 import { refusalText } from '../refusals';
 import { MachineBadges } from './machines';
 
@@ -255,6 +256,35 @@ function Actions({ machine }: { machine: Machine }) {
   );
 }
 
+/** The machine's active runs, as Activity > Live runs shows them (02, section 9.2). */
+function MachineRuns({ machine }: { machine: Machine }) {
+  const live = useLiveRuns(machine.id);
+  return (
+    <section aria-labelledby="machine-runs-title" className="space-y-3">
+      <h2 id="machine-runs-title" className="text-lg font-semibold text-slate-900">
+        Active runs
+      </h2>
+      {live.isPending ? (
+        <Loading />
+      ) : live.isError ? (
+        <ErrorMessage>The runs could not be loaded. Reload the page.</ErrorMessage>
+      ) : live.data.runs.length === 0 ? (
+        <Card>
+          <p>No active run on this machine.</p>
+        </Card>
+      ) : (
+        <ul aria-label="Active runs" className="space-y-3">
+          {live.data.runs.map((run) => (
+            <li key={run.id}>
+              <LiveRunCard run={run} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** A machine (02, section 9.2). */
 export function MachinePage() {
   const { id = '' } = useParams();
@@ -300,6 +330,7 @@ export function MachinePage() {
           )
         )}
         <Details machine={data} />
+        <MachineRuns machine={data} />
         <Doctor machine={data} />
         <Card className="space-y-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

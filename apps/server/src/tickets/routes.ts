@@ -7,6 +7,7 @@ import {
   CreateTicketRequest,
   EDITABLE_STATUSES,
   MarkDoneRequest,
+  RequestChangesRequest,
   ProjectKey,
   RejectRequest,
   TicketNumber,
@@ -737,6 +738,11 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   ownerAction('reopen', 'reopen', () => undefined);
   ownerAction('accept', 'accept', () => undefined);
   ownerAction('reject', 'reject', (body) => parseInput(RejectRequest, body ?? {}).comment);
+  ownerAction(
+    'request-changes',
+    'request_changes',
+    (body) => parseInput(RequestChangesRequest, body).comment,
+  );
 
   // The owner's answer to the open question (04, section 6): the waiting run receives it live, or
   // resumes on its machine; with that machine offline, the run fails with `machine_offline`.

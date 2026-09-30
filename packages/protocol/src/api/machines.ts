@@ -33,6 +33,8 @@ export const ClaudeAccount = z.object({
   state: AccountState,
   /** When `limited`: the expected reset time, when known. */
   limitedUntil: z.iso.datetime().nullable(),
+  /** `limitedUntil` comes from the fallback delay: no reset time was known (07, section 5.2). */
+  limitedUntilEstimated: z.boolean(),
   createdAt: z.iso.datetime(),
 });
 export type ClaudeAccount = z.infer<typeof ClaudeAccount>;
@@ -142,6 +144,16 @@ export type Machine = z.infer<typeof Machine>;
 /** `GET /api/machines`: by name. */
 export const MachineListResponse = z.object({ machines: z.array(Machine) });
 export type MachineListResponse = z.infer<typeof MachineListResponse>;
+
+/**
+ * `GET /api/machines/server-address`: the address machines connect to, for **Add machine**'s
+ * warning when a daemon would refuse it (plain `http://` outside this computer; 02, section 9.2).
+ */
+export const ServerAddressResponse = z.object({
+  address: z.string(),
+  refusedPlainHttp: z.boolean(),
+});
+export type ServerAddressResponse = z.infer<typeof ServerAddressResponse>;
 
 /** `POST /api/machines`. */
 export const CreateMachineRequest = z.object({ name: DisplayName, accountId: z.uuid() });

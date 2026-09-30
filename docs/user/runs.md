@@ -29,6 +29,7 @@ The screens update on their own while you look at them: you never need to reload
 
 - The **board** shows the run on the ticket's card: running, paused or waiting for you, on which machine, with the agent's latest progress line.
 - The **ticket page** shows the run in progress with its progress line and times, and **Watch the run live**.
+- **Activity > Live runs** shows every run in progress at once, with what each agent does now: its latest log entry, updated as it works. See [Live runs](activity.md#live-runs).
 - The **run page** shows:
   - its status, with the reason when it is paused or has failed;
   - the agent, the machine and the Claude account;
@@ -65,10 +66,10 @@ If the machine is offline, the run is marked as failed because of that, and its 
 
 Your Claude plan limits how much agents can work in a period. When a run reaches the limit, it is **paused**: its work is kept, and it does not count as a failed attempt.
 
-- **Claude usage limit reached**: the machine recognised Claude's usage limit message. The run and the Claude account wait until the limit resets (the time Claude gave, or **Quota wait when the reset time is unknown** later). **Resume** works only after that time, and no other run starts on that account until then.
-- **Run paused: possible Claude usage limit** (a *suspected* limit): the agent stopped on an error that may be the usage limit, but may also be Claude being overloaded or a network problem. The account is not marked as limited, and you can click **Resume** at once. If the limit really was reached, the run pauses again.
+- **Claude usage limit reached: you can resume after 3:45 PM**: the machine recognised Claude's usage limit message. The run and the Claude account wait until the limit resets: the time Claude gave or, when it gave none, **Quota wait when the reset time is unknown** later; the time then shows "(estimated)". **Resume** becomes available only at that time, and no other run starts on that account until then.
+- **Run paused: possible Claude usage limit** (a *suspected* limit): the agent stopped on an error that may be the usage limit, but may also be Claude being overloaded or a network problem. The account is not marked as limited, and you can click **Resume** at once: the run may pause again if it was the limit.
 
-To resume, open the ticket or the run and click **Resume**. The agent picks up where it stopped, on the same machine; if that machine cannot take it now, the page says why and the run stays paused.
+In this version, a paused run never resumes by itself. [Needs you](needs-you.md#agents-work) lists it. To resume, click **Resume** there, on the ticket or on the run. The agent picks up where it stopped, on the same machine; if that machine cannot take it now, the page says why and the run stays paused.
 
 ## When a run ends
 
@@ -76,8 +77,17 @@ To resume, open the ticket or the run and click **Resume**. The agent picks up w
 - The agent gives up, runs out of time, or its session stops unexpectedly: the run **fails**, the ticket goes back to **To do** with a comment saying why, and **Failed attempts** goes up by one.
 - Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, or a machine that did not confirm the start in time.
 
+## Check finished work
+
+When an agent finishes, its ticket is **In review** and [Needs you](needs-you.md#agents-work) lists it as **Work finished: check it**, with the agent's summary. Read the summary, the **Agent's report** and the commits on the ticket page (see [Where the work is](#where-the-work-is)), then:
+
+- if the work is right, click **Mark as done manually** and say why (see [Mark as done manually](tickets.md#mark-as-done-manually));
+- if something must change, click **Request changes**, write what should change (required), and confirm. The ticket goes back to **To do** with your comment. Its branch and commits are kept and it does not count as a failed attempt. The next dialog offers **Run now**: click it to start the next run at once, or **Later** to start it from the ticket page. The next run continues the earlier commits, on the same machine, and reads your comment first. If it cannot start (the account is limited, the machine is offline), the dialog says why, as **Run now** does on the ticket page.
+
 ## Where the work is
 
 Agents commit their work on the ticket's branch, for example `t/12-contact-form`. In this version nothing is pushed to GitHub: the branch lives only on the machine that ran the agent.
 
-The ticket page shows **Branch**: its name, "on machine Laptop, not on GitHub yet", and the commits of the last run that reported them, newest first. The next run of the ticket goes on from them, on that same machine: if it is offline, **Run now** says so. If that machine was revoked, the next run starts again from the project's default branch on another machine, and a comment says how many commits were lost.
+The ticket page shows **Branch**: its name, "on machine Laptop, not on GitHub yet", and the commits of the last run that reported them, newest first. The next run of the ticket goes on from them, on that same machine: if it is offline, **Run now** says so.
+
+On the machine itself, `orchestrator-daemon status` lists every ticket branch kept there, for each repository, with its latest commit and the commits not on GitHub yet. It works whether the daemon runs or not, and changes nothing. If that machine was revoked, the next run starts again from the project's default branch on another machine, and a comment says how many commits were lost.

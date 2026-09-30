@@ -33,6 +33,7 @@ export function toAccount(row: AccountRow, now = new Date()): ClaudeAccount {
     // A limit whose time has passed is shown available at once (07, section 3).
     state: AccountState.parse(effective.state),
     limitedUntil: effective.limitedUntil?.toISOString() ?? null,
+    limitedUntilEstimated: effective.estimated,
     createdAt: row.createdAt.toISOString(),
   };
 }

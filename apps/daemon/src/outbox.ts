@@ -32,8 +32,16 @@ export class Outbox {
     return join(runFolder(this.paths, runId), 'outbox.json');
   }
 
+  /**
+   * Writes `outbox.json`. A failed write (folder removed, disk full) is logged: the reports stay
+   * in memory, are still sent, and the next change writes the file again.
+   */
   private save(runId: string): void {
-    writeJsonAtomic(this.file(runId), this.pending.get(runId) ?? []);
+    try {
+      writeJsonAtomic(this.file(runId), this.pending.get(runId) ?? []);
+    } catch (error) {
+      this.log.error({ err: error, runId }, 'outbox.json not written: written at the next change');
+    }
   }
 
   /** Reads the reports a previous daemon left for `runId`. */

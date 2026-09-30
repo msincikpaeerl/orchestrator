@@ -57,6 +57,8 @@ export async function startTestApp(
     daemonPackageDir?: string;
     /** Interval of the realtime stream's keep-alive and session check. */
     streamKeepAliveMs?: number;
+    /** `PUBLIC_URL`; `http://localhost:8080` by default. */
+    publicUrl?: string;
   } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
@@ -75,7 +77,7 @@ export async function startTestApp(
       pool,
       logger: createLogger('trace', logs),
       secretKey: options.secretKey ?? TEST_SECRET_KEY,
-      publicUrl: 'http://localhost:8080',
+      publicUrl: options.publicUrl ?? 'http://localhost:8080',
       githubApiUrl: options.githubApiUrl,
       now: options.now,
       daemonSecondMs: options.daemonSecondMs,

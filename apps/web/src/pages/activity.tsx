@@ -1,6 +1,8 @@
 import { EventEntityType, EventType, type EventLogEntry } from '@orchestrator/protocol';
 import { useSearchParams } from 'react-router';
+import { dayStart } from '../activity/days';
 import { EventText } from '../activity/event-text';
+import { LiveRuns, RunHistory } from '../activity/runs';
 import { actorLabel, entityLabel, eventTypeLabel } from '../activity/text';
 import {
   Button,
@@ -18,13 +20,6 @@ import { refusalText } from '../refusals';
 /** The filters kept in the address, so a filtered log can be reloaded or shared. */
 const FILTERS = ['project', 'ticket', 'entity', 'type', 'from', 'to'] as const;
 type Filter = (typeof FILTERS)[number];
-
-/** Start of a day chosen in the owner's time zone (`2026-09-24`), plus `days`. */
-function dayStart(date: string, days = 0): string | null {
-  const match = /^(\d{4})-(\d\d)-(\d\d)$/.exec(date);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days).toISOString();
-}
 
 /** The API query of the filters: the last day chosen is included. */
 function apiQuery(params: URLSearchParams): string {
@@ -160,7 +155,14 @@ function EventLog() {
           <Button
             variant="secondary"
             onClick={() => {
-              setParams(new URLSearchParams(), { replace: true });
+              setParams(
+                (current) => {
+                  const updated = new URLSearchParams(current);
+                  for (const name of FILTERS) updated.delete(name);
+                  return updated;
+                },
+                { replace: true },
+              );
             }}
           >
             Clear filters
@@ -200,16 +202,22 @@ function EventLog() {
   );
 }
 
-/** Activity (02, section 7): the event log; runs come with later versions. */
+/** Activity (02, section 7): live runs, the queue (lot 4), the run history and the event log. */
 export function ActivityPage() {
   return (
     <>
       <PageHeader title="Activity" help="activity" />
-      <div className="space-y-6">
-        <Card>
-          <p className="font-medium">Live runs, queue and run history</p>
-          <p className="mt-2 text-slate-700">Coming in a later version.</p>
-        </Card>
+      <div className="space-y-8">
+        <LiveRuns />
+        <section aria-labelledby="queue-title" className="space-y-4">
+          <h2 id="queue-title" className="text-xl font-semibold text-slate-900">
+            Queue
+          </h2>
+          <Card>
+            <p>Coming in a later version: the tickets waiting to run, and why.</p>
+          </Card>
+        </section>
+        <RunHistory />
         <EventLog />
       </div>
     </>

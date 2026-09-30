@@ -97,8 +97,22 @@ export function capabilitySourceText(source: Machine['capabilitySources'][number
   }
 }
 
+/** The machine and account items of "Needs you": setup still to do and machine problems. */
+export type MachineNeedsYouItem = Extract<
+  NeedsYouItem,
+  {
+    type:
+      | 'no_claude_account'
+      | 'no_machine'
+      | 'daemon_incompatible'
+      | 'claude_code_unsupported'
+      | 'machine_problem'
+      | 'machine_offline_with_runs';
+  }
+>;
+
 /** Title and explanation of a machine or account item of "Needs you" (02, section 4). */
-export function needsYouText(item: Exclude<NeedsYouItem, { type: 'project_setup_failed' }>): {
+export function needsYouText(item: MachineNeedsYouItem): {
   title: string;
   detail: string;
 } {
