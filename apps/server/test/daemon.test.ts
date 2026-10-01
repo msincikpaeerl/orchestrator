@@ -6,6 +6,7 @@ import {
   healthyTools,
   runDaemon,
   spawnDaemon,
+  stopHomeProcesses,
   waitFor,
   type DaemonProcess,
   type TestHome,
@@ -33,11 +34,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  for (const daemon of daemons.splice(0)) {
-    daemon.child.kill('SIGKILL');
-    await daemon.exited;
-  }
+  for (const daemon of daemons.splice(0)) await daemon.stop('SIGKILL');
   await t.close();
+  // Every process started for the test is gone before its home folder is removed.
+  await stopHomeProcesses(home);
   await home.remove();
 });
 

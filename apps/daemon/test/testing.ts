@@ -116,13 +116,21 @@ export interface DaemonProcess {
   stderr(): string;
   /** Resolves with the exit code. */
   exited: Promise<number>;
+  /**
+   * Stops it and resolves once no process of it is left. tsx runs the daemon in a child process:
+   * SIGTERM goes to tsx, which passes it on; SIGKILL goes to the whole process group, since tsx
+   * cannot pass it on and the daemon would otherwise outlive the test.
+   */
+  stop(signal: 'SIGTERM' | 'SIGKILL'): Promise<void>;
 }
 
 /** Starts `orchestrator-daemon <args>` from the sources, with the test home's environment. */
 export function spawnDaemon(args: string[], env: NodeJS.ProcessEnv, input?: string): DaemonProcess {
+  // Its own process group, so that `stop` reaches the daemon tsx starts.
   const child = spawn(process.execPath, [tsxCli, '--conditions=source', cliSource, ...args], {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
   });
   let stdout = '';
   let stderr = '';
@@ -134,7 +142,23 @@ export function spawnDaemon(args: string[], env: NodeJS.ProcessEnv, input?: stri
       resolve(code ?? (signal ? 128 : 1));
     });
   });
-  return { child, stdout: () => stdout, stderr: () => stderr, exited };
+  const stop = async (signal: 'SIGTERM' | 'SIGKILL') => {
+    const group = child.pid;
+    if (group === undefined) return;
+    try {
+      if (signal === 'SIGKILL') process.kill(-group, 'SIGKILL');
+      else child.kill('SIGTERM');
+    } catch {
+      // Already gone.
+    }
+    await exited;
+    await waitFor(
+      () => groupProcesses(group).length === 0,
+      10_000,
+      `the end of the daemon's processes (group ${String(group)})`,
+    );
+  };
+  return { child, stdout: () => stdout, stderr: () => stderr, exited, stop };
 }
 
 /** Runs `orchestrator-daemon <args>` to its end. */
@@ -153,6 +177,23 @@ export function captureLogger(): { log: Logger; lines: () => string[] } {
   const lines: string[] = [];
   const log = pino({ level: 'debug' }, { write: (line: string) => lines.push(line) });
   return { log, lines: () => lines };
+}
+
+/** The processes of a process group, zombies left out (they hold nothing any more). */
+function groupProcesses(group: number): number[] {
+  const found: number[] = [];
+  for (const entry of readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      // `pid (name) state ppid pgrp ...`: the name may hold spaces and parentheses.
+      const stat = readFileSync(`/proc/${entry}/stat`, 'latin1');
+      const [state, , pgrp] = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      if (Number(pgrp) === group && state !== 'Z') found.push(Number(entry));
+    } catch {
+      // Gone.
+    }
+  }
+  return found;
 }
 
 /**
