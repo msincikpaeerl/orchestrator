@@ -13,6 +13,7 @@
 # folder of its own: your ~/.claude and ~/.claude.json are never read or changed. Quota: one
 # session per profile with one prompt, on the smallest model by default; a profile whose allowlist
 # and deny rules are the same as a profile already checked is not run again (it says so).
+# It refuses to run in CI or without a terminal, and asks you to type yes before any session.
 #
 # Usage: tools/smoke/allowlist-smoke.sh [--keep] [--model <alias>] [--profile <key>]
 #                                       [--claude <executable>] [--dry-run]
@@ -20,7 +21,7 @@
 #   --model      model alias (default: haiku, the smallest)
 #   --profile    check only this profile (default: every default profile with its own rules)
 #   --claude     the claude executable to use (default: claude from PATH)
-#   --dry-run    skip the login (for the fake claude of the tests only)
+#   --dry-run    skip the login; only with the tests' fake claude given with --claude
 #
 # The report prints PASS, FAIL or NOT ATTEMPTED (a command the agent never tried) per profile and
 # command. It and the files it records are sanitised: paths, e-mail addresses and credentials are
@@ -34,6 +35,7 @@ set -uo pipefail
 
 KEEP=0
 DRY_RUN=0
+CLAUDE_GIVEN=""
 MODEL=haiku
 ONLY=""
 START_TIMEOUT="${SMOKE_START_TIMEOUT:-60}"
@@ -50,14 +52,25 @@ while (($# > 0)); do
     --dry-run) DRY_RUN=1 ;;
     --model) MODEL="${2:?--model needs a value}"; shift ;;
     --profile) ONLY="${2:?--profile needs a value}"; shift ;;
-    --claude) PATH="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd):$PATH"; shift ;;
-    -h | --help) sed -n '2,31p' "$0"; exit 0 ;;
+    --claude)
+      CLAUDE_GIVEN="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd)/$(basename "$2")"
+      PATH="$(dirname "$CLAUDE_GIVEN"):$PATH"
+      shift
+      ;;
+    -h | --help) sed -n '2,32p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
 done
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib/real-claude-guard.sh
+source "$REPO/tools/smoke/lib/real-claude-guard.sh"
+if ((DRY_RUN)); then
+  guard_dry_run "$CLAUDE_GIVEN"
+else
+  guard_owner_terminal
+fi
 TSX="$REPO/apps/daemon/node_modules/.bin/tsx"
 HELPER="$REPO/apps/daemon/scripts/allowlist-smoke.ts"
 
@@ -121,6 +134,9 @@ echo "Scratch folder:  $SCRATCH (deleted at the end$( ((KEEP)) && echo ': no, --
 echo "Claude config:   $CLAUDE_CONFIG (the smoke test's own; your ~/.claude is not used)"
 echo
 
+if ((DRY_RUN == 0)); then
+  guard_confirm "${#PROFILES[@]} session(s) (${PROFILES[*]}), one prompt each on $MODEL (about 16 short tool calls each)."
+fi
 helper prepare || stop "the scratch layout could not be prepared."
 
 if ((DRY_RUN)); then
