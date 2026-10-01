@@ -351,13 +351,18 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
     'C: the daemon restarts during a run that then finishes; Request changes, and the next run reads the comment',
     async () => {
       // The agent works until the test lets it go on (a file it waits for in its worktree), so
-      // the daemon is restarted while a tool call runs.
+      // the daemon is restarted while a tool call runs. The command first writes `running`: the
+      // tool call is in the log before its PreToolUse hook has answered, and a hook finding no
+      // daemon refuses the call (05, section 4.6), so only the command itself shows it runs.
       await fake.play({
         turns: [
           {
             steps: [
               { do: 'text', text: 'Building the form.' },
-              { do: 'bash', command: 'while [ ! -e go ]; do sleep 0.1; done; rm go' },
+              {
+                do: 'bash',
+                command: 'touch running; while [ ! -e go ]; do sleep 0.1; done; rm go running',
+              },
               commit('contact.html', 'Add the contact form'),
               submit,
             ],
@@ -367,10 +372,9 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       const { machineId } = await enrolAndStart();
       await h.createTicket();
       const first = await runNow();
+      const worktree = join(home.paths.home, 'worktrees', first.id);
       await until('the tool call running', async () =>
-        (await runLog(first.id)).entries.some(
-          (entry) => entry.kind === 'tool_call' && entry.text.includes('[ ! -e go ]'),
-        ),
+        (await readdir(worktree).catch((): string[] => [])).includes('running'),
       );
 
       // The daemon stops (as `systemctl --user restart` does) and starts again.
@@ -385,7 +389,7 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       expect(sessionAlive(first.id)).toBe(true);
 
       // The agent goes on: its tool calls reach the new daemon, and the run finishes.
-      await writeFile(join(home.paths.home, 'worktrees', first.id, 'go'), '');
+      await writeFile(join(worktree, 'go'), '');
       await until(
         'the first run succeeded',
         async () => (await run(first.id)).status === 'succeeded',
