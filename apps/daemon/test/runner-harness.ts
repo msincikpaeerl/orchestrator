@@ -111,6 +111,8 @@ export function daemon(
       ? new Tmux(join(home.bin, 'tmux'), home.env, {
           systemd: options.systemd,
           unit: tmuxScopeName(prefix),
+          marker: join(home.paths.home, 'tmux-scope-started'),
+          shell: '/bin/sh',
         })
       : (options.tmux ?? tmux),
     trust,

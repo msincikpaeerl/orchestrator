@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Ack, DoctorCheck, MachineDoctor } from '@orchestrator/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -38,6 +38,12 @@ let git: GitHttpServer;
 let daemons: DaemonProcess[];
 /** While this file exists, the fake `systemd-run` refuses the scopes `refused` names. */
 let broken: string;
+/**
+ * While this file exists, the fake `systemd-run` of a run's scope writes `called`, then waits two
+ * seconds before starting Claude Code: a launch a test can interrupt.
+ */
+let slow: string;
+let called: string;
 
 beforeEach(async () => {
   home = await createTestHome();
@@ -49,6 +55,8 @@ beforeEach(async () => {
   home.env.TMUX_TMPDIR = tmuxDir;
   home.env.PATH = `${home.env.PATH ?? ''}:/usr/bin:/bin`;
   broken = join(home.root, 'scopes-broken');
+  slow = join(home.root, 'scopes-slow');
+  called = join(home.root, 'systemd-run-called');
   await fakeExecutable(home.bin, 'systemctl', 'exit 0');
   const remotes = join(home.root, 'remotes');
   await createRemote(remotes, 'owner', 'notes', home.env);
@@ -79,7 +87,8 @@ afterEach(async () => {
 /**
  * A fake `systemd-run --user --scope … --unit <unit> -- <command>`: runs the command where a scope
  * would hold it, or, while `broken` exists and the unit's name matches the shell pattern
- * `refused`, fails as systemd does when it refuses a scope.
+ * `refused`, fails as systemd does when it refuses a scope. While `slow` exists, a run's scope
+ * starts two seconds late.
  */
 async function fakeSystemdRun(refused: string): Promise<void> {
   await fakeExecutable(
@@ -96,6 +105,9 @@ async function fakeSystemdRun(refused: string): Promise<void> {
       'done',
       `if [ -e '${broken}' ]; then`,
       `  case "$unit" in ${refused}) printf '%s\\n' '${REFUSAL}' >&2; exit 1 ;; esac`,
+      'fi',
+      `if [ -e '${slow}' ]; then`,
+      `  case "$unit" in *orch-run-*) : > '${called}'; sleep 2 ;; esac`,
       'fi',
       'exec "$@"',
     ].join('\n'),
@@ -209,11 +221,14 @@ describe('process scopes', () => {
     TIMEOUT,
   );
 
-  it(
-    "a run's scope failing later fails the run and blocks the machine until the restart",
-    async () => {
-      // The tmux server's scope works; the runs' scopes and the checks fail once `broken` exists.
-      await fakeSystemdRun('*orch-run-*|*scope-check*');
+  it.each([
+    ["a run's scope", '*orch-run-*'],
+    ["the tmux server's scope", '*orchestrator-tmux*'],
+  ])(
+    '%s refused later fails the run and blocks the machine until the restart',
+    async (_, refused) => {
+      // The check at start passes; the scope `refused` names fails once `broken` exists.
+      await fakeSystemdRun(refused);
       startDaemon('service');
       await waitFor(() => server.hellos().length === 1, 20_000, 'hello');
       expect(scopesCheck(server.hellos()[0]?.payload.doctor ?? [])).toMatchObject({
@@ -231,7 +246,7 @@ describe('process scopes', () => {
         'the end of the run',
       );
       const end = server.states(start.runId).at(-1)?.payload;
-      expect(end).toMatchObject({ state: 'ended', reason: 'crashed' });
+      expect(end).toMatchObject({ state: 'ended', reason: 'process_scope_failed' });
       expect(end?.state === 'ended' ? end.detail : null).toContain(
         `Claude Code could not be started in the run's process scope (systemd-run --user --scope failed: ${REFUSAL})`,
       );
@@ -269,6 +284,95 @@ describe('process scopes', () => {
       expect((await runDaemon(['status'], home.env)).stdout).toContain(
         'ERROR    Process scopes: Process scopes could not be created for a run',
       );
+    },
+    TIMEOUT,
+  );
+
+  /** The machine still takes runs: no error reported, the next run.start accepted. */
+  async function notBlocked(): Promise<void> {
+    expect(server.received.some((message) => message.type === 'machine.doctor')).toBe(false);
+    expect((await runDaemon(['status'], home.env)).stdout).toContain(
+      "OK       Process scopes: Used: agents' sessions keep running when the service restarts",
+    );
+    expect(await command({ type: 'run.start', payload: payload() }, 'run.start')).toEqual({
+      ok: true,
+    });
+  }
+
+  /** Starts a run whose scope starts late, and resolves once systemd-run was called. */
+  async function slowLaunch(): Promise<string> {
+    await fakeSystemdRun('*');
+    await writeFile(slow, '');
+    startDaemon('service');
+    await waitFor(() => server.hellos().length === 1, 20_000, 'hello');
+    const start = payload();
+    expect(await command({ type: 'run.start', payload: start }, 'run.start')).toEqual({
+      ok: true,
+    });
+    await waitFor(() => existsSync(called), 30_000, 'systemd-run called for the run');
+    return start.runId;
+  }
+
+  async function endOf(runId: string) {
+    await waitFor(
+      () => server.states(runId).some((state) => state.payload.state === 'ended'),
+      30_000,
+      'the end of the run',
+    );
+    return server.states(runId).at(-1)?.payload;
+  }
+
+  it(
+    'Stop run during the launch does not block the machine',
+    async () => {
+      const runId = await slowLaunch();
+      server.send({
+        type: 'run.stop',
+        id: randomUUID(),
+        payload: { runId, reason: 'owner_stopped' },
+      });
+      expect(await endOf(runId)).toMatchObject({ state: 'ended', reason: 'stopped' });
+      await rm(slow);
+      await notBlocked();
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'the session closed during the launch is not a scope failure',
+    async () => {
+      const runId = await slowLaunch();
+      // tmux, not systemd, ends it: systemd-run stops on the hang-up without refusing anything.
+      spawnSync(
+        join(home.bin, 'tmux'),
+        ['-L', TMUX_SOCKET_NAME, 'kill-session', '-t', `=orch-${runId}`],
+        {
+          env: home.env,
+        },
+      );
+      expect(await endOf(runId)).toMatchObject({ state: 'ended', reason: 'crashed' });
+      await rm(slow);
+      await notBlocked();
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a daemon stopped during the launch does not block the machine after its restart',
+    async () => {
+      const runId = await slowLaunch();
+      const first = daemons[0];
+      first?.child.kill('SIGTERM');
+      expect(await first?.exited).toBe(0);
+      await rm(slow);
+      startDaemon('service');
+      await waitFor(() => server.hellos().length === 2, 20_000, 'the second hello');
+      expect(scopesCheck(server.hellos()[1]?.payload.doctor ?? [])).toMatchObject({
+        status: 'ok',
+      });
+      // The launch went on without the daemon: the restarted one finds the session.
+      expect(server.hellos()[1]?.payload.runs.map((run) => run.runId)).toEqual([runId]);
+      await notBlocked();
     },
     TIMEOUT,
   );

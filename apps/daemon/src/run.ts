@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Server } from 'node:net';
@@ -45,7 +45,13 @@ import {
   type RunSocketAnswer,
 } from './run-socket.js';
 import type { ProcessScopes } from './scopes.js';
-import { runScopeName, type UserSystemd } from './systemd.js';
+import {
+  ScopeRefused,
+  isRefusal,
+  runScopeName,
+  scopeFailure,
+  type UserSystemd,
+} from './systemd.js';
 import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
@@ -98,8 +104,6 @@ export class Run {
   private readonly reader: TranscriptReader;
   private releaseStart: (() => void) | null = null;
   private sessionAlive = false;
-  /** The session was launched by this daemon, through the scope marker (`scoped`). */
-  private launchedHere = false;
   private launchedAt = 0;
   private lastActivity = 0;
   private lastTick = 0;
@@ -352,7 +356,7 @@ export class Run {
       this.socket ??= await serveRunSocket(files.socket, (request) => this.onSocket(request));
       await this.context.trust.ensure(this.data.bare ?? '');
       this.releaseStart = await this.context.trust.beginStart();
-      await rm(this.scopeMarker, { force: true });
+      await Promise.all(Object.values(this.scopeFiles).map((file) => rm(file, { force: true })));
       await this.context.tmux.newSession({
         name: this.name,
         cwd: this.data.worktree ?? '',
@@ -380,17 +384,15 @@ export class Run {
       });
     } catch (error) {
       this.log.error({ err: error }, 'session not launched');
-      // The tmux server's scope may be what failed (05, section 2).
-      const scopeProblem = await this.context.systemd?.checkScope(this.context.unitPrefix);
-      if (scopeProblem) {
-        await this.scopeFailed(scopeProblem);
+      // systemd-run refused the tmux server's scope (05, section 2).
+      if (error instanceof ScopeRefused) {
+        await this.scopeFailed(error.reason);
         return;
       }
       await this.end('crashed', `Claude Code could not be launched: ${(error as Error).message}`);
       return;
     }
     this.sessionAlive = true;
-    this.launchedHere = true;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
     this.newTurn();
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text: message });
@@ -403,26 +405,69 @@ export class Run {
     return runScopeName(this.context.unitPrefix, this.runId);
   }
 
-  /** Written by the run's scope before Claude Code starts in it: the scope was created. */
-  private get scopeMarker(): string {
-    return join(runFolder(this.context.paths, this.runId), 'scope-started');
+  /**
+   * The files of the run's scope (05, section 2): `started`, written inside the scope before
+   * Claude Code starts; `error` and `exit`, systemd-run's error output and exit status, written
+   * by the wrapper outside the scope, the exit status only when `started` is missing.
+   */
+  private get scopeFiles(): { started: string; error: string; exit: string } {
+    const folder = runFolder(this.context.paths, this.runId);
+    return {
+      started: join(folder, 'scope-started'),
+      error: join(folder, 'scope-error'),
+      exit: join(folder, 'scope-exit'),
+    };
   }
 
   /**
-   * Claude Code in the run's own scope, where the user's systemd runs. A shell inside the scope
-   * writes the marker, then replaces itself with Claude Code: a session that ends without the
-   * marker never got its scope. The command is passed as arguments, never in the script.
+   * Claude Code in the run's own scope, where the user's systemd runs. A wrapper outside the
+   * scope runs systemd-run with its error output in a file, and records its exit status when
+   * the scope never started Claude Code; inside the scope, a shell writes the `started` marker,
+   * then replaces itself with Claude Code, its error output back on the terminal. The paths and
+   * the command are arguments, never part of the scripts.
    */
   private scoped(command: string[]): string[] {
-    return this.context.systemd
-      ? this.context.systemd.scopeCommand(this.scopeUnit, [
-          findExecutable('sh', this.context.toolPath) ?? '/bin/sh',
-          '-c',
-          ': > "$0" && exec "$@"',
-          this.scopeMarker,
-          ...command,
-        ])
-      : command;
+    const systemd = this.context.systemd;
+    if (!systemd) return command;
+    const shell = findExecutable('sh', this.context.toolPath) ?? '/bin/sh';
+    const { started, error, exit } = this.scopeFiles;
+    return [
+      shell,
+      '-c',
+      'm=$1 e=$2 x=$3; shift 3; "$@" 2>"$e"; s=$?; [ -e "$m" ] || echo "$s" > "$x"; exit "$s"',
+      'orchestrator-scope',
+      started,
+      error,
+      exit,
+      ...systemd.markedScopeCommand(this.scopeUnit, started, command, {
+        shell,
+        terminal: true,
+      }),
+    ];
+  }
+
+  /**
+   * Why the session ended without its scope, when systemd-run itself failed: it ended with its
+   * own exit status (not a signal) before the scope started Claude Code. Null otherwise, for
+   * example when the session was closed during the launch (05, section 2).
+   */
+  private scopeRefusal(): string | null {
+    const { started, error, exit } = this.scopeFiles;
+    if (existsSync(started)) return null;
+    let code: number;
+    try {
+      code = Number(readFileSync(exit, 'utf8').trim());
+    } catch {
+      return null;
+    }
+    if (!Number.isInteger(code) || !isRefusal(code)) return null;
+    let said = '';
+    try {
+      said = readFileSync(error, 'utf8');
+    } catch {
+      // No message: the exit status says it.
+    }
+    return scopeFailure(code, said);
   }
 
   /**
@@ -433,7 +478,7 @@ export class Run {
     this.log.error({ reason }, "the run's process scope could not be created");
     this.context.scopes.fail(reason);
     await this.end(
-      'crashed',
+      'process_scope_failed',
       `Claude Code could not be started in the run's process scope (${reason}). The machine takes no runs until this is fixed: see its problem in Needs you.`,
     );
   }
@@ -863,12 +908,9 @@ export class Run {
     if (this.sessionAlive && !(await this.context.tmux.hasSession(this.name))) {
       if (this.stoppedMeanwhile()) return;
       this.sessionAlive = false;
-      const systemd = this.context.systemd;
-      if (systemd && this.launchedHere && !existsSync(this.scopeMarker)) {
-        await this.scopeFailed(
-          (await systemd.checkScope(this.context.unitPrefix)) ??
-            "systemd-run ended before starting Claude Code in the run's scope",
-        );
+      const refused = this.context.systemd ? this.scopeRefusal() : null;
+      if (refused !== null) {
+        await this.scopeFailed(refused);
         return;
       }
       await this.end('crashed', 'Claude Code exited before the end of the run.');

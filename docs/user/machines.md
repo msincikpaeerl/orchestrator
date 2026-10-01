@@ -195,7 +195,7 @@ The service looks for tools in the folders it was given by `install-service`. Af
 
 When the daemon runs as a service, it starts the agents' sessions in **process scopes**: groups of processes that systemd keeps apart from the service. That is why restarting the service does not stop the agents at work, and why everything an agent started stops with its run.
 
-If the daemon cannot create a process scope, a restart of the service would stop every agent's session. So the daemon still connects, but the machine takes no runs: "Needs you" shows **Problem on …** with "Process scopes" and the reason, and `orchestrator-daemon status` and `orchestrator-daemon doctor` show it too. This is checked when the daemon starts. If a run's scope cannot be created later, that run fails, and the machine takes no runs either until the daemon is restarted.
+If the daemon cannot create a process scope, a restart of the service would stop every agent's session. So the daemon still connects, but the machine takes no runs: "Needs you" shows **Problem on …** with "Process scopes" and the reason, and `orchestrator-daemon status` and `orchestrator-daemon doctor` show it too. This is checked when the daemon starts. If a run's scope cannot be created later, that run fails without counting as a failed attempt, its ticket goes back to To do, and the machine takes no runs either until the daemon is restarted.
 
 To fix it, on the machine:
 

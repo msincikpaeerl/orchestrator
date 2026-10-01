@@ -34,6 +34,33 @@ export function runScopeName(prefix: string, runId: string): string {
 /** Longest systemd error kept in a reason, so a `doctor` message stays short. */
 const REASON_MAX_LENGTH = 300;
 
+/**
+ * Inside a scope, before the command: writes the marker file (`$0`) proving systemd-run created
+ * the scope and started what it holds, then replaces itself with the command. The second one
+ * gives the command the terminal back as its error output, which the run's wrapper had sent to
+ * a file for systemd-run's own message (`Run`).
+ */
+const MARK_THEN_EXEC = ': > "$0" && exec "$@"';
+const MARK_THEN_EXEC_ON_TERMINAL = ': > "$0" && exec "$@" 2>/dev/tty';
+
+/** systemd-run refused a scope: its own error message, or its exit status (05, section 2). */
+export function scopeFailure(code: number, said: string): string {
+  const text = said.trim().replace(/\s+/g, ' ').slice(0, REASON_MAX_LENGTH);
+  return `systemd-run --user --scope failed${text ? `: ${text}` : ` (exit status ${String(code)})`}`;
+}
+
+/** Whether an exit status is systemd-run's own failure, not a signal that stopped it. */
+export function isRefusal(code: number): boolean {
+  return code > 0 && code < 128;
+}
+
+/** A scope systemd-run refused to create (05, section 2): `reason` says why, in its words. */
+export class ScopeRefused extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
+
 /** What `UserSystemd.detect` found: the user's systemd, or why process scopes cannot be made. */
 export type ScopeDetection =
   { systemd: UserSystemd; problem: null } | { systemd: null; problem: string };
@@ -81,18 +108,28 @@ export class UserSystemd {
       env: this.env,
     });
     if (answer?.code === 0) return null;
-    const said = answer ? answer.stderr.trim() || answer.stdout.trim() : '';
-    const detail = said
-      ? `: ${said.replace(/\s+/g, ' ').slice(0, REASON_MAX_LENGTH)}`
-      : answer
-        ? ` (exit code ${String(answer.code)})`
-        : ' (it did not answer)';
-    return `systemd-run --user --scope failed${detail}`;
+    if (!answer) return 'systemd-run --user --scope failed (it did not answer)';
+    return scopeFailure(answer.code, answer.stderr || answer.stdout);
   }
 
   /** `command` run inside a new transient scope `unit` (stopped with `stopScope`). */
   scopeCommand(unit: string, command: readonly string[]): string[] {
     return [this.systemdRun, ...this.scopeArgs(unit, command)];
+  }
+
+  /**
+   * `command` inside a new scope `unit`, started through a shell that first writes `marker`:
+   * when it is missing after systemd-run ended, the scope never held the command. With
+   * `terminal`, the command's error output is `/dev/tty`.
+   */
+  markedScopeCommand(
+    unit: string,
+    marker: string,
+    command: readonly string[],
+    options: { shell: string; terminal: boolean },
+  ): string[] {
+    const script = options.terminal ? MARK_THEN_EXEC_ON_TERMINAL : MARK_THEN_EXEC;
+    return this.scopeCommand(unit, [options.shell, '-c', script, marker, ...command]);
   }
 
   private scopeArgs(unit: string, command: readonly string[]): string[] {

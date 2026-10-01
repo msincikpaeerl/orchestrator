@@ -119,7 +119,14 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     tmux: new Tmux(
       findExecutable('tmux', tools) ?? 'tmux',
       process.env,
-      systemd ? { systemd, unit: tmuxScopeName(prefix) } : null,
+      systemd
+        ? {
+            systemd,
+            unit: tmuxScopeName(prefix),
+            marker: join(paths.home, 'tmux-scope-started'),
+            shell: findExecutable('sh', tools) ?? '/bin/sh',
+          }
+        : null,
     ),
     trust,
     workspaces: new Workspaces({
