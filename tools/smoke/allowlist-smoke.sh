@@ -11,13 +11,14 @@
 #
 # Everything lives in a scratch folder under the temporary folder, with a Claude configuration
 # folder of its own: your ~/.claude and ~/.claude.json are never read or changed. Quota: one
-# session per profile with one prompt, on the smallest model by default.
+# session per profile with one prompt, on the smallest model by default; a profile whose allowlist
+# and deny rules are the same as a profile already checked is not run again (it says so).
 #
 # Usage: tools/smoke/allowlist-smoke.sh [--keep] [--model <alias>] [--profile <key>]
 #                                       [--claude <executable>] [--dry-run]
 #   --keep       keep the scratch folder (it holds Claude credentials: delete it yourself)
 #   --model      model alias (default: haiku, the smallest)
-#   --profile    check only this profile (default: every default profile)
+#   --profile    check only this profile (default: every default profile with its own rules)
 #   --claude     the claude executable to use (default: claude from PATH)
 #   --dry-run    skip the login (for the fake claude of the tests only)
 #
@@ -50,7 +51,7 @@ while (($# > 0)); do
     --model) MODEL="${2:?--model needs a value}"; shift ;;
     --profile) ONLY="${2:?--profile needs a value}"; shift ;;
     --claude) PATH="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd):$PATH"; shift ;;
-    -h | --help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,31p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -92,15 +93,30 @@ helper() {
 
 CLAUDE_CONFIG="$SCRATCH/home/.orchestrator/claude-config"
 RECORD="$SCRATCH/record"
-mapfile -t PROFILES < <(helper profiles) || stop "the profiles in agents/ could not be read."
-if [[ -n "$ONLY" ]]; then
-  [[ " ${PROFILES[*]} " == *" $ONLY "* ]] || stop "no default profile $ONLY (profiles: ${PROFILES[*]})."
-  PROFILES=("$ONLY")
+PROFILE_LINES="$(helper profiles)" || stop "the profiles in agents/ could not be read."
+PROFILES=()
+SKIPPED=()
+while read -r key same; do
+  [[ -n "$key" ]] || continue
+  if [[ -n "$ONLY" ]]; then
+    [[ "$key" == "$ONLY" ]] && PROFILES=("$key")
+  elif [[ -n "$same" ]]; then
+    # Same allowlist and deny rules as a profile already checked: not run again (quota).
+    SKIPPED+=("$key (same allowlist and deny rules as $same)")
+  else
+    PROFILES+=("$key")
+  fi
+done <<< "$PROFILE_LINES"
+if [[ -n "$ONLY" && ${#PROFILES[@]} -eq 0 ]]; then
+  stop "no default profile $ONLY (profiles: $(cut -d' ' -f1 <<< "$PROFILE_LINES" | paste -sd' '))."
 fi
 echo "Allowlist smoke test"
 echo "Claude Code:     $VERSION ($(command -v claude))"
 echo "Model:           $MODEL"
 echo "Profiles:        ${PROFILES[*]}"
+for skipped in "${SKIPPED[@]}"; do
+  echo "Not run again:   $skipped"
+done
 echo "Scratch folder:  $SCRATCH (deleted at the end$( ((KEEP)) && echo ': no, --keep'))"
 echo "Claude config:   $CLAUDE_CONFIG (the smoke test's own; your ~/.claude is not used)"
 echo
