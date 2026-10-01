@@ -327,6 +327,7 @@ All are configurable, following the rules in 04, section 8. The waiting run life
 ## 6. Disconnection and reconciliation
 
 - **Lot 2 subset** (owner's decision, lot 2 step A): the daemon keeps each run's state in `runs/<id>/state.json` and finds its tmux sessions again after a restart; on reconnection, a run the server no longer considers active is stopped (`run.stop` with `not_active`), which also ends a session whose end was never reported after the owner's **Stop run** (04, section 2; owner's decision, lot 2 step J); while a machine is offline its active runs show "machine offline", and the owner's **Stop run** marks such a run failed with `machine_offline` (never counted as an attempt). The rest of this section comes with lot 4.
+- A daemon that is stopping starts nothing more: it refuses any new command from the server ("The daemon is stopping."), which the server handles like any refused `run.start` or `run.resume` (lot 2 plan, step M).
 - If the connection drops, live sessions keep running. Events are buffered on disk and sent when the connection returns. MCP calls fail with a retryable error while disconnected.
 - On reconnection, `hello` lists the runs still alive. The server reconciles: the **daemon is the source of truth for processes**, the **server is the source of truth for tickets**.
 - A run unknown to the server is stopped. A run the server thinks is active but the daemon does not report is marked failed with reason `machine_offline`.

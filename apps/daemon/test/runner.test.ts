@@ -548,4 +548,24 @@ describe('runner', () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'a run manager shut down refuses new runs, so no session starts after a test cleaned up',
+    async () => {
+      // A command arriving after shutdown (a test body outliving its test, for example) once
+      // started a session after the harness had stopped the test home's processes.
+      const manager = daemon();
+      await manager.shutdown();
+      const payload = runStartPayload(cloneUrl);
+      expect(await manager.handle({ type: 'run.start', id: randomUUID(), payload })).toEqual({
+        ok: false,
+        message: 'The daemon is stopping.',
+      });
+      await sleep(1000);
+      expect(await tmux.hasSession(sessionName(payload.runId))).toBe(false);
+      expect(await fake.log()).toEqual([]);
+      expect(states(payload.runId)).toEqual([]);
+    },
+    TIMEOUT,
+  );
 });
