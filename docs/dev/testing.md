@@ -140,14 +140,14 @@ Change `@playwright/test` in `apps/web/package.json` and the image tag in `tools
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADR 0030). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main` (ADRs 0030 and 0032). `pnpm verify` is split into parallel jobs, which together run each of its scripts (a test checks it); each installs the dependencies with `pnpm install --frozen-lockfile` (pnpm store cached) and has a 15-minute timeout:
 
 - Job `checks`: `pnpm lint` (lint, format check, `bash -n` of the scripts in `tools/smoke/` and `tools/spike/`), `pnpm typecheck`, `pnpm docs:links` and `pnpm audit --audit-level critical`.
-- Job `test`: starts `postgres-test` from `docker/compose.dev.yml`, as developers do (its log shows `fsync`, `synchronous_commit` and `full_page_writes` off and its data on `tmpfs`), installs tmux from apt and runs `pnpm test`.
+- Job `test`, in three shards (a matrix, `test (1)` to `test (3)` on GitHub): each starts `postgres-test` from `docker/compose.dev.yml`, as developers do (its log shows `fsync`, `synchronous_commit` and `full_page_writes` off and its data on `tmpfs`), installs tmux from apt and runs `pnpm test --shard=i/3`, a third of the test files. `fail-fast` is off, so every shard reports its failures; `pnpm exec vitest run --shard=i/3` runs the same files locally.
 - Job `build`: `pnpm build`.
 - Job `e2e`, in the Playwright image with a PostgreSQL service: installs dependencies with the image's Node.js and pnpm (Corepack, pnpm store cached), builds the UI and runs `playwright test`. The report and traces of failed tests are kept as the `playwright-report` artifact for 7 days.
 - Job `docker`: builds the image, starts `docker/compose.yml` with a generated `.env`, and checks `/health`, `/version` and that a screen address returns the UI.
-- Job `ci`: needs every other job and fails when any of them failed, was cancelled or was skipped. Branch protection of `main` requires only this check, so jobs can be added or renamed without changing it; list every new job in its `needs` (a test checks it) and never rename or remove `ci`.
+- Job `ci`: needs every other job (the shards through the one job `test`) and fails when any of them failed, was cancelled or was skipped. Branch protection of `main` requires only this check, so jobs can be added or renamed without changing it; list every new job in its `needs` (a test checks it) and never rename or remove `ci`.
 
 To check the workflow file locally:
 
@@ -157,4 +157,4 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
 
 CI must stay under 10 minutes (08, section 4): the timeouts are a safety net, not a target. When a job grows too long, split it further (for example test shards) rather than raising its timeout.
 
-If the CI test job exceeds 10 minutes (timeout 15), split it with Vitest sharding: see the proposal in the lot-2 L1 follow-up (`docs/dev/lot-2-plan.md`).
+Vitest gives each shard the same number of test files, ordered by a hash of their paths, not by duration, so the slowest files (the daemon's runner tests, `acceptance.test.ts`, `tickets.test.ts`) decide the balance; on 2026-10-02 the three shards held 24 %, 42 % and 35 % of the test file time (ADR 0032). When a shard takes more than 8 minutes, add a shard: append the next number to `shard: [1, 2, 3]` in the `test` job, nothing else changes (tests check that the shards are numbered 1 to their count and that `ci` needs every job).
