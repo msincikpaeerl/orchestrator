@@ -65,11 +65,14 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
   useRunnerHarness();
 
   beforeAll(async () => {
-    const found = await UserSystemd.detect(SYSTEM_PATH, process.env);
-    if (!found) {
-      throw new Error('ORCHESTRATOR_TEST_SYSTEMD=1, but no systemd user session answers');
+    // The throw-away scope of the check is named like every unit of these tests.
+    const found = await UserSystemd.detect(SYSTEM_PATH, process.env, 'od-test-check-');
+    if (!found.systemd) {
+      throw new Error(
+        `ORCHESTRATOR_TEST_SYSTEMD=1, but no process scope can be created: ${found.problem}`,
+      );
     }
-    systemd = found;
+    systemd = found.systemd;
     stopTestUnits();
   });
   afterEach(() => {
@@ -195,8 +198,9 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
         });
         await fake.play({ turns: [{ steps: [{ do: 'sleep', ms: 120_000 }] }] });
 
-        // The daemon as a transient user service: its cgroup is killed when it stops, as the
-        // installed unit's is (no KillMode, 05 section 2). Nothing is written in the home folder.
+        // The daemon as a transient user service, started as the unit starts it (`--service`): its
+        // cgroup is killed when it stops, as the installed unit's is (no KillMode, 05 section 2).
+        // Nothing is written in the home folder.
         const root = fileURLToPath(new URL('..', import.meta.url));
         const tsxCli = createRequire(join(root, 'package.json')).resolve('tsx/cli');
         const startService = () => {
@@ -227,6 +231,7 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
               '--conditions=source',
               join(root, 'src', 'cli.ts'),
               'start',
+              '--service',
             ],
             { encoding: 'utf8' },
           );
@@ -235,6 +240,10 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
 
         startService();
         await waitFor(() => server.hellos().length === 1, 30_000, 'hello');
+        // The service created its throw-away scope: it takes runs (05, section 2).
+        expect(
+          server.hellos()[0]?.payload.doctor.find((check) => check.name === 'Process scopes'),
+        ).toMatchObject({ status: 'ok' });
         const payload = runStartPayload(`${git.url}/owner/notes.git`);
         runId = payload.runId;
         server.send({ type: 'run.start', id: randomUUID(), payload });

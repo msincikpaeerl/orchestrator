@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import {
@@ -36,11 +38,13 @@ import { checkToolCall, type PermissionScope } from './permissions.js';
 import { RUN_MARKER, sweepRun } from './processes.js';
 import {
   denyAnswer,
+  runFolder,
   runSocketPath,
   serveRunSocket,
   type McpAnswer,
   type RunSocketAnswer,
 } from './run-socket.js';
+import type { ProcessScopes } from './scopes.js';
 import { runScopeName, type UserSystemd } from './systemd.js';
 import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
@@ -78,6 +82,8 @@ export interface RunContext {
   systemd: UserSystemd | null;
   /** Start of the systemd unit names (`systemd.ts`). */
   unitPrefix: string;
+  /** Whether sessions may start; told when a run's scope cannot be created (05, section 2). */
+  scopes: ProcessScopes;
   /** Called once a run has ended and its folder may go when its reports are acknowledged. */
   onEnded: (run: Run) => void;
 }
@@ -92,6 +98,8 @@ export class Run {
   private readonly reader: TranscriptReader;
   private releaseStart: (() => void) | null = null;
   private sessionAlive = false;
+  /** The session was launched by this daemon, through the scope marker (`scoped`). */
+  private launchedHere = false;
   private launchedAt = 0;
   private lastActivity = 0;
   private lastTick = 0;
@@ -344,6 +352,7 @@ export class Run {
       this.socket ??= await serveRunSocket(files.socket, (request) => this.onSocket(request));
       await this.context.trust.ensure(this.data.bare ?? '');
       this.releaseStart = await this.context.trust.beginStart();
+      await rm(this.scopeMarker, { force: true });
       await this.context.tmux.newSession({
         name: this.name,
         cwd: this.data.worktree ?? '',
@@ -371,10 +380,17 @@ export class Run {
       });
     } catch (error) {
       this.log.error({ err: error }, 'session not launched');
+      // The tmux server's scope may be what failed (05, section 2).
+      const scopeProblem = await this.context.systemd?.checkScope(this.context.unitPrefix);
+      if (scopeProblem) {
+        await this.scopeFailed(scopeProblem);
+        return;
+      }
       await this.end('crashed', `Claude Code could not be launched: ${(error as Error).message}`);
       return;
     }
     this.sessionAlive = true;
+    this.launchedHere = true;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
     this.newTurn();
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text: message });
@@ -387,11 +403,39 @@ export class Run {
     return runScopeName(this.context.unitPrefix, this.runId);
   }
 
-  /** Claude Code in the run's own scope, where the user's systemd runs. */
+  /** Written by the run's scope before Claude Code starts in it: the scope was created. */
+  private get scopeMarker(): string {
+    return join(runFolder(this.context.paths, this.runId), 'scope-started');
+  }
+
+  /**
+   * Claude Code in the run's own scope, where the user's systemd runs. A shell inside the scope
+   * writes the marker, then replaces itself with Claude Code: a session that ends without the
+   * marker never got its scope. The command is passed as arguments, never in the script.
+   */
   private scoped(command: string[]): string[] {
     return this.context.systemd
-      ? this.context.systemd.scopeCommand(this.scopeUnit, command)
+      ? this.context.systemd.scopeCommand(this.scopeUnit, [
+          findExecutable('sh', this.context.toolPath) ?? '/bin/sh',
+          '-c',
+          ': > "$0" && exec "$@"',
+          this.scopeMarker,
+          ...command,
+        ])
       : command;
+  }
+
+  /**
+   * The run's scope could not be created (05, section 2): the run fails with the reason, and
+   * the daemon starts no more sessions until it is restarted.
+   */
+  private async scopeFailed(reason: string): Promise<void> {
+    this.log.error({ reason }, "the run's process scope could not be created");
+    this.context.scopes.fail(reason);
+    await this.end(
+      'crashed',
+      `Claude Code could not be started in the run's process scope (${reason}). The machine takes no runs until this is fixed: see its problem in Needs you.`,
+    );
   }
 
   /**
@@ -819,6 +863,14 @@ export class Run {
     if (this.sessionAlive && !(await this.context.tmux.hasSession(this.name))) {
       if (this.stoppedMeanwhile()) return;
       this.sessionAlive = false;
+      const systemd = this.context.systemd;
+      if (systemd && this.launchedHere && !existsSync(this.scopeMarker)) {
+        await this.scopeFailed(
+          (await systemd.checkScope(this.context.unitPrefix)) ??
+            "systemd-run ended before starting Claude Code in the run's scope",
+        );
+        return;
+      }
       await this.end('crashed', 'Claude Code exited before the end of the run.');
     }
   }

@@ -12,7 +12,7 @@ import { ServerConnection, type SocketFactory } from './connection.js';
 import type { CredentialSource } from './credentials.js';
 import { probeControl, removeStaleControl, serveControl } from './control.js';
 import { detectCapabilities, machineOs } from './detect.js';
-import { runDoctor } from './doctor.js';
+import { helpLink, runDoctor } from './doctor.js';
 import { doctorEnvironment } from './environment.js';
 import { EXIT_REFUSED, UserError } from './errors.js';
 import { findExecutable } from './exec.js';
@@ -21,6 +21,7 @@ import { clearLastStop, writeLastStop, type LastStop } from './last-stop.js';
 import { createLogger } from './logger.js';
 import type { DaemonPaths } from './paths.js';
 import { RunManager } from './runs.js';
+import { ProcessScopes } from './scopes.js';
 import { selfCommand } from './self.js';
 import { ServerCalls } from './server-calls.js';
 import { parseServerUrl, webSocketUrl } from './server-url.js';
@@ -102,10 +103,16 @@ export async function startDaemon(options: StartOptions): Promise<number> {
   const tools = environment.toolPath;
   const trust = new TrustRegistry(join(paths.claudeConfig, '.claude.json'));
   const self = selfCommand();
-  // Where the user's systemd runs (the service's normal case), the tmux server and each run get
-  // scopes of their own (05, sections 2 and 4.11).
-  const systemd = await UserSystemd.detect(tools, process.env);
+  // Where the user's systemd creates scopes (the service's normal case), the tmux server and each
+  // run get scopes of their own (05, sections 2 and 4.11). The service needs them: without them it
+  // reports an error and starts no session; a daemon in a terminal goes on without them.
   const prefix = unitPrefix(paths);
+  const { systemd, problem } = await UserSystemd.detect(tools, process.env, prefix);
+  const scopes = new ProcessScopes(
+    mode,
+    mode === 'service' ? problem : null,
+    helpLink(config, 'process-scopes'),
+  );
   const runs = new RunManager({
     paths,
     log,
@@ -130,12 +137,16 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     secondMs: 1000,
     systemd,
     unitPrefix: prefix,
+    scopes,
   });
-  log.info({ systemdScopes: systemd !== null }, 'process scopes');
+  if (systemd) log.info('process scopes used');
+  else if (scopes.problem)
+    log.error({ reason: problem }, 'process scopes cannot be created: no runs');
+  else log.warn({ reason: problem }, 'process scopes not used: daemon in a terminal');
   await runs.recover();
 
   const buildHello = async (): Promise<Hello['payload']> => {
-    const doctor = await runDoctor(environment);
+    const doctor = await runDoctor(environment, scopes.check());
     lastHello = {
       protocolVersion: PROTOCOL_VERSION,
       daemonVersion: DAEMON_VERSION,
@@ -224,6 +235,18 @@ export async function startDaemon(options: StartOptions): Promise<number> {
 
   connection = server;
   runs.outbox.connect((message) => server.sendMessage(message));
+  // A run's scope could not be created: the server hears it at once (05, section 3.3). When not
+  // connected, the next `hello` carries the same checks.
+  scopes.onProblem = () => {
+    void buildHello()
+      .then(({ doctor }) =>
+        server.sendMessage({ type: 'machine.doctor', id: randomUUID(), payload: { doctor } }),
+      )
+      .catch((error: unknown) => {
+        // Never an unhandled rejection, which would stop the daemon.
+        log.error({ err: error }, 'checks not sent');
+      });
+  };
 
   control = await serveControl(paths.controlSocket, () => ({
     type: 'status',
@@ -240,6 +263,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     claudeCodeVersion: lastHello?.claudeCodeVersion ?? null,
     os: lastHello?.os ?? machineOs(environment.wsl),
     capabilities: lastHello?.capabilities ?? [],
+    processScopes: scopes.check(),
     runs: runs.list().map(({ runId, state, ticket, repository, branch }) => ({
       runId,
       state,

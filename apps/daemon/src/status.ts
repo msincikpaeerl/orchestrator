@@ -95,6 +95,7 @@ export async function status(
   out(`Claude Code: ${s.claudeCodeVersion ?? 'not found'}`);
   out(`System: ${s.os === 'wsl' ? 'Linux on WSL' : 'Linux'}`);
   out(`Capabilities detected: ${s.capabilities.length > 0 ? s.capabilities.join(', ') : 'none'}`);
+  if (s.processScopes) for (const line of formatChecks([s.processScopes])) out(line);
   if (s.runs.length === 0) out('Runs: none');
   else {
     out('Runs:');
