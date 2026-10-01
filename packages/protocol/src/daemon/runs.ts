@@ -54,6 +54,12 @@ export const RunEndReason = z.enum([
    * launched (05, section 4.3): a machine problem, never a failed attempt.
    */
   'claude_code_unsupported',
+  /**
+   * systemd-run refused the run's process scope or the tmux server's (05, section 2): Claude Code
+   * never started, and the daemon takes no more runs until restarted. A machine problem, never a
+   * failed attempt.
+   */
+  'process_scope_failed',
   /** The workspace could not be prepared, or the session ended unexpectedly. */
   'crashed',
 ]);
