@@ -39,6 +39,20 @@ const daemonExamples = {
     },
   },
   heartbeat: { type: 'heartbeat', id, payload: {} },
+  'machine.doctor': {
+    type: 'machine.doctor',
+    id,
+    payload: {
+      doctor: [
+        {
+          name: 'Process scopes',
+          status: 'error',
+          message: 'Process scopes cannot be created (systemd-run was not found)',
+          link: 'https://orchestrator.local/help/machines#process-scopes',
+        },
+      ],
+    },
+  },
   ack: { type: 'ack', id, payload: { ok: true } },
   'run.state': {
     type: 'run.state',

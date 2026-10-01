@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Hello, Heartbeat, Welcome } from './connection.js';
+import { Hello, Heartbeat, MachineDoctor, Welcome } from './connection.js';
 import { Ack } from './envelope.js';
 import { GitCredential, GitCredentialRequest, McpCall, McpResult } from './relay.js';
 import {
@@ -16,6 +16,7 @@ import {
 export const DaemonMessage = z.discriminatedUnion('type', [
   Hello,
   Heartbeat,
+  MachineDoctor,
   Ack,
   RunState,
   RunEvents,

@@ -202,6 +202,7 @@ export {
   DoctorCheck,
   Hello,
   Heartbeat,
+  MachineDoctor,
   MachineOs,
   Welcome,
 } from './daemon/connection.js';

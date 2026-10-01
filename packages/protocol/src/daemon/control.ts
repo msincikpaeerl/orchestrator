@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Capability, MachineOs } from './connection.js';
+import { Capability, DoctorCheck, MachineOs } from './connection.js';
 import { TicketReference } from '../api/tickets.js';
 import { GitBranchName } from './git.js';
 import { DaemonRunState, RunId } from './runs.js';
@@ -42,6 +42,11 @@ export const ControlStatus = z.object({
   claudeCodeVersion: z.string().nullable(),
   os: MachineOs,
   capabilities: z.array(Capability),
+  /**
+   * The process scopes check (05, section 8): always for the service, for a daemon in a terminal
+   * only once it reports an error. `doctor` typed in a terminal shows it from here.
+   */
+  processScopes: DoctorCheck.nullable(),
   /**
    * Live runs, each with its ticket (null for a planning run), its repository (`owner/name`) and
    * its ticket branch, so `status` says which local branch a live run uses.
