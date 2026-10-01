@@ -321,6 +321,16 @@ class Session {
             cwd: this.cwd,
             model: { id: this.launch.model, display_name: this.launch.model },
             ...step.input,
+            ...(step.fullForSeconds === undefined
+              ? {}
+              : {
+                  rate_limits: {
+                    five_hour: {
+                      used_percentage: 100,
+                      resets_at: Math.floor(Date.now() / 1000) + step.fullForSeconds,
+                    },
+                  },
+                }),
           };
           await runShell(this.settings.statusLine.command, JSON.stringify(input), this.cwd);
         }
@@ -358,6 +368,7 @@ class Session {
   /** Plays the turn answering one message; resolves false when the session hangs for good. */
   async answer(message: string): Promise<boolean> {
     record({ event: 'message', text: message });
+    await this.hook('UserPromptSubmit', { prompt: message });
     this.write({ type: 'user', message: { role: 'user', content: message } });
     const turn =
       this.scenario.turns[this.turn] ?? Turn.parse({ steps: [{ do: 'text', text: 'Done.' }] });

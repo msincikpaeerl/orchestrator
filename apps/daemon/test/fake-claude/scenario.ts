@@ -21,8 +21,16 @@ export const Step = z.discriminatedUnion('do', [
   z.object({ do: z.literal('bash'), command: z.string() }),
   /** A call to a tool of the MCP server declared in `--mcp-config`, started on first use. */
   z.object({ do: z.literal('mcp'), tool: z.string(), arguments: JsonObject.default({}) }),
-  /** Runs the status line command with this input (added to the session's fields). */
-  z.object({ do: z.literal('statusLine'), input: JsonObject }),
+  /**
+   * Runs the status line command with this input (added to the session's fields). With
+   * `fullForSeconds`, the input also has a five-hour window at 100 % resetting that many seconds
+   * after the step, so a test's reset time does not depend on when the session started.
+   */
+  z.object({
+    do: z.literal('statusLine'),
+    input: JsonObject.default({}),
+    fullForSeconds: z.int().min(1).optional(),
+  }),
   z.object({
     do: z.literal('notification'),
     type: z.string().default('idle_prompt'),
