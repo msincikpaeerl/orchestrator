@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { HookEvent, RunId } from '@orchestrator/protocol';
 import { attach } from './attach.js';
 import { safeJson } from './config.js';
+import { probeControl } from './control.js';
 import { gitCredentialHelper } from './credentials.js';
 import { runDoctor } from './doctor.js';
 import { enroll } from './enroll.js';
@@ -82,7 +83,12 @@ async function main(argv: string[]): Promise<number> {
       return status(paths, out);
     case 'doctor': {
       parse({}, 0);
-      const result = await runDoctor(doctorEnvironment(paths, 'command'));
+      // The process scopes are the running daemon's own: it says how they are (05, section 8).
+      const running = await probeControl(paths.controlSocket);
+      const result = await runDoctor(
+        doctorEnvironment(paths, 'command'),
+        running.kind === 'running' ? running.status.processScopes : null,
+      );
       out(`Checks of this machine (orchestrator-daemon ${DAEMON_VERSION}):`);
       for (const line of formatChecks(result.checks)) out(line);
       const stop = await readLastStop(paths.lastStop);

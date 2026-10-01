@@ -29,6 +29,12 @@ const status: ControlStatus = {
   claudeCodeVersion: '2.1.282',
   os: 'wsl',
   capabilities: ['git'],
+  processScopes: {
+    name: 'Process scopes',
+    status: 'ok',
+    message: "Used: agents' sessions keep running when the service restarts",
+    link: null,
+  },
   runs: [],
 };
 

@@ -76,6 +76,7 @@ export class ScriptedServer {
       case 'run.state':
       case 'run.events':
       case 'run.quota_limited':
+      case 'machine.doctor':
         if (this.acknowledge) send({ type: 'ack', id: message.id, payload: { ok: true } });
         return;
       default:

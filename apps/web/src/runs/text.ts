@@ -43,6 +43,7 @@ export const failureText: Record<FailureReason, string> = {
   machine_offline: 'its machine was offline',
   machine_revoked: 'its machine was revoked',
   claude_code_unsupported: "its machine's Claude Code was missing or too old",
+  machine_problem: 'its machine could not start Claude Code in a process scope',
   cancelled: 'it was cancelled',
 };
 

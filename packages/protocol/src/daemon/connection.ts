@@ -50,6 +50,14 @@ export const Hello = message(
 export type Hello = z.infer<typeof Hello>;
 
 /**
+ * `machine.doctor`: the checks again, when they change while connected (05, section 3.3): a run's
+ * process scope could not be created, so the machine becomes unusable at once. Answered by an
+ * `ack`; not kept for resending, since the next `hello` carries the same checks.
+ */
+export const MachineDoctor = message('machine.doctor', z.object({ doctor: z.array(DoctorCheck) }));
+export type MachineDoctor = z.infer<typeof MachineDoctor>;
+
+/**
  * `welcome`: the server's answer to `hello`, with its id. When accepted, the heartbeat interval;
  * the run timeouts come with each `run.start`. When refused, the server then closes the
  * connection.

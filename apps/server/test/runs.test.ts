@@ -739,6 +739,32 @@ describe('the run reported by the daemon (05, section 4.7)', () => {
     ).toEqual({ ok: true });
     expect((await ticket()).attemptCount).toBe(0);
   });
+
+  it('fails a run whose process scope was refused with machine_problem, not counted', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    await working(daemon, created.id);
+    expect(
+      await report(
+        daemon,
+        state(created.id, {
+          state: 'ended',
+          reason: 'process_scope_failed',
+          detail: "Claude Code could not be started in the run's process scope (Access denied)",
+        }),
+      ),
+    ).toEqual({ ok: true });
+    expect(await run(created.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'machine_problem',
+    });
+    const detail = await ticket();
+    expect(detail).toMatchObject({ status: 'todo', attemptCount: 0 });
+    expect(comments(detail)).toEqual([
+      "The run on machine Laptop ended: its machine could not start Claude Code in a process scope (Claude Code could not be started in the run's process scope (Access denied)). It does not count as a failed attempt.",
+    ]);
+  });
 });
 
 describe('Stop run (04, section 2)', () => {

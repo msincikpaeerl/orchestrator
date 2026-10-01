@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { schema } from '@orchestrator/db';
 import {
   DAEMON_MESSAGE_MAX_BYTES,
@@ -9,6 +10,7 @@ import {
   claudeCodeSupport,
   isCompatibleProtocol,
   type Hello,
+  type MachineDoctor,
   type ServerMessage,
 } from '@orchestrator/protocol';
 import websocket from '@fastify/websocket';
@@ -331,6 +333,13 @@ export class DaemonGateway {
       case 'hello':
         log.warn('second hello on a connection: ignored');
         return;
+      case 'machine.doctor': {
+        await this.doctorChanged(machineId, message, log);
+        if (!connection.closed) {
+          this.sendOn(connection, { type: 'ack', id: message.id, payload: { ok: true } });
+        }
+        return;
+      }
       case 'ack':
         await runs?.acknowledged(machineId, message);
         return;
@@ -363,6 +372,46 @@ export class DaemonGateway {
         return;
       }
     }
+  }
+
+  /**
+   * `machine.doctor` (05, section 3.3): the checks changed while connected, for example a run's
+   * process scope could not be created. The machine is unusable while one reports an error, as
+   * after `hello`; a duplicate changes nothing.
+   */
+  private async doctorChanged(
+    machineId: string,
+    message: MachineDoctor,
+    log: FastifyBaseLogger,
+  ): Promise<void> {
+    const errors = doctorErrors(message.payload.doctor).map((check) => check.name);
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      const [machine] = await tx
+        .select()
+        .from(schema.machines)
+        .where(eq(schema.machines.id, machineId))
+        .for('update');
+      if (!machine || machine.revokedAt) return;
+      // A duplicate, or nothing new (jsonb does not keep the order of keys).
+      if (isDeepStrictEqual(machine.doctor, message.payload.doctor)) return;
+      await tx
+        .update(schema.machines)
+        .set({
+          doctor: message.payload.doctor,
+          doctorErrorSince: errors.length > 0 ? (machine.doctorErrorSince ?? now) : null,
+          updatedAt: now,
+        })
+        .where(eq(schema.machines.id, machineId));
+      await recordEvent(tx, {
+        actor: 'system',
+        entityType: 'machine',
+        entityId: machineId,
+        type: 'machine.doctor_changed',
+        payload: { name: machine.name, errors },
+      });
+    });
+    log.warn({ errors }, 'daemon checks changed while connected');
   }
 
   private refuseRevoked(connection: Connection, hello: Hello, log: FastifyBaseLogger): void {

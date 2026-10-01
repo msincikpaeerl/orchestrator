@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { schema } from '@orchestrator/db';
 import {
   createTestHome,
+  fakeExecutable,
   healthyTools,
   runDaemon,
   spawnDaemon,
@@ -11,7 +12,7 @@ import {
   type DaemonProcess,
   type TestHome,
 } from '@orchestrator/daemon/testing';
-import { EnrollmentResponse, Machine } from '@orchestrator/protocol';
+import { EnrollmentResponse, Machine, NeedsYouResponse } from '@orchestrator/protocol';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SERVER_VERSION } from '../src/version.js';
@@ -208,5 +209,27 @@ describe('the real daemon against the real server', { timeout: 60_000 }, () => {
         return true;
       }
     });
+  });
+  it('as the service without process scopes: online, unusable, with the reason in Needs you', async () => {
+    // A systemd that refuses every scope (05, section 2).
+    await fakeExecutable(home.bin, 'systemctl', 'exit 0');
+    await fakeExecutable(
+      home.bin,
+      'systemd-run',
+      "printf '%s\\n' 'Failed to connect to bus: No medium found' >&2\nexit 1",
+    );
+    const id = await enrolled();
+    const daemon = spawnDaemon(['start', '--service'], home.env);
+    daemons.push(daemon);
+    await online(id);
+    const connected = await machine(id);
+    const check = connected.doctor.find((each) => each.name === 'Process scopes');
+    expect(check).toMatchObject({ status: 'error', link: `${t.url}/help/machines#process-scopes` });
+    expect(check?.message).toContain('Failed to connect to bus: No medium found');
+    expect(connected.unusable).toEqual([{ type: 'doctor_error', check }]);
+    const items = NeedsYouResponse.parse(await call('GET', '/api/needs-you')).items;
+    expect(items).toContainEqual(
+      expect.objectContaining({ type: 'machine_problem', checks: [check] }),
+    );
   });
 });

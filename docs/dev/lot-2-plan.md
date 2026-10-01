@@ -743,9 +743,44 @@ Owner's decisions before the step (2026-10-01), written into 03 section 6, 05 se
   - 140 daemons from `apps/server/test/daemon.test.ts`, 2 per run of the suite since 2026-09-28. That file stopped its daemons with a `SIGKILL` to tsx, which starts the daemon in a child process and cannot pass a `SIGKILL` on, and it did not use `stopHomeProcesses`. `spawnDaemon` now starts its own process group and gives `stop(signal)`, which waits until no process of it is left; the file also ends with `stopHomeProcesses`. Regression test: `apps/daemon/test/testing.test.ts`, which failed before the fix.
   - One fake `claude` session of a runner test (2026-10-01 15:21, on step L2b's code, which has the L2 clean-up fix). Its test home had been removed, so its clean-up had run to the end; an interrupted run keeps its folder (checked by interrupting `runner.test.ts`). The session was therefore started after the clean-up, which only a `run.start` handled by a run manager already shut down can do: a test body outliving its test, after a timeout for example. Which test it was cannot be told afterwards. A run manager that was shut down now refuses new commands ("The daemon is stopping.", 05 section 6). Regression test in `runner.test.ts`, which failed before the fix.
 
+### [x] M2. Process scopes required by the service
+
+Asked by the owner after step M's check (2026-10-01): the daemon used process scopes only when `systemctl --user show-environment` answered, and otherwise went on without them, even as the service; its tmux server then started in the service's control group, and the next restart of the service would have killed every agent's session. `doctor` only checked that systemd runs for the user. Owner's decisions (2026-10-02), written into 05 sections 2, 3.3, 4.3 and 8:
+
+1. At start, the daemon creates one throw-away scope; scopes count as working only if that succeeds, and the reason when it fails is systemd's own message (or the missing `systemd-run`/`systemctl`).
+2. The service without scopes still starts and connects, reports the blocking `doctor` error "Process scopes" ("Problem on …" in "Needs you", with the reason and how to fix it), and refuses `run.start` and `run.resume` with that reason. `orchestrator-daemon status` shows it. A daemon in a terminal keeps the fallback, with no row.
+3. `doctor` typed in a terminal reads the check from the running daemon's control socket (read-only): no row when no daemon runs or a daemon in a terminal has no error.
+4. A run's scope failing later (the check at start passed): that run fails with a clear reason, and the daemon switches to the same blocking error, reported to the server at once, until it is restarted.
+5. The systemd test is run by the owner, as the first check of step N.
+
+**Done when** regression tests show: the service without scopes reports the error, refuses `run.start` and starts nothing; a daemon in a terminal without scopes is unchanged; a run's scope failing later fails the run, reports the error at once and refuses the next `run.start` and `run.resume`.
+
+*Done 2026-10-02.* Choices within the step:
+
+- `UserSystemd.detect` returns the systemd or the problem; `ProcessScopes` (`apps/daemon/src/scopes.ts`) holds the state the run manager, the runs, `hello`, the control socket and the connection read. The throw-away scope is `<prefix>orchestrator-scope-check-<random>`, so a test's is `od-test-…` like its other units.
+- A run's scope failing is told from systemd-run's own failure, without reading the screen (owner's review: a missing marker alone could be **Stop run**, a daemon stopped during the launch or tmux killed, and would block the machine on a false alarm). A wrapper outside the scope runs systemd-run with its error output in `scope-error` and, when the scope never wrote `scope-started`, records systemd-run's exit status in `scope-exit`; inside the scope, a shell writes `scope-started` and replaces itself with Claude Code, its error output back on `/dev/tty`. Only an exit status from 1 to 127 (not a signal) without the marker is a scope failure, with systemd-run's message. The tmux server's scope: `tmux new-session` runs through the same marking shell (`<home>/tmux-scope-started`), and `Tmux` throws `ScopeRefused` with systemd-run's message when it failed that way.
+- A daemon in a terminal whose check at start passed blocks the same way after a later failure (it chose scopes, and every next run would fail the same way); restarted in a terminal, it falls back to no scopes. Its check then appears in `hello`, `status` and `doctor` until the restart (accepted by the owner, written into 05 section 2).
+- The run fails with the new end reason `process_scope_failed`, recorded by the server as `failed` with the new failure reason `machine_problem` (migration `0013`): never a failed attempt, the ticket back in `todo` (owner's decision, written into 01 sections 3.4 and 3.7, 04 section 5 and 05 sections 2 and 3.3).
+- New daemon report `machine.doctor` (the checks), answered by an `ack`: the server stores them as at `hello` and writes `machine.doctor_changed` when they differ (Activity: "Machine checks changed"). It is not kept for resending, since the next `hello` carries the same checks. The control socket's status gains `processScopes`.
+- `systemd.test.ts` now starts its transient service with `start --service` and checks the "Process scopes" row is ok.
+- Tests: `apps/daemon/test/process-scopes.test.ts` (fake `systemd-run` and `systemctl`): the service without scopes, a daemon in a terminal, a run's scope and the tmux server's scope refused later (each fails on the code before the step), and three launches interrupted without blocking the machine: **Stop run**, the tmux session killed (which blocked the machine with the marker alone) and the daemon stopped then restarted; `runs.test.ts` (`process_scope_failed` fails the run with `machine_problem`, not counted); `machines.test.ts` (`machine.doctor` while connected, a duplicate writing no second event) and `daemon.test.ts` (the real daemon as the service without scopes, with the real server: online, unusable, "Problem on …" in "Needs you").
+
 ### [ ] N. Lot 2 check by the owner
 
 - Version 0.3.0 prepared (CHANGELOG section, version numbers).
+- **First check: the systemd test** (owner only, on WSL; it creates transient units in the owner's systemd user session, so a session never runs it). From the repository, in a WSL terminal of the owner's user (no database needed):
+
+  ```sh
+  ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts
+  ```
+
+  - **A pass**: the summary says `Test Files  1 passed (1)` and `Tests  3 passed (3)`, the three tests of "systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)" (scopes of a run and of the tmux server, a waiting run's scope stopped, sessions kept across a restart of the service started with `--service`, whose "Process scopes" check is ok). `3 skipped` means the variable was not set. Afterwards `systemctl --user list-units --all 'od-test-*'` lists nothing.
+  - **If it cannot run** (it stops at once with "ORCHESTRATOR_TEST_SYSTEMD=1, but no process scope can be created: …", followed by systemd's message), check in WSL first:
+    1. `/etc/wsl.conf` holds `[boot]` then `systemd=true`; after changing it, `wsl --shutdown` from Windows and open WSL again (Help > Machines > "Turn on systemd on WSL");
+    2. `systemctl --user is-system-running` answers `running` (`degraded` also works); "Failed to connect to bus" means systemd does not run for the user, or the terminal lacks `XDG_RUNTIME_DIR` (`echo $XDG_RUNTIME_DIR` shows `/run/user/<uid>`);
+    3. `systemd-run --user --scope true` ends at once without a message: its error is the reason the daemon would show;
+    4. lingering is on: `loginctl show-user "$USER" --property=Linger` answers `Linger=yes` (needed by the service of item 4, not by the test).
+  - The result is recorded in this plan. A failure is a gap fixed, with its test, before the rest of this step.
 - The owner:
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);

@@ -85,6 +85,9 @@ export class RunManager {
     switch (command.type) {
       case 'run.start': {
         if (run) return { ok: true };
+        // A session started without its scope would be stopped by a restart (05, section 2).
+        const refused = this.context.scopes.problem;
+        if (refused !== null) return { ok: false, message: refused };
         const created = Run.create(this.context, command.payload);
         this.runs.set(runId, created);
         created.begin();
@@ -96,6 +99,8 @@ export class RunManager {
         return refused ? { ok: false, message: refused } : { ok: true };
       }
       case 'run.resume': {
+        const problem = this.context.scopes.problem;
+        if (problem !== null) return { ok: false, message: problem };
         if (!run) return { ok: false, message: 'No such run on this machine.' };
         const refused = await run.resume(command.payload.claudeSessionId, command.payload.message);
         return refused ? { ok: false, message: refused } : { ok: true };

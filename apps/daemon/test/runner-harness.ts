@@ -16,6 +16,7 @@ import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
 import { TMUX_SOCKET_NAME } from '../src/paths.js';
 import { RunManager } from '../src/runs.js';
+import { ProcessScopes } from '../src/scopes.js';
 import { tmuxScopeName, unitPrefix, type UserSystemd } from '../src/systemd.js';
 import { Tmux } from '../src/tmux.js';
 import { TrustRegistry } from '../src/trust.js';
@@ -95,6 +96,7 @@ export function daemon(
     secondMs?: number;
     acknowledge?: boolean;
     systemd?: UserSystemd;
+    scopes?: ProcessScopes;
     tmux?: Tmux;
     log?: Logger;
   } = {},
@@ -109,6 +111,8 @@ export function daemon(
       ? new Tmux(join(home.bin, 'tmux'), home.env, {
           systemd: options.systemd,
           unit: tmuxScopeName(prefix),
+          marker: join(home.paths.home, 'tmux-scope-started'),
+          shell: '/bin/sh',
         })
       : (options.tmux ?? tmux),
     trust,
@@ -130,6 +134,7 @@ export function daemon(
     secondMs: options.secondMs ?? 1000,
     systemd: options.systemd ?? null,
     unitPrefix: prefix,
+    scopes: options.scopes ?? new ProcessScopes('terminal', null),
   });
   manager.outbox.connect((message) => {
     sent.push(message);

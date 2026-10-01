@@ -22,6 +22,7 @@ export const FailureReason = z.enum([
   'machine_offline',
   'machine_revoked',
   'claude_code_unsupported',
+  'machine_problem',
   'cancelled',
 ]);
 export type FailureReason = z.infer<typeof FailureReason>;
@@ -31,6 +32,7 @@ export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
   'machine_offline',
   'machine_revoked',
   'claude_code_unsupported',
+  'machine_problem',
   'cancelled',
 ];
 

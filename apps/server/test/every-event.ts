@@ -203,6 +203,21 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   await call('POST', `/api/runs/${created.id}/resume`);
   await runState({ state: 'starting', claudeCodeVersion: '2.1.100' });
 
+  // A run's process scope could not be created: the checks again while connected.
+  await daemon.request({
+    type: 'machine.doctor',
+    id: randomUUID(),
+    payload: {
+      doctor: [
+        {
+          name: 'Process scopes',
+          status: 'error',
+          message: 'Process scopes could not be created for a run (Access denied)',
+          link: null,
+        },
+      ],
+    },
+  });
   await call('PUT', `/api/machines/${machine.id}/capabilities`, { capabilities: ['git'] });
   await call('POST', `/api/machines/${machine.id}/disable`);
   await call('POST', `/api/machines/${machine.id}/enable`);

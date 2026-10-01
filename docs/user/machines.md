@@ -167,7 +167,7 @@ The daemon checks the machine each time it connects. So after fixing a problem, 
 systemctl --user restart orchestrator-daemon
 ```
 
-Restarting the service does not interrupt the agents at work: their sessions keep running and the daemon finds them again when it is back.
+Restarting the service does not interrupt the agents at work: their sessions keep running in [process scopes](#process-scopes) and the daemon finds them again when it is back.
 
 If you run the daemon yourself in a terminal (`orchestrator-daemon start`) instead of as a service, stop it with Ctrl+C and start it again.
 
@@ -179,7 +179,7 @@ If you run the daemon yourself in a terminal (`orchestrator-daemon start`) inste
 | No machine enrolled yet | No machine has enrolled (revoked machines do not count). | See [Add a machine](#add-a-machine). |
 | Update the daemon on … | The machine's daemon does not match this version of the Orchestrator, so it cannot connect. This happens after updating the Orchestrator. | On the machine, type the `npm install -g …` command shown, then restart the daemon. |
 | Claude Code not supported on … | Claude Code is missing, or older than 2.1.280. The machine gets no runs. | Install or update Claude Code (see [Before you start](#before-you-start)), then restart the daemon. |
-| Problem on … | A check on the machine found an error, for example tmux missing or too old. The machine gets no runs. | Fix what the item names, then restart the daemon. |
+| Problem on … | A check on the machine found an error, for example tmux missing or too old, or [process scopes](#process-scopes) that cannot be created. The machine gets no runs. | Fix what the item names, then restart the daemon. |
 
 An item disappears once the daemon connects again without the problem.
 
@@ -190,6 +190,20 @@ The service starts the daemon with the Node.js it was installed with. If you ins
 ### After installing a tool
 
 The service looks for tools in the folders it was given by `install-service`. After installing a tool (for example Docker, or Claude Code in another folder), type `orchestrator-daemon install-service` again from a terminal where the tool works.
+
+### Process scopes
+
+When the daemon runs as a service, it starts the agents' sessions in **process scopes**: groups of processes that systemd keeps apart from the service. That is why restarting the service does not stop the agents at work, and why everything an agent started stops with its run.
+
+If the daemon cannot create a process scope, a restart of the service would stop every agent's session. So the daemon still connects, but the machine takes no runs: "Needs you" shows **Problem on …** with "Process scopes" and the reason, and `orchestrator-daemon status` and `orchestrator-daemon doctor` show it too. This is checked when the daemon starts. If a run's scope cannot be created later, that run fails without counting as a failed attempt, its ticket goes back to To do, and the machine takes no runs either until the daemon is restarted.
+
+To fix it, on the machine:
+
+1. Type `systemctl --user is-system-running`. It should answer `running` (`degraded` also works). If it answers "Failed to connect to bus", systemd does not run for your user: on WSL, see [Turn on systemd on WSL](#turn-on-systemd-on-wsl).
+2. Type `systemd-run --user --scope true`. It should end at once without a message. If it prints an error, that error is what to fix: it is also the reason shown in "Needs you".
+3. Restart the service: `systemctl --user restart orchestrator-daemon`. The item disappears once the daemon connects without the problem.
+
+A daemon you run yourself in a terminal (`orchestrator-daemon start`) does not need process scopes: where systemd does not run, it starts sessions without them.
 
 ### When the daemon stopped by itself
 
@@ -210,8 +224,8 @@ Type these commands on the machine, in its Ubuntu terminal:
 | See whether the daemon's service is running, and its last messages | `systemctl --user status orchestrator-daemon` |
 | Read the daemon's last 100 messages | `journalctl --user -u orchestrator-daemon -n 100` |
 | Follow its messages as they come (stop with Ctrl+C) | `journalctl --user -u orchestrator-daemon -f` |
-| Check the machine: tools and versions, Claude Code login, systemd, the service, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
-| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
+| Check the machine: tools and versions, Claude Code login, systemd, the service and its process scopes, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
+| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.

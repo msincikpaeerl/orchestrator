@@ -65,11 +65,18 @@ function atLeast(version: [number, number, string], minimum: readonly [number, n
 }
 
 /** Help pages of the Orchestrator the machine is enrolled with. */
-function helpLink(config: DaemonConfig | null, section: string): string | null {
+export function helpLink(config: DaemonConfig | null, section: string): string | null {
   return config ? `${config.serverUrl}/help/machines#${section}` : null;
 }
 
-export async function runDoctor(environment: DoctorEnvironment): Promise<DoctorResult> {
+/**
+ * `processScopes`: the running daemon's process scopes check (05, section 8), from itself or,
+ * for the `doctor` command, from its control socket; null when there is none to show.
+ */
+export async function runDoctor(
+  environment: DoctorEnvironment,
+  processScopes: DoctorCheck | null = null,
+): Promise<DoctorResult> {
   const checks: DoctorCheck[] = [];
   let config: DaemonConfig | null = null;
   try {
@@ -92,6 +99,7 @@ export async function runDoctor(environment: DoctorEnvironment): Promise<DoctorR
   checks.push(...tools.checks);
   checks.push(loginCheck(environment));
   checks.push(...(await serviceChecks(environment, config)));
+  if (processScopes) checks.push(processScopes);
   checks.push(managedSettingsCheck(environment));
   if (environment.wsl) {
     checks.push(check('WSL', 'ok', 'WSL detected'));

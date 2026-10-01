@@ -91,6 +91,7 @@ export const EventType = z.enum([
   'machine.revoked',
   'machine.capabilities_changed',
   'machine.claude_code_unsupported',
+  'machine.doctor_changed',
   'agent_profile.created',
   'agent_profile.updated',
   'run.created',
@@ -285,6 +286,11 @@ export const EventPayloads = {
     version: z.string().nullable(),
     minimum: z.string(),
   }),
+  /**
+   * The daemon sent its checks again while connected (`machine.doctor`, 05 section 3.3): the
+   * names of those reporting an error, which make the machine unusable.
+   */
+  'machine.doctor_changed': z.object({ ...MachineFacts, errors: z.array(z.string()) }),
   /** A default profile seeded from `agents/` at the server's start (03, section 3). */
   'agent_profile.created': z.object({ key: z.string(), name: z.string(), version: z.int() }),
   /** A shipped file of the profile, or the common rules, changed: the version went up. */

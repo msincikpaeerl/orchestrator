@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { findExecutable, runCommand } from './exec.js';
@@ -31,32 +31,109 @@ export function runScopeName(prefix: string, runId: string): string {
   return `${prefix}orch-run-${runId}`;
 }
 
+/** Longest systemd error kept in a reason, so a `doctor` message stays short. */
+const REASON_MAX_LENGTH = 300;
+
+/**
+ * Inside a scope, before the command: writes the marker file (`$0`) proving systemd-run created
+ * the scope and started what it holds, then replaces itself with the command. The second one
+ * gives the command the terminal back as its error output, which the run's wrapper had sent to
+ * a file for systemd-run's own message (`Run`).
+ */
+const MARK_THEN_EXEC = ': > "$0" && exec "$@"';
+const MARK_THEN_EXEC_ON_TERMINAL = ': > "$0" && exec "$@" 2>/dev/tty';
+
+/** systemd-run refused a scope: its own error message, or its exit status (05, section 2). */
+export function scopeFailure(code: number, said: string): string {
+  const text = said.trim().replace(/\s+/g, ' ').slice(0, REASON_MAX_LENGTH);
+  return `systemd-run --user --scope failed${text ? `: ${text}` : ` (exit status ${String(code)})`}`;
+}
+
+/** Whether an exit status is systemd-run's own failure, not a signal that stopped it. */
+export function isRefusal(code: number): boolean {
+  return code > 0 && code < 128;
+}
+
+/** A scope systemd-run refused to create (05, section 2): `reason` says why, in its words. */
+export class ScopeRefused extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
+
+/** What `UserSystemd.detect` found: the user's systemd, or why process scopes cannot be made. */
+export type ScopeDetection =
+  { systemd: UserSystemd; problem: null } | { systemd: null; problem: string };
+
 export class UserSystemd {
   private constructor(
     private readonly systemdRun: string,
     private readonly systemctl: string,
     private readonly env: NodeJS.ProcessEnv,
+    private readonly trueCommand: string,
   ) {}
 
   /**
-   * The user's systemd when it answers to this environment (the service has it; a daemon in a
-   * terminal of a systemd session too); null otherwise.
+   * The user's systemd, when it creates a throw-away scope for this environment (the service's
+   * normal case; a daemon in a terminal of a systemd session too); otherwise why not (05, section
+   * 2). `prefix` starts the throw-away scope's name (`unitPrefix`).
    */
-  static async detect(toolPath: string, env: NodeJS.ProcessEnv): Promise<UserSystemd | null> {
+  static async detect(
+    toolPath: string,
+    env: NodeJS.ProcessEnv,
+    prefix: string,
+  ): Promise<ScopeDetection> {
     const systemdRun = findExecutable('systemd-run', toolPath);
     const systemctl = findExecutable('systemctl', toolPath);
-    if (!systemdRun || !systemctl) return null;
-    const answer = await runCommand(systemctl, ['--user', 'show-environment'], {
+    if (!systemdRun || !systemctl) {
+      return {
+        systemd: null,
+        problem: `${systemdRun ? 'systemctl' : 'systemd-run'} was not found in the daemon's PATH`,
+      };
+    }
+    const systemd = new UserSystemd(
+      systemdRun,
+      systemctl,
       env,
-      timeoutMs: 5000,
+      findExecutable('true', toolPath) ?? '/bin/true',
+    );
+    const problem = await systemd.checkScope(prefix);
+    return problem === null ? { systemd, problem: null } : { systemd: null, problem };
+  }
+
+  /** Creates a throw-away scope running `true`: null when it worked, otherwise why not. */
+  async checkScope(prefix: string): Promise<string | null> {
+    const unit = `${prefix}orchestrator-scope-check-${randomUUID().slice(0, 8)}`;
+    const answer = await runCommand(this.systemdRun, this.scopeArgs(unit, [this.trueCommand]), {
+      env: this.env,
     });
-    return answer?.code === 0 ? new UserSystemd(systemdRun, systemctl, env) : null;
+    if (answer?.code === 0) return null;
+    if (!answer) return 'systemd-run --user --scope failed (it did not answer)';
+    return scopeFailure(answer.code, answer.stderr || answer.stdout);
   }
 
   /** `command` run inside a new transient scope `unit` (stopped with `stopScope`). */
   scopeCommand(unit: string, command: readonly string[]): string[] {
+    return [this.systemdRun, ...this.scopeArgs(unit, command)];
+  }
+
+  /**
+   * `command` inside a new scope `unit`, started through a shell that first writes `marker`:
+   * when it is missing after systemd-run ended, the scope never held the command. With
+   * `terminal`, the command's error output is `/dev/tty`.
+   */
+  markedScopeCommand(
+    unit: string,
+    marker: string,
+    command: readonly string[],
+    options: { shell: string; terminal: boolean },
+  ): string[] {
+    const script = options.terminal ? MARK_THEN_EXEC_ON_TERMINAL : MARK_THEN_EXEC;
+    return this.scopeCommand(unit, [options.shell, '-c', script, marker, ...command]);
+  }
+
+  private scopeArgs(unit: string, command: readonly string[]): string[] {
     return [
-      this.systemdRun,
       '--user',
       '--scope',
       '--quiet',

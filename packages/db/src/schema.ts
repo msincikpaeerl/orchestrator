@@ -539,7 +539,7 @@ export const runs = pgTable(
     ),
     check(
       'runs_failure_reason',
-      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'cancelled')`,
+      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled')`,
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
     check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),

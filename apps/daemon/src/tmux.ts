@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { TMUX_SOCKET_NAME } from './paths.js';
-import type { UserSystemd } from './systemd.js';
+import { ScopeRefused, isRefusal, scopeFailure, type UserSystemd } from './systemd.js';
 
 /** The tmux session of a run (05, section 4.3). */
 export function sessionName(runId: string): string {
@@ -20,11 +22,17 @@ export class Tmux {
   /**
    * `serverScope`: where a systemd user session runs, the server is started inside this transient
    * scope, outside the service's cgroup, so a restart of the service keeps it (05, section 2).
+   * `marker` is written inside the scope, so a refused scope is told from a failing tmux.
    */
   constructor(
     private readonly file: string,
     env: NodeJS.ProcessEnv,
-    private readonly serverScope: { systemd: UserSystemd; unit: string } | null = null,
+    private readonly serverScope: {
+      systemd: UserSystemd;
+      unit: string;
+      marker: string;
+      shell: string;
+    } | null = null,
   ) {
     this.env = Object.fromEntries(
       Object.entries(env).filter(([name]) => name !== 'TMUX' && name !== 'TMUX_PANE'),
@@ -53,12 +61,8 @@ export class Tmux {
     });
   }
 
-  private async check(
-    args: string[],
-    input?: string,
-    wrap?: (command: string[]) => string[],
-  ): Promise<void> {
-    const result = await this.run(args, input, wrap);
+  private async check(args: string[], input?: string): Promise<void> {
+    const result = await this.run(args, input);
     if (result.code !== 0) {
       throw new Error(`tmux ${args[0] ?? ''} failed: ${result.stderr.trim()}`);
     }
@@ -94,10 +98,13 @@ export class Tmux {
     command: string[];
   }): Promise<void> {
     const scope = this.serverScope;
-    const wrap =
-      scope && !(await this.serverRunning())
-        ? (command: string[]) => scope.systemd.scopeCommand(scope.unit, command)
-        : undefined;
+    const scoped = (command: string[]) =>
+      scope
+        ? scope.systemd.markedScopeCommand(scope.unit, scope.marker, command, {
+            shell: scope.shell,
+            terminal: false,
+          })
+        : command;
     const args = [
       'new-session',
       '-d',
@@ -118,14 +125,24 @@ export class Tmux {
       'TMUX_PANE',
       ...options.command,
     ];
-    try {
-      await this.check(args, undefined, wrap);
-    } catch (error) {
-      if (!wrap) throw error;
+    const attempt = async () => {
+      // The first session starts the server, in its scope.
+      const wrap = scope && !(await this.serverRunning()) ? scoped : undefined;
+      if (wrap && scope) await rm(scope.marker, { force: true });
+      return { wrapped: wrap !== undefined, result: await this.run(args, undefined, wrap) };
+    };
+    let { wrapped, result } = await attempt();
+    if (result.code !== 0 && wrapped) {
       // The scope of a server that just exited may still be collected: once more, a moment later.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      await this.check(args, undefined, (await this.serverRunning()) ? undefined : wrap);
+      ({ wrapped, result } = await attempt());
     }
+    if (result.code === 0) return;
+    // systemd-run itself failed: it never started tmux in the scope (05, section 2).
+    if (wrapped && scope && isRefusal(result.code) && !existsSync(scope.marker)) {
+      throw new ScopeRefused(scopeFailure(result.code, result.stderr));
+    }
+    throw new Error(`tmux new-session failed: ${result.stderr.trim()}`);
   }
 
   async hasSession(name: string): Promise<boolean> {

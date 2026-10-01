@@ -99,6 +99,8 @@ export function endOfReason(
       return { status: 'failed', failureReason: 'crash' };
     case 'claude_code_unsupported':
       return { status: 'failed', failureReason: 'claude_code_unsupported' };
+    case 'process_scope_failed':
+      return { status: 'failed', failureReason: 'machine_problem' };
     case 'stopped':
       return { status: 'cancelled', failureReason: 'cancelled' };
   }
@@ -126,6 +128,8 @@ export function failureWords(reason: FailureReason): string {
       return 'its machine was revoked';
     case 'claude_code_unsupported':
       return "its machine's Claude Code is missing or too old";
+    case 'machine_problem':
+      return 'its machine could not start Claude Code in a process scope';
     case 'cancelled':
       return 'it was cancelled';
   }

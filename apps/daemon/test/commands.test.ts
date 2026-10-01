@@ -58,6 +58,7 @@ function terminalDaemon(): ControlStatus {
     claudeCodeVersion: null,
     os: 'linux',
     capabilities: [],
+    processScopes: null,
     runs: [],
   };
 }
