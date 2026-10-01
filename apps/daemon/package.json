@@ -10,6 +10,15 @@
     "./package.json": "./package.json",
     "./testing": {
       "source": "./test/testing.ts"
+    },
+    "./testing/fake-claude": {
+      "source": "./test/fake-claude/install.ts"
+    },
+    "./testing/git-http-server": {
+      "source": "./test/git-http-server.ts"
+    },
+    "./testing/remote": {
+      "source": "./test/remote.ts"
     }
   },
   "scripts": {

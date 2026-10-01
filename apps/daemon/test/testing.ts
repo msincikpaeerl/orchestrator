@@ -9,6 +9,8 @@ import { pino, type Logger } from 'pino';
 import { findExecutable } from '../src/exec.js';
 import { daemonPaths, type DaemonPaths } from '../src/paths.js';
 
+export { TMUX_SOCKET_NAME } from '../src/paths.js';
+
 // Test helpers for the daemon (`@orchestrator/daemon/testing`): a throw-away home folder, fake
 // executables in a folder of their own, and the `orchestrator-daemon` command run from its
 // TypeScript sources. Tests never touch the real home folder, systemd or Claude Code.
