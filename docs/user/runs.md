@@ -10,6 +10,18 @@ You need:
 - a project whose setup is **Ready** (see [Projects](projects.md));
 - a ticket in **To do** with an **Assignee**, for example the **Web Developer** (see [Assignee](tickets.md#assignee)), and not waiting for another ticket (see [Blocked tickets](tickets.md#blocked-tickets)).
 
+## Try it with a small ticket
+
+Every run uses your Claude account's usage, the same quota as your own use of Claude. To try the Orchestrator, or a machine you just connected, start with a ticket so small that the agent needs only a few steps. This one also shows a question and a ticket proposed by the agent:
+
+- **Type**: **Documentation**
+- **Title**: `Add one line to README.md`
+- **Description**: `Before changing anything, ask me with ticket_ask which line to add. Add the line I give you at the end of README.md and commit it. Also propose one ticket with ticket_create: title "Add a CONTRIBUTING.md file", type docs, assignee web_dev. Do nothing else.`
+- **Acceptance criteria**: `README.md ends with the line given in the answer` and `A ticket "Add a CONTRIBUTING.md file" was proposed`
+- **Assignee**: **Web Developer**
+
+When the agent asks, answer `Add this line: Checked by the Orchestrator.` Such a run is usually one session with two messages (the ticket, then your answer), and about 10 to 20 short steps of the agent.
+
 ## Start a run
 
 Open the ticket and click **Run now**. The Orchestrator chooses a machine that can take the run and sends the ticket to it; the run page opens. The ticket moves to **In progress**.
