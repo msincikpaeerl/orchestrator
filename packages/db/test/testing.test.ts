@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { migrationsFolder, runMigrations } from '../src/migrate.js';
-import { endPool } from '../src/pool.js';
+import { createPool, endPool } from '../src/pool.js';
 import {
   createTestDatabase,
   defaultTestDatabaseUrl,
@@ -24,7 +24,7 @@ async function onServer<T>(work: (client: pg.Client) => Promise<T>): Promise<T> 
 }
 
 async function withPool<T>(database: TestDatabase, work: (pool: pg.Pool) => Promise<T>) {
-  const pool = new pg.Pool({ connectionString: database.url });
+  const pool = createPool({ connectionString: database.url });
   try {
     return await work(pool);
   } finally {

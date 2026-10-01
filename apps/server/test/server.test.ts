@@ -1,9 +1,14 @@
-import { HealthResponse, PROTOCOL_VERSION, VersionResponse } from '@orchestrator/protocol';
+import {
+  HealthResponse,
+  PROTOCOL_VERSION,
+  STREAM_RETRY_MS,
+  VersionResponse,
+} from '@orchestrator/protocol';
 import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing';
 import pg from 'pg';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { endPool } from '@orchestrator/db';
+import { createPool, endPool } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
 import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
@@ -67,7 +72,7 @@ describe('health when the database is unreachable', () => {
   });
 
   it('answers 503 and names the database', async () => {
-    pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
+    pool = createPool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
     const app = buildApp({ pool, logger, ...keys });
 
     const response = await app.inject({ method: 'GET', url: '/health' });
@@ -91,7 +96,7 @@ describe('start when the database is unreachable', () => {
 describe('start after a restart during a project setup', () => {
   it('marks the interrupted setup as failed, so the owner can try again', async () => {
     const database = await createTestDatabase();
-    const pool = new pg.Pool({ connectionString: database.url });
+    const pool = createPool({ connectionString: database.url });
     try {
       await pool.query(
         `INSERT INTO projects (key, name, slug, description, kind, repo_owner, repo_name,
@@ -116,17 +121,26 @@ describe('start after a restart during a project setup', () => {
 
 describe('database connections lost, as in a PostgreSQL restart', () => {
   // Above the deadlines below, so that a missed deadline is what the failure names.
-  it('logs each terminated connection, idle or in use, and recovers', async () => {
+  it('logs each terminated connection, idle, in use or listening, and recovers', async () => {
     const database = await createTestDatabase();
     const lines: string[] = [];
     const captured = pino({ level: 'info' }, { write: (line: string) => lines.push(line) });
     const server = await startServer({ databaseUrl: database.url, port: 0, ...keys }, captured);
     const admin = new pg.Client({ connectionString: database.url });
     let held: pg.PoolClient | null = null;
-    const lost = () =>
+    const logged = (message: string) =>
       lines
         .map((line) => JSON.parse(line) as { msg: string; err?: { code?: string } })
-        .filter((entry) => entry.msg === 'database connection lost');
+        .filter((entry) => entry.msg === message);
+    const lost = () => logged('database connection lost');
+    /** The backend holding the realtime stream's `LISTEN`, if any. */
+    const listener = async () => {
+      const { rows } = await admin.query<{ pid: number }>(
+        `SELECT pid FROM pg_stat_activity
+          WHERE datname = current_database() AND query LIKE 'LISTEN %'`,
+      );
+      return rows[0]?.pid;
+    };
     try {
       const address = server.app.server.address();
       if (address === null || typeof address === 'string') throw new Error('no TCP address');
@@ -141,6 +155,9 @@ describe('database connections lost, as in a PostgreSQL restart', () => {
       expect(server.pool.idleCount).toBeGreaterThanOrEqual(1);
 
       await admin.connect();
+      // The realtime stream's listener, terminated with the others below.
+      const listening = await listener();
+      expect(listening).toBeDefined();
       const { rows } = await admin.query(
         `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
           WHERE datname = current_database() AND pid <> pg_backend_pid()`,
@@ -175,6 +192,17 @@ describe('database connections lost, as in a PostgreSQL restart', () => {
         5000,
         '/health answering 200 with the database ok',
       );
+      // The realtime stream listens again, on a new connection, after its retry delay.
+      await waitFor(
+        async () => {
+          const pid = await listener();
+          return pid !== undefined && pid !== listening;
+        },
+        STREAM_RETRY_MS + 5000,
+        'a new LISTEN connection',
+      );
+      expect(logged('realtime: database listener lost')).toHaveLength(1);
+      expect(logged('realtime: database listener reconnected')).toHaveLength(1);
     } finally {
       held?.release(true);
       await admin.end();

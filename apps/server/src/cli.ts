@@ -1,4 +1,4 @@
-import pg from 'pg';
+import { createPool, endPool, reportConnectionErrors } from '@orchestrator/db';
 import { ConfigError, loadConfig } from './config.js';
 import { createDatabase } from './database.js';
 import { ResetPasswordError, askNewPassword, resetPassword } from './reset-password.js';
@@ -21,7 +21,11 @@ async function main(args: string[]): Promise<number> {
     console.error(error.message);
     return 1;
   }
-  const pool = new pg.Pool({ connectionString: config.databaseUrl });
+  const pool = createPool({ connectionString: config.databaseUrl });
+  // A connection lost while in use (a PostgreSQL restart) fails its query, which is reported
+  // below; one lost while idle is replaced. Without a listener, either would stop the command
+  // with an unhandled error instead.
+  reportConnectionErrors(pool, () => undefined);
   try {
     const password = await askNewPassword({ input: process.stdin, output: process.stdout });
     const { username } = await resetPassword(createDatabase(pool), password);
@@ -38,7 +42,7 @@ async function main(args: string[]): Promise<number> {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   } finally {
-    await pool.end();
+    await endPool(pool);
   }
 }
 

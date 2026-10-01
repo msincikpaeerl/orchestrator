@@ -3,8 +3,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
 import { DaemonMessage, Hello, type RunStart } from '@orchestrator/protocol';
-import { endPool } from '@orchestrator/db';
-import pg from 'pg';
+import { createPool, endPool } from '@orchestrator/db';
 import { z } from 'zod';
 import { createLogger } from '../src/logger.js';
 import { startServer } from '../src/server.js';
@@ -88,7 +87,7 @@ const server = await startServer(
 // /daemon/run `{"runId":"…"}` waits for the run's `run.start` or `run.resume` and answers
 // `{"type":"run.start","runToken":"…"}`; POST /daemon/request `{"message":{…}}` sends a report or a
 // tool call of the latest daemon and answers the server's reply (`ack`, `mcp.result`).
-const pool = new pg.Pool({ connectionString: database.url });
+const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
 

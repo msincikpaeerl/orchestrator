@@ -1,4 +1,4 @@
-import { endPool, reportConnectionErrors, runMigrations } from '@orchestrator/db';
+import { createPool, endPool, reportConnectionErrors, runMigrations } from '@orchestrator/db';
 import type { FastifyBaseLogger } from 'fastify';
 import pg from 'pg';
 import { loadShippedAgents } from './agents/files.js';
@@ -26,7 +26,7 @@ export async function startServer(
   logger: FastifyBaseLogger,
   options: Pick<AppDependencies, 'githubApiUrl' | 'webRoot'> = {},
 ): Promise<RunningServer> {
-  const pool = new pg.Pool({ connectionString: config.databaseUrl });
+  const pool = createPool({ connectionString: config.databaseUrl });
   reportConnectionErrors(pool, (error) => {
     logger.error({ err: error }, 'database connection lost');
   });

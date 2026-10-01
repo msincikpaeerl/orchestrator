@@ -2,8 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { endPool } from '@orchestrator/db';
-import pg from 'pg';
+import { createPool, endPool } from '@orchestrator/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createLogger } from '../src/logger.js';
@@ -25,7 +24,7 @@ const CONTROLS = [
 ];
 
 // A 404 needs no database: the pool is never used.
-const pool = new pg.Pool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
+const pool = createPool({ connectionString: 'postgres://nobody:secret@127.0.0.1:1/none' });
 let webRoot: string;
 
 beforeAll(async () => {

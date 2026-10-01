@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
 import { migrationsFolder, runMigrations } from './migrate.js';
-import { endPool } from './pool.js';
+import { createPool, endPool } from './pool.js';
 
 /**
  * The test PostgreSQL of `docker/compose.dev.yml` (`postgres-test`, durability turned off for
@@ -106,7 +106,7 @@ async function ensureTemplate(serverUrl: string): Promise<string> {
       if (rows.some((row) => row.datname === name)) return;
       const building = `${name}_building`;
       await client.query(`CREATE DATABASE "${building}"`);
-      const pool = new pg.Pool({ connectionString: databaseUrl(serverUrl, building) });
+      const pool = createPool({ connectionString: databaseUrl(serverUrl, building) });
       try {
         await runMigrations(pool);
       } finally {

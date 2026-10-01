@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { schema } from '@orchestrator/db';
 import { createTestDatabase, migrateUpTo } from '@orchestrator/db/testing';
-import { endPool, runMigrations } from '@orchestrator/db';
+import { createPool, endPool, runMigrations } from '@orchestrator/db';
 import { RunLogResponse, STREAM_RETRY_MS, type StreamMessage } from '@orchestrator/protocol';
-import pg from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
 import { recordEvent } from '../src/events.js';
 import { RunHarness } from './run-harness.js';
@@ -173,7 +172,7 @@ describe('project setup polling removed', () => {
 
   it('drops a stored value at the migration', async () => {
     const database = await createTestDatabase({ empty: true });
-    const pool = new pg.Pool({ connectionString: database.url });
+    const pool = createPool({ connectionString: database.url });
     try {
       await migrateUpTo(pool, '0010_mcp_questions');
       await pool.query(
