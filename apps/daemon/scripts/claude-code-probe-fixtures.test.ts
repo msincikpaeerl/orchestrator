@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  credentialLikeFound,
   encodedPath,
   keptTranscript,
   personalDataFound,
@@ -10,6 +11,7 @@ import {
 // Planted values: nothing here is anyone's real data.
 const EMAIL = 'planted.owner@example.org';
 const ORG = '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b';
+const ACCOUNT = '1a2b3c4d-5e6f-4789-9abc-def012345678';
 const HOME = '/home/planted-owner';
 const SCRATCH = '/tmp/claude-code-probe.AbC123';
 
@@ -71,12 +73,17 @@ describe('probe fixtures', () => {
 
   it("reads the account's e-mail and organisation id from the session data", () => {
     const values = sessionPersonalValues(rawTranscript, {
-      oauthAccount: { emailAddress: 'other@example.org', organizationUuid: ORG },
+      oauthAccount: {
+        emailAddress: 'other@example.org',
+        accountUuid: ACCOUNT,
+        organizationUuid: ORG,
+      },
     });
     expect(values).toEqual([
       { kind: "the Claude account's e-mail address", value: EMAIL },
       { kind: 'the organisation id', value: ORG },
       { kind: "the Claude account's e-mail address", value: 'other@example.org' },
+      { kind: 'the account id', value: ACCOUNT },
       { kind: 'the organisation id', value: ORG },
     ]);
     expect(sessionPersonalValues('', undefined)).toEqual([]);
@@ -122,5 +129,42 @@ describe('probe fixtures', () => {
         HOME,
       ),
     ).toEqual([]);
+  });
+
+  it('finds whatever looks like a credential or an account id, naming what and where', () => {
+    const planted: [string, string][] = [
+      ['a masked credential', 'token [hidden] here'],
+      ['a token', 'Authorization: Bearer abcdefghijklmnop'],
+      ['a token', '{"refresh_token":"x"}'],
+      ['a token', 'sk-ant-oat01-plantedValue'],
+      ['an API key', '{"apiKey":"x"}'],
+      ['an OAuth credential', '{"oauthAccount":{}}'],
+      ['an OAuth credential', '{"expiresAt":1}'],
+      ['an account or organisation id', '{"organizationUuid":"x"}'],
+      ['an account or organisation id', '{"account_uuid":"x"}'],
+      ['an account or organisation id', '{"orgId":"x"}'],
+      ['a long token-like string', `"${'aB3'.repeat(14)}"`],
+    ];
+    for (const [kind, text] of planted) {
+      expect(credentialLikeFound({ 'hooks.jsonl': text }), text).toContain(
+        `${kind} in hooks.jsonl`,
+      );
+    }
+  });
+
+  it('lets an ordinary capture through: session ids, message ids, paths and git hashes', () => {
+    const capture = [
+      line({
+        session_id: '0f7a3c52-9d7e-4e8f-a4b1-111111111111',
+        transcript_path: '<probe>/home/.orchestrator/claude-config/projects/-probe-/x.jsonl',
+        hook_event_name: 'StopFailure',
+        error: 'rate_limit',
+        last_assistant_message: "You've hit your session limit · resets 3:45pm",
+      }),
+      line({ type: 'assistant', requestId: 'req_011CQp5x9MZ4aR2vYbT7uX3w', uuid: ORG }),
+      line({ rate_limits: { five_hour: { used_percentage: 100, resets_at: 1790000000 } } }),
+      `commit ${'a1b2c3d4e5'.repeat(4)}\n`,
+    ].join('');
+    expect(credentialLikeFound({ 'hooks.jsonl': capture })).toEqual([]);
   });
 });

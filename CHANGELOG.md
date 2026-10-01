@@ -6,6 +6,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs.
 
+- Help: "Runs" > "Try it with a small ticket" gives a tiny ticket to try the Orchestrator or a new machine with little of your Claude usage, including a question to answer and a ticket the agent proposes.
 - Machines: when a run's session closes, the daemon now waits until every program it left has exited before it removes the run's folders or lets a resumed run use them again; a program that kept starting new ones could leave one running before.
 - Server: `orchestrator reset-password` prints its "could not be changed" message instead of stopping with an error when PostgreSQL restarts while it runs.
 - Machines: the daemon no longer stops when it cannot write a run's files (a full disk, a removed folder): it logs the error, the run goes on, and the files are written again a second later. Stopping the daemon now waits for what its runs are doing, so nothing is left half done.

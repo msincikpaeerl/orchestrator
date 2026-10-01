@@ -22,6 +22,8 @@ export type RunCommand = RunStart | RunInput | RunResume | RunStop;
  */
 export class RunManager {
   private readonly runs = new Map<string, Run>();
+  /** Set by `shutdown`: a stopping daemon starts nothing. */
+  private stopping = false;
   /** Ids of commands already handled: a duplicate is acknowledged again and changes nothing. */
   private readonly handled = new Set<string>();
   readonly outbox: Outbox;
@@ -70,6 +72,8 @@ export class RunManager {
   /** Handles a command of the server; resolves with its `ack` payload. */
   async handle(command: RunCommand): Promise<Ack['payload']> {
     if (this.handled.has(command.id)) return { ok: true };
+    // Its runs are no longer watched: a session started now would be left to itself.
+    if (this.stopping) return { ok: false, message: 'The daemon is stopping.' };
     const answer = await this.apply(command);
     if (answer.ok) this.handled.add(command.id);
     return answer;
@@ -128,6 +132,7 @@ export class RunManager {
 
   /** The daemon is stopping: sessions keep running and are found again at the next start. */
   async shutdown(): Promise<void> {
+    this.stopping = true;
     await Promise.all([...this.runs.values()].map((run) => run.shutdown()));
   }
 }

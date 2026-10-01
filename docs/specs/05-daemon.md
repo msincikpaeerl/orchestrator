@@ -327,6 +327,7 @@ All are configurable, following the rules in 04, section 8. The waiting run life
 ## 6. Disconnection and reconciliation
 
 - **Lot 2 subset** (owner's decision, lot 2 step A): the daemon keeps each run's state in `runs/<id>/state.json` and finds its tmux sessions again after a restart; on reconnection, a run the server no longer considers active is stopped (`run.stop` with `not_active`), which also ends a session whose end was never reported after the owner's **Stop run** (04, section 2; owner's decision, lot 2 step J); while a machine is offline its active runs show "machine offline", and the owner's **Stop run** marks such a run failed with `machine_offline` (never counted as an attempt). The rest of this section comes with lot 4.
+- A daemon that is stopping starts nothing more: it refuses any new command from the server ("The daemon is stopping."), which the server handles like any refused `run.start` or `run.resume` (lot 2 plan, step M).
 - If the connection drops, live sessions keep running. Events are buffered on disk and sent when the connection returns. MCP calls fail with a retryable error while disconnected.
 - On reconnection, `hello` lists the runs still alive. The server reconciles: the **daemon is the source of truth for processes**, the **server is the source of truth for tickets**.
 - A run unknown to the server is stopped. A run the server thinks is active but the daemon does not report is marked failed with reason `machine_offline`.
@@ -390,7 +391,7 @@ The Claude Code behaviour this document relies on was verified on version 2.1.28
 | Launch arguments, appended instructions, settings, MCP config, resume | Validated |
 | Hook payloads, `Stop` per turn, `PreToolUse` deny with reason | Validated |
 | Multi-line input through tmux | Validated |
-| Usage-limit signal | **Open**: documented (section 4.10) but not observed. To capture with `claude-code-spike.sh --scan-limit` and `--probe-limit` the next time the limit is reached; if it is not captured before the lot 2 check, the capture moves to lot 4 |
+| Usage-limit signal | **Open**: documented (section 4.10) but not observed. To capture with `claude-code-spike.sh --scan-limit` and `--probe-limit` the next time the limit is reached (below); if it is not captured before the lot 2 check, the capture moves to lot 4 |
 | Transcript structure | Recorded; to compare when upgrading Claude Code. Documented as internal and changing between versions: used for display only |
 | Idle session for 30 minutes | Validated |
 | Remote Control | Not suitable to replace the daemon; possible later for taking over a session from a phone |
@@ -402,3 +403,9 @@ The Claude Code behaviour this document relies on was verified on version 2.1.28
 | `StopFailure` hook and usage-limit data | From the documentation; cannot be triggered on demand, so checked with the usage-limit capture (`--probe-limit`) |
 
 The spike scripts are kept as a compatibility check: they are run again before raising the supported Claude Code version.
+
+**Usage-limit capture** (lot 2 plan, step M; owner's decisions). It never tries to reach the limit, since the owner's quota is shared with daily use:
+
+- `--scan-limit` starts no session. It reads the transcripts changed in the last 2 days (`--days`) in `~/.claude/projects` and `~/.orchestrator/claude-config/projects`, and prints the whole lines holding an API error (`isApiErrorMessage`) or an assistant or system text that *is* a known usage-limit message or API error (the daemon's pattern table, at the start of the text; a text quoting one does not count, nor does a tool result), with e-mail addresses, credentials and the home folder masked.
+- `--probe-limit` is run by the owner only while Claude Code already shows a limit. It starts one session, built like the probe's (`tools/smoke/claude-code-probe.sh`) from the daemon's own settings generation (every hook of section 4.5 plus `UserPromptSubmit`, the status line, `autoContinueAtUsageLimit: false`) with a recorder, in its own throw-away Claude configuration, on `sonnet` by default (the model runs use: a Sonnet-only limit would not show on another model), and sends one message, `Reply with the word OK.`, refused at no cost while limited. It prints the hooks received, the end of the turn, the transcript's API-error entries, the status line windows, whether the screen says Claude Code continues automatically (which `autoContinueAtUsageLimit: false` must prevent), and what this section's detection module answers. Only when a limit was seen does it write fixtures to `apps/daemon/test/fixtures/usage-limit/claude-code-<version>/`, sanitised like the probe's, and nothing at all when the owner's data or anything that looks like a token, API key, OAuth credential, account id or organisation id is left. It never commits them: the owner has them reviewed first.
+- Like every script that can start the real Claude Code, it refuses to run in CI or without a terminal, asks the owner to type `yes` before any session, and runs its dry run (tested in CI) only with the tests' fake `claude`.

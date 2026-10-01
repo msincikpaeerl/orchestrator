@@ -152,22 +152,27 @@ const resultLines = (output: string, verdict: string) =>
 
 describe('allowlist smoke test, dry run with the fake claude', () => {
   it(
-    'prints PASS for every command of every profile and deletes the scratch folder',
+    'prints PASS for every command, runs a profile with the same rules only once, and deletes the scratch folder',
     async () => {
       await fake.play(session(answers()), 'architect');
       await fake.play(session(answers()), 'web_dev');
       const { code, output } = await runSmoke();
-      expect(output).toMatch(/Profiles: +architect web_dev/);
-      expect(resultLines(output, 'PASS')).toHaveLength(34);
+      // The shipped profiles share one allowlist and the same deny rules (03, section 2.2).
+      expect(output).toMatch(/Profiles: +architect$/m);
       expect(output).toMatch(
-        /^web_dev: PASS +git commit -m "Allowlist smoke test": allowed, expected allowed$/m,
+        /^Not run again: +web_dev \(same allowlist and deny rules as architect\)$/m,
+      );
+      expect(resultLines(output, 'PASS')).toHaveLength(17);
+      expect(output).toMatch(
+        /^architect: PASS +git commit -m "Allowlist smoke test": allowed, expected allowed$/m,
       );
       expect(output).toMatch(
         /^architect: PASS +curl -sI https:\/\/example\.com: refused \(not in the allowlist\), expected refused$/m,
       );
       expect(output).toMatch(
-        /^web_dev: PASS +cat <probe>\/home\/\.orchestrator\/config\.json: refused by a deny rule, expected refused$/m,
+        /^architect: PASS +cat <probe>\/home\/\.orchestrator\/config\.json: refused by a deny rule, expected refused$/m,
       );
+      expect(output).not.toMatch(/^web_dev:/m);
       expect(output).toMatch(/Every command passed\./);
       expect(code).toBe(0);
       // The block to paste holds no path of the owner's computer.
@@ -177,12 +182,9 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       expect(pasted).not.toContain(home);
       expect(await scratchFolders()).toEqual([]);
 
-      // Each session is launched with the daemon's argument list, on haiku.
+      // The session is launched with the daemon's argument list, on haiku.
       const launches = (await fake.log()).filter((entry) => entry.event === 'start');
-      expect(launches.map((entry) => entry.cwd.split('/').at(-1))).toEqual([
-        'architect',
-        'web_dev',
-      ]);
+      expect(launches.map((entry) => entry.cwd.split('/').at(-1))).toEqual(['architect']);
       for (const launch of launches) {
         expect(launch.args.slice(0, 11)).toEqual([
           '--mcp-config',

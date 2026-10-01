@@ -14,6 +14,11 @@
 
 set -uo pipefail
 
+# Only the owner runs it, by hand (working rule 10): refused in CI or without a terminal.
+# shellcheck source=../smoke/lib/real-claude-guard.sh
+source "$(cd "$(dirname "$0")/../.." && pwd)/tools/smoke/lib/real-claude-guard.sh"
+guard_real "the spike v2 sessions on ${SPIKE_MODEL:-sonnet}: a few short turns, plus one after a session left idle ${SPIKE_IDLE_MINUTES:-30} minutes."
+
 MODEL="${SPIKE_MODEL:-sonnet}"
 TURN_TIMEOUT="${SPIKE_TURN_TIMEOUT:-240}"
 IDLE_MINUTES="${SPIKE_IDLE_MINUTES:-30}"

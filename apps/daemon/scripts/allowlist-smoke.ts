@@ -25,6 +25,7 @@ import {
   writeUserSettings,
 } from '../src/run-files.js';
 import { TrustRegistry } from '../src/trust.js';
+import { profileLines } from './allowlist-smoke-profiles.js';
 import {
   personalDataFound,
   sanitise,
@@ -40,7 +41,9 @@ import {
 //
 //   prepare  --scratch <folder>                 the layout, the scratch project, one worktree per profile
 //   login    --scratch <folder>                 `orchestrator-daemon login` on the smoke test's folder
-//   profiles --scratch <folder>                 the profile keys, one per line
+//   profiles --scratch <folder>                 the profile keys, one per line; a profile whose
+//                                               allowlist and deny rules are those of an earlier
+//                                               one is followed by that profile's key
 //   session  --scratch <folder> --name <key> --model <model>
 //                                               a session's files; prints its arguments, NUL-separated
 //   evaluate --scratch <folder> [--profiles <key,...>]
@@ -455,7 +458,9 @@ async function main(): Promise<void> {
       );
       return;
     case 'profiles':
-      process.stdout.write(profiles.map((profile) => `${profile.key}\n`).join(''));
+      process.stdout.write(
+        profileLines({ daemonHome: layout.daemonHome, userHome: layout.userHome }, profiles),
+      );
       return;
     case 'session': {
       const profile = profiles.find((each) => each.key === values.name);

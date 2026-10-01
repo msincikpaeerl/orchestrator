@@ -51,7 +51,7 @@ Stop them with `docker compose -f docker/compose.dev.yml down`; add `-v` to dele
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
 | `pnpm --filter db migrate:generate` | Write a SQL migration for the changes in `packages/db/src/schema.ts` (ADR 0011). |
 | `pnpm --filter @orchestrator/daemon dev <command>` | The daemon from its sources, for example `... dev doctor` or `... dev start`. It uses `~/.orchestrator/`; set `ORCHESTRATOR_HOME` to another folder to keep a development daemon apart. Tests never use it. |
-| `tools/smoke/claude-code-probe.sh`, `tools/smoke/allowlist-smoke.sh` | The owner's checks with the real Claude Code (lot 2 steps H and N; `--help`). Sessions never run them (working rule 10); CI runs their dry runs against the fake `claude` (`docs/dev/testing.md`). |
+| `tools/smoke/claude-code-probe.sh`, `tools/smoke/allowlist-smoke.sh`, `tools/spike/claude-code-spike.sh` | The owner's checks with the real Claude Code (lot 2 steps H and N; `--help`), and the usage-limit capture (`--probe-limit` only while limited, `--scan-limit` with no session). Sessions never run them (working rule 10): they refuse in CI and without a terminal and ask for `yes`; CI runs their dry runs against the fake `claude` (`docs/dev/testing.md`). |
 | `pnpm --filter <package> <script>` | Run a script in one package. |
 
 Do not use `pnpm ci`: it is a built-in pnpm command (clean install), not our CI script (ADR 0005).

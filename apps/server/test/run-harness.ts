@@ -22,7 +22,7 @@ import { createOwner, startTestApp, type TestApp } from './helpers.js';
 // The application, a ready project `WEB`, a Claude account and scripted daemons, for the tests of
 // runs and of the MCP backend (lot 2 step K). Each test calls `start()` and, at its end, `stop()`.
 
-const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
+export const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
 export const SESSION = '0f7a3c52-9d7e-4e8f-a4b1-111111111111';
 export const HEAD = 'a'.repeat(40);
 export const COMMITS = [{ hash: 'b'.repeat(40), subject: 'Add the contact form' }];
@@ -44,6 +44,7 @@ export class RunHarness {
       settings?: Partial<SettingValues>;
       daemonSecondMs?: number;
       streamKeepAliveMs?: number;
+      gitBaseUrl?: string;
     } = {},
   ) {
     this.started = true;
@@ -55,6 +56,7 @@ export class RunHarness {
       settings: options.settings,
       daemonSecondMs: options.daemonSecondMs,
       streamKeepAliveMs: options.streamKeepAliveMs,
+      gitBaseUrl: options.gitBaseUrl,
     });
     this.cookie = await createOwner(this.t.app);
     const saved = await this.call('PUT', '/api/github/token', { token: TOKEN, expiresOn: null });

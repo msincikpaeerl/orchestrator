@@ -45,6 +45,8 @@ export interface TestApp {
 export async function startTestApp(
   options: {
     githubApiUrl?: string;
+    /** Base of the clone URLs sent to daemons: a local Git remote for the real daemon. */
+    gitBaseUrl?: string;
     /** Global values stored before the application starts, as if the owner had set them. */
     settings?: Partial<SettingValues>;
     secretKey?: string;
@@ -79,6 +81,7 @@ export async function startTestApp(
       secretKey: options.secretKey ?? TEST_SECRET_KEY,
       publicUrl: options.publicUrl ?? 'http://localhost:8080',
       githubApiUrl: options.githubApiUrl,
+      gitBaseUrl: options.gitBaseUrl,
       now: options.now,
       daemonSecondMs: options.daemonSecondMs,
       daemonPackageDir: options.daemonPackageDir,

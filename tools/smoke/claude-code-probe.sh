@@ -15,7 +15,8 @@
 # folder of its own: your ~/.claude and ~/.claude.json are never read or changed. The settings,
 # the argument list, the login and the trust entry come from the daemon's own code
 # (apps/daemon/scripts/claude-code-probe.ts). Quota: one session with one short prompt on the
-# smallest model; the control session sends no prompt.
+# smallest model; the control session sends no prompt. It refuses to run in CI or without a
+# terminal, and asks you to type yes before any session.
 #
 # Usage: tools/smoke/claude-code-probe.sh [--keep] [--model <alias>] [--claude <executable>]
 #                                         [--fixtures <folder>] [--dry-run]
@@ -23,7 +24,7 @@
 #   --model      model alias (default: haiku, the smallest)
 #   --claude     the claude executable to use (default: claude from PATH)
 #   --fixtures   where the fixtures go (default: apps/daemon/test/fixtures/claude-code-<version>)
-#   --dry-run    skip the login (for the fake claude of the tests only)
+#   --dry-run    skip the login; only with the tests' fake claude given with --claude
 #
 # The fixtures keep only the transcript entries the daemon reads, with paths, e-mail addresses and
 # credentials masked; if your e-mail, Git user, organisation id or home folder still appears in
@@ -36,6 +37,7 @@ set -uo pipefail
 
 KEEP=0
 DRY_RUN=0
+CLAUDE_GIVEN=""
 MODEL=haiku
 FIXTURES=""
 START_TIMEOUT="${PROBE_START_TIMEOUT:-60}"
@@ -53,15 +55,26 @@ while (($# > 0)); do
     --keep) KEEP=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --model) MODEL="${2:?--model needs a value}"; shift ;;
-    --claude) PATH="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd):$PATH"; shift ;;
+    --claude)
+      CLAUDE_GIVEN="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd)/$(basename "$2")"
+      PATH="$(dirname "$CLAUDE_GIVEN"):$PATH"
+      shift
+      ;;
     --fixtures) FIXTURES="${2:?--fixtures needs a value}"; shift ;;
-    -h | --help) sed -n '2,33p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,34p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
 done
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib/real-claude-guard.sh
+source "$REPO/tools/smoke/lib/real-claude-guard.sh"
+if ((DRY_RUN)); then
+  guard_dry_run "$CLAUDE_GIVEN"
+else
+  guard_real "a control session with no message (no quota), then one session with one short prompt on $MODEL (about 4 tool calls)."
+fi
 TSX="$REPO/apps/daemon/node_modules/.bin/tsx"
 HELPER="$REPO/apps/daemon/scripts/claude-code-probe.ts"
 

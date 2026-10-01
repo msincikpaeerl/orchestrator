@@ -44,6 +44,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Database migration (new) | `pnpm --filter db migrate:generate` |
 | Claude Code probe (owner only, real Claude Code, lot 2 step H) | `tools/smoke/claude-code-probe.sh` (`--help`) |
 | Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
+| Usage-limit capture (owner only: `--probe-limit` while limited; `--scan-limit` starts no session) | `tools/spike/claude-code-spike.sh --probe-limit` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
 Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the test database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
