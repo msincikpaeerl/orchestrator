@@ -15,7 +15,7 @@
     "test:e2e": "sh tools/e2e-docker.sh",
     "test:e2e:host": "pnpm --filter @orchestrator/web build && pnpm --filter @orchestrator/web e2e:host",
     "lint": "eslint . && prettier --check . && pnpm lint:shell",
-    "lint:shell": "for script in tools/smoke/*.sh; do bash -n \"$script\" || exit 1; done",
+    "lint:shell": "for script in tools/smoke/*.sh tools/smoke/lib/*.sh tools/spike/*.sh; do bash -n \"$script\" || exit 1; done",
     "format": "prettier --write .",
     "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
     "docs:links": "remark . --quiet --frail --no-stdout",

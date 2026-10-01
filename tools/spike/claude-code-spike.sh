@@ -1,40 +1,254 @@
 #!/usr/bin/env bash
 # Claude Code spike — verifies the assumptions listed in docs/specs/05-daemon.md, section 9.
+# For the owner only (working rule 10): sessions, `pnpm verify` and CI run its syntax check and
+# the dry run of --probe-limit against the fake claude, never a real session.
 #
 # Usage:
 #   ./claude-code-spike.sh              Standard run (about 5 minutes, a few short Sonnet turns)
 #   ./claude-code-spike.sh --long       Also tests an idle session kept open for 30 minutes
-#   ./claude-code-spike.sh --scan-limit Search existing transcripts for usage-limit messages
-#                                       (run it right after you hit your usage limit for real)
+#   ./claude-code-spike.sh --scan-limit [--days <n>]
+#                                       Prints the transcript lines holding an API error or a
+#                                       usage-limit message (no session, no quota): run it right
+#                                       after you hit your usage limit for real
+#   ./claude-code-spike.sh --probe-limit [--keep] [--model <alias>] [--claude <executable>]
+#                                        [--fixtures <folder>] [--dry-run]
+#                                       Records what Claude Code sends while you are limited
 #
-# Requirements: claude (logged in), tmux, node, git.
-# Output: a working folder under ~/orch-spike.XXXXXX with logs and spike-report.md.
+# --scan-limit reads the transcripts changed in the last 2 days (or --days) in ~/.claude/projects
+# and ~/.orchestrator/claude-config/projects, and prints those whole lines, with e-mail addresses,
+# credentials and your home folder masked. It never starts Claude Code.
+#
+# --probe-limit (05, section 4.10) never tries to reach the limit: run it only while Claude Code
+# already shows you "You've hit your ... limit". It starts ONE session with the daemon's own
+# settings (every hook and the status line recorded, autoContinueAtUsageLimit: false), in a
+# scratch folder under the temporary folder with its own Claude configuration (log in once: no
+# quota), and sends ONE message, "Reply with the word OK.": refused at no cost while you are
+# limited; if the limit is over, answered in a few tokens. Model: sonnet, the one runs use (a
+# Sonnet-only limit would not show on another model). It prints what was recorded and what the
+# daemon's detection makes of it, and writes sanitised fixtures (default
+# apps/daemon/test/fixtures/usage-limit/claude-code-<version>/) only when a limit was seen and
+# nothing personal or credential-like is left in them. It never commits them: have them
+# reviewed before any commit. The scratch folder (with its credentials) is deleted at the end,
+# also on failure or Ctrl-C, unless --keep.
+#   --keep       keep the scratch folder (it holds Claude credentials: delete it yourself)
+#   --model      model alias (default: sonnet)
+#   --claude     the claude executable to use (default: claude from PATH)
+#   --fixtures   where the fixtures go
+#   --dry-run    skip the login; only with the tests' fake claude given with --claude
+#   Exit code: 0 limit captured (fixtures written), 2 no limit seen, 3 stopped, refused, or
+#   fixtures withheld.
+#
+# Every mode but --scan-limit starts the real Claude Code: it refuses to run in CI or without a
+# terminal, and asks you to type yes before any session.
+#
+# Requirements: claude (logged in), tmux, node, git, and `pnpm install` done in the repository.
+# Output of the standard run: a working folder under ~/orch-spike.XXXXXX with logs and
+# spike-report.md.
 
 set -uo pipefail
+
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=../smoke/lib/real-claude-guard.sh
+source "$REPO/tools/smoke/lib/real-claude-guard.sh"
+TSX="$REPO/apps/daemon/node_modules/.bin/tsx"
+LIMIT_HELPER="$REPO/apps/daemon/scripts/usage-limit-probe.ts"
 
 MODE="standard"
 case "${1:-}" in
   --long) MODE="long" ;;
   --scan-limit) MODE="scan" ;;
+  --probe-limit) MODE="probe-limit" ;;
+  -h | --help) sed -n '2,46p' "$0"; exit 0 ;;
   "") ;;
-  *) echo "Unknown option: $1"; exit 1 ;;
+  *) echo "Unknown option: $1 (see --help)"; exit 1 ;;
 esac
+(($# > 0)) && shift
 
 MODEL="${SPIKE_MODEL:-sonnet}"
 TURN_TIMEOUT="${SPIKE_TURN_TIMEOUT:-240}"
 
+stop() {
+  echo "STOPPED: $*" >&2
+  exit 3
+}
+
 # ---------------------------------------------------------------------------
-# Scan mode: look for usage-limit traces in existing transcripts (check 4)
+# Scan mode: usage-limit traces in existing transcripts (check 4). No session.
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "scan" ]]; then
-  echo "Scanning ~/.claude/projects for usage-limit messages (most recent files first)..."
-  find "$HOME/.claude/projects" -name '*.jsonl' -mtime -2 -printf '%T@ %p\n' 2>/dev/null \
-    | sort -rn | cut -d' ' -f2- | head -50 \
-    | xargs -r grep -n -i -E 'usage limit|limit reached|rate.?limit|resets? (at|in)|hit your limit' 2>/dev/null \
-    | cut -c1-600
+  [[ -x "$TSX" ]] || stop "the repository's packages are missing: run pnpm install in $REPO first."
+  "$TSX" --conditions=source "$LIMIT_HELPER" scan "$@" || stop "the scan failed."
   echo
-  echo "Copy the relevant lines above into the report, section 'Check 4'."
+  echo "Paste the lines above to Claude, with the output of --probe-limit if you ran it."
   exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Probe-limit mode: one session while limited, every hook and the status line recorded.
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == "probe-limit" ]]; then
+  KEEP=0
+  DRY_RUN=0
+  CLAUDE_GIVEN=""
+  FIXTURES=""
+  START_TIMEOUT="${PROBE_START_TIMEOUT:-60}"
+  TURN_TIMEOUT="${PROBE_TURN_TIMEOUT:-120}"
+  STATUS_LINE_WAIT="${PROBE_STATUS_LINE_WAIT:-20}"
+  while (($# > 0)); do
+    case "$1" in
+      --keep) KEEP=1 ;;
+      --dry-run) DRY_RUN=1 ;;
+      --model) MODEL="${2:?--model needs a value}"; shift ;;
+      --claude)
+        CLAUDE_GIVEN="$(cd "$(dirname "${2:?--claude needs a value}")" && pwd)/$(basename "$2")"
+        PATH="$(dirname "$CLAUDE_GIVEN"):$PATH"
+        shift
+        ;;
+      --fixtures) FIXTURES="${2:?--fixtures needs a value}"; shift ;;
+      *) stop "unknown option $1 (see --help)" ;;
+    esac
+    shift
+  done
+  if ((DRY_RUN)); then
+    guard_dry_run "$CLAUDE_GIVEN"
+  else
+    guard_owner_terminal
+  fi
+  for tool in claude tmux git node; do
+    command -v "$tool" > /dev/null 2>&1 || stop "$tool is not installed or not in PATH."
+  done
+  [[ -x "$TSX" ]] || stop "the repository's packages are missing: run pnpm install in $REPO first."
+  VERSION_TEXT="$(claude --version 2> /dev/null)" || stop "claude --version failed."
+  VERSION="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' <<< "$VERSION_TEXT" | head -n 1)"
+  [[ -n "$VERSION" ]] || stop "cannot read the version in: $VERSION_TEXT"
+  FIXTURES="${FIXTURES:-$REPO/apps/daemon/test/fixtures/usage-limit/claude-code-$VERSION}"
+
+  if ((DRY_RUN == 0)); then
+    echo "============================================================================"
+    echo "USAGE-LIMIT CAPTURE: run it only while you are limited"
+    echo "Claude Code must be showing you \"You've hit your ... limit\" right now (in"
+    echo "your own Claude Code, or on claude.ai). This capture never tries to reach"
+    echo "the limit."
+    echo "============================================================================"
+    guard_confirm "one session with one message (Reply with the word OK.) on $MODEL: refused at no cost while you are limited; a reply of a few tokens if the limit is over."
+  fi
+
+  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/usage-limit-probe.XXXXXX")" || stop "cannot create the scratch folder."
+  chmod 700 "$SCRATCH"
+  TMUX_SOCKET="usage-limit-probe-$$"
+  cleanup() {
+    tmux -L "$TMUX_SOCKET" kill-server 2> /dev/null
+    if ((KEEP)); then
+      echo
+      echo "Scratch folder kept (--keep): $SCRATCH"
+      echo "It contains Claude credentials: delete it when you are done (rm -rf '$SCRATCH')."
+    else
+      rm -rf "$SCRATCH"
+    fi
+  }
+  trap cleanup EXIT
+  trap 'exit 3' INT TERM
+  helper() {
+    "$TSX" --conditions=source "$LIMIT_HELPER" "$@" --scratch "$SCRATCH"
+  }
+  CLAUDE_CONFIG="$SCRATCH/home/.orchestrator/claude-config"
+  RECORD="$SCRATCH/record"
+  echo "Usage-limit capture"
+  echo "Claude Code:     $VERSION ($(command -v claude))"
+  echo "Model:           $MODEL"
+  echo "Scratch folder:  $SCRATCH (deleted at the end$( ((KEEP)) && echo ': no, --keep'))"
+  echo "Claude config:   $CLAUDE_CONFIG (the capture's own; your ~/.claude is not used)"
+  echo "Fixtures:        $FIXTURES (only if a limit is seen; never committed)"
+  echo
+  helper prepare || stop "the scratch layout could not be prepared."
+
+  if ((DRY_RUN)); then
+    echo "Dry run: no login."
+  else
+    echo "============================================================================"
+    echo "LOG IN (this uses no quota)"
+    echo "Claude Code now opens with the capture's own, empty configuration folder,"
+    echo "exactly as 'orchestrator-daemon login' does for the daemon's folder."
+    echo "  1. Go through the first screens and log in with your Claude account"
+    echo "     (open the login link in your browser if asked). If Claude Code shows"
+    echo "     its prompt without asking you to log in, type /login and press Enter."
+    echo "  2. When you see the normal prompt, type /exit and press Enter."
+    echo "Do not send any message."
+    echo "============================================================================"
+    read -r -p "Press Enter to open Claude Code..." _
+    helper login
+    [[ -f "$CLAUDE_CONFIG/.credentials.json" ]] ||
+      stop "not logged in: $CLAUDE_CONFIG/.credentials.json is missing. Run the capture again and log in."
+    echo "Logged in."
+  fi
+  echo
+
+  hook_seen() { # event
+    grep -q "\"event\":\"$1\"" "$RECORD/hooks-limit.jsonl" 2> /dev/null
+  }
+  echo "Session (one message on $MODEL)..."
+  worktree="$SCRATCH/home/.orchestrator/worktrees/limit"
+  mapfile -d '' args < <(helper session --model "$MODEL") ||
+    stop "the session's files could not be written."
+  printf -v command '%q ' env -u TMUX -u TMUX_PANE "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG" \
+    GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never claude "${args[@]}"
+  tmux -L "$TMUX_SOCKET" new-session -d -s limit -x 200 -y 50 -c "$worktree" \
+    "$command; echo CLAUDE-EXITED; sleep 600" || stop "tmux could not start the session."
+  waited=0
+  while ! hook_seen SessionStart; do
+    pane="$(tmux -L "$TMUX_SOCKET" capture-pane -p -t limit 2> /dev/null)"
+    if grep -q CLAUDE-EXITED <<< "$pane" || ((waited >= START_TIMEOUT)); then
+      echo "The session did not start. Its screen:" >&2
+      echo "$pane" >&2
+      stop "Claude Code did not start (dialog, login or argument problem): paste the screen above to Claude."
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  waited=0
+  while ! hook_seen Stop && ! hook_seen StopFailure; do
+    ((waited >= TURN_TIMEOUT)) && { echo "No end of turn after ${TURN_TIMEOUT}s: evaluating what was recorded."; break; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  # The status line runs when the screen refreshes; the screen may also offer an automatic
+  # continue, which autoContinueAtUsageLimit: false must prevent.
+  waited=0
+  while ! grep -q rate_limits "$RECORD/status-line-limit.jsonl" 2> /dev/null && ((waited < STATUS_LINE_WAIT)); do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  tmux -L "$TMUX_SOCKET" capture-pane -p -S -200 -t limit > "$SCRATCH/pane-limit.txt" 2> /dev/null
+  tmux -L "$TMUX_SOCKET" send-keys -t limit -l '/exit' 2> /dev/null
+  tmux -L "$TMUX_SOCKET" send-keys -t limit Enter 2> /dev/null
+  waited=0
+  while ! hook_seen SessionEnd && ((waited < 10)); do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  tmux -L "$TMUX_SOCKET" kill-session -t limit 2> /dev/null
+
+  echo
+  echo "===== paste from here to Claude ====="
+  helper evaluate --version "$VERSION" --model "$MODEL" --fixtures "$FIXTURES" | tee "$SCRATCH/results.txt"
+  RESULT=${PIPESTATUS[0]}
+  echo "===== to here ====="
+  echo
+  case "$RESULT" in
+    0) echo "Limit captured. The fixtures are NOT committed: have them reviewed (paste the block above to Claude) before any commit." ;;
+    2) echo "No limit was seen: nothing to capture. Run it again the next time Claude Code shows a limit." ;;
+    *) echo "The capture could not be evaluated or the fixtures were withheld: paste the block above to Claude." ;;
+  esac
+  exit "$RESULT"
+fi
+
+# ---------------------------------------------------------------------------
+# Standard and long runs: several real turns.
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == "long" ]]; then
+  guard_real "the spike's sessions on $MODEL: about 5 short turns, plus one after a session kept open 30 minutes."
+else
+  guard_real "the spike's sessions on $MODEL: about 5 short turns."
 fi
 
 # ---------------------------------------------------------------------------
