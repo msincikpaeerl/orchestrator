@@ -702,7 +702,7 @@ Asked by the owner after step L2's CI runs (2026-09-30), before step M:
 
 *Done 2026-09-30.*
 
-### [ ] M. End-to-end daemon test and limit capture tooling
+### [x] M. End-to-end daemon test and limit capture tooling
 
 - One integration test running the real server, the real daemon, tmux and the fake `claude` through the whole acceptance scenario:
   1. enrol;
@@ -718,15 +718,53 @@ Asked by the owner after step L2's CI runs (2026-09-30), before step M:
 
 **Done when** both scenarios pass in `pnpm test`, and the spike script passes `bash -n` and its `--probe-limit` mode passes a dry run with the fake `claude`.
 
+Owner's decisions before the step (2026-10-01), written into 03 section 6, 05 section 9 and `docs/dev/testing.md`:
+
+1. A third scenario, C: the daemon restarted during a run (the session found again, the run finishes), then **Request changes** and **Run now** (the next run's first message holds the comment).
+2. `--scan-limit` prints only the lines holding an API error or a known limit message, e-mail addresses and the home folder masked.
+3. `--probe-limit` uses `sonnet` by default, the model runs use. It never tries to reach the limit: the owner runs it only while limited, and its one message is refused at no cost.
+4. Every script that can start the real Claude Code (probe, allowlist smoke test, the spikes) refuses to run in CI or without a terminal and asks for a typed `yes`; its dry run goes on only with the tests' fake `claude`.
+5. The allowlist smoke test skips a profile whose allowlist and deny rules are the same as a profile already checked, and says so.
+6. The `--probe-limit` fixtures are refused when anything looks like a token, an API key, an OAuth credential, an account id or an organisation id, besides the probe's personal data. The script writes them but never commits them, and asks the owner to have them reviewed first.
+7. Step N gives the exact tiny ticket to create and the number of real sessions and messages (below); the end-to-end test cleans every process and folder of its test home.
+
+*Done 2026-10-01.* Choices within the step:
+
+- The end-to-end test is `apps/server/test/acceptance.test.ts`, three scenarios in about 30 seconds. `startTestApp` and `RunHarness.start` gain `gitBaseUrl`, and `@orchestrator/daemon` exports the fake `claude`, the Git HTTP test server and the test remote (`./testing/fake-claude`, `./testing/git-http-server`, `./testing/remote`).
+- The fake `claude`'s `statusLine` step gains `fullForSeconds`, a five-hour window at 100 % resetting that many seconds after the step, so scenario B's reset time does not depend on how fast the session starts. The fake now also runs `UserPromptSubmit` for each message, when the settings declare it (the daemon's do not).
+- In scenario C the agent's tool call waits for a file the test writes in the worktree after the restart, so the restart happens while a tool call runs, without timing guesses. The scenario was checked to fail when the run's `state.json` is removed before the restart.
+- The guard is `tools/smoke/lib/real-claude-guard.sh`, sourced by `claude-code-probe.sh`, `allowlist-smoke.sh` and the three spike scripts (every mode but `--scan-limit`); `real-claude-guard.test.ts` checks every refusal for each script and mode. `pnpm lint` now checks `tools/smoke/lib/` and `tools/spike/` with `bash -n` too.
+- The shipped `architect` and `web_dev` share their rules (03 section 2.2), so the smoke test now runs `architect` only; its dry-run test changed with this behaviour (one session, 17 commands instead of 34), and `allowlist-smoke-profiles.test.ts` covers two profiles with different rules.
+- `--scan-limit` and `--probe-limit` share the helper `apps/daemon/scripts/usage-limit-probe.ts`. A message counts only when the text starts with a pattern of the daemon's table, since the owner's own transcripts quote these messages while working on this project. `--probe-limit` evaluates the recording with the daemon's own `assessTurn`, and reads the screen once for an automatic continue (05 section 4.10).
+- `sessionPersonalValues` also reads the account id (`oauthAccount.accountUuid`), for the probe's fixtures too.
+- Help > Runs gains "Try it with a small ticket", the ticket step N uses, with a CHANGELOG line.
+
 ### [ ] N. Lot 2 check by the owner
 
 - Version 0.3.0 prepared (CHANGELOG section, version numbers).
 - The owner:
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
-  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service");
+  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service"); the cheapest moment is while the run of item 4 waits for the answer (its session stays open for the waiting run lifetime, 30 minutes), then the answer goes to the same session;
   4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`;
   5. with real runs: `orchestrator-daemon status` after a run, daemon running and stopped; on the phone, Needs you → Request changes → Run now, and the next run reads the comment (owner's review of step L2).
+- **The ticket for the real runs** (Help > Runs > "Try it with a small ticket"), in a ready project:
+  - Type **Documentation**, title `Add one line to README.md`, assignee **Web Developer**;
+  - description: `Before changing anything, ask me with ticket_ask which line to add. Add the line I give you at the end of README.md and commit it. Also propose one ticket with ticket_create: title "Add a CONTRIBUTING.md file", type docs, assignee web_dev. Do nothing else.`;
+  - acceptance criteria: `README.md ends with the line given in the answer` and `A ticket "Add a CONTRIBUTING.md file" was proposed`;
+  - the answer to the agent's question: `Add this line: Checked by the Orchestrator.`;
+  - the comment of **Request changes** (item 5): `Also add this line after it: Checked again.`
+- **Quota of the whole walkthrough** (estimates; each message makes the agent take several steps, each one model request; logins use none):
+
+  | Item | Real sessions | Messages | Model |
+  |---|---|---|---|
+  | 2, allowlist smoke test | 1 (`architect`; `web_dev` has the same rules) | 1, about 16 to 20 short steps | `haiku` |
+  | 2, probe again (only if Claude Code was updated after 2.1.283) | 2 (the control one sends nothing) | 1, about 5 steps | `haiku` |
+  | 3 and 4, the ticket above, restarted while it waits for the answer | 1 (2 if the answer comes after the 30-minute waiting run lifetime) | 2: the ticket and the answer, about 10 to 20 steps | `sonnet` |
+  | 5, Request changes, then Run now | 1 | 1, about 10 steps | `sonnet` |
+  | Usage-limit capture (only while limited) | 1 | 1, refused at no cost | `sonnet` |
+
+  In all: 2 `sonnet` sessions with 3 messages, and 1 `haiku` session with 1 message (2 sessions and 2 messages if the probe runs again). A run whose agent ends a turn without deciding gets up to 2 reminders (maximum nudges per run), one message each. Restarting the service in a run of its own instead of during item 4 adds 1 `sonnet` session and 1 message.
 - If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
