@@ -738,6 +738,9 @@ Owner's decisions before the step (2026-10-01), written into 03 section 6, 05 se
 - `--scan-limit` and `--probe-limit` share the helper `apps/daemon/scripts/usage-limit-probe.ts`. A message counts only when the text starts with a pattern of the daemon's table, since the owner's own transcripts quote these messages while working on this project. `--probe-limit` evaluates the recording with the daemon's own `assessTurn`, and reads the screen once for an automatic continue (05 section 4.10).
 - `sessionPersonalValues` also reads the account id (`oauthAccount.accountUuid`), for the probe's fixtures too.
 - Help > Runs gains "Try it with a small ticket", the ticket step N uses, with a CHANGELOG line.
+- Owner's review: processes left by tests. Live processes of test homes already removed were found on the owner's machine:
+  - 140 daemons from `apps/server/test/daemon.test.ts`, 2 per run of the suite since 2026-09-28. That file stopped its daemons with a `SIGKILL` to tsx, which starts the daemon in a child process and cannot pass a `SIGKILL` on, and it did not use `stopHomeProcesses`. `spawnDaemon` now starts its own process group and gives `stop(signal)`, which waits until no process of it is left; the file also ends with `stopHomeProcesses`. Regression test: `apps/daemon/test/testing.test.ts`, which failed before the fix.
+  - One fake `claude` session of a runner test (2026-10-01 15:21, on step L2b's code, which has the L2 clean-up fix). Its test home had been removed, so its clean-up had run to the end; an interrupted run keeps its folder (checked by interrupting `runner.test.ts`). The session was therefore started after the clean-up, which only a `run.start` handled by a run manager already shut down can do: a test body outliving its test, after a timeout for example. Which test it was cannot be told afterwards. A run manager that was shut down now refuses new commands ("The daemon is stopping.", 05 section 6). Regression test in `runner.test.ts`, which failed before the fix.
 
 ### [ ] N. Lot 2 check by the owner
 
@@ -745,7 +748,7 @@ Owner's decisions before the step (2026-10-01), written into 03 section 6, 05 se
 - The owner:
   1. checks the host prerequisites;
   2. runs the allowlist smoke-test script with the real Claude Code (and, if Claude Code was updated since step H, the probe script again);
-  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service"); the cheapest moment is while the run of item 4 waits for the answer (its session stays open for the waiting run lifetime, 30 minutes), then the answer goes to the same session;
+  3. restarts the service during a run (`systemctl --user restart orchestrator-daemon`) and sees the run's session survive and go on (step K, "Sessions surviving a restart of the service"). It is done in the run of item 4, **right after sending the answer, while the agent is working again**: this checks what the fake `claude` cannot prove, how the real Claude Code behaves when its hooks fire while the daemon is down. If the run has already finished when the daemon is back, the owner records "restart during work: not observed" (not a failure), and the fallback check is a restart while a run waits for an answer (the session stays open for the waiting run lifetime, 30 minutes), in the run of item 5 or a later one;
   4. follows `docs/user/` alone on WSL: install the daemon from the server, enrol, `login`, service, create a ticket, Run now, watch it live, answer a question, accept a ticket the agent proposed, find the agent's commits on the branch shown by the ticket page and by `orchestrator-daemon status`;
   5. with real runs: `orchestrator-daemon status` after a run, daemon running and stopped; on the phone, Needs you → Request changes → Run now, and the next run reads the comment (owner's review of step L2).
 - **The ticket for the real runs** (Help > Runs > "Try it with a small ticket"), in a ready project:
@@ -760,11 +763,11 @@ Owner's decisions before the step (2026-10-01), written into 03 section 6, 05 se
   |---|---|---|---|
   | 2, allowlist smoke test | 1 (`architect`; `web_dev` has the same rules) | 1, about 16 to 20 short steps | `haiku` |
   | 2, probe again (only if Claude Code was updated after 2.1.283) | 2 (the control one sends nothing) | 1, about 5 steps | `haiku` |
-  | 3 and 4, the ticket above, restarted while it waits for the answer | 1 (2 if the answer comes after the 30-minute waiting run lifetime) | 2: the ticket and the answer, about 10 to 20 steps | `sonnet` |
+  | 3 and 4, the ticket above, restarted right after the answer | 1 (2 if the answer comes after the 30-minute waiting run lifetime) | 2: the ticket and the answer, about 10 to 20 steps | `sonnet` |
   | 5, Request changes, then Run now | 1 | 1, about 10 steps | `sonnet` |
   | Usage-limit capture (only while limited) | 1 | 1, refused at no cost | `sonnet` |
 
-  In all: 2 `sonnet` sessions with 3 messages, and 1 `haiku` session with 1 message (2 sessions and 2 messages if the probe runs again). A run whose agent ends a turn without deciding gets up to 2 reminders (maximum nudges per run), one message each. Restarting the service in a run of its own instead of during item 4 adds 1 `sonnet` session and 1 message.
+  In all: 2 `sonnet` sessions with 3 messages, and 1 `haiku` session with 1 message (2 sessions and 2 messages if the probe runs again). A run whose agent ends a turn without deciding gets up to 2 reminders (maximum nudges per run), one message each. Restarting the service in a run of its own instead of during item 4 adds 1 `sonnet` session and 1 message; the fallback restart while waiting needs a run that asks a question, such as this ticket again.
 - If the owner's checks pass on a Claude Code newer than `CLAUDE_CODE_VALIDATED_VERSION`, that constant is raised to the version checked.
 - If the usage limit was reached during the lot, the owner runs `--scan-limit` and `--probe-limit`, and the detection table and fixtures are adjusted. Otherwise the capture moves to lot 4 (spec 10 already says so).
 - Gaps found are fixed, each with its test; results recorded in this plan.
