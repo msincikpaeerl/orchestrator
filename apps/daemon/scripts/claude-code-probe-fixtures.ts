@@ -90,6 +90,9 @@ export function sessionPersonalValues(rawTranscript: string, claudeJson: unknown
   if (typeof account?.emailAddress === 'string') {
     values.push({ kind: "the Claude account's e-mail address", value: account.emailAddress });
   }
+  if (typeof account?.accountUuid === 'string') {
+    values.push({ kind: 'the account id', value: account.accountUuid });
+  }
   if (typeof account?.organizationUuid === 'string') {
     values.push({ kind: 'the organisation id', value: account.organizationUuid });
   }
@@ -118,6 +121,46 @@ export function personalDataFound(
     const lower = text.toLowerCase();
     for (const item of checked) {
       if (lower.includes(item.value.trim().toLowerCase())) found.add(`${item.kind} in ${file}`);
+    }
+  }
+  return [...found];
+}
+
+/**
+ * What looks like a credential or an account identifier, whatever its value (owner's decision,
+ * lot 2 step M, for the usage-limit capture): such a fixture is never written. Checked after
+ * sanitising, so a credential that `maskSecrets` hid still counts.
+ */
+const CREDENTIAL_LIKE: { kind: string; pattern: RegExp }[] = [
+  { kind: 'a masked credential', pattern: /\[hidden\]/ },
+  {
+    kind: 'a token',
+    pattern:
+      /\b(?:gh[pousr]_|github_pat_|sk-ant-|omt_|ort_)[A-Za-z0-9_-]{8,}|\b(?:access|refresh|id|bearer|session)[_-]?token\b|\bBearer\s+[A-Za-z0-9._~+/=-]{10,}/i,
+  },
+  { kind: 'an API key', pattern: /\b(?:x-)?api[_-]?key\b|\bsk-[A-Za-z0-9_-]{20,}/i },
+  {
+    kind: 'an OAuth credential',
+    pattern: /\boauth|\bclient[_-]?secret\b|\bexpires[_-]?at\b|\bcredentials?\.json\b/i,
+  },
+  {
+    kind: 'an account or organisation id',
+    pattern: /\b(?:account|organi[sz]ation|org|user)[_-]?(?:uuid|id)\b/i,
+  },
+  {
+    // Upper and lower case letters and digits, 40 characters or more, as random secrets are.
+    kind: 'a long token-like string',
+    pattern:
+      /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[a-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{40,}(?![A-Za-z0-9_-])/,
+  },
+];
+
+/** Each kind of credential or account identifier found in the files, as "<kind> in <file>". */
+export function credentialLikeFound(files: Record<string, string>): string[] {
+  const found = new Set<string>();
+  for (const [file, text] of Object.entries(files)) {
+    for (const { kind, pattern } of CREDENTIAL_LIKE) {
+      if (pattern.test(text)) found.add(`${kind} in ${file}`);
     }
   }
   return [...found];
