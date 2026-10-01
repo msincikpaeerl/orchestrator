@@ -68,6 +68,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'machine.revoked': 'Machine revoked',
   'machine.capabilities_changed': 'Machine capabilities edited',
   'machine.claude_code_unsupported': 'Claude Code too old at a run start',
+  'machine.doctor_changed': 'Machine checks changed',
   'agent_profile.created': 'Agent profile added',
   'agent_profile.updated': 'Agent profile updated',
   'run.created': 'Run started',
@@ -422,6 +423,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     ` cannot receive runs: a run found ${
       p.version === null ? 'no Claude Code' : `Claude Code ${p.version}`
     }, and ${p.minimum} or later is needed`,
+  ],
+  'machine.doctor_changed': (p) => [
+    'Machine ',
+    quote(p.name, null),
+    p.errors.length === 0
+      ? ': its checks changed, none reports an error'
+      : ` cannot receive runs: its checks found a problem (${list(p.errors)})`,
   ],
   'machine.capabilities_changed': (p) => [
     'Capabilities of the machine ',

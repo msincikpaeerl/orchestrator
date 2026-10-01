@@ -116,6 +116,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   'machine.enabled': { name: 'Laptop' },
   'machine.revoked': { name: 'Laptop' },
   'machine.capabilities_changed': { name: 'Laptop', capabilities: ['git', 'node'] },
+  'machine.doctor_changed': { name: 'Laptop', errors: ['Process scopes'] },
   'machine.claude_code_unsupported': { name: 'Laptop', version: '2.1.100', minimum: '2.1.280' },
   'account.limited': {
     label: 'Personal',

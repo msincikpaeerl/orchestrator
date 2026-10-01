@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { schema } from '@orchestrator/db';
 import {
   AccountListResponse,
@@ -511,6 +512,51 @@ describe('the daemon connection', () => {
     await (await connect(token)).hello();
     expect((await machine(created.machine.id)).unusable).toEqual([]);
     expect((await needsYou()).map((item) => item.type)).not.toContain('machine_problem');
+  });
+
+  it('makes the machine unusable at once on a doctor error reported while connected', async () => {
+    await start();
+    const created = await createMachine();
+    const daemon = await connect(await enrollToken(t.url, created.enrollment.code));
+    const ok = {
+      name: 'Process scopes',
+      status: 'ok' as const,
+      message: 'Used',
+      link: null,
+    };
+    await daemon.hello({ doctor: [ok] });
+    expect((await machine(created.machine.id)).unusable).toEqual([]);
+
+    const scopes = {
+      name: 'Process scopes',
+      status: 'error' as const,
+      message: 'Process scopes could not be created for a run (Access denied)',
+      link: `${t.url}/help/machines#process-scopes`,
+    };
+    const id = randomUUID();
+    const report = { type: 'machine.doctor', id, payload: { doctor: [scopes] } } as const;
+    daemon.send(report);
+    expect(
+      await daemon.find((message) => message.type === 'ack' && message.id === id, 'the ack'),
+    ).toMatchObject({ payload: { ok: true } });
+    expect((await machine(created.machine.id)).unusable).toEqual([
+      { type: 'doctor_error', check: scopes },
+    ]);
+    expect(await needsYou()).toContainEqual(
+      expect.objectContaining({ type: 'machine_problem', checks: [scopes] }),
+    );
+    // A duplicate changes nothing: one event.
+    daemon.send(report);
+    await daemon.find(
+      () => daemon.received.filter((each) => each.type === 'ack' && each.id === id).length === 2,
+      'the second ack',
+    );
+    expect(
+      (await machineEvents()).filter((event) => event.type === 'machine.doctor_changed'),
+    ).toEqual([
+      { type: 'machine.doctor_changed', payload: { name: 'Laptop', errors: ['Process scopes'] } },
+    ]);
+    await daemon.close();
   });
 
   it('marks the machine offline after the configured silence, and heartbeats keep it online', async () => {
