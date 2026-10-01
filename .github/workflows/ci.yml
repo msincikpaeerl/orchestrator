@@ -40,9 +40,18 @@ jobs:
       - name: Dependency audit (fails on critical vulnerabilities)
         run: pnpm audit --audit-level critical
 
+  # The tests in three shards on three runners (ADR 0032). Vitest gives each shard a third of the
+  # test files, by a hash of their paths, not by duration: the slowest files decide the balance.
+  # One job id for all shards, so `ci` needs `test` once and fails if any shard failed.
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      # Every shard runs to the end, so a failure in one does not hide those of the others.
+      fail-fast: false
+      matrix:
+        # 1 to N, in order: shard i runs `--shard=i/N`, N being the number of shards.
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -78,7 +87,7 @@ jobs:
             -c "SELECT name, setting FROM pg_settings WHERE name IN ('fsync', 'synchronous_commit', 'full_page_writes')"
           docker compose -f docker/compose.dev.yml exec -T postgres-test df -h /var/lib/postgresql
 
-      - run: pnpm test
+      - run: pnpm test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   build:
     runs-on: ubuntu-24.04

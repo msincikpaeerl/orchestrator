@@ -1,6 +1,6 @@
 # 0030 — Continuous integration in parallel jobs
 
-- Status: accepted
+- Status: superseded by 0032
 - Date: 2026-09-29
 - Supersedes: 0008
 

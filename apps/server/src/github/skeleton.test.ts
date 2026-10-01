@@ -105,27 +105,43 @@ function workflowJobs(workflow: string): Map<string, string[]> {
   return jobs;
 }
 
+/** Checks that `ci` is the final job of a workflow, needing every other job. */
+function expectRequiredCheck(ci: string) {
+  const jobs = workflowJobs(ci);
+  const required = jobs.get(REQUIRED_CHECK);
+  expect(required, `job ${REQUIRED_CHECK}`).toBeDefined();
+  // GitHub names the check after the job id unless the job has a name.
+  expect(required?.some((line) => line.startsWith('name:'))).toBe(false);
+  // It runs when a job it needs failed, and fails for failed, cancelled or skipped jobs.
+  expect(required).toContain('if: always()');
+  for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(required?.join('\n')).toContain(`contains(needs.*.result, '${result}')`);
+  }
+  const others = [...jobs.keys()].filter((job) => job !== REQUIRED_CHECK);
+  expect(others.length).toBeGreaterThan(0);
+  expect(required).toContain(`needs: [${others.join(', ')}]`);
+}
+
 describe('the check required by branch protection', () => {
   it.each([
     ['the skeleton', skeletonDirectory()],
     ['this repository', repositoryRoot],
   ])("is %s's CI final job, which needs every other job", async (_name, directory) => {
-    const ci = await readFile(join(directory, '.github/workflows/ci.yml'), 'utf8');
-    const jobs = workflowJobs(ci);
-    const required = jobs.get(REQUIRED_CHECK);
-    expect(required, `job ${REQUIRED_CHECK}`).toBeDefined();
-    // GitHub names the check after the job id unless the job has a name.
-    expect(required?.some((line) => line.startsWith('name:'))).toBe(false);
-    // It runs when a job it needs failed, and fails for failed, cancelled or skipped jobs.
-    expect(required).toContain('if: always()');
-    for (const result of ['failure', 'cancelled', 'skipped']) {
-      expect(required?.join('\n')).toContain(`contains(needs.*.result, '${result}')`);
-    }
-    const others = [...jobs.keys()].filter((job) => job !== REQUIRED_CHECK);
-    expect(others.length).toBeGreaterThan(0);
-    expect(required).toContain(`needs: [${others.join(', ')}]`);
+    expectRequiredCheck(await readFile(join(directory, '.github/workflows/ci.yml'), 'utf8'));
+  });
+
+  it('is refused when a job, such as the sharded tests, is missing from its needs', async () => {
+    const ci = await readFile(join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const needs = /^ {4}needs: \[(.+)\]$/m.exec(ci)?.[0] ?? 'missing';
+    expect(needs).toContain('test, ');
+    expect(() => {
+      expectRequiredCheck(ci.replace(needs, needs.replace('test, ', '')));
+    }).toThrow();
   });
 });
+
+/** The command that runs one shard of the tests, out of the shards of the job's matrix. */
+const shardedTest = 'pnpm test --shard=${{ matrix.shard }}/${{ strategy.job-total }}';
 
 describe("this repository's CI", () => {
   it('runs every script of `pnpm verify`, so a green local run predicts a green CI', async () => {
@@ -134,8 +150,23 @@ describe("this repository's CI", () => {
     ) as { scripts: Record<string, string> };
     const ci = await readFile(join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
     const commands = rootPackage.scripts.verify?.split(' && ') ?? [];
-    expect(commands.length).toBeGreaterThan(0);
-    for (const command of commands) expect(ci).toContain(`run: ${command}\n`);
+    expect(commands).toContain('pnpm test');
+    for (const command of commands) {
+      expect(ci).toContain(`run: ${command === 'pnpm test' ? shardedTest : command}\n`);
+    }
+  });
+
+  it('runs every shard of the tests, numbered 1 to their count', async () => {
+    const ci = await readFile(join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const test = workflowJobs(ci).get('test') ?? [];
+    expect(test).toContain(`- run: ${shardedTest}`);
+    const shards = test
+      .find((line) => line.startsWith('shard: ['))
+      ?.slice('shard: ['.length, -1)
+      .split(', ')
+      .map(Number);
+    expect(shards?.length).toBeGreaterThan(1);
+    expect(shards).toEqual(shards?.map((_shard, index) => index + 1));
   });
 });
 
