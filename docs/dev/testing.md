@@ -66,7 +66,7 @@ The runner's cleanup of processes a session leaves is tested in `apps/daemon/tes
 
 ## systemd tests
 
-`apps/daemon/test/systemd.test.ts` checks the scopes of lot 2 step K with the host's **real** systemd user session, which CI's runner does not have. It runs only when `ORCHESTRATOR_TEST_SYSTEMD=1` is set; it fails (rather than skip) when that is set and `systemctl --user show-environment` does not answer. On WSL with systemd:
+`apps/daemon/test/systemd.test.ts` checks the scopes of lot 2 step K with the host's **real** systemd user session, which CI's runner does not have. It runs only when `ORCHESTRATOR_TEST_SYSTEMD=1` is set; it fails (rather than skip) when that is set and a throw-away scope cannot be created (`UserSystemd.detect`, the daemon's own check at start), with systemd's reason. On WSL with systemd:
 
 ```sh
 ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts
@@ -74,11 +74,14 @@ ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/syst
 
 What it creates, all transient units of the user's systemd (nothing is written in the home folder, and no unit file is installed):
 
+- `od-test-check-orchestrator-scope-check-<random>.scope` and `od-test-<hash>-orchestrator-scope-check-<random>.scope`: the throw-away scopes of the check at start (of the test, then of the daemon), running `true` and gone at once;
 - `od-test-<hash>-orchestrator-tmux.scope`: the test's tmux server, started by the daemon code as for the real service;
 - `od-test-<hash>-orch-run-<run id>.scope`: each run's fake `claude`;
-- `od-test-<hash>-daemon.service`: the daemon started with `systemd-run --user`, stopped and started again to play a restart of the service (a transient service is killed by cgroup like the installed unit).
+- `od-test-<hash>-daemon.service`: the daemon started with `systemd-run --user` and `start --service`, whose "Process scopes" check must be ok, stopped and started again to play a restart of the service (a transient service is killed by cgroup like the installed unit).
 
 `<hash>` comes from the test's throw-away `ORCHESTRATOR_HOME` (`unitPrefix` in `apps/daemon/src/systemd.ts`): a real `orchestrator-tmux` scope or `orchestrator-daemon` service is never named, stopped or touched. Every `od-test-*` unit is stopped (and its failed state reset) after each test and before the first one, so an interrupted run's leftovers go at the next run. To remove them by hand: `systemctl --user list-units --all 'od-test-*'`, then `systemctl --user stop <units>`.
+
+Without a systemd user session, `apps/daemon/test/process-scopes.test.ts` covers the same decisions with fake `systemd-run` and `systemctl` in the test home's `bin` (lot 2 step M2): the service whose scopes are refused reports the "Process scopes" error, refuses `run.start` and starts nothing; a daemon in a terminal keeps the fallback; a run's scope refused later fails the run, sends `machine.doctor` and blocks the next `run.start` and `run.resume`. `apps/server/test/daemon.test.ts` checks the item in "Needs you" with the real server.
 
 ## Owner's Claude Code probe
 
