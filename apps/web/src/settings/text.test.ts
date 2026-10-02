@@ -1,4 +1,5 @@
-import { SETTINGS, SettingName } from '@orchestrator/protocol';
+import { SETTINGS, SettingName, isLaterVersion } from '@orchestrator/protocol';
+import { version } from '../../package.json';
 import { describe, expect, it } from 'vitest';
 import { findPage } from '../help/content';
 import { amount, laterText, parseTyped } from './text';
@@ -12,7 +13,9 @@ describe('the settings reference of the Help section', () => {
     const row = reference
       .split('\n')
       .find((line) =>
-        line.startsWith(`| ${label}${usedFrom ? ` (from version ${usedFrom})` : ''} |`),
+        line.startsWith(
+          `| ${label}${usedFrom && isLaterVersion(usedFrom, version) ? ` (from version ${usedFrom})` : ''} |`,
+        ),
       );
     expect(row).toBeDefined();
     expect(row).toContain(`| ${amount(name, SETTINGS[name].default)} |`);
@@ -48,10 +51,24 @@ describe('parseTyped', () => {
 });
 
 describe('laterText', () => {
-  it('names the version for settings of later lots only', () => {
-    expect(laterText('maxRunDurationMinutes')).toBe(
+  it('names the version for settings of versions later than the running one only', () => {
+    expect(laterText('maxRunDurationMinutes', '0.2.0')).toBe(
       'Used from version 0.3.0: it changes nothing in this version.',
     );
-    expect(laterText('commentMaxLength')).toBeNull();
+    expect(laterText('maxRunDurationMinutes', '0.3.0')).toBeNull();
+    expect(laterText('maxRunDurationMinutes', '0.4.0')).toBeNull();
+    expect(laterText('ciWaitTimeoutMinutes', '0.3.0')).toBe(
+      'Used from version 0.4.0: it changes nothing in this version.',
+    );
+    expect(laterText('commentMaxLength', '0.2.0')).toBeNull();
+  });
+
+  it('compares with the running version by default', () => {
+    // 0.3.0 uses the run limits: no note on them in 0.3.0 (lot 2 plan, step N).
+    expect(version).toBe('0.3.0');
+    expect(laterText('maxRunDurationMinutes')).toBeNull();
+    expect(laterText('ciWaitTimeoutMinutes')).toBe(
+      'Used from version 0.4.0: it changes nothing in this version.',
+    );
   });
 });

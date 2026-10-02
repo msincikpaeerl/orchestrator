@@ -3,6 +3,7 @@ import { FIRST_MESSAGE_MAX_BYTES } from './agents.js';
 import {
   FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS,
   inOrder,
+  isLaterVersion,
   PROJECT_SETTINGS,
   SETTING_ORDER,
   SETTING_PRODUCTS,
@@ -26,6 +27,16 @@ describe('SETTINGS', () => {
       if (usedFrom === undefined) continue;
       expect(usedFrom).toMatch(/^0\.[3-9]\.0$/);
     }
+  });
+
+  it('compares versions number by number', () => {
+    expect(isLaterVersion('0.4.0', '0.3.0')).toBe(true);
+    expect(isLaterVersion('0.10.0', '0.9.0')).toBe(true);
+    expect(isLaterVersion('1.0.0', '0.12.3')).toBe(true);
+    expect(isLaterVersion('0.3.1', '0.3.0')).toBe(true);
+    expect(isLaterVersion('0.3.0', '0.3.0')).toBe(false);
+    expect(isLaterVersion('0.3.0', '0.4.0')).toBe(false);
+    expect(isLaterVersion('0.9.0', '0.10.0')).toBe(false);
   });
 
   it('lets projects override only the settings marked so in 04, section 8', () => {

@@ -168,6 +168,7 @@ export {
   SETTING_ORDER,
   SETTING_PRODUCTS,
   inOrder,
+  isLaterVersion,
   type SettingProduct,
   type SettingOrder,
   SetSettingRequest,

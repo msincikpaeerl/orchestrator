@@ -33,10 +33,11 @@ test('changing a global limit, which applies at once, then resetting it', async 
   const title = setting(page, 'Longest ticket title');
   await expect(title).toContainText('Default: 200 characters (in use).');
   await expect(title.getByRole('button', { name: 'Reset to default' })).toBeDisabled();
-  // A setting of a later version says so.
-  await expect(setting(page, 'Longest run')).toContainText(
-    'Used from version 0.3.0: it changes nothing in this version.',
+  // A setting of a later version says so; one used from this version does not.
+  await expect(setting(page, 'Scheduler check interval')).toContainText(
+    'Used from version 0.5.0: it changes nothing in this version.',
   );
+  await expect(setting(page, 'Longest run')).not.toContainText('Used from version');
 
   // A value outside the allowed range is refused with the range.
   await title.getByLabel('Value (characters)').fill('0');
