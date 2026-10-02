@@ -41,6 +41,15 @@ export async function clearLastStop(path: string): Promise<void> {
   await rm(path, { force: true });
 }
 
+/**
+ * The messages of a stop by a signal. They say what stopped the daemon, not how to start it:
+ * `status` says that on its next line.
+ */
+export const STOPPED_MESSAGES = {
+  service: 'Stopped (systemctl --user stop orchestrator-daemon, or the computer shut down).',
+  terminal: 'Stopped with Ctrl+C or a signal.',
+} as const;
+
 export function describeLastStop(stop: LastStop): string {
   return `Last stop (${new Date(stop.at).toLocaleString()}): ${stop.message}`;
 }
