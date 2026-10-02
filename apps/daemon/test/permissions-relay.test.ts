@@ -385,6 +385,12 @@ describe('decision tools', () => {
         '--',
         answer,
       ]);
+      // A resumed session sets its permission mode too, so Claude Code's own default (auto mode
+      // from 2.1.288) never applies to an agent (lot 2 step N).
+      for (const { args } of launches) {
+        expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+      }
+      expect((await fake.log()).some((entry) => entry.event === 'arguments_refused')).toBe(false);
     },
     TIMEOUT,
   );
