@@ -17,7 +17,7 @@ import { doctorEnvironment } from './environment.js';
 import { EXIT_REFUSED, UserError } from './errors.js';
 import { findExecutable } from './exec.js';
 import { Git } from './git.js';
-import { clearLastStop, writeLastStop, type LastStop } from './last-stop.js';
+import { STOPPED_MESSAGES, clearLastStop, writeLastStop, type LastStop } from './last-stop.js';
 import { createLogger } from './logger.js';
 import type { DaemonPaths } from './paths.js';
 import { RunManager } from './runs.js';
@@ -289,10 +289,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
         {
           at: new Date().toISOString(),
           reason: 'stopped',
-          message:
-            mode === 'service'
-              ? 'Stopped (systemctl --user stop orchestrator-daemon, or the computer shut down). Start it with: systemctl --user start orchestrator-daemon'
-              : 'Stopped with Ctrl+C or a signal.',
+          message: STOPPED_MESSAGES[mode],
         },
         0,
       );

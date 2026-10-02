@@ -17,7 +17,9 @@ Every run uses your Claude account's usage, the same quota as your own use of Cl
 - **Type**: **Documentation**
 - **Title**: `Add one line to README.md`
 - **Description**: `Before changing anything, ask me with ticket_ask which line to add. Add the line I give you at the end of README.md and commit it. Also propose one ticket with ticket_create: title "Add a CONTRIBUTING.md file", type docs, assignee web_dev. Do nothing else.`
-- **Acceptance criteria**: `README.md ends with the line given in the answer` and `A ticket "Add a CONTRIBUTING.md file" was proposed`
+- **Acceptance criteria**, two of them, each in its own box (click **Add a criterion** for the second):
+  1. `README.md ends with the line given in the answer`
+  2. `A ticket "Add a CONTRIBUTING.md file" was proposed`
 - **Assignee**: **Web Developer**
 
 When the agent asks, answer `Add this line: Checked by the Orchestrator.` Such a run is usually one session with two messages (the ticket, then your answer), and about 10 to 20 short steps of the agent.

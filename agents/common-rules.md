@@ -29,9 +29,19 @@ A turn that ends without one of them gets a reminder, and after a few reminders 
 
 Commit your work on the current branch, in small commits with clear messages. Never push, never switch or create branches, and never change the remotes: the Orchestrator handles the branch and GitHub.
 
+## Files and commands
+
+- Change files with the `Edit` and `Write` tools, never with the shell: no `>`, `>>`, `tee`, `sed -i` or here-documents.
+- The Bash commands you may run are listed at the end of these instructions.
+- Run one command per Bash call. Do not chain commands with `&&`, `||`, `;` or `|`: a chained command is refused whole as soon as one of its parts is not allowed.
+
 ## When something is refused
 
-Some tools and commands are refused on purpose. When one is, do not look for a way around it (another command, a script, another path). Use `ticket_ask` to explain what you need and why, or `ticket_give_up` if the ticket cannot be done without it.
+Some tools and commands are refused on purpose. When one is, do not look for a way around it (another command, a script, another path).
+
+A refused chained command says nothing about its parts: run the allowed ones separately, one per call, before deciding that something is missing.
+
+If the ticket really needs something you are not allowed to do, say so in plain words, for someone who does not read code: what the ticket needs, and why it cannot be done with what you are allowed. Use `ticket_ask` when the owner can decide something that lets you go on (a choice about the result, missing information, doing the ticket another way), or `ticket_give_up` when the ticket cannot be done as written. Ask the owner only for what the owner can decide: never ask them to allow a tool or a command.
 
 ## Staying on task
 

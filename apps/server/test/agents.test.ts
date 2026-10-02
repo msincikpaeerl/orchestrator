@@ -101,6 +101,12 @@ describe('seeding the default profiles (03, section 3)', () => {
     expect((await profiles()).map((row) => row.version)).toEqual([2, 2]);
   });
 
+  it('raises every default profile when the allowlist template changed', async () => {
+    await changeFile('templates/allowlist.md', (text) => text.replace('Any other', 'Every other'));
+    const result = await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
+    expect(result.updated).toEqual(['architect', 'web_dev']);
+  });
+
   it('keeps the profile row, so tickets assigned to it stay assigned', async () => {
     const [before] = await t.db
       .select()

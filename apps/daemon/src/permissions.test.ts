@@ -70,9 +70,20 @@ describe('settings rules', () => {
       `/${userHome}/.claude/**`,
       `/${userHome}/.claude.json`,
     ];
-    expect(deny).toEqual(paths.flatMap((path) => [`Read(${path})`, `Edit(${path})`]));
-    expect(deny.every((rule) => rule.includes('(//'))).toBe(true);
+    const files = deny.filter((rule) => !rule.startsWith('Bash('));
+    expect(files).toEqual(paths.flatMap((path) => [`Read(${path})`, `Edit(${path})`]));
+    expect(files.every((rule) => rule.includes('(//'))).toBe(true);
     expect(deny.some((rule) => rule.includes('worktrees'))).toBe(false);
+  });
+
+  it('denies the container tools, which Claude Code would allow by itself for "docker ps"', () => {
+    const { deny } = settingsPermissions(scope, []);
+    expect(deny.filter((rule) => rule.startsWith('Bash('))).toEqual(
+      ['docker', 'docker-compose', 'podman', 'nerdctl', 'kubectl'].flatMap((name) => [
+        `Bash(${name})`,
+        `Bash(${name} *)`,
+      ]),
+    );
   });
 });
 
@@ -134,6 +145,35 @@ describe('PreToolUse rules for Bash', () => {
     expect(bash('echo x > .claude/settings.json')).toBe(REASONS.claudeFolder);
     expect(bash('cat .claude/settings.json')).toBe(REASONS.claudeFolder);
     expect(bash('rm -rf ./.claude')).toBe(REASONS.claudeFolder);
+  });
+
+  it('refuses the container tools, in any form', () => {
+    for (const command of [
+      'docker ps',
+      'docker',
+      'docker inspect orchestrator',
+      'docker compose up -d',
+      'docker-compose ps',
+      '/usr/bin/docker ps',
+      'sudo docker ps',
+      'env DOCKER_HOST=x docker ps',
+      'npm test && docker ps',
+      'echo $(docker ps -q)',
+      'podman ps',
+      'nerdctl inspect orchestrator',
+      'kubectl get pods',
+      'sudo /usr/bin/podman ps',
+    ]) {
+      expect(bash(command), command).toBe(REASONS.containers);
+    }
+    for (const command of [
+      'cat Dockerfile',
+      'ls docker',
+      'cat docker/compose.yml',
+      'grep docker README.md',
+    ]) {
+      expect(bash(command), command).toBeNull();
+    }
   });
 
   it('refuses any command naming tmux', () => {

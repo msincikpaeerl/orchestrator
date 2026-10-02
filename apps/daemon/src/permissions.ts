@@ -34,13 +34,21 @@ export const ORCHESTRATOR_MCP = 'mcp__orchestrator';
 const DAEMON_FILES = ['config.json', 'daemon.sock', 'last-stop.json'];
 const DAEMON_FOLDERS = ['claude-config', 'repos', 'runs'];
 
+/**
+ * Container tools an agent never runs (owner's decision, lot 2 step N): they reach every container
+ * of the owner's user, the Orchestrator's own included, whose configuration holds its secret key.
+ */
+const CONTAINER_PROGRAMS = ['docker', 'docker-compose', 'podman', 'nerdctl', 'kubectl'];
+
 /** A rule path for an absolute path: Claude Code writes absolute paths with `//`. */
 const rulePath = (path: string) => `/${path}`;
 
 /**
  * The `permissions` of a run's `settings.json` (05, section 4.6): the profile's allowlist with
  * `ToolSearch` and the Orchestrator's MCP tools, and deny rules for the daemon's folder (but its
- * worktrees) and the Claude configuration folders.
+ * worktrees), the Claude configuration folders and the container tools. Claude Code allows some
+ * commands it considers read-only (`docker ps`) outside the allowlist: only a deny rule or the
+ * hook refuses them.
  */
 export function settingsPermissions(
   scope: Pick<PermissionScope, 'daemonHome' | 'userHome'>,
@@ -53,10 +61,10 @@ export function settingsPermissions(
     `${join(scope.userHome, '.claude')}/**`,
     join(scope.userHome, '.claude.json'),
   ];
-  const deny = targets.flatMap((target) => [
-    `Read(${rulePath(target)})`,
-    `Edit(${rulePath(target)})`,
-  ]);
+  const deny = [
+    ...targets.flatMap((target) => [`Read(${rulePath(target)})`, `Edit(${rulePath(target)})`]),
+    ...CONTAINER_PROGRAMS.flatMap((name) => [`Bash(${name})`, `Bash(${name} *)`]),
+  ];
   return { allow, deny };
 }
 
@@ -67,6 +75,7 @@ const ASK = 'If you need it for your ticket, explain why with ticket_ask.';
 export const REASONS = {
   remote: `Git commands that reach a remote, and gh or hub, are refused: the Orchestrator fetches and pushes the branch itself. Commit your work locally. ${ASK}`,
   github: `Commands that reach GitHub are refused: the Orchestrator talks to GitHub itself. ${ASK}`,
+  containers: `Container commands (docker, docker-compose, podman, nerdctl, kubectl) are refused: they reach every container on this computer, the Orchestrator's own included. ${ASK}`,
   tmux: 'tmux commands are refused: the Orchestrator runs your session in tmux and must be the only one driving it.',
   claudeFolder: `Changes to the repository's .claude folder are refused (and Bash commands naming it): it configures Claude Code for the owner. ${ASK}`,
   daemonFolder:
@@ -305,6 +314,7 @@ export function checkBash(scope: PermissionScope, command: string): string | nul
     if (name !== undefined) {
       const base = basename(name);
       if (base === 'gh' || base === 'hub') return REASONS.remote;
+      if (CONTAINER_PROGRAMS.includes(base)) return REASONS.containers;
       if (base === 'git') {
         const refusal = gitRefusal(args);
         if (refusal) return refusal;

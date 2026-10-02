@@ -31,9 +31,23 @@ function part(template: Template, name: string, values: Record<string, string> =
   return fill(template, text, values);
 }
 
-/** What Claude Code's system prompt receives: the common rules, then the role (03, section 3). */
-export function runInstructions(commonRules: string, roleInstructions: string): string {
-  return `${commonRules.trim()}\n\n${roleInstructions.trim()}\n`;
+/**
+ * What Claude Code's system prompt receives (03, section 3): the common rules, the role, then the
+ * profile's Bash rules as the allowlist template lists them.
+ */
+export function runInstructions(
+  commonRules: string,
+  roleInstructions: string,
+  allowlist: Template,
+  allowedTools: readonly string[],
+): string {
+  const rules = allowedTools.flatMap((tool) => /^Bash\((.+)\)$/.exec(tool)?.[1] ?? []);
+  const commands =
+    rules.length === 0
+      ? part(allowlist, 'no-commands')
+      : rules.map((rule) => part(allowlist, 'command', { rule })).join('\n');
+  const section = fill(allowlist, allowlist.main, { commands });
+  return `${commonRules.trim()}\n\n${roleInstructions.trim()}\n\n${section.trim()}\n`;
 }
 
 export interface FirstMessageComment {

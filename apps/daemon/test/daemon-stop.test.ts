@@ -6,6 +6,7 @@ import { ScriptedServer } from './scripted-server.js';
 import {
   createTestHome,
   healthyTools,
+  runDaemon,
   spawnDaemon,
   stopHomeProcesses,
   waitFor,
@@ -82,6 +83,24 @@ describe('stopping the daemon', () => {
       const elapsed = Date.now() - began;
       expect(await daemon.exited).toBe(0);
       expect(elapsed).toBeLessThan(QUICK_MS);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('status after the service was stopped', () => {
+  it(
+    "says how to start it once (owner's check, lot 2 step N: it said it twice)",
+    async () => {
+      const daemon = spawnDaemon(['start', '--service'], home.env);
+      await waitFor(() => server.hellos().length === 1, 30_000, 'hello');
+      daemon.child.kill('SIGTERM');
+      expect(await daemon.exited).toBe(0);
+      const result = await runDaemon(['status'], home.env);
+      expect(result.stdout).toContain(
+        'Stopped (systemctl --user stop orchestrator-daemon, or the computer shut down).\n',
+      );
+      expect(result.stdout.match(/Start it with/g)).toHaveLength(1);
     },
     TIMEOUT,
   );

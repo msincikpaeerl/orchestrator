@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lots 0 and 1 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`). Lot 2 (version 0.3.0) is in progress: follow `docs/dev/lot-2-plan.md` and `docs/dev/working-rules.md`, one step at a time. Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lots 0, 1 and 2 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`). Lot 3 has no plan yet: wait for the owner's instructions, then follow `docs/dev/working-rules.md`. Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 

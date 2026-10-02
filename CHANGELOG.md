@@ -2,10 +2,19 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
-## 0.3.0 — 2026-10-02
+## 0.3.0 — 2026-10-03
 
 Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.
 
+- Machines: `orchestrator-daemon login` can be typed in any folder: Claude Code opens in an empty folder of the Orchestrator's own, so it no longer asks whether you trust the terminal's folder, nor reads that folder's files. Help: "Machines" > "Add a machine" says what to answer.
+- Machines: Claude Code 2.1.287 is now the latest version checked with this Orchestrator: no warning on a machine with it.
+- Runs: the run's log no longer says "N transcript line(s) could not be read and were skipped" for the lines Claude Code 2.1.287 adds, none of which holds the agent's work; the warning stays for lines really unknown.
+- Agents: each agent is now told the list of commands it may run, and that any other is refused. When a ticket really needs a command it may not run, the agent says so in plain words and asks you how to go on, or gives up the ticket. Help: "Agents".
+- Help: "Machines" > "Add a machine" points to "Runs" > "Try it with a small ticket", which now gives its two acceptance criteria one per line.
+- Machines: `orchestrator-daemon status` with no daemon running says how to start it once, instead of twice after the service was stopped.
+- Agents: every agent now changes files with its editing tools, runs one command at a time, and when a command is refused, runs its allowed parts on their own before asking you; it asks you only what you can decide, never to allow a command. Before, an agent whose chained command was refused asked to "allow Bash for git add and git commit". Help: "Agents".
+- Machines: agents can no longer run the container tools `docker`, `docker-compose`, `podman`, `nerdctl` and `kubectl`: your user can use them, and the Orchestrator may run in Docker on the same computer, where a container's configuration could show its secret key. Before, Claude Code let `docker ps` through by itself. Help: "Machines" > "Agents on your own user".
+- Machines: `orchestrator-daemon install-service` turns lingering on with your user name, which works on WSL without `sudo` (it failed with "No such device or address" before); when it still fails, it shows loginctl's own reason and the command to type, as `orchestrator-daemon doctor` does. Help: "Machines" > "Lingering".
 - Settings > Limits: the limits used from this version on no longer say "it changes nothing in this version"; the note stays only on limits of later versions, and Help > Settings says which project limit already changes something.
 - Machines: stopping or restarting the daemon (`systemctl --user restart orchestrator-daemon`) no longer waits up to 30 seconds when the Orchestrator does not answer: it stops as soon as its own work is done.
 - Machines: the daemon's service now checks that it can create the process scopes that keep agents' sessions running when the service restarts. Before, it went on without them and the next restart stopped every agent's session. When it cannot create them, the machine stays online but takes no runs, and "Needs you" shows the problem with the reason and how to fix it; `orchestrator-daemon status` and `orchestrator-daemon doctor` show it too. If a run's scope cannot be created later, that run fails without counting as a failed attempt (its ticket goes back to To do), and the machine takes no runs until the daemon is restarted. Help: "Machines" > "Process scopes".

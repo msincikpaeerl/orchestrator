@@ -68,13 +68,38 @@ const answer = sample.comments[2]?.body ?? '';
 
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
 
+describe('run instructions', () => {
+  // Owner's decision, lot 2 step N: the agent is told its Bash allowlist, so it does not try
+  // commands that are refused (each refusal costs a turn).
+  it("end with the profile's Bash rules and say that any other command is refused", () => {
+    const text = runInstructions('Common.', 'Role.', shipped.allowlist, [
+      'Read',
+      'Bash(npm *)',
+      'Bash(git status)',
+      'WebFetch',
+    ]);
+    expect(text).toMatch(/^Common\.\n\nRole\.\n\n## Commands you may run\n/);
+    expect(text).toContain('\n- `npm *`\n- `git status`\n');
+    expect(text).toContain('Any other command is refused');
+    expect(text).not.toContain('`Read`');
+    expect(runInstructions('Common.', 'Role.', shipped.allowlist, ['Read'])).toContain(
+      shipped.allowlist.parts.get('no-commands'),
+    );
+  });
+});
+
 describe('run instructions and messages for a sample ticket (snapshot)', () => {
   it('renders the appended instructions, the first message and the other templates', async () => {
     const webDev = shipped.profiles.find((profile) => profile.key === 'web_dev');
     const sections = [
       '<!-- Rendered by apps/server/src/agents/messages.test.ts: review it with the templates. -->',
       '# Appended to the system prompt (Web Developer)',
-      runInstructions(shipped.commonRules, webDev?.instructions ?? ''),
+      runInstructions(
+        shipped.commonRules,
+        webDev?.instructions ?? '',
+        shipped.allowlist,
+        webDev?.allowedTools ?? [],
+      ),
       '# First message (implement)',
       implementFirstMessage(templates.implement, sample),
       '# First message (implement), attempt 2 with commits from an earlier attempt',

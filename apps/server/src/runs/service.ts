@@ -32,7 +32,12 @@ import {
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
-import { loadShippedAgents, loadTemplates, type Templates } from '../agents/files.js';
+import {
+  loadShippedAgents,
+  loadTemplates,
+  type Template,
+  type Templates,
+} from '../agents/files.js';
 import {
   FirstMessageTooLarge,
   answerMessage,
@@ -139,7 +144,8 @@ export class RunService {
   private readonly secondMs: number;
   private gateway: RunGateway | undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
-  private agentFiles: Promise<{ templates: Templates; commonRules: string }> | undefined;
+  private agentFiles:
+    Promise<{ templates: Templates; commonRules: string; allowlist: Template }> | undefined;
   private readonly mcp: McpBackend;
 
   constructor(private readonly options: RunServiceOptions) {
@@ -169,7 +175,11 @@ export class RunService {
 
   private files() {
     this.agentFiles ??= Promise.all([loadTemplates(), loadShippedAgents()]).then(
-      ([templates, shipped]) => ({ templates, commonRules: shipped.commonRules }),
+      ([templates, shipped]) => ({
+        templates,
+        commonRules: shipped.commonRules,
+        allowlist: shipped.allowlist,
+      }),
     );
     return this.agentFiles;
   }
@@ -560,7 +570,7 @@ export class RunService {
   /** **Run now** on a ticket (07, section 3): checks, machine, run `queued`, then `dispatched`. */
   async runNow(projectKey: string, ticketNumber: number): Promise<Run> {
     const github = await this.githubIdentity();
-    const { templates, commonRules } = await this.files();
+    const { templates, commonRules, allowlist } = await this.files();
     const settings = await resolveSettings(this.db, [
       'maxRunDurationMinutes',
       'idleTimeoutMinutes',
@@ -814,6 +824,7 @@ export class RunService {
         });
       }
 
+      const allowedTools = z.array(z.string()).parse(profile.allowedTools);
       const start: RunStart = {
         type: 'run.start',
         id: dispatchMessageId,
@@ -835,9 +846,14 @@ export class RunService {
           profile: {
             key: profile.key,
             version: profile.version,
-            instructions: runInstructions(commonRules, profile.instructions),
+            instructions: runInstructions(
+              commonRules,
+              profile.instructions,
+              allowlist,
+              allowedTools,
+            ),
             model: profile.model,
-            allowedTools: z.array(z.string()).parse(profile.allowedTools),
+            allowedTools,
           },
           runToken,
           initialPrompt,

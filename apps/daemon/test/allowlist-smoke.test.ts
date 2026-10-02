@@ -58,10 +58,10 @@ function answers(
     'git add smoke-note.txt',
     'git commit -m "Allowlist smoke test"',
     'git log --oneline -1',
+    'cat ../../config.json',
     'curl -sI https://example.com',
     'sudo true',
     'docker ps',
-    'cat ../../config.json',
   ];
   return commands.flatMap((command): Steps => {
     const result = outcome(command);
@@ -172,6 +172,15 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       expect(output).toMatch(
         /^architect: PASS +cat <probe>\/home\/\.orchestrator\/config\.json: refused by a deny rule, expected refused$/m,
       );
+      // The machine's key is checked before the other refusals: `haiku` skipped the last step in
+      // the owner's run (lot 2 step N).
+      const commands = resultLines(output, 'PASS').map((line) => line.split(/ {2,}/)[1] ?? '');
+      expect(commands.slice(-4).map((command) => command.split(':')[0])).toEqual([
+        'cat <probe>/home/.orchestrator/config.json',
+        'curl -sI https',
+        'sudo true',
+        'docker ps',
+      ]);
       expect(output).not.toMatch(/^web_dev:/m);
       expect(output).toMatch(/Every command passed\./);
       expect(code).toBe(0);

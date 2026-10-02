@@ -304,7 +304,8 @@ async function serviceChecks(
       : check(
           'Lingering',
           'warning',
-          'Off: the service stops when you log out. Type "loginctl enable-linger".',
+          `Off: the service stops when you log out. Type "loginctl enable-linger ${environment.username}".`,
+          helpLink(config, 'lingering'),
         ),
   );
 

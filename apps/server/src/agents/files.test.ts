@@ -62,6 +62,16 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     }
   });
 
+  it("tell the agent to edit files with its tools, one command per call, and what to ask the owner (owner's check, lot 2 step N)", async () => {
+    const { commonRules } = await loadShippedAgents();
+    expect(commonRules).toMatch(
+      /Change files with the `Edit` and `Write` tools, never with the shell/,
+    );
+    expect(commonRules).toMatch(/One command per Bash call/i);
+    expect(commonRules).toMatch(/A refused chained command says nothing about its parts/);
+    expect(commonRules).toMatch(/Ask the owner only for what the owner can decide/);
+  });
+
   it('ship the four run message templates of 03, section 3.2', async () => {
     const templates = await loadTemplates();
     expect(Object.keys(templates)).toEqual(['implement', 'continue', 'answer', 'nudge']);

@@ -98,3 +98,7 @@ Run by the owner on Claude Code 2.1.283 with `tools/smoke/claude-code-probe.sh` 
 - The status line input has `rate_limits` and `cost`: validated.
 - `autoContinueAtUsageLimit`: no settings problem reported, but unknown keys are not reported either, so only the usage-limit capture can confirm it; the session closing on every limit is the guarantee (05, section 4.10).
 - Claude Code adds the Claude account's e-mail address, the global Git user and the organisation id to the session's context and transcript: the probe's fixtures keep only the transcript entries the daemon reads, and refuse to write when any of these remains.
+
+## Update 2026-10-03 (lot 2 step N, owner's check)
+
+Run by the owner on Claude Code 2.1.287: the probe passed checks 1 to 4 again (5 is information only; fixtures in `apps/daemon/test/fixtures/claude-code-2.1.287/`), and the real runs of the lot's check passed end to end. The highest validated version is now 2.1.287. The allowlist smoke test passed on 2.1.288, to which Claude Code had updated itself. Found on the way: Claude Code allows some commands it considers read-only outside the allowlist (`docker ps`; 03, section 6), and its transcripts have seven more line types, none holding the agent's work (05, section 4.5).

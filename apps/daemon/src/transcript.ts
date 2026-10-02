@@ -8,7 +8,23 @@ import type { RunLogEvent } from '@orchestrator/protocol';
 export type LogEntry = Omit<RunLogEvent, 'seq'>;
 
 /** Entry types seen in transcripts (ADR 0002): only `user` and `assistant` are shown. */
-const KNOWN_TYPES = new Set(['user', 'assistant', 'system', 'attachment', 'cost-state']);
+export const KNOWN_TRANSCRIPT_TYPES: ReadonlySet<string> = new Set([
+  'user',
+  'assistant',
+  'system',
+  'attachment',
+  'cost-state',
+  // Seen with Claude Code 2.1.287 (owner's check, lot 2 step N), none holding the agent's work:
+  // the session's generated title, a copy of the last message sent, the session's modes, an
+  // internal flag, and the backups of edited files for Claude Code's rewind.
+  'ai-title',
+  'last-prompt',
+  'mode',
+  'permission-mode',
+  'atis-latch',
+  'file-history-snapshot',
+  'file-history-delta',
+]);
 
 interface ContentPart {
   type?: unknown;
@@ -107,7 +123,7 @@ export class TranscriptReader {
       return null;
     }
     if (typeof entry !== 'object' || typeof entry.type !== 'string') return null;
-    if (!KNOWN_TYPES.has(entry.type)) return null;
+    if (!KNOWN_TRANSCRIPT_TYPES.has(entry.type)) return null;
     const at =
       typeof entry.timestamp === 'string' && !Number.isNaN(Date.parse(entry.timestamp))
         ? new Date(entry.timestamp).toISOString()

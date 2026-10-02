@@ -50,4 +50,24 @@ describe('TranscriptReader', () => {
     await appendFile(transcript, line.slice(10));
     expect((await reader.read(transcript)).entries.map((entry) => entry.text)).toEqual(['Whole.']);
   });
+
+  it("skips Claude Code 2.1.287's other line types without counting them, and counts unknown ones", async () => {
+    // Made-up lines shaped like the real ones of the owner's check (lot 2 step N), which counted
+    // them as unreadable: 17 to 29 per run.
+    const lines = [
+      { type: 'ai-title', aiTitle: 'Add a line', sessionId: 's' },
+      { type: 'last-prompt', lastPrompt: 'Implement ticket T-1', leafUuid: 'u', sessionId: 's' },
+      { type: 'mode', mode: 'normal', sessionId: 's' },
+      { type: 'permission-mode', permissionMode: 'dontAsk', sessionId: 's' },
+      { type: 'atis-latch', atis: '', sessionId: 's' },
+      { type: 'file-history-snapshot', messageId: 'm', snapshot: {}, isSnapshotUpdate: false },
+      { type: 'file-history-delta', messageId: 'm', backup: {}, snapshotMessageId: 'm' },
+      { type: 'something-new', sessionId: 's' },
+    ];
+    await appendFile(transcript, lines.map((line) => `${JSON.stringify(line)}\n`).join(''));
+    await appendFile(transcript, assistant('Done.'));
+    const result = await new TranscriptReader().read(transcript);
+    expect(result.entries.map((entry) => entry.text)).toEqual(['Done.']);
+    expect(result.skipped).toBe(1);
+  });
 });

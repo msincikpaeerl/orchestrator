@@ -6,6 +6,7 @@ import {
   personalDataFound,
   sanitise,
   sessionPersonalValues,
+  transcriptTypes,
 } from './claude-code-probe-fixtures.js';
 
 // Planted values: nothing here is anyone's real data.
@@ -49,6 +50,22 @@ describe('probe fixtures', () => {
     expect(kept).toEqual(['user', 'assistant', 'cost-state', 'system']);
     expect(keptTranscript(rawTranscript)).not.toContain(EMAIL);
     expect(keptTranscript(rawTranscript)).not.toContain(ORG);
+  });
+
+  it('lists the line types with their counts, names only, and those unknown to the daemon', () => {
+    const text = [
+      { type: 'assistant' },
+      { type: 'ai-title', aiTitle: 'Private title' },
+      { type: 'assistant' },
+      { type: 'something-new' },
+      { type: 'Not A Name, maybe personal' },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join('\n');
+    expect(transcriptTypes(text)).toBe(
+      'Transcript line types: <other> 1, ai-title 1, assistant 2, something-new 1. Unknown to the daemon: <other> 1, something-new 1.',
+    );
+    expect(transcriptTypes('')).toBe('Transcript line types: none. Unknown to the daemon: none.');
   });
 
   it('replaces the scratch and home paths, in both forms, and masks e-mail addresses and keys', () => {

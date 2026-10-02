@@ -1,0 +1,7 @@
+Claude Code probe, 2026-10-02T17:31:04.636Z
+Claude Code 2.1.287, model haiku
+1. PASS  repository settings ignored (--setting-sources user): its allow rule and hook did not apply: marker command refused, no repository hook (hook payload)
+2. PASS  repository MCP server ignored (--strict-mcp-config): not started, not offered: only the --mcp-config server was used (hook payload)
+3. PASS  cat on the denied file refused by a deny rule: refused with the rule's message, while the control file next to it was refused by dontAsk mode (hook payload)
+4. PASS  status line input has rate_limits and cost: 7 status line input(s) recorded
+5. INFO  autoContinueAtUsageLimit: no settings problem reported (information only: the usage-limit capture proves it): the made-up key orchestratorProbeUnknownSetting was not reported either

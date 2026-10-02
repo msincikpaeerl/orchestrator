@@ -28,13 +28,14 @@ Builds features and fixes bugs on web apps and websites. Assign it **Feature** a
 Every agent works on one ticket at a time, in its own copy of the project on your machine. It:
 
 - reads the project's `CLAUDE.md` first;
+- changes files with Claude Code's editing tools, and runs one command at a time, so a refusal names the command really refused;
 - talks to you only through the Orchestrator: a short line showing what it is doing, notes, and questions that appear in **Needs you**;
 - saves its work in commits on the ticket's branch, and never sends anything to GitHub itself;
 - ends its work in one of three ways: it says the ticket is finished (with a report on each acceptance criterion), asks you a question and waits, or gives up with the reason.
 
 ## What an agent may run
 
-Each agent has a list of the commands it may run: the package managers (`npm`, `pnpm`, `yarn`, `npx`) and `node`, the Git commands that stay on your machine (see changes, commit), and simple file commands (list, copy, move, create a folder). It may also read and edit the project's files, and search the web and read web pages to look up how a tool works. Anything else is refused at once, and the agent asks you instead of trying another way.
+Each agent has a list of the commands it may run: the package managers (`npm`, `pnpm`, `yarn`, `npx`) and `node`, the Git commands that stay on your machine (see changes, commit), and simple file commands (list, copy, move, create a folder). It may also read and edit the project's files, and search the web and read web pages to look up how a tool works. Each agent is told this list. Anything else is refused at once. The agent does not try another way: it asks you, but only about what you can decide (what the result should be, information it lacks, whether the ticket can be done another way), never to allow a command. When the ticket really needs a command it may not run, it says so in plain words, and asks you how to go on or gives up the ticket. Claude Code itself also lets through some commands it considers read-only, such as `od`, which shows a file's bytes; the refusals of [Agents on your own user](machines.md#agents-on-your-own-user) apply to them all the same.
 
 This list saves time and keeps agents on task, but it does not protect your computer: see "Agents on your own user" in [Machines](machines.md#agents-on-your-own-user).
 

@@ -30,6 +30,7 @@ import {
   personalDataFound,
   sanitise,
   sessionPersonalValues,
+  transcriptTypes,
   type PersonalValue,
 } from './claude-code-probe-fixtures.js';
 
@@ -645,6 +646,7 @@ async function main(): Promise<void> {
           (check, index) =>
             `${String(index + 1)}. ${check.verdict.padEnd(width)}  ${check.title}: ${check.detail}`,
         ),
+        transcriptTypes(transcriptPath ? text(transcriptPath) : ''),
       ].join('\n');
       process.stdout.write(`${report}\n`);
       const verdicts = new Set(checks.map((check) => check.verdict));
