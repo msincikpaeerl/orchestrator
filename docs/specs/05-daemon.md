@@ -403,7 +403,7 @@ The Claude Code behaviour this document relies on was verified on version 2.1.28
 | Workspace trust | Solved by a dedicated configuration folder and trust registered per repository |
 | `dontAsk` permission mode | Validated |
 | `--append-system-prompt-file` | ADR 0002 found no such option; the documentation checked in lot 2 step A lists it and says it works in interactive mode. The daemon keeps `--append-system-prompt <text>` (validated); the owner's smoke test in the lot 2 check tells whether the file variant can replace it |
-| `--strict-mcp-config`, `--setting-sources`, deny rules on Bash `cat`, status line input | Validated on 2.1.283 by the owner's probe (`tools/smoke/claude-code-probe.sh`, lot 2 plan step H); fixtures in `apps/daemon/test/fixtures/claude-code-2.1.283/` |
+| `--strict-mcp-config`, `--setting-sources`, deny rules on Bash `cat`, status line input | Validated on 2.1.283 by the owner's probe (`tools/smoke/claude-code-probe.sh`, lot 2 plan step H), and again on 2.1.287 (lot 2 plan step N, with the real runs of the lot's check); fixtures in `apps/daemon/test/fixtures/claude-code-2.1.283/` and `claude-code-2.1.287/`. `CLAUDE_CODE_VALIDATED_VERSION` is 2.1.287 |
 | `autoContinueAtUsageLimit` | No settings problem reported on 2.1.283, but Claude Code does not report unknown keys either: confirmed only by the usage-limit capture (section 4.10); the session closing on every limit is the guarantee |
 | `StopFailure` hook and usage-limit data | From the documentation; cannot be triggered on demand, so checked with the usage-limit capture (`--probe-limit`) |
 
