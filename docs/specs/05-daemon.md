@@ -41,7 +41,7 @@ The daemon runs as a normal process on the host, **not in Docker**, because it n
 
 1. In the UI, the owner creates a machine and selects the Claude account it uses. The server shows a one-time enrollment command containing the server URL and an enrollment code valid for the enrollment code lifetime (a setting, 15 minutes by default, 04 section 8).
 2. On the machine, the owner runs `orchestrator-daemon enroll <server-url> <code>`.
-3. The owner runs `orchestrator-daemon login`, which opens Claude Code once with the dedicated configuration folder so they can log in to their Claude account. This is the only interactive step, done once per machine.
+3. The owner runs `orchestrator-daemon login`, which opens Claude Code once with the dedicated configuration folder so they can log in to their Claude account. Claude Code starts in `~/.orchestrator/login/`, an empty folder the daemon marks as trusted in the dedicated configuration beforehand (as for a run's bare clone, section 4.2.1), whatever folder the command is typed in: Claude Code asks no trust question and loads no `CLAUDE.md` (owner's check, lot 2 step N: from the terminal's folder it asked to trust that folder, and from a repository it would have loaded its `CLAUDE.md`). This is the only interactive step, done once per machine.
 4. The daemon exchanges the code for a long-lived **machine token**, stored in `~/.orchestrator/config.json` with permissions `600`.
 5. The machine appears online in the UI. The owner can revoke the token at any time, which disconnects the daemon.
 
@@ -127,6 +127,7 @@ Everything the daemon manages lives under `~/.orchestrator/`:
   daemon.sock              control socket of the running daemon, read-only (section 8)
   last-stop.json           why the daemon last stopped (section 3.2)
   claude-config/           dedicated CLAUDE_CONFIG_DIR: login, trust entries, transcripts
+  login/                   empty folder where `login` opens Claude Code (section 3.1)
   repos/<owner>/<name>.git bare clone, one per repository, reused across runs
   worktrees/<run-id>/      Git worktree for a run
   runs/<run-id>/           run files (never inside the worktree)

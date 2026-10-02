@@ -6,6 +6,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.
 
+- Machines: `orchestrator-daemon login` can be typed in any folder: Claude Code opens in an empty folder of the Orchestrator's own, so it no longer asks whether you trust the terminal's folder, nor reads that folder's files. Help: "Machines" > "Add a machine" says what to answer.
 - Runs: the run's log no longer says "N transcript line(s) could not be read and were skipped" for the lines Claude Code 2.1.287 adds, none of which holds the agent's work; the warning stays for lines really unknown.
 - Agents: each agent is now told the list of commands it may run, and that any other is refused. When a ticket really needs a command it may not run, the agent says so in plain words and asks you how to go on, or gives up the ticket. Help: "Agents".
 - Help: "Machines" > "Add a machine" points to "Runs" > "Try it with a small ticket", which now gives its two acceptance criteria one per line.

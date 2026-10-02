@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -9,6 +9,7 @@ import { writeConfig } from '../src/config.js';
 import { serveControl } from '../src/control.js';
 import { EXIT_REFUSED } from '../src/errors.js';
 import { DAEMON_UNREACHABLE } from '../src/run-socket.js';
+import { TrustRegistry } from '../src/trust.js';
 import { parseUnit } from '../src/unit.js';
 import {
   DAEMON_COMMAND,
@@ -244,11 +245,21 @@ describe('attach', () => {
 describe('login', () => {
   it('opens claude with the dedicated configuration folder', async () => {
     const log = join(home.root, 'claude.log');
-    await fakeExecutable(home.bin, 'claude', `echo "$CLAUDE_CONFIG_DIR $*" > '${log}'`);
+    await fakeExecutable(
+      home.bin,
+      'claude',
+      `echo "$CLAUDE_CONFIG_DIR $*" > '${log}'; pwd -P >> '${log}'`,
+    );
     const result = await runDaemon(['login'], home.env);
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/Log in with the Claude account/);
-    expect(await readFile(log, 'utf8')).toBe(`${home.paths.claudeConfig} \n`);
+    // In the daemon's own empty folder, trusted beforehand, wherever it is typed (owner's check,
+    // lot 2 step N: from the terminal's folder, Claude Code asked to trust it and would load its
+    // CLAUDE.md).
+    const folder = await realpath(home.paths.loginFolder);
+    expect(await readFile(log, 'utf8')).toBe(`${home.paths.claudeConfig} \n${folder}\n`);
+    const trust = new TrustRegistry(join(home.paths.claudeConfig, '.claude.json'));
+    expect(await trust.isTrusted(folder)).toBe(true);
     expect((await stat(home.paths.home)).mode & 0o777).toBe(0o700);
     expect((await stat(home.paths.claudeConfig)).mode & 0o777).toBe(0o700);
   });

@@ -16,6 +16,11 @@ export interface DaemonPaths {
   config: string;
   /** The dedicated `CLAUDE_CONFIG_DIR` (ADR 0002). */
   claudeConfig: string;
+  /**
+   * The empty folder `login` opens Claude Code in, trusted beforehand: no trust question, and no
+   * CLAUDE.md of the terminal's folder (05, section 3.1).
+   */
+  loginFolder: string;
   /** The control socket of the running daemon (05, section 8). */
   controlSocket: string;
   lastStop: string;
@@ -31,6 +36,7 @@ export function daemonPaths(env: NodeJS.ProcessEnv = process.env): DaemonPaths {
     userHome: env.HOME || homedir(),
     config: join(home, 'config.json'),
     claudeConfig: join(home, 'claude-config'),
+    loginFolder: join(home, 'login'),
     controlSocket: join(home, 'daemon.sock'),
     lastStop: join(home, 'last-stop.json'),
     unit: join(configHome, 'systemd', 'user', `${SERVICE_NAME}.service`),
