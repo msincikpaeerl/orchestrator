@@ -91,6 +91,8 @@ Your GitHub token is never stored on the machine. The daemon receives it from th
 
 On Windows, also do [Keep WSL running](#keep-wsl-running).
 
+Then try the machine with the small ticket of [Try it with a small ticket](runs.md#try-it-with-a-small-ticket): it shows the whole work of an agent, a question and a proposed ticket included, with little of your Claude usage.
+
 If the Orchestrator runs on another computer, read [Orchestrator on another computer](#orchestrator-on-another-computer) first. When its address starts with `http://` and is not this computer, **Add machine** warns you at the top of the page: the daemon would refuse that address.
 
 ### Orchestrator on another computer

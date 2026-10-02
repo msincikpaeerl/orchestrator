@@ -84,4 +84,14 @@ describe('the user documentation', () => {
     const index = helpPages[0]?.markdown ?? '';
     for (const page of helpPages.slice(1)) expect(index).toContain(`(${page.slug}.md`);
   });
+
+  // Owner's check, lot 2 step N: the owner missed the small ticket, and pasted both criteria as one.
+  it('points from Add a machine to the small ticket, whose criteria are given one per line', () => {
+    const page = (slug: string) => helpPages.find((each) => each.slug === slug)?.markdown ?? '';
+    const addMachine = /## Add a machine\n([\s\S]*?)\n### /.exec(page('machines'))?.[1] ?? '';
+    expect(addMachine).toContain('(runs.md#try-it-with-a-small-ticket)');
+    expect(page('runs')).toMatch(
+      /\n {2}1\. `README\.md ends with the line given in the answer`\n {2}2\. `A ticket "Add a CONTRIBUTING\.md file" was proposed`\n/,
+    );
+  });
 });

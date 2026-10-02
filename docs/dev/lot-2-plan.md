@@ -793,6 +793,7 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
   - 2711445, 2711638, 2718311, 2718864: from `/home/kisscool/orchestrator`, test homes `orchestrator-daemon-test-…`, a name `createTestHome` used only in step E's code (before `74d5800`, 2026-09-26); two runs of the suite, two daemons each;
   - 58898, 59277: from a worktree of `main` at `170f120` (2026-10-01, 23:38), made by another session to time the suite, test homes `od-test-…`; step M's fix (`spawnDaemon` process group and `stopHomeProcesses` in that file) reached `main` 20 minutes later, at `781b921`.
   None ran code with step M's fix, so the fix is not shown incomplete. The owner stops them.
+- **Carried to lot 7** (owner's check, 2026-10-02): `docs/user/network-access.md` does not say how to reach an Orchestrator running in WSL from the home network, and its `PUBLIC_URL=http://<lan address>` advice makes **Add machine** give the daemon an address it refuses (the daemon accepts plain `http://` only for the same computer). Lot 7 rewrites that page; nothing changes in lot 2.
 - **Owner's corrections (2026-10-02)**:
   - No installable daemon existed in 0.2.0 (`apps/daemon` was a stub): item 4 is a first install, through **Add machine** and `docs/user/` alone, not an update.
   - **Carried to lot 3**: nothing tells the owner that a machine's daemon is older than the Orchestrator while the protocol version is unchanged, and `docs/user/` does not say how to update a daemon (`machines.md` says the daemon "does not match this version" only on a protocol mismatch). Lot 3 decides the notice and the documentation; no code for it in lot 2.
@@ -805,7 +806,7 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
 - **The ticket for the real runs** (Help > Runs > "Try it with a small ticket"), in a ready project:
   - Type **Documentation**, title `Add one line to README.md`, assignee **Web Developer**;
   - description: `Before changing anything, ask me with ticket_ask which line to add. Add the line I give you at the end of README.md and commit it. Also propose one ticket with ticket_create: title "Add a CONTRIBUTING.md file", type docs, assignee web_dev. Do nothing else.`;
-  - acceptance criteria: `README.md ends with the line given in the answer` and `A ticket "Add a CONTRIBUTING.md file" was proposed`;
+  - acceptance criteria, two, each in its own box: `README.md ends with the line given in the answer`, then `A ticket "Add a CONTRIBUTING.md file" was proposed`;
   - the answer to the agent's question: `Add this line: Checked by the Orchestrator.`;
   - the comment of **Request changes** (item 5): `Also add this line after it: Checked again.`
 - **Quota of the whole walkthrough** (estimates; each message makes the agent take several steps, each one model request; logins use none):
