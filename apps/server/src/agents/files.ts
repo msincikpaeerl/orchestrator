@@ -14,21 +14,31 @@ export function agentsDirectory(): string {
 }
 
 export const COMMON_RULES_FILE = 'common-rules.md';
+/**
+ * The section of the run instructions listing the profile's Bash rules. Part of every profile's
+ * instructions, so it counts in their version like the common rules.
+ */
+export const ALLOWLIST_TEMPLATE_FILE = 'templates/allowlist.md';
 
 /** A default profile as its file describes it, with what its version covers. */
 export interface ShippedProfile extends AgentProfileFile {
-  /** SHA-256 of the common rules and the profile's file: what the profile's version covers. */
+  /**
+   * SHA-256 of the common rules, the allowlist template and the profile's file: what the
+   * profile's version covers.
+   */
   shippedHash: string;
 }
 
 export interface ShippedAgents {
   commonRules: string;
+  allowlist: Template;
   profiles: ShippedProfile[];
 }
 
 /** The common rules and every default profile, sorted by key. */
 export async function loadShippedAgents(directory = agentsDirectory()): Promise<ShippedAgents> {
   const commonRules = (await readFile(join(directory, COMMON_RULES_FILE), 'utf8')).trim();
+  const allowlistText = await readFile(join(directory, ALLOWLIST_TEMPLATE_FILE), 'utf8');
   const files = (await readdir(directory))
     .filter((name) => name.endsWith('.md') && name !== COMMON_RULES_FILE)
     .sort();
@@ -38,12 +48,14 @@ export async function loadShippedAgents(directory = agentsDirectory()): Promise<
       const shippedHash = createHash('sha256')
         .update(commonRules)
         .update('\0')
+        .update(allowlistText)
+        .update('\0')
         .update(text)
         .digest('hex');
       return { ...parseAgentProfileFile(file, text), shippedHash };
     }),
   );
-  return { commonRules, profiles };
+  return { commonRules, allowlist: parseTemplate('allowlist', allowlistText), profiles };
 }
 
 /** The run message templates of 03, section 3.2, by file name in `agents/templates/`. */

@@ -6,6 +6,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.
 
+- Agents: each agent is now told the list of commands it may run, and that any other is refused. When a ticket really needs a command it may not run, the agent says so in plain words and asks you how to go on, or gives up the ticket. Help: "Agents".
 - Help: "Machines" > "Add a machine" points to "Runs" > "Try it with a small ticket", which now gives its two acceptance criteria one per line.
 - Machines: `orchestrator-daemon status` with no daemon running says how to start it once, instead of twice after the service was stopped.
 - Agents: every agent now changes files with its editing tools, runs one command at a time, and when a command is refused, runs its allowed parts on their own before asking you; it asks you only what you can decide, never to allow a command. Before, an agent whose chained command was refused asked to "allow Bash for git add and git commit". Help: "Agents".
