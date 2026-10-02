@@ -34,7 +34,7 @@ Every agent works on one ticket at a time, in its own copy of the project on you
 
 ## What an agent may run
 
-Each agent has a list of the commands it may run: the package managers (`npm`, `pnpm`, `yarn`, `npx`) and `node`, the Git commands that stay on your machine (see changes, commit), and simple file commands (list, copy, move, create a folder). It may also read and edit the project's files, and search the web and read web pages to look up how a tool works. Anything else is refused at once, and the agent asks you instead of trying another way.
+Each agent has a list of the commands it may run: the package managers (`npm`, `pnpm`, `yarn`, `npx`) and `node`, the Git commands that stay on your machine (see changes, commit), and simple file commands (list, copy, move, create a folder). It may also read and edit the project's files, and search the web and read web pages to look up how a tool works. Anything else is refused at once, and the agent asks you instead of trying another way. Claude Code itself also lets through some commands it considers read-only, such as `od`, which shows a file's bytes; the refusals of [Agents on your own user](machines.md#agents-on-your-own-user) apply to them all the same.
 
 This list saves time and keeps agents on task, but it does not protect your computer: see "Agents on your own user" in [Machines](machines.md#agents-on-your-own-user).
 

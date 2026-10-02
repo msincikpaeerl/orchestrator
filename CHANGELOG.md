@@ -6,6 +6,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.
 
+- Machines: agents can no longer run the container tools `docker`, `docker-compose`, `podman`, `nerdctl` and `kubectl`: your user can use them, and the Orchestrator may run in Docker on the same computer, where a container's configuration could show its secret key. Before, Claude Code let `docker ps` through by itself. Help: "Machines" > "Agents on your own user".
 - Machines: `orchestrator-daemon install-service` turns lingering on with your user name, which works on WSL without `sudo` (it failed with "No such device or address" before); when it still fails, it shows loginctl's own reason and the command to type, as `orchestrator-daemon doctor` does. Help: "Machines" > "Lingering".
 - Settings > Limits: the limits used from this version on no longer say "it changes nothing in this version"; the note stays only on limits of later versions, and Help > Settings says which project limit already changes something.
 - Machines: stopping or restarting the daemon (`systemctl --user restart orchestrator-daemon`) no longer waits up to 30 seconds when the Orchestrator does not answer: it stops as soon as its own work is done.
