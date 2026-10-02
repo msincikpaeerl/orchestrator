@@ -98,6 +98,7 @@ The server is a single process. Components are modules inside it, not separate s
 
 - The server, UI and daemon share one version number, released together.
 - The daemon protocol has its own version, sent in `hello`; lot 2 introduces version 1, also returned by `/version`. The server accepts the current and the previous protocol version and marks older daemons incompatible, with an update instruction in the UI.
+- From the 0.3.0 release on, any change a released daemon cannot understand raises `PROTOCOL_VERSION` (`packages/protocol`), in the same change: the version number of a release alone never tells the server what a daemon understands (owner's decision, lot 2 step N).
 - Supported Claude Code versions (the minimum and the highest validated one) are declared once in `packages/protocol` and used by the daemon and the server (05, section 2). Unsupported versions make the machine unusable with a clear message; the connection stays open (05, section 3.2).
 
 ## 7. Deployment

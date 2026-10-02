@@ -21,3 +21,4 @@ Every session working on a lot of [10 — Delivery Plan](../specs/10-delivery-pl
 12. **Pull request text.** At the end of every step, give the owner a pull request title and description ready to paste, both in one Markdown code block:
     - title in Conventional Commits style, for example `feat(auth): owner account and login`;
     - description following `.github/pull_request_template.md`, fully filled in: a summary written for the owner (what changes for the user), the ticket or "none", the acceptance criteria as checked items (the step's "Done when"), the tests added and how they were run, and the documentation checklist with each box checked or marked "not needed" with the reason.
+13. **Protocol version.** From the 0.3.0 release on, any change a released daemon cannot understand raises `PROTOCOL_VERSION` in `packages/protocol`, in the same change ([09, section 6](../specs/09-architecture-and-deployment.md#6-versioning-and-compatibility)).
