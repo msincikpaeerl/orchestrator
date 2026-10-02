@@ -1,4 +1,5 @@
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import { dirname } from 'node:path';
 import { requireConfig } from './config.js';
 import { probeControl } from './control.js';
@@ -61,14 +62,19 @@ export async function installService(
   }
   out('The service is enabled and started.');
 
+  // With the user's name: without it, loginctl looks for the terminal's login session, which a
+  // WSL terminal does not have ("No such device or address").
+  const user = userInfo().username;
   const loginctl = findExecutable('loginctl', env.PATH);
-  const linger = loginctl ? await runCommand(loginctl, ['enable-linger'], { env }) : null;
+  const linger = loginctl ? await runCommand(loginctl, ['enable-linger', user], { env }) : null;
   if (linger?.code === 0) {
     out('Lingering is on: the service runs even when you are not logged in.');
   } else {
+    const reason = linger ? linger.stderr.trim() || 'no message' : 'loginctl was not found';
     out(
-      'Lingering could not be turned on, so the service stops when you log out. Type: sudo loginctl enable-linger "$USER"',
+      `Lingering could not be turned on (${reason}), so the service stops when you log out. Type: loginctl enable-linger ${user}`,
     );
+    out('If it fails again, see "Lingering" in Help > Machines.');
   }
   out('Check it with "orchestrator-daemon status".');
 }

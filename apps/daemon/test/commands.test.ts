@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile, stat, writeFile } from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { ControlStatus } from '@orchestrator/protocol';
@@ -156,15 +157,24 @@ describe('install-service', () => {
     expect(await readFile(systemctlLog, 'utf8')).toBe(
       '--user daemon-reload\n--user enable orchestrator-daemon\n--user restart orchestrator-daemon\n',
     );
-    expect(await readFile(loginctlLog, 'utf8')).toBe('enable-linger\n');
+    // With the user's name: WSL terminals have no login session for loginctl to find.
+    expect(await readFile(loginctlLog, 'utf8')).toBe(`enable-linger ${userInfo().username}\n`);
   });
 
-  it('says how to turn lingering on when loginctl refuses', async () => {
+  it("says how to turn lingering on when loginctl refuses, with loginctl's own message", async () => {
     await enroll();
-    await fakeExecutable(home.bin, 'loginctl', 'exit 1');
+    await fakeExecutable(
+      home.bin,
+      'loginctl',
+      'echo "Could not enable linger: No such device or address" >&2; exit 1',
+    );
     const result = await runDaemon(['install-service'], home.env);
     expect(result.code).toBe(0);
-    expect(result.stdout).toContain('sudo loginctl enable-linger');
+    expect(result.stdout).toContain(
+      'Lingering could not be turned on (Could not enable linger: No such device or address)',
+    );
+    expect(result.stdout).toContain(`Type: loginctl enable-linger ${userInfo().username}\n`);
+    expect(result.stdout).toContain('"Lingering" in Help > Machines');
   });
 
   it('stops with the systemd help when systemctl fails', async () => {

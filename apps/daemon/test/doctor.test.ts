@@ -124,7 +124,10 @@ describe('systemd, lingering and the service', () => {
   it("asks loginctl for the user's lingering", async () => {
     const log = join(home.root, 'loginctl.log');
     await fakeExecutable(home.bin, 'loginctl', `echo "$*" > '${log}'; echo no`);
-    expect((await grade('Lingering'))[0]).toBe('warning');
+    expect(await grade('Lingering')).toEqual([
+      'warning',
+      expect.stringContaining('Type "loginctl enable-linger owner"'),
+    ]);
     expect(await readFile(log, 'utf8')).toBe('show-user owner --property=Linger --value\n');
     await fakeExecutable(home.bin, 'loginctl', 'echo yes');
     expect((await grade('Lingering'))[0]).toBe('ok');

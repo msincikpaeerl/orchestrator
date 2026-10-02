@@ -144,7 +144,7 @@ Help is readable without logging in, so the login page and the wizard can link t
 | `control.ts` | The read-only control socket `daemon.sock` (05, section 8): `status` only, never a secret; `start` and `install-service` use it to find a running daemon, and remove a stale socket file. Its schemas are in `packages/protocol/src/daemon/control.ts`. |
 | `last-stop.ts` | `last-stop.json`: why the daemon last stopped, shown by `status` and `doctor`, cleared by an accepted `welcome` or a new enrollment. |
 | `doctor.ts`, `certificate.ts`, `environment.ts`, `detect.ts` | The checks of 05 section 8, graded as its table; `DoctorEnvironment` says where they look (tool `PATH`, system `PATH`, managed settings folders, WSL), so tests point them at fakes. `detect.ts`: WSL and the detected capabilities. |
-| `install-service.ts`, `unit.ts` | The systemd user unit `orchestrator-daemon`: absolute `node` and script, the terminal's `PATH` filtered, `RestartPreventExitStatus=78`; `systemctl --user` then `loginctl enable-linger`. `parseUnit` reads it back for `doctor`. |
+| `install-service.ts`, `unit.ts` | The systemd user unit `orchestrator-daemon`: absolute `node` and script, the terminal's `PATH` filtered, `RestartPreventExitStatus=78`; `systemctl --user` then `loginctl enable-linger <user>`. `parseUnit` reads it back for `doctor`. |
 | `login.ts`, `attach.ts` | `claude` with `CLAUDE_CONFIG_DIR`; `tmux -L orchestrator attach-session [-r]` without the owner's `TMUX`. |
 
 | `scripts/pack.ts` | The package: esbuild bundle, `package.json`, bundled licenses, reproducible `.tgz` (ADR 0026). |

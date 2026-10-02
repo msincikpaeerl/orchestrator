@@ -85,7 +85,7 @@ Your GitHub token is never stored on the machine. The daemon receives it from th
    1. `npm install -g …`: installs the daemon of the same version as the Orchestrator, downloaded from the Orchestrator itself.
    2. `orchestrator-daemon enroll …`: connects the machine to the Orchestrator with a one-time code. The code works once, and only for a limited time: 15 minutes by default (the **Enrollment code lifetime** setting, see [Settings](settings.md#machines)). If it expires, open the machine and click **New enrollment code**.
    3. `orchestrator-daemon login`: opens Claude Code once, in a configuration kept only for the Orchestrator (your own Claude Code settings are not used). Log in with the Claude account you chose, then quit Claude Code (type `/exit`).
-   4. `orchestrator-daemon install-service`: starts the daemon as a background service, which also starts again after a restart of the computer. The service uses the tools this terminal finds (Node.js, Git, tmux, Claude Code): the command prints the list of folders it looks in (the `PATH`). Type it in a terminal where `node --version` and `claude --version` work.
+   4. `orchestrator-daemon install-service`: starts the daemon as a background service, which also starts again after a restart of the computer. The service uses the tools this terminal finds (Node.js, Git, tmux, Claude Code): the command prints the list of folders it looks in (the `PATH`). Type it in a terminal where `node --version` and `claude --version` work. It also turns on [lingering](#lingering), so the service keeps running when you close the terminal.
 4. Come back to the Orchestrator page. It checks again each time you come back to it and shows **Connected** once the daemon has connected. If it says the machine cannot receive runs yet, see [When a machine has a problem](#when-a-machine-has-a-problem).
 
 On Windows, also do [Keep WSL running](#keep-wsl-running).
@@ -128,6 +128,18 @@ Instead, you can keep an Ubuntu window open. Details: [Microsoft's WSL settings 
 **Check that it works**: close every Ubuntu window, wait two minutes, then open the machine in the Orchestrator: it is still **Online**. (A machine whose WSL stopped shows **Offline** after about a minute: the **Machine offline after** setting, 60 seconds by default. Waiting two minutes leaves time for it.)
 
 The daemon cannot read this Windows file: its checks show "Check this yourself" for it, with a link to this section.
+
+### Lingering
+
+Linux normally stops your services when you close your last terminal or log out. **Lingering** tells it to keep them running, and to start them when the computer starts, even before you log in. The daemon's service needs it. `orchestrator-daemon install-service` turns it on for you.
+
+`orchestrator-daemon doctor` shows **Lingering**: **OK** when it is on. When it is off (a warning, and `install-service` said "Lingering could not be turned on" with the reason), type the command the check shows, with your Linux user name, for example:
+
+```sh
+loginctl enable-linger alice
+```
+
+`$USER` gives your user name: `loginctl enable-linger "$USER"` works too. Type the name: without it, on WSL, loginctl answers "Could not enable linger: No such device or address". If it answers that you are not allowed, type it again with `sudo` in front. Check with `loginctl show-user "$USER" --property=Linger`: it answers `Linger=yes`. Then restart the daemon (see [When a machine has a problem](#when-a-machine-has-a-problem)).
 
 ## The machine page
 
