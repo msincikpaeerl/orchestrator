@@ -768,7 +768,7 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
 ### [ ] N. Lot 2 check by the owner
 
 - Version 0.3.0 prepared (CHANGELOG section, version numbers).
-- **For the closing step of every next lot** (owner's decision, 2026-10-02): when version numbers go up, `docs/user/settings.md` drops the "(from version x.y.0)" labels of the version being released (the Help test in `apps/web/src/settings/text.test.ts` fails until it does); Settings > Limits drops its "Used from version …" notes by itself, since it shows them only for versions later than the running one (`isLaterVersion`).
+- **For the closing step of every next lot** (owner's decision, 2026-10-02): working rule 14, "Closing a lot".
 - **First check: the systemd test** (owner only, on WSL; it creates transient units in the owner's systemd user session, so a session never runs it). From the repository, in a WSL terminal of the owner's user (no database needed):
 
   ```sh

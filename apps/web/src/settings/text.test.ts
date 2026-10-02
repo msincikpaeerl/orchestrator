@@ -63,12 +63,7 @@ describe('laterText', () => {
     expect(laterText('commentMaxLength', '0.2.0')).toBeNull();
   });
 
-  it('compares with the running version by default', () => {
-    // 0.3.0 uses the run limits: no note on them in 0.3.0 (lot 2 plan, step N).
-    expect(version).toBe('0.3.0');
-    expect(laterText('maxRunDurationMinutes')).toBeNull();
-    expect(laterText('ciWaitTimeoutMinutes')).toBe(
-      'Used from version 0.4.0: it changes nothing in this version.',
-    );
+  it.each(SettingName.options)('compares %s with the running version by default', (name) => {
+    expect(laterText(name)).toBe(laterText(name, version));
   });
 });

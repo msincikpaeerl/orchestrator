@@ -9,6 +9,7 @@ import {
   MCP_TICKET_LIST_PAGE_SIZE,
   MCP_TOOLS,
   McpPermission,
+  SETTINGS,
   ProjectKind,
   TicketPriority,
   TicketStatus,
@@ -96,21 +97,11 @@ const refuse = (code: McpError['code'], message: string, details?: McpErrorDetai
 const ENDED_MESSAGE =
   'This run has ended (it was stopped, or its time is over): its token is no longer valid. Stop working: nothing you do now will be recorded.';
 
-/** Labels of the settings a refusal names, with their current value (06, section 3). */
-const SETTING_WORDS: Partial<Record<SettingName, string>> = {
-  ticketTitleMaxLength: 'Longest ticket title',
-  ticketDescriptionMaxLength: 'Longest ticket description',
-  ticketMaxAcceptanceCriteria: 'Max acceptance criteria per ticket',
-  acceptanceCriterionMaxLength: 'Longest acceptance criterion',
-  commentMaxLength: 'Longest comment',
-  maxAgentTicketsPerRun: 'Max tickets an agent may create per run',
-};
-
 function tooLong(field: string, setting: SettingName, max: number, unit = 'characters') {
   return {
     field,
     setting,
-    message: `${field}: at most ${String(max)} ${unit} (setting "${SETTING_WORDS[setting] ?? setting}": ${String(max)})`,
+    message: `${field}: at most ${String(max)} ${unit} (setting "${SETTINGS[setting].label}": ${String(max)})`,
   } satisfies McpErrorDetail;
 }
 
@@ -848,7 +839,7 @@ export class McpBackend {
     if ((created?.total ?? 0) >= limit) {
       throw refuse(
         'LIMIT_REACHED',
-        `Limit of ${String(limit)} tickets per run reached (setting "${SETTING_WORDS.maxAgentTicketsPerRun ?? ''}": ${String(limit)}). Record what you found with ticket_comment instead.`,
+        `Limit of ${String(limit)} tickets per run reached (setting "${SETTINGS.maxAgentTicketsPerRun.label}": ${String(limit)}). Record what you found with ticket_comment instead.`,
         [
           {
             setting: 'maxAgentTicketsPerRun',
