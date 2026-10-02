@@ -189,6 +189,8 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     await writeLastStop(paths.lastStop, stop);
     control?.close();
     await removeStaleControl(paths.controlSocket);
+    // Stopping never waits for the server's answer to the close (05, section 6).
+    connection?.release();
     finish(code);
   };
 

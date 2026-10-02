@@ -292,4 +292,13 @@ describe('the daemon connection (05, section 3.2)', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     expect(sockets).toHaveLength(1);
   });
+
+  it("ends the closed socket on release, without waiting for the server's answer", async () => {
+    const socket = await open();
+    socket.welcome();
+    connection.stop();
+    expect(socket.terminated).toBe(false);
+    connection.release();
+    expect(socket.terminated).toBe(true);
+  });
 });
