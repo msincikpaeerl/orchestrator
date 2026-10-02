@@ -2,9 +2,9 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
-## 0.3.0 — in progress
+## 0.3.0 — 2026-10-02
 
-Lot 2, Machines and manual runs.
+Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.
 
 - Machines: the daemon's service now checks that it can create the process scopes that keep agents' sessions running when the service restarts. Before, it went on without them and the next restart stopped every agent's session. When it cannot create them, the machine stays online but takes no runs, and "Needs you" shows the problem with the reason and how to fix it; `orchestrator-daemon status` and `orchestrator-daemon doctor` show it too. If a run's scope cannot be created later, that run fails without counting as a failed attempt (its ticket goes back to To do), and the machine takes no runs until the daemon is restarted. Help: "Machines" > "Process scopes".
 - Help: "Runs" > "Try it with a small ticket" gives a tiny ticket to try the Orchestrator or a new machine with little of your Claude usage, including a question to answer and a ticket the agent proposes.
@@ -17,7 +17,6 @@ Lot 2, Machines and manual runs.
 - Activity: **Live runs** shows every run in progress with what its agent does now (its latest log entry, updated as it works), **Stop run** and the command to watch it in a terminal; **History** lists ended runs with filters by project, agent, outcome and dates, and says why a failed run failed. Help: "Activity".
 - Machines: each Claude account shows its state (available, or limited until when), and the machine list and page show the runs in progress on each machine. **Add machine** warns when machines would reach the Orchestrator over plain `http://` from another computer, which the daemon refuses. Help: "Machines".
 - Machines: `orchestrator-daemon status` lists the ticket branches kept on the machine with their commits not on GitHub yet, and which run uses each; it works even when the daemon is stopped, and changes nothing. Help: "Machines" and "Runs" > "Where the work is".
-
 - Runs: **Run now** on a ticket in To do starts its agent on one of your machines and opens the run page, or says in plain words why it cannot start. The run page shows the run's status, the time spent working and waiting, the estimated usage, the agent's progress line and its log as it happens. **Stop run** stops it (the ticket goes back to To do and the branch is kept) and **Resume** continues a run paused on a Claude usage limit. The ticket page shows the run in progress, every run of the ticket, the failed attempts, the agent's report, and the branch "on machine …, not on GitHub yet" with its commits. Help: new "Runs" page.
 - Questions: an agent's question appears on the ticket page and the run page, with a box to answer it. Help: "Runs" > "Questions".
 - Tickets: the board has a **Proposed** column while an agent has proposed a ticket, cards show "created by agent" and the run in progress with its latest progress line, and a proposed ticket has **Accept** and **Reject** (with an optional comment). Help: "Tickets" > "Tickets proposed by agents".
