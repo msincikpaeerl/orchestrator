@@ -28,8 +28,23 @@ export interface SettingDefinition {
   default: number;
   /** Whether a project can override the global value (02, section 6.5). */
   perProject: boolean;
-  /** Version that first uses it, for settings of later lots; absent when already in use. */
+  /**
+   * Version that first uses it (`x.y.z`), for settings added before the version that uses them;
+   * absent when in use since lots 0 and 1. Screens say so only while it is later than the running
+   * version (`isLaterVersion`).
+   */
   usedFrom?: string;
+}
+
+/** Whether `version` comes after `current`, both `x.y.z`, compared number by number. */
+export function isLaterVersion(version: string, current: string): boolean {
+  const a = version.split('.').map(Number);
+  const b = current.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const difference = (a[i] ?? 0) - (b[i] ?? 0);
+    if (difference !== 0) return difference > 0;
+  }
+  return false;
 }
 
 /**

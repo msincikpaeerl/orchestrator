@@ -1,9 +1,12 @@
 import {
   SETTINGS,
+  isLaterVersion,
   settingValue,
   type SettingGroup,
   type SettingName,
 } from '@orchestrator/protocol';
+// The web and the server are released together with one version (09, section 6).
+import { version as runningVersion } from '../../package.json';
 
 /** Section titles of Settings > Limits, in display order. */
 export const groupTitle: Record<SettingGroup, string> = {
@@ -20,10 +23,15 @@ export function amount(name: SettingName, value: number): string {
   return `${value.toLocaleString('en-US')} ${SETTINGS[name].unit}`;
 }
 
-/** Shown for settings of later versions: they can be set now but change nothing yet. */
-export function laterText(name: SettingName): string | null {
+/**
+ * Shown for settings of versions later than the running one (`current`): they can be set now but
+ * change nothing yet. It disappears by itself in the version that uses the setting.
+ */
+export function laterText(name: SettingName, current = runningVersion): string | null {
   const { usedFrom } = SETTINGS[name];
-  return usedFrom ? `Used from version ${usedFrom}: it changes nothing in this version.` : null;
+  return usedFrom && isLaterVersion(usedFrom, current)
+    ? `Used from version ${usedFrom}: it changes nothing in this version.`
+    : null;
 }
 
 /**

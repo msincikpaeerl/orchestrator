@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
+import { userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { findExecutable, runCommand } from './exec.js';
 import { SWEEP_GRACE_MS } from './processes.js';
@@ -14,10 +14,11 @@ import type { DaemonPaths } from './paths.js';
 /**
  * What unit names start with: nothing for the daemon's own folder; for any other folder (the
  * tests' throw-away homes), `od-test-` and a hash of it, so a test never meets the owner's units
- * and its leftovers are found by that prefix.
+ * and its leftovers are found by that prefix. The own folder is in the home folder of the user's
+ * account (the passwd entry), not `HOME`: a test's daemon runs with `HOME` in its test home.
  */
 export function unitPrefix(paths: DaemonPaths): string {
-  if (resolve(paths.home) === resolve(join(homedir(), '.orchestrator'))) return '';
+  if (resolve(paths.home) === resolve(join(userInfo().homedir, '.orchestrator'))) return '';
   return `od-test-${createHash('sha256').update(resolve(paths.home)).digest('hex').slice(0, 8)}-`;
 }
 

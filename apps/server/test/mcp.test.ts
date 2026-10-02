@@ -5,6 +5,7 @@ import {
   MCP_OUTPUT_MAX_CHARACTERS,
   MCP_TOOLS,
   ROLE_MCP_PERMISSIONS,
+  SETTINGS,
   TicketDetail,
   type McpError,
   type McpResult,
@@ -404,6 +405,8 @@ describe('ticket_create (06, section 4.3), then Accept and Reject (04, section 2
       details: [{ setting: 'maxAgentTicketsPerRun' }],
     });
     expect(limit.message).toMatch(/Limit of 2 tickets per run reached.*: 2\)/);
+    // The limit as Settings names it, never another wording.
+    expect(limit.message).toContain(`(setting "${SETTINGS.maxAgentTicketsPerRun.label}": 2)`);
   });
 
   it('refuses texts above the owner form limits, and an archived project', async () => {
@@ -421,6 +424,26 @@ describe('ticket_create (06, section 4.3), then Accept and Reject (04, section 2
       details: [{ field: 'title', setting: 'ticketTitleMaxLength' }],
     });
     expect(error.message).toMatch(/at most 12 characters/);
+    expect(error.message).toContain(`(setting "${SETTINGS.ticketTitleMaxLength.label}": 12)`);
+    // Lowered once the run's ticket exists, since it has two criteria.
+    expect(
+      (await h.call('PUT', '/api/settings/ticketMaxAcceptanceCriteria', { value: 1 })).statusCode,
+    ).toBe(200);
+    const criteria = refusal(
+      await h.tool(daemon, runToken, 'ticket_create', {
+        ...input,
+        title: 'Short',
+        acceptance_criteria: ['One', 'Two'],
+      }),
+    );
+    expect(criteria).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: [{ field: 'acceptance_criteria', setting: 'ticketMaxAcceptanceCriteria' }],
+    });
+    // The limit as Settings names it, never another wording.
+    expect(criteria.message).toContain(
+      `(setting "${SETTINGS.ticketMaxAcceptanceCriteria.label}": 1)`,
+    );
     await h.t.db.update(schema.projects).set({ status: 'archived' });
     expect(
       refusal(await h.tool(daemon, runToken, 'ticket_create', { ...input, title: 'Short' })).code,

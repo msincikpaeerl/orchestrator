@@ -254,6 +254,17 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
         );
         const [launch] = (await fake.log()).filter((entry) => entry.event === 'start');
         if (launch?.event !== 'start') throw new Error('no launch');
+        // The service's units carry the test's prefix, never the owner's names, although the
+        // service runs with HOME in the test home.
+        expect(cgroup(launch.pid)).toContain(`/${runScopeName(prefix, runId)}.scope`);
+        const tmuxServer = spawnSync(
+          join(home.bin, 'tmux'),
+          ['-L', TMUX_SOCKET_NAME, 'display-message', '-p', '#{pid}'],
+          { env: home.env, encoding: 'utf8' },
+        );
+        expect(cgroup(Number(tmuxServer.stdout.trim()))).toContain(
+          `/${tmuxScopeName(prefix)}.scope`,
+        );
 
         // The restart: stopping the service kills its whole cgroup.
         const stopped = spawnSync('systemctl', ['--user', 'stop', `${service}.service`], {

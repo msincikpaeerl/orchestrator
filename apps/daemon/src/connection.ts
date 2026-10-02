@@ -83,6 +83,8 @@ export class ServerConnection {
   connectedAt: Date | null = null;
   lastError: string | null = null;
   private current: SocketLike | null = null;
+  /** The socket `stop()` closed, until `release()` ends it. */
+  private closing: SocketLike | null = null;
   private retries = 0;
   private stopped = false;
   private retryTimer: NodeJS.Timeout | undefined;
@@ -105,7 +107,18 @@ export class ServerConnection {
     clearInterval(this.heartbeatTimer);
     const socket = this.current;
     this.current = null;
+    this.closing = socket;
     socket?.close(1000, 'daemon stopping');
+  }
+
+  /**
+   * Ends the socket `stop()` closed without waiting any longer for the server's answer to the
+   * close, which a server that does not answer would make last the `ws` close timeout (30 s).
+   * Called once the daemon's own stopping work is done (05, section 6).
+   */
+  release(): void {
+    this.closing?.terminate();
+    this.closing = null;
   }
 
   /** Read through a method: `stop()` can run while an attempt awaits. */

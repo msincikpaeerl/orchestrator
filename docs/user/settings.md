@@ -18,7 +18,7 @@ What a change affects:
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
 - Every change is recorded in the [event log](activity.md#event-log).
 
-Limits marked "Used from version ..." belong to features of later versions (agents, runs, the scheduler). You can already set them, but they change nothing yet.
+Limits marked "Used from version ..." belong to features of later versions (CI checks, the scheduler, plans). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
 
 ## Override a limit for one project
 
@@ -28,7 +28,7 @@ Some limits can have a different value for one project: the reference below says
 2. Each limit says whether the project uses the global value (the one in **Settings > Limits**) or its own value. Type a value and click **Save**: it applies to this project only.
 3. **Reset to default** removes the project's own value: the project uses the global value again, and follows it when you change it.
 
-The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In this version, only limits of later versions can be overridden per project.
+The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In this version, **Most tickets an agent creates per run** is the only limit a project can override that already changes something; the others belong to later versions.
 
 ## Settings reference
 
@@ -60,7 +60,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Longest acceptance criterion | 500 characters | 1 to 5,000 | No | Most characters in one acceptance criterion. |
 | Longest comment | 20,000 characters | 1 to 100,000 | No | Most characters in one comment. |
 | Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan proposing more tickets than this is refused. |
-| Most tickets an agent creates per run (from version 0.3.0) | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
+| Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
 | Failed attempts before asking you (from version 0.4.0) | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
 | CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a submitted ticket waits for its CI result before the attempt fails. |
 
@@ -68,16 +68,16 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
-| Waiting run lifetime (from version 0.3.0) | 30 minutes | 1 to 1,440 | No | How long a run stays alive after asking you a question; after that it stops and continues when you answer. |
-| Longest run (from version 0.3.0) | 90 minutes | 1 to 1,440 | No | Working time after which a run is stopped. Time waiting for CI, for you or for the quota does not count. |
-| Idle timeout (from version 0.3.0) | 10 minutes | 1 to 120 | No | A run whose agent shows no activity for this long is stopped. Time waiting for you, for CI or for the quota, and time running a command, does not count. |
-| Most reminders per run (from version 0.3.0) | 2 reminders | 0 to 10 | No | Reminders sent to an agent that stops without finishing, before the run is stopped. |
-| Session start timeout (from version 0.3.0) | 30 seconds | 5 to 600 | No | How long a machine waits for Claude Code to start a run's session; after that the run fails (a startup dialog or a change in Claude Code is likely). |
-| MCP call timeout (from version 0.3.0) | 30 seconds | 5 to 300 | No | How long a machine waits for the Orchestrator's answer to an agent's tool call; after that the agent is told to try again later. Must be below the Claude Code MCP tool timeout. |
-| Claude Code MCP tool timeout (from version 0.3.0) | 120 seconds | 10 to 1,800 | No | How long Claude Code waits for an Orchestrator tool call before giving up on it. Must be above the MCP call timeout, so the machine always answers first: a value breaking this is refused, naming both limits and their values. |
-| Machine answer timeout (from version 0.3.0) | 60 seconds | 5 to 600 | No | How long the Orchestrator waits for a machine to confirm it starts a run; without an answer the run is cancelled and does not count as a failed attempt. |
-| Progress update interval (from version 0.3.0) | 60 seconds | 0 to 3,600 | No | Shortest time between two new progress lines shown for a run. The agent's updates are never refused: the latest one is shown when this time has passed. |
-| Longest stored log entry (from version 0.3.0) | 2,000 characters | 100 to 100,000 | No | Most characters kept of one entry of a run's log, such as a command's output; the rest is cut and the cut is marked. |
+| Waiting run lifetime | 30 minutes | 1 to 1,440 | No | How long a run stays alive after asking you a question; after that it stops and continues when you answer. |
+| Longest run | 90 minutes | 1 to 1,440 | No | Working time after which a run is stopped. Time waiting for CI, for you or for the quota does not count. |
+| Idle timeout | 10 minutes | 1 to 120 | No | A run whose agent shows no activity for this long is stopped. Time waiting for you, for CI or for the quota, and time running a command, does not count. |
+| Most reminders per run | 2 reminders | 0 to 10 | No | Reminders sent to an agent that stops without finishing, before the run is stopped. |
+| Session start timeout | 30 seconds | 5 to 600 | No | How long a machine waits for Claude Code to start a run's session; after that the run fails (a startup dialog or a change in Claude Code is likely). |
+| MCP call timeout | 30 seconds | 5 to 300 | No | How long a machine waits for the Orchestrator's answer to an agent's tool call; after that the agent is told to try again later. Must be below the Claude Code MCP tool timeout. |
+| Claude Code MCP tool timeout | 120 seconds | 10 to 1,800 | No | How long Claude Code waits for an Orchestrator tool call before giving up on it. Must be above the MCP call timeout, so the machine always answers first: a value breaking this is refused, naming both limits and their values. |
+| Machine answer timeout | 60 seconds | 5 to 600 | No | How long the Orchestrator waits for a machine to confirm it starts a run; without an answer the run is cancelled and does not count as a failed attempt. |
+| Progress update interval | 60 seconds | 0 to 3,600 | No | Shortest time between two new progress lines shown for a run. The agent's updates are never refused: the latest one is shown when this time has passed. |
+| Longest stored log entry | 2,000 characters | 100 to 100,000 | No | Most characters kept of one entry of a run's log, such as a command's output; the rest is cut and the cut is marked. |
 
 ### Machines
 
@@ -94,5 +94,5 @@ What these limits apply to: see [Machines](machines.md).
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
 | Scheduler check interval (from version 0.5.0) | 30 seconds | 5 to 600 | No | The scheduler looks for work to start at least this often. |
-| Quota wait when the reset time is unknown (from version 0.3.0) | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. |
+| Quota wait when the reset time is unknown | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. |
 | Longest quota wait (from version 0.5.0) | 240 minutes | 1 to 2,880 | No | The doubling wait above never goes above this. |
