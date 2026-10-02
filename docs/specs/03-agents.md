@@ -128,7 +128,7 @@ The text given to Claude Code at the start of a run has three layers, from most 
 
 | Layer | Source | Content |
 |---|---|---|
-| 1. Common rules | Application, versioned | How the Orchestrator works: MCP tools as the only channel, the three ways to end a run, commit but never push, read CLAUDE.md first, stay within the ticket. |
+| 1. Common rules | Application, versioned | How the Orchestrator works: MCP tools as the only channel, the three ways to end a run, commit but never push, read CLAUDE.md first, stay within the ticket; files changed with `Edit` and `Write`, never shell redirection, one command per Bash call, a refused chained command's allowed parts run separately before asking, and the owner asked only what the owner can decide (owner's check, lot 2 step N: an agent asked the owner to "allow Bash for git add and git commit" after a chain starting with `echo … >> README.md` was refused whole). |
 | 2. Role instructions | Agent profile | Sections 2.1 to 2.6, written as direct instructions. |
 | 3. Run context | Built by the server | The ticket (or request), its comments, previous review points, the purpose of the run. |
 
