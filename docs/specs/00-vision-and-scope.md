@@ -75,7 +75,7 @@ The system has two parts.
 ### Out of scope for v1
 
 - Multiple users, roles and permissions between humans.
-- Deploying generated projects (hosting websites, publishing apps to stores).
+- Deploying generated projects (hosting websites, publishing apps to stores). Deploying projects to a server is a planned evolution after v1; updating the Orchestrator itself would then be one case of it (owner's decision, lot 2 step N).
 - Android emulator or on-device tests.
 - Automatic merge by agents.
 - Non-Claude runners (the abstraction exists, no second implementation).
