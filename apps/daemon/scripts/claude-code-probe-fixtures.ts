@@ -1,4 +1,5 @@
 import { maskSecrets } from '@orchestrator/protocol';
+import { KNOWN_TRANSCRIPT_TYPES } from '../src/transcript.js';
 
 // Fixtures of the Claude Code probe (lot 2 plan, step H; owner's decisions after the first run):
 // what is kept of a real session, how it is sanitised, and the final guard that refuses to write
@@ -36,6 +37,30 @@ export function keptTranscript(text: string): string {
     .filter((entry) => typeof entry.type === 'string' && KEPT_TRANSCRIPT_TYPES.has(entry.type))
     .map((entry) => `${JSON.stringify(entry)}\n`)
     .join('');
+}
+
+/**
+ * The transcript's line types with their counts, names only, and those the daemon does not know
+ * (a run's log counts them as unreadable): the fixtures keep only what the daemon reads, so this
+ * line is where a new type shows (owner's decision, lot 2 step N).
+ */
+export function transcriptTypes(text: string): string {
+  const counts = new Map<string, number>();
+  for (const entry of parsedLines(text)) {
+    // A name only: anything that does not look like one is not shown.
+    const type =
+      typeof entry.type === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(entry.type)
+        ? entry.type
+        : '<other>';
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  const list = (names: string[]) =>
+    names.length === 0
+      ? 'none'
+      : names.map((name) => `${name} ${String(counts.get(name))}`).join(', ');
+  const names = [...counts.keys()].sort();
+  const unknown = names.filter((name) => !KNOWN_TRANSCRIPT_TYPES.has(name));
+  return `Transcript line types: ${list(names)}. Unknown to the daemon: ${list(unknown)}.`;
 }
 
 export interface SanitiseOptions {

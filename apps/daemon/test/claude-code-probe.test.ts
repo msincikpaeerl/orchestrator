@@ -174,6 +174,9 @@ describe('Claude Code probe, dry run with the fake claude', () => {
       );
       expect(output).toMatch(/^5\. INFO .*the made-up key was reported/m);
       expect(output).toMatch(/Fixtures written to: /);
+      expect(output).toMatch(
+        /^Transcript line types: .*assistant \d+.*\. Unknown to the daemon: none\.$/m,
+      );
       expect(output).toMatch(/Every check passed\./);
       expect(code).toBe(0);
       expect(await scratchFolders()).toEqual([]);
@@ -195,6 +198,9 @@ describe('Claude Code probe, dry run with the fake claude', () => {
         expect(text).not.toContain(root.replace(/[^A-Za-z0-9]/g, '-'));
         for (const value of PLANTED) expect(text.toLowerCase()).not.toContain(value.toLowerCase());
       }
+      expect(await readFile(join(root, 'fixtures', 'results.txt'), 'utf8')).toMatch(
+        /^Transcript line types: /m,
+      );
       // Only the entries the daemon reads: the attachments are gone.
       const transcript = await readFile(join(root, 'fixtures', 'transcript.jsonl'), 'utf8');
       expect(transcript).not.toContain('"attachment"');
