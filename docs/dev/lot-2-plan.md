@@ -1,6 +1,6 @@
 # Lot 2 — Implementation plan
 
-> Status: in progress (version 0.3.0)
+> Status: done 2026-10-03 (version 0.3.0)
 > Scope: "Lot 2 — Machines and manual runs" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 2 is done when** the owner starts a run on a ticket, watches it live, answers a question, and finds the agent's commits on a local branch.
 
@@ -765,7 +765,7 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
 - `systemd.test.ts` now starts its transient service with `start --service` and checks the "Process scopes" row is ok.
 - Tests: `apps/daemon/test/process-scopes.test.ts` (fake `systemd-run` and `systemctl`): the service without scopes, a daemon in a terminal, a run's scope and the tmux server's scope refused later (each fails on the code before the step), and three launches interrupted without blocking the machine: **Stop run**, the tmux session killed (which blocked the machine with the marker alone) and the daemon stopped then restarted; `runs.test.ts` (`process_scope_failed` fails the run with `machine_problem`, not counted); `machines.test.ts` (`machine.doctor` while connected, a duplicate writing no second event) and `daemon.test.ts` (the real daemon as the service without scopes, with the real server: online, unusable, "Problem on …" in "Needs you").
 
-### [ ] N. Lot 2 check by the owner
+### [x] N. Lot 2 check by the owner
 
 - Version 0.3.0 prepared (CHANGELOG section, version numbers).
 - **For the closing step of every next lot** (owner's decision, 2026-10-02): working rule 14, "Closing a lot".
@@ -801,7 +801,7 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
     2. Agents could run `docker` (Claude Code allowed `docker ps` by itself, outside the allowlist): `docker`, `docker-compose`, `podman`, `nerdctl` and `kubectl` are refused by a settings deny rule and by the hook (05 section 4.6, 03 section 6).
     3. An agent chained `echo … >> README.md && git add … && git commit …`, was refused whole, and asked the owner to "allow Bash for git add and git commit": the common rules now say to edit files with `Edit` and `Write`, run one command per Bash call, run a refused chain's allowed parts separately, and ask the owner only what the owner can decide, never to allow a command, while a ticket that really needs one is said so in plain words with `ticket_ask` or `ticket_give_up`. Each agent is also told its Bash allowlist, from the template `agents/templates/allowlist.md`, which counts in the profile version (03 section 3).
     4. Transcript lines counted as unreadable (17 to 29 per run): Claude Code 2.1.287's `ai-title`, `last-prompt`, `mode`, `permission-mode`, `atis-latch`, `file-history-snapshot` and `file-history-delta`, none holding the agent's work, are now read silently; the warning stays for other types, and the probe's report lists the transcript's line types (05 section 4.5).
-    5. `login` opened Claude Code in the terminal's folder, which Claude Code asked to trust (and from a repository it would load its `CLAUDE.md`): it now opens in `~/.orchestrator/login/`, trusted beforehand; Help describes the screens (05 section 3.1).
+    5. `login` opened Claude Code in the terminal's folder, which Claude Code asked to trust (and from a repository it would load its `CLAUDE.md`): it now opens in `~/.orchestrator/login/`, trusted beforehand; Help says where to type it and what to answer, without describing first-start screens nobody checked (05 section 3.1).
     6. Help: "Add a machine" points to "Try it with a small ticket", whose two criteria are given one per line.
     7. `status` with no daemon running said "Start it with" twice.
     8. Spec 00: deploying projects to a server is a planned evolution after v1, updating the Orchestrator itself one case of it.
@@ -847,3 +847,12 @@ Asked by the owner after step M's check (2026-10-01): the daemon used process sc
 - Gaps found are fixed, each with its test; results recorded in this plan.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 2 is closed as version 0.3.0.
+
+*Done 2026-10-03.* Version 0.3.0 prepared. The owner ran the scenario from `docs/user/` alone with the real Claude Code and confirmed it (results above); the gaps found are fixed, each with its test. The owner then checked the fixes on `lot2/n2-check-gaps` (2026-10-03):
+
+- `allowlist-smoke.sh`: "Every command passed.", exit code 0, 17 PASS out of 17, on Claude Code **2.1.288** (it had updated itself during the evening; the probe and the real runs were on 2.1.287). `cat <probe>/home/.orchestrator/config.json` and `docker ps` were both "refused by a deny rule".
+- New `login`: Claude Code opened with no trust question; after `/exit`, `ls -A ~/.orchestrator/login` printed nothing. The smoke test's own login also opened in its `.orchestrator/login` with no trust question.
+- `CLAUDE_CODE_VALIDATED_VERSION` raised to 2.1.287, the version the probe and the real runs passed on; the probe's 2.1.287 fixtures, reviewed, are committed.
+- **To watch in lot 3**: Claude Code 2.1.288 shows at start "Auto mode is now Claude Code's default permission mode." It cannot apply to an agent: every launch, a new run or a resumed one, comes from `claudeArguments` (`apps/daemon/src/run-files.ts`) with `--permission-mode dontAsk`; the fake `claude` refuses any launch without it, and the tests check it on a new run (`runner.test.ts`) and on a resumed one (`permissions-relay.test.ts`, "closes the session after the waiting run lifetime, keeping the worktree, then resumes it"). Lot 3 checks the notice on the next Claude Code versions, and whether the probe should check the mode a session actually runs in.
+
+Lot 2 is closed as version 0.3.0.
