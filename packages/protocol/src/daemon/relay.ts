@@ -4,7 +4,7 @@ import { McpError } from '../mcp/errors.js';
 import { McpToolName } from '../mcp/tools.js';
 import { requiredText } from '../text-limits.js';
 import { message } from './envelope.js';
-import { BranchReport, RepositoryOwner } from './git.js';
+import { BranchReport, PushResult, RepositoryOwner } from './git.js';
 import { RunId } from './runs.js';
 
 /** A JSON object: a tool's input or output, checked against the tool's own schema by the server. */
@@ -18,6 +18,17 @@ export const WorkspaceFacts = z.object({
   /** No uncommitted changes, untracked files included. */
   clean: z.boolean(),
   branch: BranchReport,
+  /**
+   * The push made before forwarding the call, when the worktree was clean with commits ahead
+   * (protocol 2); null when none was tried. Absent from a protocol 1 daemon, which never pushes.
+   */
+  push: PushResult.nullable().default(null),
+  /**
+   * Paths changed on the branch against the base branch, relative to the worktree root, for the
+   * check that every path the report lists is changed (04, section 3.1; protocol 2). Null when not
+   * collected: absent from a protocol 1 daemon.
+   */
+  changedFiles: z.array(requiredText()).nullable().default(null),
 });
 export type WorkspaceFacts = z.infer<typeof WorkspaceFacts>;
 
@@ -53,15 +64,15 @@ export const McpResult = message(
 export type McpResult = z.infer<typeof McpResult>;
 
 /**
- * `git.credential_request`: the credential for one Git command on the repository of an active run
- * (05, section 7). `push` comes with lot 3.
+ * `git.credential_request`: the credential for one Git command on the repository of an active or
+ * ending run (05, section 7). `push` from protocol 2, never for a `review` run.
  */
 export const GitCredentialRequest = message(
   'git.credential_request',
   z.object({
     runId: RunId,
     repository: z.object({ owner: RepositoryOwner, name: RepositoryName }),
-    command: z.enum(['fetch']),
+    command: z.enum(['fetch', 'push']),
   }),
 );
 export type GitCredentialRequest = z.infer<typeof GitCredentialRequest>;

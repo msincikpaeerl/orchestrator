@@ -1,7 +1,7 @@
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ApiError } from '@orchestrator/protocol';
+import { DaemonBuild, daemonPackageFileName, type ApiError } from '@orchestrator/protocol';
 import type { FastifyInstance } from 'fastify';
 import { SERVER_VERSION } from './version.js';
 
@@ -12,7 +12,19 @@ export function defaultDaemonPackageDir(): string {
 
 /** File name of the daemon package of the server's own version (05, section 2). */
 export function daemonPackageFile(version = SERVER_VERSION): string {
-  return `orchestrator-daemon-${version}.tgz`;
+  return daemonPackageFileName(version);
+}
+
+/**
+ * The build identifier of the daemon package this server serves (05, section 2), from the file
+ * `apps/daemon/scripts/pack.ts` writes next to it; null when the package was not built. Read at
+ * each use, so a package built again while the server runs is seen.
+ */
+export function providedDaemonBuild(packageDir: string): DaemonBuild | null {
+  const path = join(packageDir, `${daemonPackageFile()}.build`);
+  if (!existsSync(path)) return null;
+  const build = DaemonBuild.safeParse(readFileSync(path, 'utf8').trim());
+  return build.success ? build.data : null;
 }
 
 /**

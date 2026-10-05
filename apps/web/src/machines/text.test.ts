@@ -1,12 +1,15 @@
 import {
   CLAUDE_CODE_MIN_VERSION,
   CLAUDE_CODE_VALIDATED_VERSION,
+  daemonUpdateCommands,
   type Machine,
 } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  buildText,
   capabilitySourceText,
   claudeCodeText,
+  daemonUpdateText,
   needsYouText,
   statusText,
   unusableText,
@@ -16,6 +19,7 @@ import {
 const MACHINE_ID = '3f1e0e8c-3333-4000-8000-000000000000';
 const ref = { id: MACHINE_ID, name: 'Desktop' };
 const since = '2026-09-25T10:00:00.000Z';
+const UPDATE_COMMANDS = daemonUpdateCommands('http://localhost:8080', '0.4.0');
 
 function machine(fields: Partial<Machine>): Machine {
   return {
@@ -27,8 +31,11 @@ function machine(fields: Partial<Machine>): Machine {
     os: 'wsl',
     daemonVersion: '0.3.0',
     protocolVersion: 1,
+    daemonBuild: null,
+    providedDaemonBuild: null,
+    daemonBuildDiffers: false,
     daemonIncompatible: false,
-    updateCommand: null,
+    updateCommands: null,
     claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION,
     claudeCodeSupport: 'supported',
     lastHeartbeatAt: since,
@@ -54,7 +61,25 @@ describe('needsYouText', () => {
       machine: ref,
       daemonVersion: '9.0.0',
       protocolVersion: 7,
-      updateCommand: 'npm install -g http://localhost:8080/downloads/orchestrator-daemon-0.3.0.tgz',
+      updateCommands: UPDATE_COMMANDS,
+      since,
+    },
+    daemon_outdated: {
+      type: 'daemon_outdated',
+      machine: ref,
+      daemonVersion: '0.3.0',
+      serverVersion: '0.4.0',
+      updateCommands: UPDATE_COMMANDS,
+      since,
+    },
+    daemon_build_differs: {
+      type: 'daemon_build_differs',
+      machine: ref,
+      daemonVersion: '0.4.0',
+      daemonBuild: 'fedcba9876543210',
+      serverVersion: '0.4.0',
+      providedBuild: '0123456789abcdef',
+      updateCommands: UPDATE_COMMANDS,
       since,
     },
     claude_code_unsupported: {
@@ -104,6 +129,36 @@ describe('needsYouText', () => {
     if (incompatible.type !== 'daemon_incompatible') throw new Error('wrong example');
     expect(needsYouText(incompatible).detail).toContain('daemon 9.0.0');
   });
+
+  it('asks to update a daemon of the previous protocol, as the specification words it', () => {
+    const outdated = needsYouText(examples.daemon_outdated);
+    expect(outdated.title).toBe('Update the daemon on Desktop');
+    expect(outdated.detail).toMatch(
+      /^Daemon 0\.3\.0 is older than this Orchestrator \(0\.4\.0\)\./,
+    );
+    expect(outdated.detail).toContain('receives no runs');
+    // A server built between two releases has the same version number: still true.
+    const same = needsYouText({
+      ...examples.daemon_outdated,
+      serverVersion: '0.3.0',
+    } as MachineNeedsYouItem);
+    expect(same.detail).toContain('older than this Orchestrator, though both say version 0.3.0');
+  });
+
+  it('says another build is not the one provided, without calling it older or newer', () => {
+    const { title, detail } = needsYouText(examples.daemon_build_differs);
+    expect(title).toBe('The daemon on Desktop is not the one this Orchestrator provides');
+    expect(detail).toContain('build fedcba9876543210');
+    expect(detail).toContain('build 0123456789abcdef');
+    expect(detail).toContain('may be older or newer');
+    expect(detail).toContain('still receives runs');
+    expect(`${title} ${detail}`).not.toMatch(/\b(is|are) (older|newer|outdated)\b|too old|too new/);
+    const sources = needsYouText({
+      ...examples.daemon_build_differs,
+      daemonBuild: null,
+    } as MachineNeedsYouItem);
+    expect(sources.detail).toContain('(0.4.0, run from its sources)');
+  });
 });
 
 describe('machine texts', () => {
@@ -111,6 +166,42 @@ describe('machine texts', () => {
     expect(statusText(machine({ state: 'disabled', online: false }))).toBe('Disabled (offline)');
     expect(statusText(machine({ state: 'disabled', online: true }))).toBe('Disabled (online)');
     expect(statusText(machine({ state: 'waiting_enrollment' }))).toBe('Waiting for enrollment');
+  });
+
+  it('explains why the update commands are shown, or shows none', () => {
+    expect(daemonUpdateText(machine({}))).toBeNull();
+    expect(
+      daemonUpdateText(machine({ daemonIncompatible: true, updateCommands: UPDATE_COMMANDS })),
+    ).toContain('so it cannot connect');
+    expect(
+      daemonUpdateText(
+        machine({
+          updateCommands: UPDATE_COMMANDS,
+          unusable: [
+            {
+              type: 'daemon_outdated',
+              daemonVersion: '0.3.0',
+              protocolVersion: 1,
+              serverVersion: '0.4.0',
+              serverProtocolVersion: 2,
+            },
+          ],
+        }),
+      ),
+    ).toMatch(
+      /^Daemon 0\.3\.0 is older than this Orchestrator \(0\.4\.0\)\. The machine receives no runs/,
+    );
+    const other = daemonUpdateText(
+      machine({ daemonBuildDiffers: true, updateCommands: UPDATE_COMMANDS }),
+    );
+    expect(other).toContain('another build, older or newer');
+    expect(other).toContain('still receives runs');
+  });
+
+  it('shows a build, or why there is none', () => {
+    expect(buildText('0123456789abcdef', 2)).toBe('0123456789abcdef');
+    expect(buildText(null, 2)).toBe('None (run from its sources)');
+    expect(buildText(null, 1)).toBe('Not reported (older daemon)');
   });
 
   it('explains why a machine cannot receive runs', () => {

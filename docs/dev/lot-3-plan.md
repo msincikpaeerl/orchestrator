@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (step A done)
+> Status: in progress (steps A and B done)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -139,7 +139,7 @@ then check the machine page: online, usable, and the build the same as the serve
 
 *Done 2026-10-05.* Approved by the owner with six corrections: the daemon's package name and the update commands that worked (with a test in step B); the smoke script repairs the link and waits for CI before the merge; ticket 1 of step N keeps one criterion the agent can meet, and Help > Tickets says what a criterion is; clean-up option A without the base-branch comparison; working rule 15 on step size, and step G split into G1 and G2; the "Needs you" item for a different daemon build named so it stays true both ways.
 
-### [ ] B. Protocol 2, daemon build and updates
+### [x] B. Protocol 2, daemon build and updates
 
 - `packages/protocol`: every lot 3 message and tool as Zod schemas (as lot 2 step B):
   - `git.credential_request` `push`;
@@ -164,6 +164,15 @@ then check the machine page: online, usable, and the build the same as the serve
 - integration tests show a protocol 1 `hello` online but unusable with the update commands, a different build giving the warning item, and the same build giving none;
 - a test installs the served package and `orchestrator-daemon --version` prints the build the server reports;
 - a test reads the package name in the documented update commands (`docs/user/machines.md` and the "Needs you" item) and checks it against the name of the package the server serves, so the Help can never name a package that is not installed.
+
+*Done 2026-10-05.* Choices made in the step, written into the specs (01, 02, 05, 09):
+
+- **What goes into the build identifier**: the first 16 hexadecimal digits of the SHA-256 of the bundled script (with a placeholder where the identifier is then written) and of the package's `package.json` (`apps/daemon/scripts/bundle.ts`). It changes with any change of the bundled code (the daemon's, the protocol's, a library's, or esbuild's output) and with the package's name or version; never with the time, the machine or the folder (esbuild names bundled files relative to `apps/daemon`; comments are left out). A comment, or code the bundle does not use, gives the same build. `pack.ts` writes it next to the package (`<package>.build`), where the server reads it; `/version` returns it. A daemon run from its sources has no build.
+- **Protocol 1 messages stay readable**: every protocol 2 field of a daemon message (the build, push results, changed files, "head moved") reads as null when absent. The daemon sends them null until steps D, F and H fill them.
+- **Lot 3 failure reasons** `ci_failed` (counted), `ci_timeout` and `review_branch_moved` (not counted) exist from this step, so the server can map the new end reasons (01, section 3.7); `push_failed` comes with step F.
+- **The new tools before their steps**: `ci_status` answers "no pull request yet" (true until step F); `review_approve` and `review_request_changes` are refused with `INVALID_TRANSITION` outside a review run (06, section 4.5), that is always until step H. Every agent sees the three tools in its list; the server refuses those its role does not have.
+- **Update commands everywhere**: the refused-protocol item ("Update the daemon on …", which already existed) now shows the same five commands as the protocol 1 item, instead of `npm install -g` and a restart.
+- A protocol 1 daemon on a server of the same version number reads "Daemon 0.3.0 is older than this Orchestrator, though both say version 0.3.0" (servers built from `main` during lot 3).
 
 ### [ ] C. Local fake GitHub
 

@@ -150,6 +150,7 @@ Click a machine's name to open its page. It shows:
 
 - its **status**: **Online** (connected), **Offline** (not connected; the daemon or the computer is stopped, or WSL was shut down), **Waiting for enrollment**, **Disabled** or **Revoked**;
 - its Claude account, system, daemon and Claude Code versions, and when it was last heard from;
+- its **daemon build** and the build this Orchestrator provides (see [Update the daemon](#update-the-daemon));
 - the **Checks on the machine**, done by the daemon each time it connects: **OK**, **Warning**, **Error** or **Check this yourself**. An error keeps the machine from receiving runs;
 - its **Active runs**: each run in progress on it, as [Live runs](activity.md#live-runs) shows them, with **Stop run** and the command to watch it in a terminal;
 - its **capabilities** and its actions.
@@ -192,7 +193,8 @@ If you run the daemon yourself in a terminal (`orchestrator-daemon start`) inste
 |---|---|---|
 | No Claude account yet | No Claude account exists. | Add one: see [Add a Claude account](#add-a-claude-account). |
 | No machine enrolled yet | No machine has enrolled (revoked machines do not count). | See [Add a machine](#add-a-machine). |
-| Update the daemon on … | The machine's daemon does not match this version of the Orchestrator, so it cannot connect. This happens after updating the Orchestrator. | On the machine, type the `npm install -g …` command shown, then restart the daemon. |
+| Update the daemon on … | The machine's daemon is too old (or too new) for this version of the Orchestrator. Either it cannot connect, or it connects but gets no runs. This happens after updating the Orchestrator. | [Update the daemon](#update-the-daemon) with the commands the item shows. |
+| The daemon on … is not the one this Orchestrator provides | The daemon works with this Orchestrator, but it is not the daemon this Orchestrator provides: an older or a newer build of it (see [Update the daemon](#update-the-daemon)). The machine still gets runs. | [Update the daemon](#update-the-daemon) with the commands the item shows, so the machine runs the daemon this Orchestrator was tested with. |
 | Claude Code not supported on … | Claude Code is missing, or older than 2.1.280. The machine gets no runs. | Install or update Claude Code (see [Before you start](#before-you-start)), then restart the daemon. |
 | Problem on … | A check on the machine found an error, for example tmux missing or too old, or [process scopes](#process-scopes) that cannot be created. The machine gets no runs. | Fix what the item names, then restart the daemon. |
 
@@ -225,10 +227,39 @@ A daemon you run yourself in a terminal (`orchestrator-daemon start`) does not n
 The daemon stops, instead of trying again, when trying again cannot help:
 
 - the machine was revoked, or got a new enrollment code: enroll it again with the command shown on its page, then restart the daemon;
-- the daemon's version does not match the Orchestrator's: install it again with the `npm install -g …` command shown, then restart it;
+- the daemon's version does not match the Orchestrator's: [update the daemon](#update-the-daemon);
 - another daemon connected with this machine's key (a second terminal, or a copy of the `~/.orchestrator` folder on another computer): stop the other one, or add that computer as its own machine.
 
 `orchestrator-daemon status` and `orchestrator-daemon doctor` show why it last stopped. Only one daemon runs per user: `orchestrator-daemon start` refuses when the service already runs.
+
+## Update the daemon
+
+The daemon on each machine must match the Orchestrator. After updating the Orchestrator, update the daemon on every machine. "Needs you" and the machine's page tell you when a machine needs it:
+
+- **Update the daemon on …**: the daemon is too old (or too new) for this Orchestrator. Either it cannot connect, or it connects but gets no runs until you update it. For example, a daemon of version 0.3.0 cannot push work to GitHub, which this Orchestrator needs.
+- **The daemon on … is not the one this Orchestrator provides**: the daemon works with this Orchestrator and still gets runs, but it is another **build** than the one this Orchestrator provides. A build is a short code, such as `3f9a0c1d2e4b5a69`, that changes whenever the daemon's program changes. Two daemons with the same version number can be different builds, and the one on the machine can be older or newer than the one provided. Updating gives the machine the daemon this Orchestrator was tested with.
+
+Update when no agent is working on the machine (its page shows no active run), so no work is interrupted. Then, on the machine, in its Ubuntu terminal, type these commands one after the other. The item in "Needs you" and the machine's page show them with your Orchestrator's address and version filled in in place of `<server URL>` and `<version>`: copy them from there.
+
+```sh
+systemctl --user stop orchestrator-daemon
+npm uninstall -g orchestrator-daemon
+npm install -g --prefer-online <server URL>/downloads/orchestrator-daemon-<version>.tgz
+orchestrator-daemon install-service
+orchestrator-daemon doctor
+```
+
+They:
+
+1. stop the daemon's service;
+2. remove the installed daemon;
+3. install the daemon this Orchestrator provides, downloaded from it again (`--prefer-online`: npm would otherwise reuse a copy of the same version number it keeps, which can be another build);
+4. install the service again and start it;
+5. check the machine.
+
+Then open the machine's page: it should be **Online**, receive runs, and show the same **Daemon build** as **Build this Orchestrator provides**. `orchestrator-daemon --version` shows the version and build of the daemon installed on the machine.
+
+If you run the daemon yourself in a terminal instead of as a service, stop it with Ctrl+C instead of the first command, skip `install-service`, and start it again with `orchestrator-daemon start`.
 
 ## Troubleshooting
 
@@ -240,7 +271,7 @@ Type these commands on the machine, in its Ubuntu terminal:
 | Read the daemon's last 100 messages | `journalctl --user -u orchestrator-daemon -n 100` |
 | Follow its messages as they come (stop with Ctrl+C) | `journalctl --user -u orchestrator-daemon -f` |
 | Check the machine: tools and versions, Claude Code login, systemd, the service and its process scopes, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
-| See whether the daemon runs (as the service or in a terminal), its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
+| See whether the daemon runs (as the service or in a terminal), its version and build, its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.

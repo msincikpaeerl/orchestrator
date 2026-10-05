@@ -53,7 +53,44 @@ export function unusableText(reason: UnusableReason): string {
         : `Claude Code ${reason.version} is too old. Update it to ${reason.minimum} or later.`;
     case 'doctor_error':
       return `Problem found by doctor: ${reason.check.name}: ${reason.check.message}`;
+    case 'daemon_outdated':
+      return `${olderDaemon(reason.daemonVersion, reason.serverVersion)} Update it.`;
   }
+}
+
+/**
+ * A daemon of the previous protocol (05, section 3.3): "Daemon 0.3.0 is older than this
+ * Orchestrator (0.4.0)", or, when both have the same version number (a server built between two
+ * releases), a sentence that stays true.
+ */
+function olderDaemon(daemonVersion: string, serverVersion: string): string {
+  return daemonVersion === serverVersion
+    ? `Daemon ${daemonVersion} is older than this Orchestrator, though both say version ${serverVersion}.`
+    : `Daemon ${daemonVersion} is older than this Orchestrator (${serverVersion}).`;
+}
+
+/** A build as shown: its 16 digits, or why there is none. */
+export function buildText(build: string | null, protocolVersion: number | null): string {
+  if (build !== null) return build;
+  return protocolVersion !== null && protocolVersion < 2
+    ? 'Not reported (older daemon)'
+    : 'None (run from its sources)';
+}
+
+/**
+ * Why the machine page shows the update commands (05, section 3.3), or null when it does not.
+ * The other build may be older or newer: the text says neither.
+ */
+export function daemonUpdateText(machine: Machine): string | null {
+  if (machine.updateCommands === null) return null;
+  if (machine.daemonIncompatible) {
+    return 'The daemon on this machine does not match this version of the Orchestrator, so it cannot connect. On the machine, type these commands one after the other:';
+  }
+  const outdated = machine.unusable.find((reason) => reason.type === 'daemon_outdated');
+  if (outdated) {
+    return `${olderDaemon(outdated.daemonVersion, outdated.serverVersion)} The machine receives no runs until you update it. On the machine, type these commands one after the other:`;
+  }
+  return 'The daemon on this machine is not the one this Orchestrator provides: it is another build, older or newer. The machine still receives runs. When no agent works on it, type these commands on the machine, one after the other:';
 }
 
 /**
@@ -105,6 +142,8 @@ export type MachineNeedsYouItem = Extract<
       | 'no_claude_account'
       | 'no_machine'
       | 'daemon_incompatible'
+      | 'daemon_outdated'
+      | 'daemon_build_differs'
       | 'claude_code_unsupported'
       | 'machine_problem'
       | 'machine_offline_with_runs';
@@ -132,7 +171,17 @@ export function needsYouText(item: MachineNeedsYouItem): {
     case 'daemon_incompatible':
       return {
         title: `Update the daemon on ${item.machine.name}`,
-        detail: `Its daemon${item.daemonVersion === null ? '' : ` ${item.daemonVersion}`} does not match this version of the Orchestrator, so it cannot connect. On that machine, install the daemon of this version, then restart it.`,
+        detail: `Its daemon${item.daemonVersion === null ? '' : ` ${item.daemonVersion}`} does not match this version of the Orchestrator, so it cannot connect. On that machine, type these commands one after the other.`,
+      };
+    case 'daemon_outdated':
+      return {
+        title: `Update the daemon on ${item.machine.name}`,
+        detail: `${olderDaemon(item.daemonVersion, item.serverVersion)} Until you update it, the machine receives no runs. On that machine, type these commands one after the other.`,
+      };
+    case 'daemon_build_differs':
+      return {
+        title: `The daemon on ${item.machine.name} is not the one this Orchestrator provides`,
+        detail: `Its daemon (${item.daemonVersion}, ${item.daemonBuild === null ? 'run from its sources' : `build ${item.daemonBuild}`}) is another build than the one this Orchestrator provides (${item.serverVersion}, build ${item.providedBuild}): it may be older or newer. The machine still receives runs. When no agent works on it, type these commands on that machine, one after the other.`,
       };
     case 'claude_code_unsupported':
       return {

@@ -209,6 +209,8 @@ function state(
         reason: payload.reason,
         detail: payload.detail ?? null,
         branch: payload.branch ?? null,
+        push: null,
+        headMoved: null,
       },
     };
   }

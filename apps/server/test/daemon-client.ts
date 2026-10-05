@@ -21,6 +21,8 @@ export function helloMessage(payload: Partial<Hello['payload']> = {}): Hello {
     payload: {
       protocolVersion: PROTOCOL_VERSION,
       daemonVersion: '0.3.0',
+      // A daemon run from its sources: the test servers serve no built package.
+      daemonBuild: null,
       claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION,
       os: 'wsl',
       capabilities: ['git', 'node'],

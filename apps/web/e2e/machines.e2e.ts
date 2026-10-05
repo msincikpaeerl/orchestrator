@@ -225,3 +225,62 @@ test('Add machine warns when machines would reach the Orchestrator over plain ht
   await expect(page.getByRole('link', { name: 'Orchestrator on another computer' })).toBeVisible();
   await expectFitsScreen(page);
 });
+
+test('a daemon to update, and a daemon of another build than the one provided', async ({
+  page,
+}) => {
+  await completeSetup(page);
+  // A 0.3.0 daemon: the previous protocol, no build.
+  const old = await createMachine(page, { name: 'Desktop', account: 'Personal' });
+  expect(
+    await connectDaemon(page, old.code, {
+      protocolVersion: 1,
+      daemonVersion: '0.3.0',
+      daemonBuild: null,
+    }),
+  ).toBe(204);
+  // A daemon of this protocol, but not the build this Orchestrator provides.
+  const other = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(await connectDaemon(page, other.code, { daemonBuild: '0123456789abcdef' })).toBe(204);
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Update the daemon on Desktop' })).toBeVisible();
+  await expect(page.getByText(/Daemon 0\.3\.0 is older than this Orchestrator/)).toBeVisible();
+  await expect(
+    page.getByRole('heading', {
+      name: 'The daemon on Laptop is not the one this Orchestrator provides',
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('it may be older or newer')).toBeVisible();
+  const commands = page.getByLabel('Update commands');
+  await expect(commands).toHaveCount(2);
+  await expect(commands.first()).toHaveText(
+    new RegExp(
+      [
+        'systemctl --user stop orchestrator-daemon',
+        'npm uninstall -g orchestrator-daemon',
+        'npm install -g --prefer-online http://localhost:\\d+/downloads/orchestrator-daemon-[\\d.]+\\.tgz',
+        'orchestrator-daemon install-service',
+        'orchestrator-daemon doctor',
+      ].join('\\n'),
+    ),
+  );
+  await expectFitsScreen(page);
+
+  await page.goto(`/machines/${old.id}`);
+  await expect(page.getByRole('heading', { name: 'Desktop', level: 1 })).toBeVisible();
+  await expect(page.getByText('Daemon to update')).toBeVisible();
+  await expect(page.getByText('Not reported (older daemon)')).toBeVisible();
+  await expect(page.getByText(/The machine receives no runs until you update it/)).toBeVisible();
+  await expect(page.getByLabel('Update commands')).toBeVisible();
+  await expectFitsScreen(page);
+
+  await page.goto(`/machines/${other.id}`);
+  await expect(page.getByRole('heading', { name: 'Laptop', level: 1 })).toBeVisible();
+  await expect(page.getByText('Another daemon build')).toBeVisible();
+  await expect(page.getByText('0123456789abcdef')).toBeVisible();
+  await expect(page.getByText('e2e0e2e0e2e0e2e0')).toBeVisible();
+  await expect(page.getByText(/another build, older or newer/)).toBeVisible();
+  await expect(page.getByText('This machine cannot receive runs')).toBeHidden();
+  await expectFitsScreen(page);
+});

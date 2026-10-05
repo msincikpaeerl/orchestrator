@@ -222,6 +222,8 @@ export function cleanWorkspace(
       head: HEAD,
       commitsAhead: overrides.commitsAhead ?? COMMITS,
     },
+    push: null,
+    changedFiles: null,
   };
 }
 
@@ -244,6 +246,8 @@ export function state(
         reason: payload.reason,
         detail: null,
         branch: { name: 't/1-contact-form', head: HEAD, commitsAhead: COMMITS },
+        push: null,
+        headMoved: null,
       },
     };
   }

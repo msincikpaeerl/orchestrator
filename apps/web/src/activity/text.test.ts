@@ -290,6 +290,43 @@ describe('eventText', () => {
     expect(plainText(eventText(entry('machine.online')))).toBe(
       'Machine “Laptop” connected: daemon 0.3.0, Claude Code 2.1.279, detected docker, git. It cannot receive runs: its Claude Code version is not supported',
     );
+    expect(
+      plainText(
+        eventText(
+          entry('machine.online', {
+            payload: {
+              name: 'Laptop',
+              daemonVersion: '0.3.0',
+              daemonBuild: null,
+              claudeCodeVersion: '2.1.287',
+              detected: [],
+              unusable: ['daemon_outdated'],
+            },
+          }),
+        ),
+      ),
+    ).toBe(
+      'Machine “Laptop” connected: daemon 0.3.0, Claude Code 2.1.287, detected nothing. It cannot receive runs: its daemon is older than this Orchestrator',
+    );
+    expect(
+      plainText(
+        eventText(
+          entry('machine.online', {
+            payload: {
+              name: 'Laptop',
+              daemonVersion: '0.4.0',
+              daemonBuild: 'fedcba9876543210',
+              buildDiffers: true,
+              claudeCodeVersion: '2.1.287',
+              detected: ['git'],
+              unusable: [],
+            },
+          }),
+        ),
+      ),
+    ).toBe(
+      'Machine “Laptop” connected: daemon 0.4.0 (build fedcba9876543210, not the one provided), Claude Code 2.1.287, detected git',
+    );
     expect(plainText(eventText(entry('account.updated')))).toBe(
       'Claude account “Work Max” edited: renamed from “Personal Max”, 2 runs at a time',
     );

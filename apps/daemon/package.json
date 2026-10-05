@@ -22,7 +22,7 @@
     }
   },
   "scripts": {
-    "build": "tsx scripts/pack.ts",
+    "build": "tsx --conditions=source scripts/pack.ts",
     "typecheck": "tsc -p tsconfig.json",
     "dev": "tsx --conditions=source src/cli.ts"
   },

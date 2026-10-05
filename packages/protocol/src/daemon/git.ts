@@ -38,3 +38,25 @@ export type BranchReport = z.infer<typeof BranchReport>;
 export const RepositoryOwner = z
   .string()
   .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, 'must be a GitHub account name');
+
+/**
+ * A push of the ticket branch by the daemon (05, section 4.9; protocol 2): only that branch, by an
+ * explicit refspec, never forced. `pushed` gives the head now on GitHub; `failed` says why, in
+ * the words of Git or of the server that refused the credential.
+ */
+export const PushResult = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('pushed'), head: GitHash }),
+  z.object({
+    status: z.literal('failed'),
+    reason: z.enum([
+      /** GitHub's branch has commits the local one does not: never forced (05, section 4.9). */
+      'diverged',
+      /** GitHub, or the server giving the credential, refused it. */
+      'refused',
+      /** GitHub or the server could not be reached. */
+      'unreachable',
+    ]),
+    message: requiredText(),
+  }),
+]);
+export type PushResult = z.infer<typeof PushResult>;

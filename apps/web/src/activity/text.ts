@@ -383,12 +383,18 @@ const describe: { [T in EventType]: Describe<T> } = {
     const problems = p.unusable.map((reason) =>
       reason === 'claude_code_unsupported'
         ? 'its Claude Code version is not supported'
-        : 'doctor found a problem',
+        : reason === 'daemon_outdated'
+          ? 'its daemon is older than this Orchestrator'
+          : 'doctor found a problem',
     );
     return [
       'Machine ',
       quote(p.name, null),
-      ` connected: daemon ${p.daemonVersion}, ${
+      ` connected: daemon ${p.daemonVersion}${
+        p.daemonBuild
+          ? ` (build ${p.daemonBuild}${p.buildDiffers ? ', not the one provided' : ''})`
+          : ''
+      }, ${
         p.claudeCodeVersion === null
           ? 'Claude Code not found'
           : `Claude Code ${p.claudeCodeVersion}`

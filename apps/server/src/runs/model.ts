@@ -103,6 +103,10 @@ export function endOfReason(
       return { status: 'failed', failureReason: 'machine_problem' };
     case 'stopped':
       return { status: 'cancelled', failureReason: 'cancelled' };
+    case 'ci_failed':
+    case 'ci_timeout':
+    case 'review_branch_moved':
+      return { status: 'failed', failureReason: reason };
   }
 }
 
@@ -132,6 +136,12 @@ export function failureWords(reason: FailureReason): string {
       return 'its machine could not start Claude Code in a process scope';
     case 'cancelled':
       return 'it was cancelled';
+    case 'ci_failed':
+      return 'CI failed more times than the run allows';
+    case 'ci_timeout':
+      return 'CI did not finish in time';
+    case 'review_branch_moved':
+      return 'the branch changed during the review';
   }
 }
 

@@ -31,8 +31,36 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     machine: MachineRef,
     daemonVersion: z.string().nullable(),
     protocolVersion: z.int().nullable(),
-    /** Installs the daemon of the server's version; then the daemon is restarted. */
-    updateCommand: z.string(),
+    /** Help > Machines > "Update the daemon", for this server (05, section 2). */
+    updateCommands: z.array(z.string()),
+    since: z.iso.datetime(),
+  }),
+  /**
+   * The daemon speaks the previous protocol (a 0.3.0 daemon from lot 3 on): online but unusable
+   * until updated, "Update the daemon on X" (05, section 3.3; 09, section 6).
+   */
+  z.object({
+    type: z.literal('daemon_outdated'),
+    machine: MachineRef,
+    daemonVersion: z.string(),
+    serverVersion: z.string(),
+    updateCommands: z.array(z.string()),
+    since: z.iso.datetime(),
+  }),
+  /**
+   * The daemon speaks this server's protocol but is another build than the package this server
+   * serves, older or newer: not blocking, "The daemon on X is not the one this Orchestrator
+   * provides" (05, section 3.3).
+   */
+  z.object({
+    type: z.literal('daemon_build_differs'),
+    machine: MachineRef,
+    daemonVersion: z.string(),
+    /** Null for a daemon run from its sources. */
+    daemonBuild: z.string().nullable(),
+    serverVersion: z.string(),
+    providedBuild: z.string(),
+    updateCommands: z.array(z.string()),
     since: z.iso.datetime(),
   }),
   /** Claude Code missing or below the minimum: the machine is unusable. */

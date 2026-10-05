@@ -11,7 +11,7 @@ import { registerAgentRoutes } from './agents/routes.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { createDatabase } from './database.js';
 import { GITHUB_API_URL, GITHUB_WEB_URL } from './github/client.js';
-import { registerDownloads, defaultDaemonPackageDir } from './downloads.js';
+import { registerDownloads, defaultDaemonPackageDir, providedDaemonBuild } from './downloads.js';
 import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
@@ -57,12 +57,15 @@ export function buildApp(dependencies: AppDependencies) {
   const { pool, logger } = dependencies;
   const db = createDatabase(pool);
   const app = Fastify({ loggerInstance: logger });
+  const daemonPackageDir = dependencies.daemonPackageDir ?? defaultDaemonPackageDir();
+  const providedBuild = () => providedDaemonBuild(daemonPackageDir);
   app.setErrorHandler(handleError);
   void app.register(cookie);
   const gateway = new DaemonGateway({
     db,
     log: logger,
     publicUrl: dependencies.publicUrl,
+    providedDaemonBuild: providedBuild,
     secondMs: dependencies.daemonSecondMs,
   });
   const key = deriveSecretKey(dependencies.secretKey);
@@ -106,10 +109,14 @@ export function buildApp(dependencies: AppDependencies) {
     }
   });
 
-  registerDownloads(app, dependencies.daemonPackageDir ?? defaultDaemonPackageDir());
+  registerDownloads(app, daemonPackageDir);
 
   app.get('/version', () => {
-    return { server: SERVER_VERSION, protocol: PROTOCOL_VERSION } satisfies VersionResponse;
+    return {
+      server: SERVER_VERSION,
+      protocol: PROTOCOL_VERSION,
+      daemonBuild: providedBuild(),
+    } satisfies VersionResponse;
   });
 
   void app.register((scope, _options, done) => {
@@ -129,7 +136,12 @@ export function buildApp(dependencies: AppDependencies) {
     registerTicketRoutes(scope, { db, runs, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
-    registerNeedsYouRoutes(scope, { db, publicUrl: dependencies.publicUrl, runs });
+    registerNeedsYouRoutes(scope, {
+      db,
+      publicUrl: dependencies.publicUrl,
+      providedDaemonBuild: providedBuild,
+      runs,
+    });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
     registerAccountRoutes(scope, { db });
@@ -138,6 +150,7 @@ export function buildApp(dependencies: AppDependencies) {
       gateway,
       runs,
       publicUrl: dependencies.publicUrl,
+      providedDaemonBuild: providedBuild,
       now: dependencies.now,
     });
     done();

@@ -412,6 +412,8 @@ export const machines = pgTable(
     /** Reported by the daemon in `hello`; null before its first connection. */
     os: text('os'),
     daemonVersion: text('daemon_version'),
+    /** Build identifier of the daemon package (05, section 2); null when none was reported. */
+    daemonBuild: text('daemon_build'),
     protocolVersion: integer('protocol_version'),
     claudeCodeVersion: text('claude_code_version'),
     /** `DoctorCheck[]` of the last accepted connection. */
@@ -423,6 +425,10 @@ export const machines = pgTable(
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     /** Since when the last `hello` was refused for its protocol version; cleared by an accepted one. */
     daemonIncompatibleSince: timestamp('daemon_incompatible_since', { withTimezone: true }),
+    /** Since when the daemon speaks the previous protocol (unusable), for "Needs you". */
+    daemonOutdatedSince: timestamp('daemon_outdated_since', { withTimezone: true }),
+    /** Since when its build differs from the package the server serves (a warning). */
+    daemonBuildDiffersSince: timestamp('daemon_build_differs_since', { withTimezone: true }),
     /** Since when Claude Code is missing or below the minimum, for "Needs you". */
     claudeCodeUnsupportedSince: timestamp('claude_code_unsupported_since', { withTimezone: true }),
     /** Since when `doctor` reports an error, for "Needs you". */
@@ -539,7 +545,7 @@ export const runs = pgTable(
     ),
     check(
       'runs_failure_reason',
-      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled')`,
+      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved')`,
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
     check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),

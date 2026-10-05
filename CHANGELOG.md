@@ -2,6 +2,14 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
+## 0.4.0 — in progress
+
+Lot 3, Full ticket lifecycle.
+
+- Machines: each daemon package now has a **build**, a short code that changes whenever the daemon's program changes, so two daemons with the same version number are told apart. `orchestrator-daemon --version` and `orchestrator-daemon status` show it, and the machine's page shows its build next to the build this Orchestrator provides. When they differ, the machine still gets runs, but its page and "Needs you" say "The daemon on … is not the one this Orchestrator provides", with the commands to update it. Help: "Machines" > "Update the daemon".
+- Machines: a 0.3.0 daemon connects to this Orchestrator but gets no runs, since it cannot do what this version needs: "Needs you" shows "Update the daemon on …", and the machine's page says why. Run now refuses the machine until it is updated.
+- Machines: "Update the daemon on …" now gives the five commands that update a daemon installed as a service, with your Orchestrator's address filled in, ready to copy: stop the service, uninstall, install again from the Orchestrator (downloading it again even when the version number is the same), install the service, check the machine. Help: "Machines" > "Update the daemon".
+
 ## 0.3.0 — 2026-10-03
 
 Lot 2, Machines and manual runs: add your Claude accounts and machines, start an agent on a ticket with **Run now**, watch it work live, answer its questions, accept or reject the tickets it proposes, and check its finished work and its commits on the ticket's branch. The scheduler, pull requests and CI come in the next versions.

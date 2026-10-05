@@ -11,7 +11,8 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
-import { daemonInstallCommand, doctorErrors, toAccount } from './machines/model.js';
+import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.js';
+import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import type { RunService } from './runs/service.js';
 import { profileLinks, toComment } from './tickets/model.js';
@@ -126,7 +127,17 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
  */
 export function registerNeedsYouRoutes(
   app: FastifyInstance,
-  { db, publicUrl, runs }: { db: Database; publicUrl: string; runs: RunService },
+  {
+    db,
+    publicUrl,
+    providedDaemonBuild,
+    runs,
+  }: {
+    db: Database;
+    publicUrl: string;
+    providedDaemonBuild: () => string | null;
+    runs: RunService;
+  },
 ) {
   app.get('/api/needs-you', async (request) => {
     await requireSession(db, request);
@@ -164,8 +175,35 @@ export function registerNeedsYouRoutes(
           machine: ref,
           daemonVersion: machine.daemonVersion,
           protocolVersion: machine.protocolVersion,
-          updateCommand: daemonInstallCommand(publicUrl),
+          updateCommands: daemonUpdateCommands(publicUrl),
           since: machine.daemonIncompatibleSince.toISOString(),
+        });
+      }
+      if (machine.daemonOutdatedSince && machine.daemonVersion !== null) {
+        items.push({
+          type: 'daemon_outdated',
+          machine: ref,
+          daemonVersion: machine.daemonVersion,
+          serverVersion: SERVER_VERSION,
+          updateCommands: daemonUpdateCommands(publicUrl),
+          since: machine.daemonOutdatedSince.toISOString(),
+        });
+      }
+      const providedBuild = providedDaemonBuild();
+      if (
+        machine.daemonBuildDiffersSince &&
+        machine.daemonVersion !== null &&
+        providedBuild !== null
+      ) {
+        items.push({
+          type: 'daemon_build_differs',
+          machine: ref,
+          daemonVersion: machine.daemonVersion,
+          daemonBuild: machine.daemonBuild,
+          serverVersion: SERVER_VERSION,
+          providedBuild,
+          updateCommands: daemonUpdateCommands(publicUrl),
+          since: machine.daemonBuildDiffersSince.toISOString(),
         });
       }
       if (machine.claudeCodeUnsupportedSince) {

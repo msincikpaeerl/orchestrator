@@ -45,6 +45,9 @@ export const failureText: Record<FailureReason, string> = {
   claude_code_unsupported: "its machine's Claude Code was missing or too old",
   machine_problem: 'its machine could not start Claude Code in a process scope',
   cancelled: 'it was cancelled',
+  ci_failed: 'CI failed more times than the run allows',
+  ci_timeout: 'CI did not finish in time',
+  review_branch_moved: 'the branch changed during the review',
 };
 
 export const pauseText: Record<PauseReason, string> = {

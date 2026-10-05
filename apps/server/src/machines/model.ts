@@ -6,7 +6,10 @@ import {
   Capability,
   DoctorCheck,
   MachineOs,
+  PROTOCOL_VERSION,
   claudeCodeSupport,
+  daemonPackageFileName,
+  daemonUpdateCommands as updateCommandsFor,
   type ClaudeAccount,
   type Machine,
   type MachineCapability,
@@ -109,6 +112,15 @@ export function unusableReasons(row: MachineRow): UnusableReason[] {
   if (row.daemonVersion === null) return [];
   const reasons: UnusableReason[] = [];
   const support = claudeCodeSupport(row.claudeCodeVersion);
+  if (row.daemonOutdatedSince !== null) {
+    reasons.push({
+      type: 'daemon_outdated',
+      daemonVersion: row.daemonVersion,
+      protocolVersion: row.protocolVersion ?? 0,
+      serverVersion: SERVER_VERSION,
+      serverProtocolVersion: PROTOCOL_VERSION,
+    });
+  }
   if (support === 'missing' || support === 'below_minimum') {
     reasons.push({
       type: 'claude_code_unsupported',
@@ -126,7 +138,12 @@ export function toMachine(
   row: MachineRow,
   account: Pick<AccountRow, 'id' | 'label'>,
   publicUrl: string,
+  providedBuild: string | null,
 ): Machine {
+  const update =
+    row.daemonIncompatibleSince !== null ||
+    row.daemonOutdatedSince !== null ||
+    row.daemonBuildDiffersSince !== null;
   const lists = capabilityLists(row);
   const state = machineState(row);
   return {
@@ -138,8 +155,11 @@ export function toMachine(
     os: row.os === null ? null : MachineOs.parse(row.os),
     daemonVersion: row.daemonVersion,
     protocolVersion: row.protocolVersion,
+    daemonBuild: row.daemonBuild,
+    providedDaemonBuild: providedBuild,
+    daemonBuildDiffers: row.daemonBuildDiffersSince !== null,
     daemonIncompatible: row.daemonIncompatibleSince !== null,
-    updateCommand: row.daemonIncompatibleSince === null ? null : daemonInstallCommand(publicUrl),
+    updateCommands: update ? daemonUpdateCommands(publicUrl) : null,
     claudeCodeVersion: row.claudeCodeVersion,
     claudeCodeSupport: row.daemonVersion === null ? null : claudeCodeSupport(row.claudeCodeVersion),
     lastHeartbeatAt: row.lastHeartbeatAt?.toISOString() ?? null,
@@ -161,7 +181,12 @@ export function toMachine(
 /** Installs the daemon of the server's own version from the server (05, section 2). */
 export function daemonInstallCommand(publicUrl: string): string {
   const base = publicUrl.replace(/\/+$/, '');
-  return `npm install -g ${base}/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`;
+  return `npm install -g ${base}/downloads/${daemonPackageFileName(SERVER_VERSION)}`;
+}
+
+/** Help > Machines > "Update the daemon": to the package of the server's own version (05, section 2). */
+export function daemonUpdateCommands(publicUrl: string): string[] {
+  return updateCommandsFor(publicUrl, SERVER_VERSION);
 }
 
 /** The server's base address, as given to `orchestrator-daemon enroll`. */

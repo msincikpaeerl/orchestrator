@@ -21,8 +21,18 @@ export const McpErrorCode = z.enum([
 ]);
 export type McpErrorCode = z.infer<typeof McpErrorCode>;
 
-/** Checks of the lot 2 submission (04, section 3.1), named in `DOD_FAILED` details. */
-export const DodCheck = z.enum(['criteria_met', 'worktree_clean', 'commits_ahead']);
+/** Checks of the submission (04, section 3.1), named in `DOD_FAILED` details. */
+export const DodCheck = z.enum([
+  'criteria_met',
+  'worktree_clean',
+  'commits_ahead',
+  /** The daemon pushed the branch to GitHub (lot 3). */
+  'pushed',
+  /** Where the ticket type requires them, tests or documentation listed or justified (lot 3). */
+  'type_rules',
+  /** Every path the report lists is changed on the branch (lot 3). */
+  'paths_changed',
+]);
 export type DodCheck = z.infer<typeof DodCheck>;
 
 /** One problem of a refused call, written for the agent. */

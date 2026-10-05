@@ -19,7 +19,9 @@ import { CapabilitiesEditor } from '../machines/capabilities';
 import { Command } from '../machines/command';
 import { EnrollmentSteps } from '../machines/enrollment';
 import {
+  buildText,
   claudeCodeText,
+  daemonUpdateText,
   doctorStatusLabel,
   osLabel,
   RESTART_COMMAND,
@@ -40,23 +42,24 @@ const doctorLook: Record<Machine['doctor'][number]['status'], string> = {
 /** What keeps the machine from working, and how to fix it (02, section 4). */
 function Problems({ machine }: { machine: Machine }) {
   if (machine.state === 'revoked') return null;
+  const update = daemonUpdateText(machine);
+  // A daemon to update is explained with its commands; the other reasons are fixed on the machine.
+  const unusable = machine.unusable.filter((reason) => reason.type !== 'daemon_outdated');
   return (
     <>
-      {machine.updateCommand !== null && (
+      {update !== null && machine.updateCommands !== null && (
         <WarningMessage>
-          <span className="block font-medium">
-            The daemon on this machine does not match this version of the Orchestrator, so it cannot
-            connect. On the machine, install the daemon of this version:
+          <span className="block font-medium">{update}</span>
+          <Command command={machine.updateCommands.join('\n')} label="Update commands" />
+          <span className="mt-2 block">
+            <HelpLink page="machines#update-the-daemon">What these commands do</HelpLink>
           </span>
-          <Command command={machine.updateCommand} label="Update command" />
-          <span className="mt-2 block">Then restart the daemon:</span>
-          <Command command={RESTART_COMMAND} label="Restart command" />
         </WarningMessage>
       )}
-      {machine.unusable.length > 0 && (
+      {unusable.length > 0 && (
         <WarningMessage>
           <span className="block font-medium">This machine cannot receive runs:</span>
-          {machine.unusable.map((reason) => (
+          {unusable.map((reason) => (
             <span
               key={reason.type === 'doctor_error' ? reason.check.name : reason.type}
               className="block"
@@ -80,6 +83,18 @@ function Details({ machine }: { machine: Machine }) {
     ['Claude account', machine.account.label],
     ['System', machine.os === null ? null : osLabel[machine.os]],
     ['Daemon version', machine.daemonVersion],
+    [
+      'Daemon build',
+      machine.daemonVersion === null
+        ? null
+        : buildText(machine.daemonBuild, machine.protocolVersion),
+    ],
+    [
+      'Build this Orchestrator provides',
+      machine.daemonVersion === null
+        ? null
+        : (machine.providedDaemonBuild ?? 'None (its daemon package is not built)'),
+    ],
     ['Claude Code version', machine.daemonVersion === null ? null : claudeCode.text],
     [
       'Last heard from',

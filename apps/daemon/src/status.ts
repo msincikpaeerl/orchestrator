@@ -5,6 +5,7 @@ import { Git } from './git.js';
 import { describeLastStop, readLastStop } from './last-stop.js';
 import { localBranches } from './local-branches.js';
 import type { DaemonPaths } from './paths.js';
+import { versionText } from './version.js';
 
 const CONNECTION_TEXT = {
   connected: 'connected',
@@ -85,7 +86,7 @@ export async function status(
   }
   const s = probe.status;
   out(
-    `Daemon ${s.daemonVersion} running ${s.mode === 'service' ? 'as the service' : 'in a terminal'} (process ${String(s.pid)}, since ${new Date(s.startedAt).toLocaleString()}).`,
+    `Daemon ${versionText(s.daemonVersion, s.daemonBuild)} running ${s.mode === 'service' ? 'as the service' : 'in a terminal'} (process ${String(s.pid)}, since ${new Date(s.startedAt).toLocaleString()}).`,
   );
   out(`Machine: ${s.machineName}`);
   out(`Orchestrator: ${s.serverUrl}`);
