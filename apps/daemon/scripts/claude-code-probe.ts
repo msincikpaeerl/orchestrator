@@ -230,6 +230,7 @@ function session(layout: Layout, name: 'probe' | 'control', model: string): stri
     mcpConfig,
     runMcpConfig(name, selfCommand, {
       claudeCodeMcpToolTimeoutSeconds: SETTINGS.claudeCodeMcpToolTimeoutSeconds.default,
+      pushTimeoutSeconds: SETTINGS.pushTimeoutSeconds.default,
     } as Parameters<typeof runMcpConfig>[2]),
   );
   // The daemon's user settings; the control session adds its made-up key there too.

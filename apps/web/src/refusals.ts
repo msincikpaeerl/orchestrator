@@ -123,6 +123,16 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     const total = count(product.firstValue * product.secondValue);
     return `${first} times ${second} is ${total} ${product.unit}, above the ${count(product.max)} ${product.unit} a run's first message has room for. Lower one of them.`;
   },
+  setting_sum_invalid: ({ settingSum: sum }) => {
+    if (!sum) {
+      return 'This value would make two limits together too long for a third one. Check them and try again.';
+    }
+    const [first, second] = sum.parts.map(
+      (part) => `${SETTINGS[part.name].label} (${amount(part.name, part.value)})`,
+    );
+    const below = `${SETTINGS[sum.below.name].label} (${amount(sum.below.name, sum.below.value)})`;
+    return `${first ?? ''} plus ${second ?? ''} must be less than ${below}. Change one of them first, or choose another value.`;
+  },
   account_not_found: () => 'This Claude account no longer exists. Reload the page.',
   account_label_taken: () =>
     'Another Claude account already has this label. Choose a different label.',

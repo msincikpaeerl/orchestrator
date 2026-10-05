@@ -173,6 +173,7 @@ function session(layout: Layout, model: string): string[] {
     mcpConfig,
     runMcpConfig(SESSION, selfCommand, {
       claudeCodeMcpToolTimeoutSeconds: SETTINGS.claudeCodeMcpToolTimeoutSeconds.default,
+      pushTimeoutSeconds: SETTINGS.pushTimeoutSeconds.default,
     } as Parameters<typeof runMcpConfig>[2]),
   );
   writeUserSettings(layout.claudeConfig);

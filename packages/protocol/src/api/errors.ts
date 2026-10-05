@@ -56,6 +56,8 @@ export const ApiErrorCode = z.enum([
   'setting_order_invalid',
   /** The value would put a pair of `SETTING_PRODUCTS` above its ceiling; see `settingProduct`. */
   'setting_product_invalid',
+  /** The value would put the sum of `SETTING_SUMS` too high; see `settingSum`. */
+  'setting_sum_invalid',
   'account_not_found',
   /** Another account has this label (without regard to case). */
   'account_label_taken',
@@ -135,6 +137,13 @@ export const ApiError = z.object({
         secondValue: z.int(),
         max: z.int().positive(),
         unit: z.string(),
+      })
+      .optional(),
+    /** `setting_sum_invalid`: the two settings added, the one their sum must stay below, values. */
+    settingSum: z
+      .object({
+        parts: z.array(z.object({ name: SettingName, value: z.int() })).length(2),
+        below: z.object({ name: SettingName, value: z.int() }),
       })
       .optional(),
     /** `run_not_possible`: why **Run now** or **Resume** cannot start. */

@@ -314,6 +314,18 @@ const definitions = {
     perProject: false,
     usedFrom: '0.3.0',
   },
+  pushTimeoutSeconds: {
+    group: 'runs',
+    label: 'Longest push',
+    description:
+      "How long a machine lets one fetch from GitHub or one push of a ticket branch take before stopping it. The MCP call timeout plus this limit must stay below the Claude Code MCP tool timeout, since the push at submission happens inside the agent's tool call.",
+    unit: 'seconds',
+    min: 10,
+    max: 600,
+    default: 60,
+    perProject: false,
+    usedFrom: '0.4.0',
+  },
   dispatchAckTimeoutSeconds: {
     group: 'runs',
     label: 'Machine answer timeout',
@@ -490,6 +502,26 @@ export const SETTING_PRODUCTS: readonly SettingProduct[] = [
     second: 'acceptanceCriterionMaxLength',
     max: FIRST_MESSAGE_CRITERIA_MAX_CHARACTERS,
     unit: 'characters',
+  },
+];
+
+/**
+ * Settings whose sum must stay below another setting (04, section 8): the `parts` added together
+ * are strictly below `below`. A change or reset breaking it is refused with
+ * `setting_sum_invalid`, naming the three settings and their values. All are global only.
+ */
+export interface SettingSum {
+  parts: readonly [SettingName, SettingName];
+  below: SettingName;
+}
+
+export const SETTING_SUMS: readonly SettingSum[] = [
+  // The push at submission happens inside the agent's `ticket_submit` call, before the machine
+  // waits for the Orchestrator's answer: both fit in Claude Code's wait (owner's decision, lot 3
+  // step D).
+  {
+    parts: ['mcpCallTimeoutSeconds', 'pushTimeoutSeconds'],
+    below: 'claudeCodeMcpToolTimeoutSeconds',
   },
 ];
 

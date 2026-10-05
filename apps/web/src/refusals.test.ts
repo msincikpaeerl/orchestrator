@@ -56,6 +56,31 @@ describe('refusalText', () => {
     );
   });
 
+  it('names the three settings of a sum that must stay below a third one', () => {
+    const error = new ApiRequestError(
+      409,
+      'setting_sum_invalid',
+      'x',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        parts: [
+          { name: 'mcpCallTimeoutSeconds', value: 30 },
+          { name: 'pushTimeoutSeconds', value: 90 },
+        ],
+        below: { name: 'claudeCodeMcpToolTimeoutSeconds', value: 120 },
+      },
+    );
+    expect(refusalText(error)).toBe(
+      'MCP call timeout (30 seconds) plus Longest push (90 seconds) must be less than Claude Code MCP tool timeout (120 seconds). Change one of them first, or choose another value.',
+    );
+  });
+
   it('states the rule of a pair that must be at least twice the other', () => {
     const error = new ApiRequestError(
       409,

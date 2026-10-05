@@ -3,6 +3,7 @@ import {
   inOrder,
   SETTING_ORDER,
   SETTING_PRODUCTS,
+  SETTING_SUMS,
   SETTINGS,
   SettingName,
   type SettingValues,
@@ -205,6 +206,35 @@ export async function changeSetting(
   else await storeSetting(tx, name, target, value);
   await checkOrder(tx, name, target.projectId);
   await checkProducts(tx, name);
+  await checkSums(tx, name);
+}
+
+/**
+ * After a change or reset of `name`, in its transaction: refuses it when the parts of a
+ * `SETTING_SUMS` rule no longer add up to less than its limit (04, section 8).
+ */
+async function checkSums(tx: Executor, name: SettingName) {
+  for (const sum of SETTING_SUMS) {
+    const [first, second] = sum.parts;
+    if (name !== first && name !== second && name !== sum.below) continue;
+    const values = await resolveSettings(tx, [first, second, sum.below]);
+    const total = values[first] + values[second];
+    if (total < values[sum.below]) continue;
+    throw new HttpError(
+      409,
+      'setting_sum_invalid',
+      `${first} (${String(values[first])}) plus ${second} (${String(values[second])}) must be below ${sum.below} (${String(values[sum.below])})`,
+      {
+        settingSum: {
+          parts: [
+            { name: first, value: values[first] },
+            { name: second, value: values[second] },
+          ],
+          below: { name: sum.below, value: values[sum.below] },
+        },
+      },
+    );
+  }
 }
 
 /**

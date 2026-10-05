@@ -579,6 +579,7 @@ export class RunService {
       'sessionStartTimeoutSeconds',
       'mcpCallTimeoutSeconds',
       'claudeCodeMcpToolTimeoutSeconds',
+      'pushTimeoutSeconds',
       'dispatchAckTimeoutSeconds',
     ]);
 
@@ -866,6 +867,7 @@ export class RunService {
             sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
             mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
             claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
+            pushTimeoutSeconds: settings.pushTimeoutSeconds,
           },
           resumeSessionId: null,
         },

@@ -20,6 +20,8 @@ export class ApiRequestError extends Error {
     readonly settingProduct?: ApiError['error']['settingProduct'],
     /** Why **Run now** or **Resume** cannot start, for `run_not_possible`. */
     readonly runRefusal?: ApiError['error']['runRefusal'],
+    /** The three settings of a sum too large, for `setting_sum_invalid`. */
+    readonly settingSum?: ApiError['error']['settingSum'],
   ) {
     super(message);
   }
@@ -67,6 +69,7 @@ export async function api<T>(
       setting,
       settingProduct,
       runRefusal,
+      settingSum,
     } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
     throw new ApiRequestError(
@@ -80,6 +83,7 @@ export async function api<T>(
       setting,
       settingProduct,
       runRefusal,
+      settingSum,
     );
   }
   if (schema === null) return undefined as T;

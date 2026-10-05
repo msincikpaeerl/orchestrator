@@ -16,6 +16,7 @@ export class HttpError extends Error {
       | 'cycle'
       | 'settingOrder'
       | 'settingProduct'
+      | 'settingSum'
       | 'setting'
       | 'retryAfterSeconds'
       | 'runRefusal'
