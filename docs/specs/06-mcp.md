@@ -76,7 +76,7 @@ An agent can read anything in its own project. It can only change **its own tick
 | `ticket.comments` | Comments of a ticket, oldest first, including questions and answers, a page at a time like `ticket.list`. Defaults to the run's ticket. |
 | `request.get` | The request being planned, with its comments (planning runs). *(Lot 5.)* |
 | `agent.list` | Available agent profiles with their role and description, so tickets can be assigned. |
-| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). *(Lot 3.)* |
+| `ci.status` | CI status of the run's pull request, with the log excerpt of failed jobs. Read from GitHub Actions workflow runs, jobs and job logs, and from commit statuses: fine-grained tokens cannot use the Checks API (02, section 3.1). *(Lot 3.)* The result follows 04, section 3.1 (every workflow run of the head commit and its statuses; "No CI found"); each failed job lists its failed steps and the end of its log, cut to **Longest CI log excerpt**, and the whole output stays within `MCP_OUTPUT_MAX_CHARACTERS`, the longest excerpts cut further with a marker. Without a pull request it says so. All roles (owner's decision, lot 3 step A). |
 
 **Output size** (owner's decision, lot 2 step K). Claude Code refuses an MCP output above 25,000 tokens (`MAX_MCP_OUTPUT_TOKENS`), and a description or a comment can be up to 100,000 characters within the settings' ranges. A reading tool's output is therefore at most `MCP_OUTPUT_MAX_CHARACTERS`, 40,000 characters of JSON (about 10,000 tokens of English, with room for denser text), a constant in `packages/protocol` (04, section 8). A page holds whole items while they fit, always at least one; `ticket.list` returns at most 50 tickets per page. A single text above the budget (a description, a comment) is cut at a line boundary and followed by a marker saying how many characters were left out. With the default settings nothing is ever cut: the largest `ticket.get` (a 20,000-character description and 20 criteria of 500 characters) is about 32,000 characters.
 
@@ -87,7 +87,7 @@ An agent can read anything in its own project. It can only change **its own tick
 | `ticket.progress` | Short status line shown live in the UI ("Writing tests for the contact form"). Does not create a comment. Never refused for frequency: the server accepts every call, keeps the latest line and publishes it at most once per progress update interval (a setting, one minute by default, 04 section 8). The description tells the agent that calling more often is harmless but useless (owner's review, lot 2 step B). |
 | `ticket.comment` | Adds a `note` comment: findings, decisions, anything the owner or the next agent should know. |
 | `ticket.ask` | Asks the owner a question. The ticket moves to `waiting_human`. The agent should end its turn after calling it; the answer arrives as the next message. |
-| `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. The daemon pushes the branch, the server opens or updates the pull request and runs the checks. Returns either the list of failed checks, or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message. |
+| `ticket.submit` | Submits the work with the DoD report (see 04, section 3.1). In lot 2 it only runs the reduced checks of 04, section 3.1 and, when they pass, ends the run: nothing is pushed and the agent receives no CI result. From lot 3, the daemon pushes the branch, the server runs the checks of 04 section 3.1 and, when they pass, opens or updates the pull request. Returns either the list of failed checks (`DOD_FAILED`; nothing opened or updated), or `pending_ci`, in which case the agent ends its turn and receives the CI result as the next message only if CI fails; when CI passes, the run ends. Each submission after a CI failure is checked again from the start (owner's decisions, lot 3 step A). |
 | `ticket.give_up` | Declares that the ticket cannot be completed, with the reason (`reason`) and what was tried (`tried`). Both are posted as the agent's `note` on the ticket, so the owner and the next attempt read them, and the reason is kept as the run's outcome; when the turn ends, the run ends as failed, its `system` comment follows and the retry policy applies (04, section 5) (owner's decision, lot 2 step K). |
 
 Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
@@ -139,10 +139,10 @@ Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.g
 
 | Tool | Description |
 |---|---|
-| `review.approve` | Approves the ticket under review with a summary comment. The ticket moves to `awaiting_merge`. |
-| `review.request_changes` | Requests changes with a list of actionable points (optionally with file and line). The ticket returns to `todo` for a `fix_review` run. The points are also posted as a review on the GitHub pull request. |
+| `review.approve` | Approves the ticket under review with a summary comment. The ticket moves to `awaiting_merge`. The summary is also posted on the pull request. |
+| `review.request_changes` | Requests changes with a list of actionable points (optionally with file and line). Each point is posted as a `review` comment and the ticket returns to `todo` for a `fix_review` run (or stops after **Most review rounds per ticket**, 04 section 5). The points are also posted on the GitHub pull request. |
 
-The server rejects both tools when the reviewing profile is the one that implemented the ticket.
+The server rejects both tools when the reviewing profile is the one that implemented the ticket, and when the run is not a `review` run of a ticket in `in_review`. On GitHub each is posted as **one review of the "comment" kind**, the points in its body with `file:line` when given: GitHub refuses an approval or a request for changes on your own pull request (every pull request is the owner's), and refuses inline comments on lines outside the diff. When GitHub refuses the post, the decision stands, with an event and a note on the ticket page (owner's decisions, lot 3 step A).
 
 ## 5. Permissions by role
 
@@ -167,7 +167,8 @@ The server builds the first message of each run. It always states:
 - that a run must end with exactly one of `ticket.submit`, `ticket.ask` (then wait), or `ticket.give_up` (or `plan.propose` / review tools for planning and review runs);
 - that pushing to GitHub is done by the system, and the agent only commits;
 - where to find the project conventions (CLAUDE.md, docs, ADRs), and that the agent reads `CLAUDE.md` first: Claude Code does not load it on its own in a run (05, section 4.3);
-- that when a tool or command is refused, the agent must not look for a workaround: it uses `ticket.ask` to explain what it needs and why, or `ticket.give_up` if the ticket cannot be done without it.
+- that when a tool or command is refused, the agent must not look for a workaround and never asks the owner to allow it: if the ticket cannot be done without it, it says so in plain words with `ticket.ask` (something the owner can decide) or `ticket.give_up` (03, section 3; owner's decisions, lot 2 step N and lot 3 step A);
+- that tips Claude Code shows about its own commands (such as `/ultrareview`) are not for the agent and are ignored (owner's decision, lot 3 step A).
 
 The template for each purpose is versioned with the application and documented in [03 — Agents](03-agents.md).
 
@@ -175,6 +176,6 @@ The template for each purpose is versioned with the application and documented i
 
 The event log is for changes, and agents call the reading tools dozens of times per run, so not every call is an event (owner's decision, lot 2 step K):
 
-- a call that changes something writes the events of that change, in its transaction, with the actor `agent` and the profile and run in the payload: `ticket.comment` (`ticket.commented`), `ticket.ask` (`ticket.commented` and `ticket.status_changed`), `ticket.create` (`ticket.created`), `ticket.submit` when accepted (`ticket.submitted`), `ticket.give_up` (`ticket.commented`), and `ticket.progress` when a new line is shown (`run.progress`);
+- a call that changes something writes the events of that change, in its transaction, with the actor `agent` and the profile and run in the payload: `ticket.comment` (`ticket.commented`), `ticket.ask` (`ticket.commented` and `ticket.status_changed`), `ticket.create` (`ticket.created`), `ticket.submit` when accepted (`ticket.submitted`), `ticket.give_up` (`ticket.commented`), `review.approve` and `review.request_changes` (`ticket.commented` and `ticket.status_changed`), and `ticket.progress` when a new line is shown (`run.progress`); `ci.status` is a reading call;
 - a reading call (`project.get`, `ticket.get`, `ticket.list`, `ticket.comments`, `agent.list`) and a refused call write no event: they appear in the run's log, which shows every tool call and its result from the transcript (02, section 7);
 - the server logs every call (run, ticket, machine, tool, result code) in its own log.
