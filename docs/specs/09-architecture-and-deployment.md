@@ -123,7 +123,7 @@ Environment variables:
 | `PORT` | HTTP port (default 8080). |
 | `LOG_LEVEL` | Log verbosity. |
 
-Health endpoint `/health` for Docker health checks; `/version` returns server and protocol versions.
+Health endpoint `/health` for Docker health checks; `/version` returns server and protocol versions, and the build of the daemon package the server serves (null when it was not built; lot 3 step B).
 
 ### 7.2 Targets
 
