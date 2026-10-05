@@ -55,6 +55,13 @@ Run now in lot 2, precisely (owner's decisions, lot 2 step J):
 - **Resume** of a paused run is sent only to the run's own machine. When that machine is offline, disabled or unusable, Resume is refused with the named reason and the run stays `paused_quota`; **Stop run** still works. The run is `dispatched` while `run.resume` waits for its acknowledgement; without one within the dispatch acknowledgement timeout, the run returns to `paused_quota` with an event, no attempt is counted, and Resume can be tried again.
 - An account whose `limited_until` has passed is treated as `available` by Run now, Resume and the screens at once; the first action that reads it writes the change and its event (`account.available`).
 
+**Lot 3, before the loop exists** (owner's decisions, lot 3 step A):
+
+- **Run now** on a `todo` ticket starts a `fix_review` run when the ticket's latest request for changes (Quality's, or the owner's **Request changes**) came after its latest accepted submission, and an `implement` run otherwise. It refuses a ticket stopped by the retry policy (04, section 5), naming the setting and its value.
+- **Start review** on an `in_review` ticket with a pull request and no active review run starts a `review` run with the `quality` profile, through the same checks and machine selection; the ticket's assignee is not used. **Skip review** starts nothing.
+- **The machine holding the ticket's work** applies only to commits not on GitHub: once the ticket's branch head on GitHub is the last reported head, any suitable machine can take the run, which takes the branch from GitHub.
+- A run waiting for CI counts against its account's maximum concurrent runs (04, section 3.1). Lot 4 decides whether it still does once runs start by themselves.
+
 ## 4. Machine selection
 
 A machine can take a run when it is:
@@ -122,10 +129,10 @@ The owner can pause an account at any time from the UI or the "Needs you" view. 
 | Schedule windows | None (always) | Set on the account | Account |
 | Daily budget (working time or estimated usage) | None | Set on the account | Account |
 | Behaviour at window end | Finish current run | Set on the account | Account |
-| Fallback delay when reset time is unknown (doubles each time the limit is still reached) | 1 hour | 1 to 1,440 minutes | Global |
-| Longest fallback delay | 4 hours | 1 to 2,880 minutes | Global |
-| Dispatch acknowledgement timeout (also for runs started with **Run now**) | 60 seconds | 5 to 600 seconds | Global |
-| Scheduler tick | 30 seconds | 5 to 600 seconds | Global |
+| Quota wait when the reset time is unknown (`quotaFallbackDelayMinutes`; doubles each time the limit is still reached) | 1 hour | 1 to 1,440 minutes | Global |
+| Longest quota wait (`quotaFallbackMaxDelayMinutes`) | 4 hours | 1 to 2,880 minutes | Global |
+| Machine answer timeout (`dispatchAckTimeoutSeconds`; the dispatch acknowledgement timeout, also for runs started with **Run now**) | 60 seconds | 5 to 600 seconds | Global |
+| Scheduler check interval (`schedulerTickSeconds`) | 30 seconds | 5 to 600 seconds | Global |
 
 The longest fallback delay is never below the fallback delay: a change or a **Reset to default** that would make it so is refused, naming both settings.
 

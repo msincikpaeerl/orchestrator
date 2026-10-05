@@ -64,7 +64,7 @@ This document defines the six default agent profiles, how their instructions are
 
 **What an allowlist is for** (applies to every profile; owner's decision, lot 2 step I). The allowlist limits wasted turns and keeps agents on task: a command outside it is refused at once, and the agent asks instead of improvising. It is **not a security boundary**: `node`, `npx` and `pnpm` can run any code, and so can a project's own scripts. Isolation comes from the deny rules, the `PreToolUse` hook (05, section 4.6) and the limits of running under the owner's user (05, section 2, recommended setup). `WebFetch` and `WebSearch` let the agent read library documentation, and also expose it to instructions hidden in web pages (prompt injection); the deny rules and the hook limit what such instructions could make it do. Both points are in the Help, Machines > "Agents on your own user".
 
-**Lot 2 allowlist** of the Architect and the Web Developer (the same list, since a local dev server is a package manager script; owner's decision, lot 2 step I): `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ToolSearch`; Bash with `npm`, `npx`, `pnpm`, `yarn` and `node`; the local Git commands `status`, `diff`, `log`, `show`, `add`, `commit`, `rm`, `mv`, `restore`, `rev-parse` and `branch` (listing only: `git branch`, `--list`, `--show-current`); and the file commands `ls`, `mkdir`, `mv`, `cp`, `rm`, `cat`, `head`, `tail`, `wc`, `find`, `grep` and `sort`. The exact rules are in `agents/architect.md` and `agents/web_dev.md`.
+**Lot 2 allowlist** of the Architect and the Web Developer (the same list, since a local dev server is a package manager script; owner's decision, lot 2 step I): `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ToolSearch`; Bash with `npm`, `npx`, `pnpm`, `yarn` and `node`; the local Git commands `status`, `diff`, `log`, `show`, `add`, `commit`, `rm`, `mv`, `restore`, `rev-parse` and `branch` (listing only: `git branch`, `--list`, `--show-current`); and the file commands `ls`, `mkdir`, `mv`, `cp`, `rm`, `cat`, `head`, `tail`, `wc`, `find`, `grep` and `sort`. The exact rules are in `agents/architect.md` and `agents/web_dev.md`. Lot 3 adds `git merge`, so an agent can bring the base branch into its ticket branch (`git merge origin/<base>`, 04 section 4; owner's decision, lot 3 step A).
 
 ### 2.3 Web Developer (`web_dev`)
 
@@ -106,6 +106,8 @@ Same responsibilities as the Web Developer, for Android projects (Kotlin, Jetpac
 
 **Tools.** Read-only file tools. Bash limited to test, build, lint and read-only Git commands (`diff`, `log`, `show`).
 
+**Lot 3** (owner's decisions, lot 3 step A): model `sonnet`; the allowlist of the Architect and the Web Developer (section 2.2) without `Edit`, `Write`, the Git commands `add`, `commit`, `rm`, `mv` and `restore`, and the file commands `mkdir`, `mv`, `cp` and `rm`, so it keeps `npm`, `npx`, `pnpm`, `yarn` and `node` to install, build and test when it needs to. Its instructions say that CI already ran, so it does not run the test suite again unless the diff or the CI result gives a reason. A review run never pushes, and a moved branch head fails it (04, section 3.2). The owner starts a review with **Start review** or skips it with **Skip review** until the scheduler starts reviews (lot 4): a review costs one session, skipping none.
+
 ### 2.6 Technical Writer (`writer`)
 
 **Purpose.** Keep documentation complete, consistent and readable by someone who never reads the code.
@@ -143,9 +145,9 @@ Layers 1 and 2 are appended to Claude Code's system prompt. Layer 3 is the first
 | Purpose | Agent | First message asks the agent to |
 |---|---|---|
 | `plan` | pm | Read the request and the project, ask questions if needed, then propose a plan. |
-| `implement` | builder or writer | Implement the ticket, then submit. In lot 2, submitting records the report and ends the run, with no push or pull request (04, section 3.1). |
-| `fix_review` | same builder | Address each review point listed, then submit again. |
-| `review` | quality | Review the submitted work, then approve or request changes. |
+| `implement` | builder or writer | Implement the ticket, then submit. In lot 2, submitting records the report and ends the run, with no push or pull request (04, section 3.1). From lot 3, the CI result comes as the next message when CI fails (template `ci-failed`). |
+| `fix_review` | the ticket's assignee | Address each point of the latest review listed (Quality's `review` comments, or the owner's **Request changes** comment), on the same branch and pull request, then submit again. |
+| `review` | quality | Review the submitted work (the ticket, the DoD report, the CI result or "No CI found", earlier review points, the workflow files changed if any, and how to see the diff against the base branch), then approve or request changes. |
 
 The templates for these messages are stored with the application and versioned like the common rules. Lot 2 ships the common rules, the `implement` template and the Architect and Web Developer profiles; each later lot adds the profiles and templates it uses.
 
@@ -158,7 +160,9 @@ Every text sent to an agent comes from a **run message template** in `agents/`, 
 - the wrapping of the owner's answer to a question, whether delivered live (`run.input`) or after the waiting run lifetime (`run.resume`, 04 section 6);
 - the nudge sent when a turn ends without a decision (05, section 4.8). The server fills it in when it builds `run.start` and sends it in that payload; the daemon decides when to nudge but never holds agent-facing text of its own.
 
-Lot 2 ships these four: `implement`, continue after a pause, the owner's answer, and the nudge.
+Lot 2 ships these four: `implement`, continue after a pause, the owner's answer, and the nudge. Lot 3 adds `review`, `fix-review`, `ci-failed` (the CI result sent when CI fails, 04 section 3.1) and `pull-request` (the pull request's description; not sent to an agent, but filled in the same way). The common rules gain how to bring the base branch in (`git merge origin/<base>`, never a rebase, 04 section 4), and that tips Claude Code shows about its own commands (such as `/ultrareview`) are ignored (owner's decisions, lot 3 step A).
+
+**One exception**: the reasons the daemon's `PreToolUse` hook gives when it refuses a tool call are written in the daemon, because the hook must refuse correctly even when the server cannot be reached. Each reason that says what to do next ends with the same sentence as the common rules: "Do not ask the owner to allow it. If your ticket cannot be done without it, say so in plain words with `ticket_ask` or `ticket_give_up`." (05, section 4.6; owner's decision, lot 3 step A).
 
 **Size of the first message** (owner's decision, lot 2 step I). The first message is passed to Claude Code as one command-line argument (05, section 4.3), and Linux caps one argument at 128 KiB. So the filled-in message has a byte budget, `FIRST_MESSAGE_MAX_BYTES` in `packages/protocol`: a constant, not a setting, because it follows from the operating system's limit (as the reconnection backoff of 05, section 3.2). The ticket is always included in full (description, acceptance criteria, dependencies), and its comments are added from the newest to the oldest while they fit; the message then says how many earlier comments were left out and that `ticket_comments` returns them. If the ticket alone does not fit, its description is cut at a line boundary and followed by a visible marker telling the agent to read the rest with `ticket_get`.
 

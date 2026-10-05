@@ -72,7 +72,8 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Quality profile, review runs, `review.approve`, `review.request_changes`, `fix_review` runs.
 - Merge detection, `done` state; "Needs you" with pull requests to merge.
 - Failure handling and retry policy (04, section 5).
-- Decide whether the owner's **Request changes** from `in_review` (added in lot 2 step L2, 04 section 2) stays once Quality reviews `in_review` tickets.
+- Decide whether the owner's **Request changes** from `in_review` (added in lot 2 step L2, 04 section 2) stays once Quality reviews `in_review` tickets. *Decided in lot 3 step A*: it stays while no review run is active, and its next run is `fix_review` with the owner's comment as the point; reviews are started by the owner (**Start review**) or skipped (**Skip review**) until lot 4 (04 section 2, 07 section 3).
+- Protocol version 2 and the daemon's build identifier, with "Update the daemon" in Help (05 sections 2 and 3.3).
 
 **Done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -85,6 +86,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Schedule windows, daily budget, manual pause.
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).
+- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs.
 
 **Done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 

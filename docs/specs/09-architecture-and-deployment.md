@@ -75,7 +75,7 @@ docker/        Dockerfile and compose files
 | **Daemon gateway** | WebSocket endpoint for daemons: authentication, heartbeats, message routing, reconciliation (05, section 6). |
 | **MCP backend** | Executes MCP tool calls relayed by daemons: permission checks, transitions, DoD checks (06). |
 | **Scheduler** | Section 07. |
-| **GitHub integration** | Repository creation and skeleton commit, pull requests, review comments, CI status, merge detection. Polling every 60 seconds for tickets that wait on GitHub; no webhooks (00, section 6). |
+| **GitHub integration** | Repository creation and skeleton commit, pull requests, review comments, CI status, merge detection. Polling at the **GitHub check interval** (60 seconds by default, 04 section 8) for tickets that wait on GitHub: CI of a pending submission, open pull requests; no webhooks (00, section 6). |
 | **Event log** | Append-only events (01, section 3.10), feeding the activity views. |
 | **Settings** | Global and per-project settings with defaults (04, section 8). |
 | **Help** | Renders `docs/user/` inside the application. |
@@ -99,6 +99,7 @@ The server is a single process. Components are modules inside it, not separate s
 - The server, UI and daemon share one version number, released together.
 - The daemon protocol has its own version, sent in `hello`; lot 2 introduces version 1, also returned by `/version`. The server accepts the current and the previous protocol version and marks older daemons incompatible, with an update instruction in the UI.
 - From the 0.3.0 release on, any change a released daemon cannot understand raises `PROTOCOL_VERSION` (`packages/protocol`), in the same change: the version number of a release alone never tells the server what a daemon understands (owner's decision, lot 2 step N).
+- Lot 3 introduces protocol version 2 (05, section 3.3). A daemon of the previous protocol is accepted but marked **unusable** when it cannot do what the server's runs need ("Daemon 0.3.0 is older than this Orchestrator (0.4.0): update it", with the update commands). Each daemon package also carries a build identifier, sent in `hello` and compared with the bundle the server serves: a different build of the same protocol is a warning, not a block (05, section 2; owner's decisions, lot 3 step A).
 - Supported Claude Code versions (the minimum and the highest validated one) are declared once in `packages/protocol` and used by the daemon and the server (05, section 2). Unsupported versions make the machine unusable with a clear message; the connection stays open (05, section 3.2).
 
 ## 7. Deployment
