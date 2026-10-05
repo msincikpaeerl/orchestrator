@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lots 0, 1 and 2 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`). Lot 3 has no plan yet: wait for the owner's instructions, then follow `docs/dev/working-rules.md`. Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lots 0, 1 and 2 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`). Lot 3 (version 0.4.0) is planned in `docs/dev/lot-3-plan.md`: implement only its next unchecked step. Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
