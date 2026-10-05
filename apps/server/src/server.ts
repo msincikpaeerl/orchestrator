@@ -24,7 +24,10 @@ export interface RunningServer {
 export async function startServer(
   config: Pick<Config, 'databaseUrl' | 'port' | 'secretKey' | 'publicUrl'>,
   logger: FastifyBaseLogger,
-  options: Pick<AppDependencies, 'githubApiUrl' | 'webRoot' | 'daemonPackageDir'> = {},
+  options: Pick<
+    AppDependencies,
+    'githubApiUrl' | 'gitBaseUrl' | 'webRoot' | 'daemonPackageDir'
+  > = {},
 ): Promise<RunningServer> {
   const pool = createPool({ connectionString: config.databaseUrl });
   reportConnectionErrors(pool, (error) => {

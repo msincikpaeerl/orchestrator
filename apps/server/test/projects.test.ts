@@ -592,14 +592,18 @@ describe('linking an existing repository', () => {
   it('checks the harness elements again on request', async () => {
     await create(linkLegacy);
     const first = await settled('LEG');
-    const legacy = repository('legacy');
-    legacy.git = undefined;
-    legacy.files = {
-      'CLAUDE.md': '# Legacy',
-      'docs/user/a.md': 'A',
-      'docs/dev/setup.md': 'Setup',
-      '.github/workflows/ci.yml': 'name: ci',
-    };
+    // The owner adds files on GitHub.
+    github.commit(
+      repository('legacy'),
+      'main',
+      {
+        'CLAUDE.md': '# Legacy',
+        'docs/user/a.md': 'A',
+        'docs/dev/setup.md': 'Setup',
+        '.github/workflows/ci.yml': 'name: ci',
+      },
+      'Add the harness files',
+    );
 
     const response = await call('POST', '/api/projects/LEG/harness/check');
     expect(response.statusCode, response.body).toBe(200);
