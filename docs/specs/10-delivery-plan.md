@@ -86,7 +86,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Schedule windows, daily budget, manual pause.
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).
-- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs.
+- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs. Decide whether agents running under a separate system user from the daemon (lot 7) comes before runs start without the owner (owner's decision, lot 3 step D1).
 
 **Done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -123,6 +123,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Harness check tickets (08, section 7).
 - Browser notifications.
 - Secret masking in transcripts, audit of permissions, dependency audit in CI.
+- Agents run under a separate system user from the daemon (05, section 7.2): today an agent runs as the daemon's user, so it can read the daemon's machine token and ask the server for the GitHub credential of an active run. Lot 4's plan decides whether to bring this forward, since runs then start without the owner (owner's decision, lot 3 step D1).
 - Trust the forwarded client address from a configured reverse proxy, for login throttling (see ADR 0015).
 - Point to settle: whether the server's shutdown forces busy HTTP connections closed after a grace period. Since lot 2 step L1, SIGTERM ends the realtime streams at once and the server exits in milliseconds, but a response still being sent (for example a daemon package download the client stops reading) keeps the close waiting until Docker kills the process, 10 seconds by default; PostgreSQL rolls back any write interrupted by the kill. Left unchanged in lot 2 (owner's decision, review of step L1).
 

@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B and C done; step D split into D1, D2 and D3)
+> Status: in progress (steps A, B, C and D1 done; step D split into D1, D2 and D3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -207,7 +207,7 @@ Split approved by the owner on 2026-10-06. The token is used by the daemon, unde
 
 What stays open, written in 05 section 7 and Help: an agent runs as the owner's user. It can read the daemon's machine token (`~/.orchestrator/config.json`) and connect to the server in the daemon's place, and a process it leaves running can read the environment of Git processes started at the same time. A stolen GitHub token allows writing to and administering every repository of the owner's account (`docs/user/github-token.md` asks for "All repositories" and Administration). The fix, agents running under a separate system user from the daemon, is in lot 7's scope (10); lot 4's plan decides whether to bring it forward.
 
-### [ ] D1. Credentialed Git isolated, and the push at submission
+### [x] D1. Credentialed Git isolated, and the push at submission
 
 - **The isolated credentialed command** (05 section 7), used by every fetch and push:
   - a new bare repository per command in the run folder (`git init --bare --template=`), with a random name, removed afterwards. Its configuration is written by the daemon only. It borrows the bare clone's objects through `objects/info/alternates`, and `core.alternateRefsCommand` is set to a shell built-in that prints nothing, so Git never starts `for-each-ref` in the bare clone. The commits it already has come from refs the daemon writes into it before a fetch (`refs/orchestrator/have/*`, read from the bare clone by a local command without the credential);
@@ -233,6 +233,16 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - a push stopped at **Longest push** reported `unreachable`, its process group gone; the settings rule refusing a sum too large;
 - the server refusing a push credential for a run of another machine, another repository, a review run and a finished run;
 - every feature used exists in Git 2.40 (doctor's minimum), checked against Git's release notes and recorded in 05.
+
+*Done 2026-10-06.* Choices made in the step:
+
+- `HOME=/nonexistent` instead of an empty private folder: the owner's user cannot create it, so nothing can be planted in it while a command runs.
+- `maintenance.auto=false` matters: without it a fetch starts `git maintenance run --auto --detach`, a detached process holding the credential's variables.
+- A `file://` URL (the runner tests' remotes) runs in the isolated repository without a credential helper; `http` is allowed only to a loopback address.
+- The bare clone's `remote.origin.url` and `credential.helper` are now set with `--replace-all`: an agent adding a second value made preparation fail ("has multiple values").
+- `credential-leaks.test.ts` removes the test home's proxy variables, because `no_proxy` made curl ignore a planted proxy and hid the attack: the two lot 2 regression tests were checked to fail with `main`'s daemon (the planted proxy received `x-access-token:<token>`; the planted askpass got the token from the socket). With the isolated command allowed to read the global configuration, 6 of the 9 cases fail.
+- A fetch after one new commit brings at most 4 objects: `index-pack --fix-thin` adds the delta base of the new tree.
+- Not run on Git 2.40 itself: the versions are checked against Git's release notes (05 section 7.1).
 
 ### [ ] D2. Run ends, reviews and preparation
 
