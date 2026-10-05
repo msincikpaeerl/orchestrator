@@ -160,10 +160,14 @@ export function createGitHttpHandler(options: {
   };
 }
 
-/** Serves the repositories under `root` to `username` and `password` only. */
+/**
+ * Serves the repositories under `root` to `username` and `password` only. `delayMs` holds each
+ * request that long first, for tests that watch a command while it runs.
+ */
 export async function startGitHttpServer(
   root: string,
   credential: { username: string; password: string },
+  options: { delayMs?: number } = {},
 ): Promise<GitHttpServer> {
   const requests: GitHttpServer['requests'] = [];
   const handler = createGitHttpHandler({
@@ -187,7 +191,13 @@ export async function startGitHttpServer(
       authenticated:
         sent?.username === credential.username && sent.password === credential.password,
     });
-    handler.handle(request, response);
+    if (options.delayMs) {
+      setTimeout(() => {
+        handler.handle(request, response);
+      }, options.delayMs);
+    } else {
+      handler.handle(request, response);
+    }
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;

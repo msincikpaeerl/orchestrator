@@ -10,6 +10,10 @@
 //   configuration (`createTestHome`) rewrites github.com URLs to `REAL_GITHUB_BLOCKED_URL`, a
 //   closed local port, so Git fails with "Failed to connect to 127.0.0.1 port 9" and the URL
 //   names the reason.
+// - The daemon's fetches and pushes (lot 3 step D): they read no Git configuration of the test
+//   home, by design (05, section 7), but keep the proxy variables of the daemon's environment.
+//   Every test home sets `REAL_GITHUB_PROXY_ENV`: any address except the loopback ones goes
+//   through a proxy where nothing listens.
 
 /** Where Git sends github.com URLs in a test home: nothing listens on port 9. */
 export const REAL_GITHUB_BLOCKED_URL = 'http://127.0.0.1:9/a-test-tried-to-reach-github.com/';
@@ -22,6 +26,14 @@ export const REAL_GITHUB_GIT_CONFIG = [
   ),
   '',
 ].join('\n');
+
+/** Proxy variables of every test home: only loopback addresses are reached directly. */
+export const REAL_GITHUB_PROXY_ENV = {
+  http_proxy: 'http://127.0.0.1:9',
+  https_proxy: 'http://127.0.0.1:9',
+  all_proxy: 'http://127.0.0.1:9',
+  no_proxy: 'localhost,127.0.0.1,127.0.0.2,::1',
+};
 
 const REAL_GITHUB_HOST = /(^|\.)(github\.com|githubusercontent\.com)$/i;
 

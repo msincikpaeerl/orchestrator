@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { pino, type Logger } from 'pino';
 import { findExecutable } from '../src/exec.js';
 import { daemonPaths, type DaemonPaths } from '../src/paths.js';
-import { REAL_GITHUB_GIT_CONFIG } from './real-github-guard.js';
+import { REAL_GITHUB_GIT_CONFIG, REAL_GITHUB_PROXY_ENV } from './real-github-guard.js';
 
 export { TMUX_SOCKET_NAME } from '../src/paths.js';
 
@@ -52,6 +52,10 @@ export async function createTestHome(): Promise<TestHome> {
     PATH: [bin, dirname(process.execPath)].join(delimiter),
     LANG: 'C.UTF-8',
     LOG_LEVEL: 'info',
+    // The daemon's credentialed Git commands read no Git configuration of the test home, so its
+    // github.com rewrite does not reach them: every address but the local ones goes through a
+    // proxy where nothing listens (working rule 9; `real-github-guard.ts`).
+    ...REAL_GITHUB_PROXY_ENV,
   };
   await mkdir(env.HOME ?? '', { recursive: true });
   // Git reads `$XDG_CONFIG_HOME/git/config` besides `~/.gitconfig`, which some tests write.

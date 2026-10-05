@@ -100,6 +100,8 @@ export const CredentialSocketRequest = z.object({
   key: requiredText(),
   protocol: z.string(),
   host: z.string(),
+  /** The repository path Git asks for (`credential.useHttpPath`), without the leading `/`. */
+  path: z.string(),
 });
 export type CredentialSocketRequest = z.infer<typeof CredentialSocketRequest>;
 

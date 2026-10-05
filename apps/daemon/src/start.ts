@@ -76,7 +76,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     new Promise((resolve) => {
       const run = runs.get(request.runId);
       if (!run) {
-        resolve(null);
+        resolve({ ok: false, message: 'The run is not on this machine.' });
         return;
       }
       const id = randomUUID();
@@ -84,13 +84,15 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       const timer = setTimeout(() => {
         credentialAnswers.delete(id);
         log.warn({ runId: request.runId }, 'no Git credential from the Orchestrator in time');
-        resolve(null);
+        resolve({
+          ok: false,
+          message: `The Orchestrator did not answer within the MCP call timeout (${String(timeoutSeconds)} seconds).`,
+        });
       }, timeoutSeconds * 1000);
       credentialAnswers.set(id, (answer) => {
         clearTimeout(timer);
         credentialAnswers.delete(id);
-        if (answer && !answer.ok) log.warn({ runId: request.runId }, answer.message);
-        resolve(answer?.ok ? { username: answer.username, password: answer.password } : null);
+        resolve(answer ?? { ok: false, message: 'The Orchestrator could not be reached.' });
       });
       if (!connection?.sendMessage({ type: 'git.credential_request', id, payload: request })) {
         credentialAnswers.get(id)?.(null);

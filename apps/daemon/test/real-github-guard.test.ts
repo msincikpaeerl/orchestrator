@@ -1,9 +1,18 @@
 import { execFile } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Git } from '../src/git.js';
+import { isolatedFetch } from '../src/isolated-git.js';
 import { REAL_GITHUB_BLOCKED_URL, takeRealGitHubAttempts } from './real-github-guard.js';
-import { createTestHome, linkSystemTool, type TestHome } from './testing.js';
+import {
+  DAEMON_COMMAND,
+  captureLogger,
+  createTestHome,
+  linkSystemTool,
+  type TestHome,
+} from './testing.js';
 
 // Working rule 9: what a test that tries to reach the real GitHub gets. The root vitest.setup.ts
 // installs the fetch guard in every test file and fails a test after it tried; here the attempts
@@ -48,5 +57,38 @@ describe('the real GitHub guard', () => {
     );
     expect(failure).toContain(REAL_GITHUB_BLOCKED_URL);
     expect(failure).toMatch(/Failed to connect to 127\.0\.0\.1 port 9|Could not connect/);
+  });
+
+  it("sends the daemon's credentialed Git, which reads no test home configuration, to a dead proxy", async () => {
+    const git = new Git(join(home.bin, 'git'), home.env);
+    const bare = join(home.root, 'bare.git');
+    await git.run(['init', '--quiet', '--bare', bare]);
+    const folder = join(home.root, 'run');
+    await mkdir(folder, { mode: 0o700 });
+    let asked = 0;
+    const failure = await isolatedFetch(
+      {
+        git,
+        folder,
+        cloneUrl: 'https://github.com/octo-owner/shop.git',
+        request: {
+          runId: '00000000-0000-4000-8000-000000000000',
+          repository: { owner: 'octo-owner', name: 'shop' },
+        },
+        source: () => {
+          asked++;
+          return Promise.resolve({ ok: false, message: 'never asked' });
+        },
+        selfCommand: DAEMON_COMMAND,
+        log: captureLogger().log,
+        timeoutSeconds: 30,
+      },
+      bare,
+    ).then(
+      () => 'reached',
+      (error: unknown) => String(error),
+    );
+    expect(failure).toContain('Failed to connect to github.com port 443 via 127.0.0.1');
+    expect(asked).toBe(0);
   });
 });
