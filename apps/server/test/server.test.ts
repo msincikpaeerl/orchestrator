@@ -10,6 +10,7 @@ import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createPool, endPool } from '@orchestrator/db';
 import { buildApp } from '../src/app.js';
+import { defaultDaemonPackageDir, providedDaemonBuild } from '../src/downloads.js';
 import { INTERRUPTED_REASON } from '../src/projects/setup.js';
 import { startServer, type RunningServer } from '../src/server.js';
 import { waitFor } from '@orchestrator/daemon/testing';
@@ -53,14 +54,16 @@ describe('server started on a new database', () => {
     expect(HealthResponse.parse(await response.json())).toEqual({ status: 'ok', database: 'ok' });
   });
 
-  it('returns the server version and daemon protocol 1', async () => {
+  it('returns the server version, daemon protocol 2 and the build it provides', async () => {
     const response = await fetch(`${baseUrl}/version`);
     expect(response.status).toBe(200);
     expect(VersionResponse.parse(await response.json())).toEqual({
       server: '0.3.0',
-      protocol: 1,
+      protocol: 2,
+      // Null when `pnpm build` has not built the daemon package yet.
+      daemonBuild: providedDaemonBuild(defaultDaemonPackageDir()),
     });
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
   });
 });
 

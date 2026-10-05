@@ -168,11 +168,10 @@ function MachineItemCard({ item }: { item: MachineNeedsYouItem }) {
           ))}
         </ul>
       )}
-      {item.type === 'daemon_incompatible' && (
-        <>
-          <Command command={item.updateCommand} label="Update command" />
-          <Command command={RESTART_COMMAND} label="Restart command" />
-        </>
+      {(item.type === 'daemon_incompatible' ||
+        item.type === 'daemon_outdated' ||
+        item.type === 'daemon_build_differs') && (
+        <Command command={item.updateCommands.join('\n')} label="Update commands" />
       )}
       {(item.type === 'claude_code_unsupported' || item.type === 'machine_problem') && (
         <Command command={RESTART_COMMAND} label="Restart command" />
@@ -197,7 +196,17 @@ function MachineItemCard({ item }: { item: MachineNeedsYouItem }) {
             <Link to={`/machines/${item.machine.id}`} className="text-blue-700 underline">
               Open the machine
             </Link>
-            <HelpLink page="machines#when-a-machine-has-a-problem">What to do</HelpLink>
+            <HelpLink
+              page={
+                item.type === 'daemon_incompatible' ||
+                item.type === 'daemon_outdated' ||
+                item.type === 'daemon_build_differs'
+                  ? 'machines#update-the-daemon'
+                  : 'machines#when-a-machine-has-a-problem'
+              }
+            >
+              What to do
+            </HelpLink>
           </>
         )}
       </div>

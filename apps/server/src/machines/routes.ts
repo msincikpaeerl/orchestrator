@@ -47,6 +47,8 @@ export interface MachineRoutesOptions {
   gateway: DaemonGateway;
   runs: RunService;
   publicUrl: string;
+  /** The build of the daemon package the server serves (05, section 2). */
+  providedDaemonBuild: () => string | null;
   now?: () => Date;
 }
 
@@ -83,7 +85,7 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
       .from(schema.claudeAccounts)
       .where(eq(schema.claudeAccounts.id, row.accountId));
     if (!account) throw accountNotFound();
-    return toMachine(row, account, publicUrl);
+    return toMachine(row, account, publicUrl, options.providedDaemonBuild());
   }
 
   /** The machine, locked for the rest of the transaction. */
@@ -155,7 +157,9 @@ export function registerMachineRoutes(app: FastifyInstance, options: MachineRout
       .innerJoin(schema.claudeAccounts, eq(schema.claudeAccounts.id, schema.machines.accountId))
       .orderBy(asc(sql`lower(${schema.machines.name})`));
     return {
-      machines: rows.map((row) => toMachine(row.machine, row.account, publicUrl)),
+      machines: rows.map((row) =>
+        toMachine(row.machine, row.account, publicUrl, options.providedDaemonBuild()),
+      ),
     } satisfies MachineListResponse;
   });
 

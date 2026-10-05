@@ -260,9 +260,12 @@ export const EventPayloads = {
   'machine.online': z.object({
     ...MachineFacts,
     daemonVersion: z.string(),
+    /** From lot 3: the build reported (null without one) and whether it differs from the served one. */
+    daemonBuild: z.string().nullable().optional(),
+    buildDiffers: z.boolean().optional(),
     claudeCodeVersion: z.string().nullable(),
     detected: z.array(z.string()),
-    unusable: z.array(z.enum(['claude_code_unsupported', 'doctor_error'])),
+    unusable: z.array(z.enum(['claude_code_unsupported', 'doctor_error', 'daemon_outdated'])),
   }),
   'machine.offline': z.object({
     ...MachineFacts,

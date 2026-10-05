@@ -24,6 +24,12 @@ export const FailureReason = z.enum([
   'claude_code_unsupported',
   'machine_problem',
   'cancelled',
+  /** One CI failure more than **Most CI failures per run** (lot 3). */
+  'ci_failed',
+  /** **CI wait at submission** reached (lot 3). */
+  'ci_timeout',
+  /** The branch head moved during a review run (lot 3). */
+  'review_branch_moved',
 ]);
 export type FailureReason = z.infer<typeof FailureReason>;
 
@@ -34,6 +40,8 @@ export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
   'claude_code_unsupported',
   'machine_problem',
   'cancelled',
+  'ci_timeout',
+  'review_branch_moved',
 ];
 
 /** What made a run change status, for its events and the run page. */

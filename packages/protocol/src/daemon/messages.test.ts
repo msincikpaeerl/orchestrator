@@ -8,6 +8,7 @@ const runId = '0d9a5b1c-2e3f-4a5b-8c7d-9e0f1a2b3c4d';
 const sessionId = '7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d';
 const hash = 'a'.repeat(40);
 const at = '2026-09-25T10:00:00.000Z';
+const build = '0123456789abcdef';
 
 const branch = {
   name: 't/12-contact-form',
@@ -21,8 +22,9 @@ const daemonExamples = {
     type: 'hello',
     id,
     payload: {
-      protocolVersion: 1,
-      daemonVersion: '0.3.0',
+      protocolVersion: 2,
+      daemonVersion: '0.4.0',
+      daemonBuild: build,
       claudeCodeVersion: '2.1.282',
       os: 'wsl',
       capabilities: ['git', 'node', 'android-sdk'],
@@ -66,6 +68,8 @@ const daemonExamples = {
       reason: 'submitted',
       detail: null,
       branch,
+      push: { status: 'pushed', head: hash },
+      headMoved: null,
     },
   },
   'run.events': {
@@ -102,13 +106,18 @@ const daemonExamples = {
       tool: 'ticket_submit',
       runToken: 'run-token',
       input: { summary: 'Adds a contact form.' },
-      workspace: { clean: true, branch },
+      workspace: {
+        clean: true,
+        branch,
+        push: { status: 'pushed', head: hash },
+        changedFiles: ['src/contact/ContactForm.tsx', 'docs/user/contact-form.md'],
+      },
     },
   },
   'git.credential_request': {
     type: 'git.credential_request',
     id,
-    payload: { runId, repository: { owner: 'owner-login', name: 'bakery' }, command: 'fetch' },
+    payload: { runId, repository: { owner: 'owner-login', name: 'bakery' }, command: 'push' },
   },
 } as const;
 
@@ -117,7 +126,7 @@ const serverExamples = {
   welcome: {
     type: 'welcome',
     id,
-    payload: { accepted: true, protocolVersion: 1, heartbeatIntervalSeconds: 15 },
+    payload: { accepted: true, protocolVersion: 2, heartbeatIntervalSeconds: 15 },
   },
   ack: { type: 'ack', id, payload: { ok: false, message: 'Unknown run' } },
   'run.start': {
@@ -270,9 +279,50 @@ describe('payload checks', () => {
       (p) => (p.input = 'hello'),
     ],
     [
-      'git.credential_request for a push (lot 3)',
+      'git.credential_request for a forced push',
       daemonExamples['git.credential_request'],
-      (p) => (p.command = 'push'),
+      (p) => (p.command = 'force-push'),
+    ],
+    ['hello with a short build', daemonExamples.hello, (p) => (p.daemonBuild = '0123abc')],
+    [
+      'hello with a build in capitals',
+      daemonExamples.hello,
+      (p) => (p.daemonBuild = '0123456789ABCDEF'),
+    ],
+    [
+      'run.state of an unknown end reason',
+      daemonExamples['run.state'],
+      (p) => (p.reason = 'merged'),
+    ],
+    [
+      'run.state pushed without its head',
+      daemonExamples['run.state'],
+      (p) => (p.push = { status: 'pushed' }),
+    ],
+    [
+      'run.state with a push failed for an unknown reason',
+      daemonExamples['run.state'],
+      (p) => (p.push = { status: 'failed', reason: 'forced', message: 'x' }),
+    ],
+    [
+      'run.state with a failed push without its message',
+      daemonExamples['run.state'],
+      (p) => (p.push = { status: 'failed', reason: 'refused' }),
+    ],
+    [
+      'run.state with "head moved" as text',
+      daemonExamples['run.state'],
+      (p) => (p.headMoved = 'yes'),
+    ],
+    [
+      'mcp.call of ticket_submit with changed files as text',
+      daemonExamples['mcp.call'],
+      (p) => ((p.workspace as Json).changedFiles = 'src/a.ts'),
+    ],
+    [
+      'mcp.call of ticket_submit with an empty changed path',
+      daemonExamples['mcp.call'],
+      (p) => ((p.workspace as Json).changedFiles = ['']),
     ],
     [
       'git.credential_request for a ../ repository',
@@ -420,6 +470,59 @@ describe('payload checks', () => {
         payload: { runId, at, state: 'working', claudeSessionId: sessionId, sessionAlive: true },
       }).success,
     ).toBe(true);
+  });
+
+  it('accepts the protocol 2 additions', () => {
+    for (const reason of ['ci_failed', 'ci_timeout', 'review_branch_moved']) {
+      const ended = withPayload(daemonExamples['run.state'], (p) => {
+        p.reason = reason;
+        p.push = { status: 'failed', reason: 'diverged', message: 'rejected: non-fast-forward' };
+        p.headMoved = reason === 'review_branch_moved';
+      });
+      expect(DaemonMessage.safeParse(ended).success).toBe(true);
+    }
+    for (const purpose of ['review', 'fix_review']) {
+      const start = withPayload(serverExamples['run.start'], (p) => (p.purpose = purpose));
+      expect(ServerMessage.safeParse(start).success).toBe(true);
+    }
+    const completed = withPayload(serverExamples['run.stop'], (p) => (p.reason = 'completed'));
+    expect(ServerMessage.safeParse(completed).success).toBe(true);
+    const waiting = {
+      runId,
+      at,
+      state: 'waiting_ci',
+      claudeSessionId: sessionId,
+      sessionAlive: true,
+    };
+    expect(DaemonMessage.safeParse({ type: 'run.state', id, payload: waiting }).success).toBe(true);
+    for (const tool of ['review_approve', 'review_request_changes', 'ci_status']) {
+      const call = { tool, runToken: 'run-token', input: {} };
+      expect(DaemonMessage.safeParse({ type: 'mcp.call', id, payload: call }).success).toBe(true);
+    }
+    // A daemon run from its sources has no build.
+    const sources = withPayload(daemonExamples.hello, (p) => (p.daemonBuild = null));
+    expect(DaemonMessage.safeParse(sources).success).toBe(true);
+  });
+
+  it('reads the messages of a protocol 1 daemon, the protocol 2 facts null (09, section 6)', () => {
+    const hello = DaemonMessage.parse(
+      withPayload(daemonExamples.hello, (p) => {
+        p.protocolVersion = 1;
+        delete p.daemonBuild;
+      }),
+    );
+    expect(hello.payload).toMatchObject({ protocolVersion: 1, daemonBuild: null });
+    const ended = DaemonMessage.parse(
+      withPayload(daemonExamples['run.state'], (p) => {
+        delete p.push;
+        delete p.headMoved;
+      }),
+    );
+    expect(ended.payload).toMatchObject({ push: null, headMoved: null });
+    const submit = DaemonMessage.parse(
+      withPayload(daemonExamples['mcp.call'], (p) => (p.workspace = { clean: true, branch })),
+    );
+    expect(submit.payload).toMatchObject({ workspace: { push: null, changedFiles: null } });
   });
 
   it('carries the Claude Code version with the starting state only', () => {

@@ -124,6 +124,57 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
     input: report,
     output: { result: 'accepted', ticket: { ...ticket, status: 'in_review', dod_report: report } },
   },
+  ci_status: {
+    input: {},
+    output: {
+      pull_request: {
+        number: 7,
+        url: 'https://github.com/owner-login/bakery/pull/7',
+        head: 'a'.repeat(40),
+      },
+      ci: {
+        state: 'failed',
+        checks: [
+          {
+            kind: 'workflow_run',
+            name: 'CI',
+            state: 'failed',
+            url: 'https://github.com/owner-login/bakery/actions/runs/1',
+          },
+          { kind: 'status', name: 'deploy/preview', state: 'passed', url: null },
+        ],
+        failed_jobs: [
+          {
+            workflow: 'CI',
+            job: 'docs-links',
+            url: 'https://github.com/owner-login/bakery/actions/runs/1/job/2',
+            failed_steps: ['Check links'],
+            log_excerpt: 'README.md:3: docs/user/faq.md not found',
+            log_cut: true,
+          },
+        ],
+      },
+    },
+  },
+  review_approve: {
+    input: { summary: 'The form validates the email and the tests cover it.' },
+    output: {
+      comment: { ...comment, author: { agent: 'quality' }, kind: 'review' },
+      ticket: { ...ticket, status: 'awaiting_merge' },
+    },
+  },
+  review_request_changes: {
+    input: {
+      points: [
+        { body: 'Test an empty email too.', file: 'src/contact/ContactForm.test.ts', line: 12 },
+        { body: 'Describe the form in the user documentation.' },
+      ],
+    },
+    output: {
+      comments: [{ ...comment, author: { agent: 'quality' }, kind: 'review' }],
+      ticket: { ...ticket, status: 'todo' },
+    },
+  },
 };
 
 /** For each tool with input fields: a required field, and a text field with its ceiling. */
@@ -135,10 +186,12 @@ const inputFields: Partial<Record<McpToolName, { required?: string; text?: [stri
   ticket_give_up: { required: 'tried', text: ['reason', settingCeiling('commentMaxLength')] },
   ticket_create: { required: 'title', text: ['title', settingCeiling('ticketTitleMaxLength')] },
   ticket_submit: { required: 'summary', text: ['summary', TEXT_CEILING] },
+  review_approve: { required: 'summary', text: ['summary', settingCeiling('commentMaxLength')] },
+  review_request_changes: { required: 'points' },
 };
 
 describe('MCP_TOOLS', () => {
-  it('holds the lot 2 tools, named <object>_<verb>', () => {
+  it('holds the tools of lots 2 and 3, named <object>_<verb>', () => {
     expect([...McpToolName.options].sort()).toEqual(Object.keys(examples).sort());
     for (const name of McpToolName.options) expect(name).toMatch(/^[a-z]+_[a-z_]+$/);
   });
@@ -161,6 +214,9 @@ describe('MCP_TOOLS', () => {
       ['ticket_submit', 'If a criterion cannot be met, do not submit'],
       ['ticket_create', 'Search with ticket_list first'],
       ['ticket_give_up', 'Never give up because a command was refused'],
+      ['review_approve', 'otherwise use review_request_changes'],
+      ['review_request_changes', 'never change the branch yourself'],
+      ['ci_status', 'you receive the same result as a message without asking'],
     ];
     for (const [name, text] of guidance) expect(MCP_TOOLS[name].description).toContain(text);
     expect(MCP_TOOLS.ticket_progress.description).not.toContain('LIMIT_REACHED');
@@ -242,10 +298,55 @@ describe('wrong types and inconsistent inputs', () => {
       { ...report, tests: { paths: [], justification: null } },
     ],
     ['a report without its docs', 'ticket_submit', { ...report, docs: undefined }],
+    ['a request for changes without a point', 'review_request_changes', { points: [] }],
+    [
+      'a point with a line but no file',
+      'review_request_changes',
+      { points: [{ body: 'Off by one.', line: 3 }] },
+    ],
+    [
+      'a point on line 0',
+      'review_request_changes',
+      { points: [{ body: 'Off by one.', file: 'src/a.ts', line: 0 }] },
+    ],
+    [
+      'an oversized point',
+      'review_request_changes',
+      { points: [{ body: 'x'.repeat(settingCeiling('commentMaxLength') + 1) }] },
+    ],
+    ['an empty approval summary', 'review_approve', { summary: ' ' }],
+    ['a pull request number for ci_status', 'ci_status', { pull_request: 7 }],
   ];
 
   it.each(refused)('refuses %s', (_, tool, input) => {
     expect(MCP_TOOLS[tool].input.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('outputs of lot 3', () => {
+  it('ticket_submit answers accepted or pending_ci, nothing else', () => {
+    const output = MCP_TOOLS.ticket_submit.output;
+    const pending = { ...examples.ticket_submit.output, result: 'pending_ci' };
+    expect(output.safeParse(pending).success).toBe(true);
+    expect(output.safeParse({ ...pending, result: 'merged' }).success).toBe(false);
+  });
+
+  it('ci_status says when there is no pull request yet, and refuses an unknown CI state', () => {
+    const output = MCP_TOOLS.ci_status.output;
+    expect(output.safeParse({ pull_request: null, ci: null }).success).toBe(true);
+    const ci = examples.ci_status.output.ci as Json;
+    expect(
+      output.safeParse({ ...examples.ci_status.output, ci: { ...ci, state: 'no_ci' } }),
+    ).toMatchObject({ success: true });
+    expect(
+      output.safeParse({ ...examples.ci_status.output, ci: { ...ci, state: 'green' } }).success,
+    ).toBe(false);
+    expect(
+      output.safeParse({
+        ...examples.ci_status.output,
+        ci: { ...ci, failed_jobs: [{ workflow: 'CI', job: 'test', url: null }] },
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -271,6 +372,22 @@ describe('McpError', () => {
         ],
       }).success,
     ).toBe(true);
+    for (const check of ['pushed', 'type_rules', 'paths_changed']) {
+      expect(
+        McpError.safeParse({
+          code: 'DOD_FAILED',
+          message: 'The submission checks failed.',
+          details: [{ check, message: 'Explained for the agent.' }],
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      McpError.safeParse({
+        code: 'DOD_FAILED',
+        message: 'x',
+        details: [{ check: 'ci_passed', message: 'CI is not a check of the call.' }],
+      }).success,
+    ).toBe(false);
     expect(McpError.safeParse({ code: 'TIMEOUT', message: 'x' }).success).toBe(false);
     expect(McpError.safeParse({ code: 'FORBIDDEN' }).success).toBe(false);
   });

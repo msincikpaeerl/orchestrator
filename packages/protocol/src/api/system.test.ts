@@ -16,9 +16,12 @@ describe('HealthResponse', () => {
 });
 
 describe('VersionResponse', () => {
-  it('requires a server version and a positive integer protocol version', () => {
-    expect(VersionResponse.safeParse({ server: '0.0.0', protocol: 1 }).success).toBe(true);
-    expect(VersionResponse.safeParse({ server: '', protocol: 1 }).success).toBe(false);
-    expect(VersionResponse.safeParse({ server: '0.0.0', protocol: 1.5 }).success).toBe(false);
+  it('requires a server version, a positive integer protocol version and the provided build', () => {
+    const version = { server: '0.0.0', protocol: 2, daemonBuild: '0123456789abcdef' };
+    expect(VersionResponse.safeParse(version).success).toBe(true);
+    expect(VersionResponse.safeParse({ ...version, daemonBuild: null }).success).toBe(true);
+    expect(VersionResponse.safeParse({ server: '0.0.0', protocol: 2 }).success).toBe(false);
+    expect(VersionResponse.safeParse({ ...version, server: '' }).success).toBe(false);
+    expect(VersionResponse.safeParse({ ...version, protocol: 1.5 }).success).toBe(false);
   });
 });

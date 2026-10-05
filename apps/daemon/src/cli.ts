@@ -17,7 +17,7 @@ import { daemonPaths } from './paths.js';
 import { forwardToRun } from './run-socket.js';
 import { startDaemon } from './start.js';
 import { formatChecks, status } from './status.js';
-import { DAEMON_VERSION } from './version.js';
+import { DAEMON_VERSION, versionText } from './version.js';
 
 // The `orchestrator-daemon` command (05, section 8).
 
@@ -31,7 +31,7 @@ Commands:
   status                                   Show whether the daemon runs and is connected
   doctor                                   Check this machine
   attach <run-id> [--write]                Watch a run's session live (read-only by default)
-  --version                                Show the version
+  --version                                Show the version and build
 
 Help: the Machines page of the Orchestrator's Help.`;
 
@@ -57,7 +57,7 @@ async function main(argv: string[]): Promise<number> {
     case '--version':
     case '-v':
     case 'version':
-      out(DAEMON_VERSION);
+      out(versionText());
       return 0;
     case undefined:
     case 'help':

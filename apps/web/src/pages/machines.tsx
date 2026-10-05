@@ -24,9 +24,16 @@ export function MachineBadges({ machine }: { machine: Machine }) {
       <span className={`rounded px-2 py-0.5 text-sm ${badgeLook[machine.state]}`}>
         {statusText(machine)}
       </span>
-      {machine.state !== 'revoked' && machine.daemonIncompatible && (
-        <span className="rounded bg-red-100 px-2 py-0.5 text-sm text-red-900">
-          Daemon to update
+      {machine.state !== 'revoked' &&
+        (machine.daemonIncompatible ||
+          machine.unusable.some((reason) => reason.type === 'daemon_outdated')) && (
+          <span className="rounded bg-red-100 px-2 py-0.5 text-sm text-red-900">
+            Daemon to update
+          </span>
+        )}
+      {machine.state !== 'revoked' && machine.daemonBuildDiffers && (
+        <span className="rounded bg-amber-100 px-2 py-0.5 text-sm text-amber-900">
+          Another daemon build
         </span>
       )}
       {machine.state !== 'revoked' && machine.unusable.length > 0 && (

@@ -25,6 +25,7 @@ const status: ControlStatus = {
   connectedAt: '2026-09-26T08:00:01.000Z',
   lastError: null,
   daemonVersion: '0.2.0',
+  daemonBuild: '0123456789abcdef',
   protocolVersion: 1,
   claudeCodeVersion: '2.1.282',
   os: 'wsl',

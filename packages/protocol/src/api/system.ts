@@ -11,5 +11,10 @@ export type HealthResponse = z.infer<typeof HealthResponse>;
 export const VersionResponse = z.object({
   server: z.string().min(1),
   protocol: z.int().positive(),
+  /**
+   * Build identifier of the daemon package the server serves (05, section 2); null when it was not
+   * built.
+   */
+  daemonBuild: z.string().nullable(),
 });
 export type VersionResponse = z.infer<typeof VersionResponse>;

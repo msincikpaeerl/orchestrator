@@ -199,7 +199,8 @@ export class Workspaces {
       '--untracked-files=all',
     ]);
     const branch = await this.branchReport(bare, repository);
-    return branch ? { clean: status.trim() === '', branch } : null;
+    // Nothing is pushed and the changed files are not collected before lot 3's steps D and F.
+    return branch ? { clean: status.trim() === '', branch, push: null, changedFiles: null } : null;
   }
 
   /** Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). */

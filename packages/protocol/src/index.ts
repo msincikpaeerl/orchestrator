@@ -196,10 +196,12 @@ export {
   CommitSummary,
   GitBranchName,
   GitHash,
+  PushResult,
   RepositoryOwner,
 } from './daemon/git.js';
 export {
   Capability,
+  DaemonBuild,
   DoctorCheck,
   Hello,
   Heartbeat,
@@ -235,6 +237,11 @@ export {
 } from './daemon/relay.js';
 export { DaemonMessage, ServerMessage } from './daemon/messages.js';
 export {
+  DAEMON_PACKAGE_NAME,
+  daemonPackageFileName,
+  daemonUpdateCommands,
+} from './daemon/package.js';
+export {
   CredentialSocketAnswer,
   CredentialSocketRequest,
   HookAnswer,
@@ -263,6 +270,7 @@ export {
   isCompatibleProtocol,
 } from './daemon/enrollment.js';
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
+export { CiCheck, CiFailedJob, CiResult, CiState } from './mcp/ci.js';
 export {
   DodReport,
   MCP_OUTPUT_MAX_CHARACTERS,

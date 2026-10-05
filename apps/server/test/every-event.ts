@@ -187,6 +187,8 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         head: 'a'.repeat(40),
         commitsAhead: [{ hash: 'a'.repeat(40), subject: 'Do the work' }],
       },
+      push: null,
+      changedFiles: null,
     },
   });
   await daemon.request({

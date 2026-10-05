@@ -23,6 +23,7 @@ import {
   type McpTicket,
   type McpTicketSummary,
   type McpToolInput,
+  type McpToolOutput,
   type McpToolName,
   type SettingName,
 } from '@orchestrator/protocol';
@@ -72,6 +73,7 @@ const READING = new Set<McpToolName>([
   'ticket_list',
   'ticket_comments',
   'agent_list',
+  'ci_status',
 ]);
 
 const ACTIVE = new Set<string>(ACTIVE_RUN_STATUSES);
@@ -262,6 +264,9 @@ export class McpBackend {
         return this.ticketComments(call, input as McpToolInput<'ticket_comments'>);
       case 'agent_list':
         return this.agentList();
+      case 'ci_status':
+        // No ticket has a pull request before the server opens them (lot 3 step F).
+        return { pull_request: null, ci: null } satisfies McpToolOutput<'ci_status'>;
       default:
         throw new Error(`${tool} is not a reading tool`);
     }
@@ -522,6 +527,16 @@ export class McpBackend {
             maxAgentTicketsPerRun:
               call.run.maxAgentTickets ?? agentTicketsSetting.maxAgentTicketsPerRun,
           });
+        case 'review_approve':
+        case 'review_request_changes':
+          // Only a review run of a ticket in review (06, section 4.5); the server starts none yet.
+          if (call.run.purpose !== 'review') {
+            throw refuse(
+              'INVALID_TRANSITION',
+              `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
+            );
+          }
+          throw new Error(`${tool} in a review run is not implemented yet`);
         case 'ticket_submit':
           if (message.payload.tool !== 'ticket_submit') throw new Error('no worktree facts');
           return this.submit(

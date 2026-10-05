@@ -9,12 +9,13 @@ import {
   TicketType,
 } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
+import { CiResult } from './ci.js';
 import { DodReport } from './dod-report.js';
 
 export { DodReport };
 
 /*
- * Inputs and outputs of the lot 2 MCP tools (06, section 4). Field names are snake_case, as in
+ * Inputs and outputs of the MCP tools of lots 2 and 3 (06, section 4). Field names are snake_case, as in
  * 06. Inputs are strict: a misspelt field is refused with `VALIDATION_FAILED` rather than ignored.
  * Texts are Markdown; tickets are named by their human number (`WEB-12`).
  */
@@ -106,8 +107,21 @@ export interface McpToolDefinition {
   output: z.ZodType;
 }
 
+/** A point of `review_request_changes`, posted as a `review` comment (06, section 4.5). */
+const ReviewPoint = z
+  .strictObject({
+    body: requiredText(COMMENT_CEILING),
+    /** Path relative to the worktree root. */
+    file: requiredText().optional(),
+    line: z.int().positive().optional(),
+  })
+  .refine((point) => point.line === undefined || point.file !== undefined, {
+    message: 'a line needs its file',
+    path: ['file'],
+  });
+
 /**
- * The lot 2 tools, by wire name (`<object>_<verb>`, 06 section 3). The agent sees them as
+ * The tools of lots 2 and 3, by wire name (`<object>_<verb>`, 06 section 3). The agent sees them as
  * `mcp__orchestrator__<name>`. The descriptions are part of the harness, reviewed like code.
  */
 export const MCP_TOOLS = {
@@ -159,6 +173,17 @@ export const MCP_TOOLS = {
       "Returns a ticket's comments, oldest first: notes, questions and the owner's answers, reviews and status changes. Without `ticket`, returns those of your run's ticket. Results come a page at a time: when `next_cursor` is not null, call again with it as `cursor`.",
     input: z.strictObject({ ticket: TicketReference.optional(), cursor: Cursor.optional() }),
     output: z.object({ comments: z.array(McpComment), next_cursor: Cursor.nullable() }),
+  },
+  ci_status: {
+    description:
+      "Returns the CI result of your run's pull request: every GitHub Actions workflow run and commit status of its head commit, with pending, passed or failed, and for each failed job its failed steps and the end of its log. Use it when you need the CI result again; when CI fails after your submission, you receive the same result as a message without asking. Before your ticket has a pull request, `pull_request` and `ci` are null.",
+    input: NoInput,
+    output: z.object({
+      pull_request: z
+        .object({ number: z.int().positive(), url: z.url(), head: z.string() })
+        .nullable(),
+      ci: CiResult.nullable(),
+    }),
   },
   agent_list: {
     description:
@@ -217,7 +242,23 @@ export const MCP_TOOLS = {
     description:
       "Submits your run's ticket as finished, with the Definition of Done report: every acceptance criterion (by index, from 0) reported met with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. File paths are relative to the worktree root. Commit all your work first, on the current branch; never push and never switch branches: the Orchestrator handles that. If a criterion cannot be met, do not submit: use ticket_ask to get a decision, or ticket_give_up if the work is impossible as specified. The submission is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, or the branch has no commits; fix them and submit again. When it is accepted, the ticket moves to in_review and the run ends: end your turn.",
     input: DodReport,
-    output: z.object({ result: z.literal('accepted'), ticket: McpTicket }),
+    /**
+     * `accepted`: the run ends with the turn (lot 2, and lot 3 until CI is awaited). `pending_ci`:
+     * the pull request is open and CI runs; the run waits for it (04, section 3.1; protocol 2).
+     */
+    output: z.object({ result: z.enum(['accepted', 'pending_ci']), ticket: McpTicket }),
+  },
+  review_approve: {
+    description:
+      'Approves the ticket you review, with a summary of your verdict: what you checked and why it is good to merge. The summary is posted as a review comment on the ticket and on the pull request, and the ticket moves to awaiting_merge, where the owner merges it. Use it only in a review run, once every point of your review is satisfied; otherwise use review_request_changes. End your turn after calling it.',
+    input: z.strictObject({ summary: requiredText(COMMENT_CEILING) }),
+    output: z.object({ comment: McpComment, ticket: McpTicket }),
+  },
+  review_request_changes: {
+    description:
+      'Requests changes on the ticket you review, as a list of actionable points, each with the file and line it is about when there is one (paths relative to the worktree root). Each point is posted as a review comment on the ticket, all of them as one review on the pull request, and the ticket goes back to todo for the agent that implemented it. Use it only in a review run; never change the branch yourself. End your turn after calling it.',
+    input: z.strictObject({ points: z.array(ReviewPoint).min(1) }),
+    output: z.object({ comments: z.array(McpComment), ticket: McpTicket }),
   },
 } as const satisfies Record<string, McpToolDefinition>;
 

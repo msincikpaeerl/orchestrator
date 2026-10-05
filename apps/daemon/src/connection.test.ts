@@ -54,6 +54,7 @@ class FakeSocket extends EventEmitter implements SocketLike {
 const payload: Hello['payload'] = {
   protocolVersion: PROTOCOL_VERSION,
   daemonVersion: '0.2.0',
+  daemonBuild: null,
   claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION,
   os: 'linux',
   capabilities: ['git'],

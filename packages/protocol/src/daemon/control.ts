@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Capability, DoctorCheck, MachineOs } from './connection.js';
+import { Capability, DaemonBuild, DoctorCheck, MachineOs } from './connection.js';
 import { TicketReference } from '../api/tickets.js';
 import { GitBranchName } from './git.js';
 import { DaemonRunState, RunId } from './runs.js';
@@ -38,6 +38,8 @@ export const ControlStatus = z.object({
   /** Why the last attempt failed, while not connected. */
   lastError: z.string().nullable(),
   daemonVersion: z.string(),
+  /** Null for a daemon run from its sources. */
+  daemonBuild: DaemonBuild.nullable(),
   protocolVersion: z.int().positive(),
   claudeCodeVersion: z.string().nullable(),
   os: MachineOs,

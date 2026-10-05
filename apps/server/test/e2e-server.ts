@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
-import { DaemonMessage, Hello, type RunStart } from '@orchestrator/protocol';
+import { DaemonBuild, DaemonMessage, Hello, type RunStart } from '@orchestrator/protocol';
 import { createPool, endPool } from '@orchestrator/db';
 import { z } from 'zod';
+import { daemonPackageFile } from '../src/downloads.js';
 import { createLogger } from '../src/logger.js';
 import { startServer } from '../src/server.js';
 import { defaultWebRoot } from '../src/web.js';
@@ -64,6 +66,12 @@ function resetGitHub() {
 }
 resetGitHub();
 
+// The build of the daemon package this server provides: a fixed one, whatever `pnpm build` left.
+// The scripted daemon says it by default; a test changes `daemonBuild` to see the warning.
+const E2E_DAEMON_BUILD = 'e2e0e2e0e2e0e2e0';
+const daemonPackageDir = mkdtempSync(join(tmpdir(), 'orchestrator-e2e-daemon-package-'));
+writeFileSync(join(daemonPackageDir, `${daemonPackageFile()}.build`), `${E2E_DAEMON_BUILD}\n`);
+
 const database = await createTestDatabase();
 const server = await startServer(
   {
@@ -73,7 +81,7 @@ const server = await startServer(
     publicUrl: `http://localhost:${String(port)}`,
   },
   createLogger(process.env.E2E_LOG_LEVEL ?? 'warn'),
-  { githubApiUrl: github.url, webRoot },
+  { githubApiUrl: github.url, webRoot, daemonPackageDir },
 );
 
 // Test-only controls, never part of the server: POST /reset empties every table but the agent
@@ -125,7 +133,11 @@ const RequestControl = z.object({ message: DaemonMessage });
 
 const ConnectDaemon = z.object({
   code: z.string(),
-  hello: Hello.shape.payload.partial().default({}),
+  // Without the protocol's default (null), so an absent build is the e2e one.
+  hello: Hello.shape.payload
+    .partial()
+    .extend({ daemonBuild: DaemonBuild.nullable().optional() })
+    .default({}),
 });
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
@@ -174,7 +186,7 @@ async function handle(
         daemon.send({ type: 'ack', id: message.id, payload: { ok: true } });
       }
     };
-    const welcome = await daemon.hello(hello);
+    const welcome = await daemon.hello({ daemonBuild: E2E_DAEMON_BUILD, ...hello });
     const heartbeat = setInterval(() => {
       if (daemon.isOpen) daemon.heartbeat();
     }, 5000);
@@ -234,6 +246,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       await endPool(pool);
       await github.close();
       await database.drop();
+      rmSync(daemonPackageDir, { recursive: true, force: true });
       process.exit(0);
     })();
   });

@@ -962,6 +962,9 @@ export class Run {
           reason,
           detail: detail === null ? null : maskSecrets(detail).slice(0, TEXT_CEILING),
           branch,
+          // Pushing at a run's end and review runs come with lot 3's steps D and H.
+          push: null,
+          headMoved: null,
         },
       });
       await this.closeSocket();
@@ -1035,11 +1038,16 @@ export class Run {
   }
 }
 
-/** The decision each accepted tool makes, applied when the turn ends (05, section 4.8). */
+/**
+ * The decision each accepted tool makes, applied when the turn ends (05, section 4.8). An accepted
+ * review decision ends a review run with `submitted` (protocol 2).
+ */
 const DECISIONS: Partial<Record<McpToolName, 'submitted' | 'gave_up' | 'asked'>> = {
   ticket_submit: 'submitted',
   ticket_give_up: 'gave_up',
   ticket_ask: 'asked',
+  review_approve: 'submitted',
+  review_request_changes: 'submitted',
 };
 
 function toolKey(input: Record<string, unknown>): string {

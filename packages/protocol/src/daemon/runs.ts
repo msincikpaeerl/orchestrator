@@ -4,7 +4,7 @@ import { RepositoryName } from '../api/projects.js';
 import { TicketReference } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
 import { message } from './envelope.js';
-import { BranchReport, GitBranchName, RepositoryOwner } from './git.js';
+import { BranchReport, GitBranchName, PushResult, RepositoryOwner } from './git.js';
 
 export const RunId = z.uuid();
 export type RunId = z.infer<typeof RunId>;
@@ -62,6 +62,12 @@ export const RunEndReason = z.enum([
   'process_scope_failed',
   /** The workspace could not be prepared, or the session ended unexpectedly. */
   'crashed',
+  /** One CI failure more than **Most CI failures per run** (04, section 3.1; protocol 2). */
+  'ci_failed',
+  /** **CI wait at submission** reached while waiting for CI (04, section 3.1; protocol 2). */
+  'ci_timeout',
+  /** The branch head moved during a review run (04, section 3.2; protocol 2). */
+  'review_branch_moved',
 ]);
 export type RunEndReason = z.infer<typeof RunEndReason>;
 
@@ -184,6 +190,10 @@ export const RunStop = message(
       'ticket_cancelled',
       /** Reported alive by the daemon, but no longer active on the server. */
       'not_active',
+      /**
+       * The run waits for CI and CI passed: it ends with `submitted` (05, section 4.9; protocol 2).
+       */
+      'completed',
     ]),
   }),
 );
@@ -218,6 +228,16 @@ export const RunState = message(
       detail: boundedText().nullable(),
       /** The ticket branch at the end; null when no worktree was created. */
       branch: BranchReport.nullable(),
+      /**
+       * The best-effort push of an `implement` or `fix_review` run ending with commits not on
+       * GitHub (05, section 4.11; protocol 2); null when none was tried. Absent from protocol 1.
+       */
+      push: PushResult.nullable().default(null),
+      /**
+       * A `review` run: whether the branch head moved during the review (04, section 3.2;
+       * protocol 2). Null for other runs, and absent from protocol 1.
+       */
+      headMoved: z.boolean().nullable().default(null),
     }),
   ]),
 );

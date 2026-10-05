@@ -92,6 +92,17 @@ export const UnusableReason = z.discriminatedUnion('type', [
     minimum: z.string(),
   }),
   z.object({ type: z.literal('doctor_error'), check: DoctorCheck }),
+  /**
+   * The daemon speaks the previous protocol: accepted, but it cannot do what this server's runs
+   * need (09, section 6). Update it with the machine's `updateCommands`.
+   */
+  z.object({
+    type: z.literal('daemon_outdated'),
+    daemonVersion: z.string(),
+    protocolVersion: z.int(),
+    serverVersion: z.string(),
+    serverProtocolVersion: z.int(),
+  }),
 ]);
 export type UnusableReason = z.infer<typeof UnusableReason>;
 
@@ -115,13 +126,26 @@ export const Machine = z.object({
   os: MachineOs.nullable(),
   daemonVersion: z.string().nullable(),
   protocolVersion: z.int().nullable(),
+  /**
+   * The package's build identifier (05, section 2); null before its first connection, for a
+   * protocol 1 daemon, and for a daemon run from its sources.
+   */
+  daemonBuild: z.string().nullable(),
+  /** The build of the daemon package this server serves; null when it was not built. */
+  providedDaemonBuild: z.string().nullable(),
+  /**
+   * The daemon speaks this server's protocol, but its build is not the one this server serves
+   * (older or newer): a warning, the machine still receives runs (05, section 3.3).
+   */
+  daemonBuildDiffers: z.boolean(),
   /** The last connection was refused for its protocol version: update the daemon. */
   daemonIncompatible: z.boolean(),
   /**
-   * When the daemon is incompatible: the command installing the daemon of the server's version,
-   * shown with the instruction to restart the daemon (02, section 4; 05, section 2).
+   * When the daemon must or should be updated (refused, the previous protocol, another build): the
+   * commands of Help > Machines > "Update the daemon", for this server (02, section 4; 05, section
+   * 2). Null otherwise.
    */
-  updateCommand: z.string().nullable(),
+  updateCommands: z.array(z.string()).nullable(),
   claudeCodeVersion: z.string().nullable(),
   claudeCodeSupport: ClaudeCodeSupportLevel.nullable(),
   lastHeartbeatAt: z.iso.datetime().nullable(),

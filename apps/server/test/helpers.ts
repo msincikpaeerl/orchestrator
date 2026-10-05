@@ -41,6 +41,9 @@ export interface TestApp {
   close(): Promise<void>;
 }
 
+/** A folder that never exists: the test server serves no daemon package and provides no build. */
+export const NO_DAEMON_PACKAGE = '/nonexistent/orchestrator-test-daemon-package';
+
 /** The application on a new migrated database, with logs captured at the most verbose level. */
 export async function startTestApp(
   options: {
@@ -84,7 +87,8 @@ export async function startTestApp(
       gitBaseUrl: options.gitBaseUrl,
       now: options.now,
       daemonSecondMs: options.daemonSecondMs,
-      daemonPackageDir: options.daemonPackageDir,
+      // No package unless a test builds one: what `pnpm build` left must not change a test.
+      daemonPackageDir: options.daemonPackageDir ?? NO_DAEMON_PACKAGE,
       streamKeepAliveMs: options.streamKeepAliveMs,
     });
   const app = build();

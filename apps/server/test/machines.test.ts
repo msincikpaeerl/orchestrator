@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { schema } from '@orchestrator/db';
 import {
   AccountListResponse,
@@ -12,10 +15,12 @@ import {
   MachineListResponse,
   NeedsYouResponse,
   PROTOCOL_VERSION,
+  daemonUpdateCommands,
   type SettingValues,
 } from '@orchestrator/protocol';
 import { asc, eq, like, or } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
+import { daemonPackageFile } from '../src/downloads.js';
 import { markAllOffline } from '../src/machines/gateway.js';
 import { SERVER_VERSION } from '../src/version.js';
 import { enroll, enrollToken, RefusedConnection, ScriptedDaemon } from './daemon-client.js';
@@ -26,6 +31,10 @@ import { createOwner, startTestApp, type TestApp } from './helpers.js';
 
 /** One second of the heartbeat settings lasts this long in these tests. */
 const SECOND_MS = 20;
+/** Help > Machines > "Update the daemon", for the test server's address. */
+const UPDATE_COMMANDS = daemonUpdateCommands('http://localhost:8080', SERVER_VERSION);
+const PROVIDED = '0123456789abcdef';
+const OTHER = 'fedcba9876543210';
 
 let t: TestApp;
 let cookie: string;
@@ -33,7 +42,11 @@ let clock: Date;
 const daemons: ScriptedDaemon[] = [];
 
 async function start(
-  options: { settings?: Partial<SettingValues>; daemonSecondMs?: number } = {},
+  options: {
+    settings?: Partial<SettingValues>;
+    daemonSecondMs?: number;
+    daemonPackageDir?: string;
+  } = {},
 ): Promise<void> {
   clock = new Date();
   t = await startTestApp({
@@ -41,6 +54,7 @@ async function start(
     now: () => clock,
     daemonSecondMs: options.daemonSecondMs,
     settings: options.settings,
+    daemonPackageDir: options.daemonPackageDir,
   });
   cookie = await createOwner(t.app);
 }
@@ -403,21 +417,21 @@ describe('the daemon connection', () => {
     expect(welcome).toEqual({
       accepted: false,
       reason: 'protocol_incompatible',
-      message: `This daemon speaks protocol version ${String(PROTOCOL_VERSION + 1)}; this server accepts version ${String(PROTOCOL_VERSION)}. Install the daemon of the server's version: npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
+      message: `This daemon speaks protocol version ${String(PROTOCOL_VERSION + 1)}; this server accepts version ${String(PROTOCOL_VERSION - 1)} or ${String(PROTOCOL_VERSION)}. Install the daemon of the server's version: npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
     });
     expect((await old.closed).code).toBe(DaemonCloseCode.incompatible);
     expect(await machine(created.machine.id)).toMatchObject({
       state: 'offline',
       daemonIncompatible: true,
       daemonVersion: '9.0.0',
-      updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
+      updateCommands: UPDATE_COMMANDS,
     });
     expect(await needsYou()).toContainEqual(
       expect.objectContaining({
         type: 'daemon_incompatible',
         daemonVersion: '9.0.0',
         protocolVersion: PROTOCOL_VERSION + 1,
-        updateCommand: `npm install -g http://localhost:8080/downloads/orchestrator-daemon-${SERVER_VERSION}.tgz`,
+        updateCommands: UPDATE_COMMANDS,
       }),
     );
     // Retrying with the same versions writes no second event.
@@ -428,11 +442,144 @@ describe('the daemon connection', () => {
     expect((await updated.hello()).accepted).toBe(true);
     expect(await machine(created.machine.id)).toMatchObject({
       daemonIncompatible: false,
-      updateCommand: null,
+      updateCommands: null,
     });
     expect((await needsYou()).map((item) => item.type)).not.toContain('daemon_incompatible');
     const types = (await machineEvents()).map((event) => event.type);
     expect(types.filter((type) => type === 'machine.daemon_incompatible')).toHaveLength(1);
+  });
+
+  it('accepts a daemon of the previous protocol online but unusable, with the update commands', async () => {
+    await start();
+    const created = await createMachine();
+    const token = await enrollToken(t.url, created.enrollment.code);
+    const old = await connect(token);
+    // A 0.3.0 daemon's hello: protocol 1, no build.
+    const welcome = await old.hello({ protocolVersion: 1, daemonVersion: '0.3.0' });
+    expect(welcome).toEqual({
+      accepted: true,
+      protocolVersion: PROTOCOL_VERSION,
+      heartbeatIntervalSeconds: expect.any(Number) as number,
+    });
+    expect(await machine(created.machine.id)).toMatchObject({
+      state: 'online',
+      daemonVersion: '0.3.0',
+      protocolVersion: 1,
+      daemonBuild: null,
+      daemonIncompatible: false,
+      daemonBuildDiffers: false,
+      updateCommands: UPDATE_COMMANDS,
+      unusable: [
+        {
+          type: 'daemon_outdated',
+          daemonVersion: '0.3.0',
+          protocolVersion: 1,
+          serverVersion: SERVER_VERSION,
+          serverProtocolVersion: PROTOCOL_VERSION,
+        },
+      ],
+    });
+    const item = (await needsYou()).find((each) => each.type === 'daemon_outdated');
+    expect(item).toEqual({
+      type: 'daemon_outdated',
+      machine: { id: created.machine.id, name: 'Laptop' },
+      daemonVersion: '0.3.0',
+      serverVersion: SERVER_VERSION,
+      updateCommands: UPDATE_COMMANDS,
+      since: expect.any(String) as string,
+    });
+    const online = await machineEvents();
+    expect(online.at(-1)).toMatchObject({
+      type: 'machine.online',
+      payload: { daemonVersion: '0.3.0', daemonBuild: null, unusable: ['daemon_outdated'] },
+    });
+    // Reconnecting with the same daemon keeps when the item began.
+    await old.close();
+    const again = await connect(token);
+    await again.hello({ protocolVersion: 1, daemonVersion: '0.3.0' });
+    expect((await needsYou()).find((each) => each.type === 'daemon_outdated')?.since).toBe(
+      item?.since,
+    );
+    // Updated: usable, nothing to do.
+    await again.close();
+    const updated = await connect(token);
+    await updated.hello();
+    expect(await machine(created.machine.id)).toMatchObject({
+      protocolVersion: PROTOCOL_VERSION,
+      unusable: [],
+      updateCommands: null,
+    });
+    expect((await needsYou()).map((each) => each.type)).not.toContain('daemon_outdated');
+  });
+
+  it('warns about a daemon of another build than the one served, and not about the same', async () => {
+    const dist = await mkdtemp(join(tmpdir(), 'orchestrator-provided-build-'));
+    try {
+      await writeFile(join(dist, `${daemonPackageFile()}.build`), `${PROVIDED}\n`);
+      await start({ daemonPackageDir: dist });
+      const created = await createMachine();
+      const token = await enrollToken(t.url, created.enrollment.code);
+      const other = await connect(token);
+      expect((await other.hello({ daemonBuild: OTHER })).accepted).toBe(true);
+      expect(await machine(created.machine.id)).toMatchObject({
+        state: 'online',
+        daemonBuild: OTHER,
+        providedDaemonBuild: PROVIDED,
+        daemonBuildDiffers: true,
+        updateCommands: UPDATE_COMMANDS,
+        unusable: [],
+      });
+      expect((await needsYou()).find((each) => each.type === 'daemon_build_differs')).toEqual({
+        type: 'daemon_build_differs',
+        machine: { id: created.machine.id, name: 'Laptop' },
+        daemonVersion: '0.3.0',
+        daemonBuild: OTHER,
+        serverVersion: SERVER_VERSION,
+        providedBuild: PROVIDED,
+        updateCommands: UPDATE_COMMANDS,
+        since: expect.any(String) as string,
+      });
+      expect((await machineEvents()).at(-1)).toMatchObject({
+        type: 'machine.online',
+        payload: { daemonBuild: OTHER, buildDiffers: true, unusable: [] },
+      });
+
+      // A daemon run from its sources is not the one provided either.
+      await other.close();
+      const sources = await connect(token);
+      await sources.hello({ daemonBuild: null });
+      expect(await machine(created.machine.id)).toMatchObject({
+        daemonBuild: null,
+        daemonBuildDiffers: true,
+      });
+
+      // The same build: no warning, no item.
+      await sources.close();
+      const same = await connect(token);
+      await same.hello({ daemonBuild: PROVIDED });
+      expect(await machine(created.machine.id)).toMatchObject({
+        daemonBuild: PROVIDED,
+        daemonBuildDiffers: false,
+        updateCommands: null,
+        unusable: [],
+      });
+      expect((await needsYou()).map((each) => each.type)).not.toContain('daemon_build_differs');
+    } finally {
+      await rm(dist, { recursive: true, force: true });
+    }
+  });
+
+  it('compares no build when the server serves no package', async () => {
+    await start();
+    const created = await createMachine();
+    const daemon = await connect(await enrollToken(t.url, created.enrollment.code));
+    await daemon.hello({ daemonBuild: OTHER });
+    expect(await machine(created.machine.id)).toMatchObject({
+      daemonBuild: OTHER,
+      providedDaemonBuild: null,
+      daemonBuildDiffers: false,
+      updateCommands: null,
+    });
   });
 
   it('keeps a machine with an old Claude Code connected but unusable', async () => {

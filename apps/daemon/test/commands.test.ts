@@ -56,6 +56,7 @@ function terminalDaemon(): ControlStatus {
     connectedAt: null,
     lastError: null,
     daemonVersion: '0.2.0',
+    daemonBuild: null,
     protocolVersion: 1,
     claudeCodeVersion: null,
     os: 'linux',
@@ -66,13 +67,13 @@ function terminalDaemon(): ControlStatus {
 }
 
 describe('--version and help', () => {
-  it('prints the version', async () => {
+  it('prints the version, and that a daemon run from its sources has no build', async () => {
     const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
     expect(await runDaemon(['--version'], home.env)).toMatchObject({
       code: 0,
-      stdout: `${pkg.version}\n`,
+      stdout: `${pkg.version} (run from its sources, no build)\n`,
     });
   });
 
@@ -120,6 +121,24 @@ describe('start', () => {
       const result = await runDaemon(['start', '--service'], home.env);
       expect(result.code).toBe(EXIT_REFUSED);
       expect(result.stderr).toMatch(/already running in a terminal \(process 4321\)/);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('status', () => {
+  it("shows the running daemon's version and build", async () => {
+    await enroll();
+    const server = await serveControl(home.paths.controlSocket, () => ({
+      ...terminalDaemon(),
+      daemonBuild: '0123456789abcdef',
+    }));
+    try {
+      const result = await runDaemon(['status'], home.env);
+      expect(result.stdout).toMatch(
+        /^Daemon 0\.2\.0 \(build 0123456789abcdef\) running in a terminal \(process 4321,/,
+      );
     } finally {
       server.close();
     }

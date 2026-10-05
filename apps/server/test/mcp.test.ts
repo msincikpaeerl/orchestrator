@@ -98,6 +98,33 @@ describe('role permissions (06, section 5)', () => {
     expect(error.message).toMatch(/reviewer/);
     // Every other lot 2 tool is allowed to every role.
     expect((await h.tool(daemon, runToken, 'ticket_comment', { body: 'Looking' })).ok).toBe(true);
+    // The review tools are the reviewer's, but only in a review run (06, section 4.5), which the
+    // server starts from lot 3 step H: this run implements the ticket.
+    const approve = refusal(await h.tool(daemon, runToken, 'review_approve', { summary: 'Good.' }));
+    expect(approve).toMatchObject({ code: 'INVALID_TRANSITION' });
+    expect(approve.message).toBe(
+      'review_approve is only for a review run of a ticket in in_review; the purpose of this run is implement.',
+    );
+  });
+
+  it("refuses the review tools to a builder, naming its role (lot 3's protocol)", async () => {
+    const { daemon, runToken } = await working();
+    for (const [tool, input] of [
+      ['review_approve', { summary: 'Good.' }],
+      ['review_request_changes', { points: [{ body: 'Test it.' }] }],
+    ] as const) {
+      const error = refusal(await h.tool(daemon, runToken, tool, input));
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toMatch(/builder/);
+    }
+  });
+});
+
+describe('ci_status (06, section 4.1)', () => {
+  it('says there is no pull request yet, for every role', async () => {
+    const { daemon, runToken } = await working();
+    const result = await h.tool(daemon, runToken, 'ci_status');
+    expect(result).toEqual({ ok: true, output: { pull_request: null, ci: null } });
   });
 });
 
@@ -719,10 +746,13 @@ describe('questions and answers (04, section 6)', () => {
 });
 
 describe('tool descriptions', () => {
-  it('cover every lot 2 tool', () => {
+  it('cover every tool of lots 2 and 3', () => {
     expect(Object.keys(MCP_TOOLS).sort()).toEqual(
       [
         'agent_list',
+        'ci_status',
+        'review_approve',
+        'review_request_changes',
         'project_get',
         'ticket_ask',
         'ticket_comment',

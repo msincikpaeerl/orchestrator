@@ -28,7 +28,7 @@ import { parseServerUrl, webSocketUrl } from './server-url.js';
 import { UserSystemd, tmuxScopeName, unitPrefix } from './systemd.js';
 import { Tmux } from './tmux.js';
 import { TrustRegistry } from './trust.js';
-import { DAEMON_VERSION } from './version.js';
+import { DAEMON_BUILD, DAEMON_VERSION } from './version.js';
 import { Workspaces } from './workspace.js';
 
 export interface StartOptions {
@@ -157,6 +157,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     lastHello = {
       protocolVersion: PROTOCOL_VERSION,
       daemonVersion: DAEMON_VERSION,
+      daemonBuild: DAEMON_BUILD,
       claudeCodeVersion: doctor.claudeCodeVersion,
       os: machineOs(environment.wsl),
       capabilities: detectCapabilities(environment.toolPath),
@@ -268,6 +269,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     connectedAt: server.connectedAt?.toISOString() ?? null,
     lastError: server.lastError,
     daemonVersion: DAEMON_VERSION,
+    daemonBuild: DAEMON_BUILD,
     protocolVersion: PROTOCOL_VERSION,
     claudeCodeVersion: lastHello?.claudeCodeVersion ?? null,
     os: lastHello?.os ?? machineOs(environment.wsl),
@@ -296,7 +298,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     });
   }
 
-  log.info({ serverUrl, mode, version: DAEMON_VERSION }, 'daemon started');
+  log.info({ serverUrl, mode, version: DAEMON_VERSION, build: DAEMON_BUILD }, 'daemon started');
   server.start();
   return finished;
 }

@@ -51,6 +51,8 @@ export interface GatewayOptions {
   db: Database;
   log: FastifyBaseLogger;
   publicUrl: string;
+  /** The build of the daemon package the server serves, compared at each `hello` (05, section 2). */
+  providedDaemonBuild: () => string | null;
   /** Milliseconds in one second of the heartbeat and offline settings; tests shorten it. */
   secondMs?: number;
 }
@@ -451,8 +453,11 @@ export class DaemonGateway {
           .update(schema.machines)
           .set({
             daemonVersion: payload.daemonVersion,
+            daemonBuild: payload.daemonBuild,
             protocolVersion: payload.protocolVersion,
             daemonIncompatibleSince: machine.daemonIncompatibleSince ?? now,
+            daemonOutdatedSince: null,
+            daemonBuildDiffersSince: null,
             updatedAt: now,
           })
           .where(eq(schema.machines.id, machine.id));
@@ -494,6 +499,15 @@ export class DaemonGateway {
     const claudeCodeUnsupported = support === 'missing' || support === 'below_minimum';
     const doctorError = doctorErrors(payload.doctor).length > 0;
     const detected = [...new Set(payload.capabilities)].sort();
+    // The previous protocol is accepted, but cannot do what this server's runs need (09, section
+    // 6); a protocol 2 daemon of another build only gets a warning (05, section 3.3).
+    const outdated = payload.protocolVersion < PROTOCOL_VERSION;
+    const provided = this.options.providedDaemonBuild();
+    const buildDiffers = !outdated && provided !== null && payload.daemonBuild !== provided;
+    const sameDaemon =
+      machine.daemonVersion === payload.daemonVersion &&
+      machine.daemonBuild === payload.daemonBuild &&
+      machine.protocolVersion === payload.protocolVersion;
 
     const accepted = await this.db.transaction(async (tx) => {
       const updated = await tx
@@ -502,12 +516,19 @@ export class DaemonGateway {
           status: 'online',
           os: payload.os,
           daemonVersion: payload.daemonVersion,
+          daemonBuild: payload.daemonBuild,
           protocolVersion: payload.protocolVersion,
           claudeCodeVersion: payload.claudeCodeVersion,
           doctor: payload.doctor,
           detectedCapabilities: detected,
           lastHeartbeatAt: now,
           daemonIncompatibleSince: null,
+          daemonOutdatedSince: outdated
+            ? ((sameDaemon ? machine.daemonOutdatedSince : null) ?? now)
+            : null,
+          daemonBuildDiffersSince: buildDiffers
+            ? ((sameDaemon ? machine.daemonBuildDiffersSince : null) ?? now)
+            : null,
           claudeCodeUnsupportedSince: claudeCodeUnsupported
             ? (machine.claudeCodeUnsupportedSince ?? now)
             : null,
@@ -526,9 +547,12 @@ export class DaemonGateway {
         payload: {
           name: machine.name,
           daemonVersion: payload.daemonVersion,
+          daemonBuild: payload.daemonBuild,
+          buildDiffers,
           claudeCodeVersion: payload.claudeCodeVersion,
           detected,
           unusable: [
+            ...(outdated ? ['daemon_outdated'] : []),
             ...(claudeCodeUnsupported ? ['claude_code_unsupported'] : []),
             ...(doctorError ? ['doctor_error'] : []),
           ],
@@ -563,6 +587,11 @@ export class DaemonGateway {
     log.info(
       {
         daemonVersion: payload.daemonVersion,
+        daemonBuild: payload.daemonBuild,
+        protocolVersion: payload.protocolVersion,
+        outdated,
+        buildDiffers,
+        providedBuild: provided,
         claudeCodeVersion: payload.claudeCodeVersion,
         claudeCode: support,
         minimum: CLAUDE_CODE_MIN_VERSION,

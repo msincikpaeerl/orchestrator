@@ -25,6 +25,13 @@ export const DoctorCheck = z.object({
 });
 export type DoctorCheck = z.infer<typeof DoctorCheck>;
 
+/**
+ * The build identifier of a daemon package (05, section 2): 16 hexadecimal digits of a hash of
+ * the bundled daemon, computed when the package is built (`apps/daemon/scripts/bundle.ts`).
+ */
+export const DaemonBuild = z.string().regex(/^[0-9a-f]{16}$/, 'must be 16 hexadecimal digits');
+export type DaemonBuild = z.infer<typeof DaemonBuild>;
+
 /** `hello`: the daemon's first message after connecting (05, section 3.3). */
 export const Hello = message(
   'hello',
@@ -32,6 +39,11 @@ export const Hello = message(
     /** Any version is readable here; the server decides whether it is compatible (09, section 6). */
     protocolVersion: z.int().positive(),
     daemonVersion: requiredText(),
+    /**
+     * The package's build identifier (protocol 2); null for a daemon run from its sources
+     * (development, tests). Absent from a protocol 1 daemon.
+     */
+    daemonBuild: DaemonBuild.nullable().default(null),
     /** Null when `claude` is missing. */
     claudeCodeVersion: requiredText().nullable(),
     os: MachineOs,
