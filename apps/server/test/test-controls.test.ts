@@ -6,6 +6,7 @@ import { createPool, endPool } from '@orchestrator/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createLogger } from '../src/logger.js';
+import { GITHUB_CONTROLS } from './fake-github-controls.js';
 import { LogCapture, TEST_SECRET_KEY } from './helpers.js';
 
 // The end-to-end server's test-only controls (reset, GitHub failures, the scripted daemon) live
@@ -17,6 +18,7 @@ const serverRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONTROLS = [
   '/reset',
   '/github/fail-next',
+  ...GITHUB_CONTROLS,
   '/daemon/connect',
   '/daemon/run',
   '/daemon/request',

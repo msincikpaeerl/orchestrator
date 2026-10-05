@@ -11,6 +11,8 @@ import { createLogger } from '../src/logger.js';
 import { startServer } from '../src/server.js';
 import { defaultWebRoot } from '../src/web.js';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
+import { installRealGitHubGuard } from '@orchestrator/daemon/testing/real-github-guard';
+import { GITHUB_CONTROLS, githubControl } from './fake-github-controls.js';
 import { fullAccount, startFakeGitHub } from './fake-github.js';
 import { TEST_SECRET_KEY } from './helpers.js';
 
@@ -31,6 +33,8 @@ function inDays(days: number): Date {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }
 
+// Working rule 9: the server under test never reaches the real GitHub, even by mistake.
+installRealGitHubGuard();
 const github = await startFakeGitHub();
 
 /** The fake GitHub's accounts as each test starts: repositories created by a test are removed. */
@@ -81,7 +85,7 @@ const server = await startServer(
     publicUrl: `http://localhost:${String(port)}`,
   },
   createLogger(process.env.E2E_LOG_LEVEL ?? 'warn'),
-  { githubApiUrl: github.url, webRoot, daemonPackageDir },
+  { githubApiUrl: github.url, gitBaseUrl: github.url, webRoot, daemonPackageDir },
 );
 
 // Test-only controls, never part of the server: POST /reset empties every table but the agent
@@ -95,6 +99,16 @@ const server = await startServer(
 // /daemon/run `{"runId":"…"}` waits for the run's `run.start` or `run.resume` and answers
 // `{"type":"run.start","runToken":"…"}`; POST /daemon/request `{"message":{…}}` sends a report or a
 // tool call of the latest daemon and answers the server's reply (`ack`, `mcp.result`).
+// What happens on GitHub without the Orchestrator, in a repository of the full account
+// (`octo-owner`), each answering `{"sha":"…"}` when it makes a commit: POST /github/commit
+// `{"repository":"notes","branch":"main","files":{"a.md":"A"},"message":"…"}` (a file set to null
+// is removed); POST /github/ci `{"repository":"notes","ref":"<branch or SHA>","action":"start"}`
+// starts the commit's workflow runs, `"action":"complete"` completes them, successful or with
+// `"failures":[{"job":"docs-links","step":"Check documentation links","log":"…"}]`; POST
+// /github/status `{"repository":"notes","ref":"…","context":"deploy","state":"success"}`; POST
+// /github/merge `{"repository":"notes","pullRequest":1,"method":"squash"}`, /github/close and
+// /github/update-branch `{"repository":"notes","pullRequest":1}`. A control GitHub would not
+// offer (a merge with conflicts) answers 409 with the reason.
 const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
@@ -176,6 +190,9 @@ async function handle(
       return { status: failure.status, body: { message: 'Failure requested by the test' } };
     };
     return 204;
+  }
+  if (request.method === 'POST' && GITHUB_CONTROLS.includes(request.url ?? '')) {
+    return githubControl(github, request.url ?? '', await readJson(request)) ?? 404;
   }
   if (request.method === 'POST' && request.url === '/daemon/connect') {
     const { code, hello } = ConnectDaemon.parse(await readJson(request));
