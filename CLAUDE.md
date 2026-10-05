@@ -47,7 +47,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Usage-limit capture (owner only: `--probe-limit` while limited; `--scan-limit` starts no session) | `tools/spike/claude-code-spike.sh --probe-limit` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 
-Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the test database started. Requires Node.js 24 (`.nvmrc`), Docker, and Git and tmux on the host (the daemon's tests); setup details in `docs/dev/setup.md`.
+Run `pnpm verify` and `pnpm test:e2e` before considering any task finished; both need the test database started. Requires Node.js 24 (`.nvmrc`), Docker, Git and tmux on the host (the daemon's tests and the fake GitHub); setup details in `docs/dev/setup.md`.
 
 ## Repository map
 

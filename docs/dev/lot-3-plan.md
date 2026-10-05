@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A and B done)
+> Status: in progress (steps A, B and C done)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -174,7 +174,7 @@ then check the machine page: online, usable, and the build the same as the serve
 - **Update commands everywhere**: the refused-protocol item ("Update the daemon on …", which already existed) now shows the same five commands as the protocol 1 item, instead of `npm install -g` and a restart.
 - A protocol 1 daemon on a server of the same version number reads "Daemon 0.3.0 is older than this Orchestrator, though both say version 0.3.0" (servers built from `main` during lot 3).
 
-### [ ] C. Local fake GitHub
+### [x] C. Local fake GitHub
 
 - `apps/server/test/fake-github.ts` grows into the fake of the decisions above, and the Git HTTP test server of `@orchestrator/daemon/testing` serves the fake's repositories with token checks (`git http-backend` behind it), so a push is seen by the REST API.
 - Test controls for CI and for the owner's actions on GitHub, also reachable from the end-to-end server.
@@ -189,6 +189,17 @@ then check the machine page: online, usable, and the build the same as the serve
 - commit statuses;
 - a conflict and **Update branch**;
 - 401, and 403 naming a permission.
+
+*Done 2026-10-05.* Choices made in the step (`docs/dev/testing.md`, "The fake GitHub"; ADR 0033):
+
+- **Real Git repositories**: each repository of the fake is a bare repository on disk (`/tmp/od-test-github-*`, removed by `close()`), written by Git plumbing commands with no user or system Git configuration. The REST API's commits and trees are real Git objects, so `git http-backend` (behind the handler of `@orchestrator/daemon/testing/git-http-server`, mounted on the fake's own address) serves what the REST API wrote, and a push is seen by the REST API at once. The clone URL is `<fake url>/<owner>/<name>.git`; the end-to-end server now gives it as `gitBaseUrl`.
+- **One token check**: Git requests use the same accounts and the same permission check as the REST API. The token is the Basic password with any non-empty user name; Contents read to fetch a private repository, Contents write to push, and a pre-receive hook refuses a push that touches `.github/workflows/` without Workflows write. A public repository is fetched without a credential.
+- **Which runs exist** follows "Events that trigger workflows": a repository lists its workflows (`skeletonWorkflow()` is the skeleton's CI; none by default, "No CI found"); `pull_request` runs start when a pull request is opened, reopened or its head moves, never while it has a conflict; `push` runs only for the listed branches. A repository's `ci` script says what a new run does (`queued` for a test to move on, `success`, failures with logs, or `none`).
+- **Mergeable**: the first read after a change of the head or the base answers `null`, the next one the computed value (`git merge-tree`).
+- **The owner's actions** (merge or squash, close, **Update branch**, a commit on any branch) and CI (start, complete with failures, commit statuses) are functions of the fake, and controls of the end-to-end server (`fake-github-controls.ts`).
+- **No test reaches GitHub** (rule 9): `vitest.setup.ts` makes `fetch` refuse github.com in every test file and fails the test that tried, naming the request; every test home's Git configuration sends github.com URLs to a closed local port (`real-github-guard.ts`). The end-to-end server installs the same `fetch` guard.
+- What GitHub's documentation does not say, or what later steps depend on, is listed under step E, "Assumptions to confirm on the real GitHub".
+- **For step H**: every agent sees the review tools in its tool list since step B, and the server refuses them by role (06, section 4.5). Step H decides whether the relay should list only the tools of the run's purpose.
 
 ### [ ] D. Push by the daemon
 
@@ -220,22 +231,53 @@ then check the machine page: online, usable, and the build the same as the serve
   - a repository that does not exist.
 
   **The token** is read from the terminal without echo (`read -s`), held only in the script's process memory, passed to its Node.js helper through a pipe on standard input, never written to disk, never in arguments, the environment of child processes, shell history or output, and masked in any message GitHub sends back. Its steps, each printing `PASS` or `FAIL`:
-  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration;
-  2. open a pull request; read it back;
-  3. wait for CI and read its result (Actions runs and commit statuses);
-  4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt;
+  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused (A1, A4, A22);
+  2. open a pull request; read it back, printing `mergeable` at the first read and the next ones; a second pull request for the same branch is refused (A5, A6);
+  3. wait for CI and read its result (Actions runs and commit statuses): the runs found by the head commit are the `pull_request` runs only; the logs of a job not finished yet; the combined commit status with Actions only (A12, A14, A17);
+  4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt through the redirect, and the jobs and steps with their conclusions (A12, A13, A15);
   5. push a commit that repairs the link; wait for CI to pass (the owner's projects require the `ci` check to merge);
-  6. post a comment review; check that a request-changes review on your own pull request is refused as expected;
-  7. read the mergeable flag;
-  8. ask the owner to merge it on GitHub (the script waits), then detect the merge;
-  9. open a second pull request from a second branch; ask the owner to close it without merging; detect that.
+  6. post a comment review; check that an approval and a request-changes review on your own pull request are refused as expected (A11);
+  7. read the mergeable flag and `mergeable_state` (A10);
+  8. ask the owner to merge it on GitHub (the script waits), then detect the merge (`merged`, `GET .../merge` 204); reopening it is refused; list the push runs of the merge commit without waiting for them (A9, A16, A20, A21);
+  9. open a second pull request from a second branch made from the default branch as it was before step 8, changing the same line as the first: it conflicts (`mergeable` false after `null`, `mergeable_state`), no `pull_request` run starts, and **Update branch** through the API is refused; ask the owner to close it without merging; detect that, find it with `state=all`, reopen it through the API and close it again (A8, A9, A10, A18, A19, A20);
+  10. *only when the owner gives a second token* (`--restricted-token`, read like the first; Metadata read and Contents read only, on the test repository): a push is refused, and opening a pull request, reading Actions runs and reading commit statuses each answer 403 with `X-Accepted-GitHub-Permissions` naming the permission; with Contents write added to it by the owner, a push changing `.github/workflows/` is refused with GitHub's text (A2, A3, A23). Without that token the step prints `NOT ATTEMPTED`.
+
+  It also prints each assumption below with `PASS`, `FAIL` (with what GitHub answered) or `NOT ATTEMPTED`: a difference is fixed in the fake, with its test, before step F.
 
   At the end it deletes its branches on GitHub and its scratch clone (the merged commit stays on the default branch). If it stops early, it says what it left (branches, pull requests) and how to remove them. Checked in CI with `bash -n` and a dry run against the fake GitHub.
 - The guard of `tools/smoke/lib/` also covers scripts that act on the real GitHub.
 
+**Assumptions to confirm on the real GitHub** (written in step C): what the fake does that GitHub's documentation does not say, or that later steps depend on. The documented behaviours are cited in `apps/server/test/fake-github/` and `docs/dev/testing.md`. "Step" is the smoke script's.
+
+| # | The fake does | Relied on by | Step |
+|---|---|---|---|
+| A1 | A push over HTTPS with the token as password and `x-access-token` as user name is accepted | D | 1 |
+| A2 | A push touching `.github/workflows/` without Workflows write: the ref is rejected with "refusing to allow a Personal Access Token to create or update workflow `<file>` without `workflows` permission" | D, F (`push_failed` reason) | 10 |
+| A3 | A push without Contents write: HTTP 403, "Permission to <owner>/<name>.git denied to <login>." | D, F | 10 |
+| A4 | A wrong token on Git: 401, and Git says "Authentication failed" | D | 1 |
+| A5 | A new pull request's `mergeable` is `null` in the creation answer, then `true` or `false` at a later read | F, J | 2 |
+| A6 | A second open pull request for the same head and base: 422, `errors[].message` "A pull request already exists for <owner>:<branch>." | F | 2 |
+| A7 | No commits between the base and the head: 422, "No commits between <base> and <head>" | nothing (the server opens a pull request only for commits ahead) | not checked |
+| A8 | `GET /pulls?head=<owner>:<branch>&state=all` finds a closed pull request | F, J | 9 |
+| A9 | `PATCH` `state: open` reopens a pull request closed without merging while its branch exists; a merged one: 422 | J | 8, 9 |
+| A10 | `mergeable_state` is `clean` when mergeable, `dirty` on a conflict, `unknown` while computed | nothing (only `mergeable` is used) | 7, 9 |
+| A11 | A review on your own pull request: APPROVE answers 422 with `errors` `["Review Can not approve your own pull request"]`, REQUEST_CHANGES `["Review Can not request changes on your own pull request"]`; COMMENT is accepted with state `COMMENTED` | H | 6 |
+| A12 | A `pull_request` run's `head_sha` is the pull request's head commit, and `GET /actions/runs?head_sha=` finds the runs of that commit; a push to a branch the workflow does not list starts no run | G1 | 3, 4 |
+| A13 | Job logs: 302 to another host, downloaded without the API's `Authorization`; each line starts with a timestamp with seven decimals (`2026-10-05T10:00:00.0000000Z`); steps open with `##[group]`; a failing step ends with `##[error]Process completed with exit code 1.`; the later steps are `skipped` | G2 | 4 |
+| A14 | The logs of a job not finished yet: 404 | G2 | 3 |
+| A15 | The skeleton's CI failing on a link: job `docs-links` fails at step "Check documentation links", and job `ci` fails too | G2 | 4 |
+| A16 | A merge into the default branch starts its `push` runs on the merge commit | J (not waited for) | 8 |
+| A17 | With Actions only, the combined commit status is `pending` with no statuses ("GitHub Actions generates checks, not commit statuses") | G1 | 3 |
+| A18 | **Update branch** through the API is refused for a pull request with a conflict (no `pull_request` run while it has one is documented) | G1, J | 9 |
+| A19 | `mergeable` becomes `false` (after `null`) when the base branch changes the same lines | J | 9 |
+| A20 | A pull request closed by the owner reads `state` `closed`, `merged` false, and `GET .../merge` 404; a merged one 204 | J | 8, 9 |
+| A21 | The merge commit's message ("Merge pull request #<n> from <owner>/<branch>") and the squash commit's ("<title> (#<n>)") | nothing (printed only) | 8 |
+| A22 | A wrong token on the REST API: 401 "Bad credentials" | E | 1 |
+| A23 | A refusal names the permission in `X-Accepted-GitHub-Permissions`: `pull_requests=write` to open a pull request, `actions=read` for runs, `statuses=read` for statuses | E | 10 |
+
 **Done when** the fake GitHub tests cover every function and refusal, the script passes its dry run, and **the owner has run it once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
-**The owner's run**: a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. About 10 to 15 minutes, mostly waiting for CI: 5 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair), 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it), and 1 on the second pull request (not waited for either). Actions minutes of a private repository: about 10. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>`.
+**The owner's run**: a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 10 to 15 minutes, mostly waiting for CI: 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>` (add `--restricted-token` for step 10).
 
 ### [ ] F. Full submission and the pull request
 
