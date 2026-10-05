@@ -101,7 +101,7 @@ The DoD is checked at two points. The first check is mechanical and done by the 
 
 When the assigned agent calls `ticket.submit`, it sends a **DoD report**:
 
-- for each acceptance criterion: `met` or `not_met`, with a one-line justification;
+- for each acceptance criterion: `met` or `not_met`, with a one-line justification. A criterion is something the agent can show in its own work; CI is the system's check (below), never a criterion, since a criterion such as "CI passes" could not be reported `met` at the first submission (owner's decision, lot 3 step A; Help > Tickets);
 - tests added or changed (file paths), or a justification when none are needed;
 - documentation updated (file paths), or a justification when not needed;
 - ADRs added, if a technical decision was made;
@@ -160,6 +160,7 @@ CI already ran, so the Quality agent does not run the test suite again unless th
 - One Git worktree per run, managed by the daemon.
 - One pull request per ticket. Later runs (`fix_review`) push to the same branch.
 - Pull request title: `<number>: <title>`. The description is built from the DoD report summary and links back to the ticket.
+- After a merge, the server deletes the ticket's branch on GitHub unless another open pull request uses it, and a branch GitHub already deleted counts as deleted; the daemon deletes its local copy (05, section 4.11). After a cancellation nothing is deleted, so **Reopen** finds the work (owner's decision, lot 3 step A).
 - The daemon pushes only the ticket's branch, by an explicit refspec, never a tag or another branch, and never forces a push. If the default branch moved, the agent brings it in with `git merge origin/<base>` (the daemon fetches before each run), never with a rebase, so the history Quality reviewed is kept. Unresolvable conflicts are raised as a `question`. When the branch on GitHub contains the machine's branch (for example after GitHub's **Update branch**), the daemon fast-forwards the machine's branch when it prepares a run; a branch that diverged fails the push with a clear reason and a "Needs you" item (owner's decisions, lot 3 step A).
 - Merge is done by the owner on GitHub. The web application detects merges by polling GitHub.
 - Agent commits are authored as "<profile name> (Orchestrator)" with the owner's GitHub noreply address (`<id>+<login>@users.noreply.github.com`, from the id and login stored with the token, 02 section 3.2), so pushes pass GitHub's "block pushes that expose my email" option and GitHub links the commits to the owner's account. The daemon sets them per worktree.

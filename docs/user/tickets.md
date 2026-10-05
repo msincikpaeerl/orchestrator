@@ -24,7 +24,7 @@ On a computer the states sit side by side. On a phone they are one below the oth
    - **Type**: **Feature** (something new), **Bug** (something broken), **Chore** (maintenance), **Documentation**, or **Spike** (a short investigation to answer a question).
    - **Title**: a short sentence, for example "Add a search box to the recipe list".
    - **Description**: what must be done and why. See [Formatting](#formatting-descriptions-and-comments).
-   - **Acceptance criteria**: the statements that must be true when the work is done, one per criterion, for example "Typing a word shows only the recipes that contain it". Use **Add a criterion**, and **Move up** or **Move down** to put them in order. Empty criteria are left out.
+   - **Acceptance criteria**: the statements that must be true when the work is done, one per criterion, for example "Typing a word shows only the recipes that contain it". Use **Add a criterion**, and **Move up** or **Move down** to put them in order. Empty criteria are left out. Write only what the agent can show in its own work: the agent must report every criterion as met before it can hand its work in. Don't write "the automatic checks pass" as a criterion: the Orchestrator checks that itself after the agent hands its work in.
    - **Priority**: **Low**, **Normal** or **High**. Higher priority tickets come first in their column.
    - **Assignee**: the agent expected to do the work, for example **Web Developer** (see [Assignee](#assignee)). Optional.
    - **Blocked by**: the tickets that must be done before this one can start (see [Dependencies](#dependencies)). Optional.

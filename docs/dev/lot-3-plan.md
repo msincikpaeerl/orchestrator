@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (step A)
+> Status: in progress (step A done)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -52,7 +52,7 @@ Confirmed by the owner in step A and written into the specs (01, 02, 03, 04, 05,
 - "Needs you" lists pull requests to merge: link, review summary (or "review skipped"), CI result, conflicts and workflow-change flags, ordered by when the wait began.
 - A pull request closed without merging on GitHub: the ticket is unchanged; "Needs you" shows "Pull request closed without merging" with **Reopen pull request** and **Cancel ticket**. Cancelling a ticket closes its pull request; reopening the ticket leaves it closed until the next accepted submission reopens it (Q20).
 - Conflicts with the base branch while `awaiting_merge`: "Needs you" shows "Conflicts with <base>", and **Request changes** comes with a filled-in comment asking to merge the base branch and resolve them (Q21).
-- Cleaning up a ticket's branches and worktree after a merge or a cancellation: **open**, the owner chooses before step J (options in step J).
+- Clean-up after a merge (option A, corrected by the owner): the server deletes the ticket's branch on GitHub, unless another open pull request uses it, and accepts a branch GitHub already deleted. The daemon deletes its local ticket branch when the server says the ticket's pull request is merged and the local head is the head that was merged (nothing unpushed); "every commit in the base branch" is never true after a squash merge. After a cancellation nothing is deleted, so **Reopen** finds the work.
 
 **Failures and retries** (04 section 5, 01 section 3.7):
 
@@ -64,8 +64,8 @@ Confirmed by the owner in step A and written into the specs (01, 02, 03, 04, 05,
 
 - `PROTOCOL_VERSION` 2 (Q24): `git.credential_request` gains `push`; the `ticket_submit` facts gain the push result and the changed files; `review_approve` and `review_request_changes` are decisions; an accepted submission answers `pending_ci` and the daemon waits for CI; the server ends a run waiting for CI with `run.stop` reason `completed`; `run.start` carries the `review` and `fix_review` purposes; `run.state` gains `waiting_ci`, the end reasons `ci_failed`, `ci_timeout`, `review_branch_moved` and the pushed head; `hello` gains the daemon's build.
 - A protocol 1 daemon (0.3.0) is accepted as the previous version but is **unusable**: "Daemon 0.3.0 is older than this Orchestrator (0.4.0): update it", with the update commands, as "Update the daemon on X" in "Needs you".
-- **Daemon build** (Q25, owner's addition): the daemon sends a **build identifier** in `hello`, a hash of its bundled sources computed when the package is built; the server compares it with the build of the bundle it serves. A different build with the same protocol gives a warning on the machine page and a non-blocking "Needs you" item, "A newer daemon is available for X". `orchestrator-daemon --version`, `status` and the machine page show it.
-- Help > Machines gains "Update the daemon", with the commands that worked on 2026-10-03: `npm uninstall -g @orchestrator/daemon`, `npm install -g --prefer-online <server URL>/downloads/orchestrator-daemon-<version>.tgz`, `orchestrator-daemon install-service`.
+- **Daemon build** (Q25, owner's addition): the daemon sends a **build identifier** in `hello`, a hash of its bundled sources computed when the package is built; the server compares it with the build of the bundle it serves. A different build with the same protocol gives a warning on the machine page and a non-blocking "Needs you" item, "The daemon on X is not the one this Orchestrator provides": a different build is not always a newer one (owner's correction). `orchestrator-daemon --version`, `status` and the machine page show it.
+- Help > Machines gains "Update the daemon", with the commands that worked on 2026-10-03: `systemctl --user stop orchestrator-daemon`, `npm uninstall -g orchestrator-daemon`, `npm install -g --prefer-online <server URL>/downloads/orchestrator-daemon-<version>.tgz`, `orchestrator-daemon install-service`, then `orchestrator-daemon doctor`. The installed package is named `orchestrator-daemon` (`apps/daemon/scripts/pack.ts`), not `@orchestrator/daemon` (the workspace's name).
 
 **Local fake GitHub** (Q26, `docs/dev/testing.md`): one fake joining REST and Git. Pushes over HTTP with token checks land in the repositories the REST API reads. It also covers:
 
@@ -112,9 +112,11 @@ The end-to-end server uses it.
 From **step B** on, `main` speaks protocol 2. A server built from `main` after step B is merged accepts the owner's installed 0.3.0 daemon but marks the machine unusable ("Update the daemon on X"), so **Run now** refuses on it. An Orchestrator still running 0.3.0 (the release image) is not affected. When the owner runs a server built from `main` with a real machine (step N at the latest), they update the daemon from that server with Help > Machines > "Update the daemon":
 
 ```sh
-npm uninstall -g @orchestrator/daemon
+systemctl --user stop orchestrator-daemon
+npm uninstall -g orchestrator-daemon
 npm install -g --prefer-online <server URL>/downloads/orchestrator-daemon-0.4.0.tgz
 orchestrator-daemon install-service
+orchestrator-daemon doctor
 ```
 
 then check the machine page: online, usable, and the build the same as the server's. Step E's check needs no daemon.
@@ -124,15 +126,18 @@ then check the machine page: online, usable, and the build the same as the serve
 - **Asynchronous causes**: a test waits, with a deadline, for the observable effect (a file, a database row, a stream message, a GitHub state in the fake), never for a delay or for a log line written before the effect (lot 2 step M, scenario C).
 - **The owner's processes and units**: a test's daemons, tmux servers, sessions and systemd units never look like the owner's. Test homes are under `/tmp/od-test-*`, units are named `od-test-<hash>-…`, every spawned process is in its own process group and stopped until none is left, and each test file ends with `stopHomeProcesses` (lot 2 steps K, M and N).
 - **CI duration**: a CI test shard that takes more than 8 minutes gets a new shard in the same change (ADR 0032).
+- **Step size**: a session that finds its step too large for one session says so before writing any code and proposes a split, which the owner approves (working rule 15).
 - **Rules 9 and 10**: only the owner touches the real GitHub and the real Claude Code. Every script that can do either refuses to run in CI or without a terminal and asks for a typed `yes` (`tools/smoke/lib/real-claude-guard.sh`, extended to GitHub in step E).
 
 ## Steps
 
-### [ ] A. Plan and spec decisions
+### [x] A. Plan and spec decisions
 
 - This plan; the decisions above written into specs 01, 02, 03, 04, 05, 06, 07, 09 and 10; the settings named as on the screen (04 section 8, 05 section 5, 07 section 8); CLAUDE.md's "Current state".
 
-**Done when** the owner has approved this plan and the spec changes, and chosen the clean-up option of step J.
+**Done when** the owner has approved this plan and the spec changes.
+
+*Done 2026-10-05.* Approved by the owner with six corrections: the daemon's package name and the update commands that worked (with a test in step B); the smoke script repairs the link and waits for CI before the merge; ticket 1 of step N keeps one criterion the agent can meet, and Help > Tickets says what a criterion is; clean-up option A without the base-branch comparison; working rule 15 on step size, and step G split into G1 and G2; the "Needs you" item for a different daemon build named so it stays true both ways.
 
 ### [ ] B. Protocol 2, daemon build and updates
 
@@ -148,7 +153,7 @@ then check the machine page: online, usable, and the build the same as the serve
 
   `PROTOCOL_VERSION` 2, returned by `/version`.
 - Daemon build identifier: computed from the bundled sources when the package is built, embedded in the bundle, shown by `--version` and `status`. The server reads the build of the bundle it serves.
-- Server: a protocol 1 daemon is accepted but unusable, with the update commands; a different build with protocol 2 is a warning and a non-blocking "Needs you" item. The machine page shows the build.
+- Server: a protocol 1 daemon is accepted but unusable, with the update commands; a different build with protocol 2 is a warning and a non-blocking "Needs you" item, "The daemon on X is not the one this Orchestrator provides". The machine page shows the build.
 - The daemon speaks protocol 2: the decision tools of the relay include the review tools. Its behaviour is unchanged until the steps that use the new messages.
 - `docs/user/machines.md` "Update the daemon"; `needs-you.md` rows; CHANGELOG.
 
@@ -157,7 +162,8 @@ then check the machine page: online, usable, and the build the same as the serve
 - unit tests accept a valid example of every new message and tool and reject invalid ones;
 - `/version` reports protocol 2;
 - integration tests show a protocol 1 `hello` online but unusable with the update commands, a different build giving the warning item, and the same build giving none;
-- a test installs the served package and `orchestrator-daemon --version` prints the build the server reports.
+- a test installs the served package and `orchestrator-daemon --version` prints the build the server reports;
+- a test reads the package name in the documented update commands (`docs/user/machines.md` and the "Needs you" item) and checks it against the name of the package the server serves, so the Help can never name a package that is not installed.
 
 ### [ ] C. Local fake GitHub
 
@@ -209,17 +215,18 @@ then check the machine page: online, usable, and the build the same as the serve
   2. open a pull request; read it back;
   3. wait for CI and read its result (Actions runs and commit statuses);
   4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt;
-  5. post a comment review; check that a request-changes review on your own pull request is refused as expected;
-  6. read the mergeable flag;
-  7. ask the owner to merge it on GitHub (the script waits), then detect the merge;
-  8. open a second pull request from a second branch; ask the owner to close it without merging; detect that.
+  5. push a commit that repairs the link; wait for CI to pass (the owner's projects require the `ci` check to merge);
+  6. post a comment review; check that a request-changes review on your own pull request is refused as expected;
+  7. read the mergeable flag;
+  8. ask the owner to merge it on GitHub (the script waits), then detect the merge;
+  9. open a second pull request from a second branch; ask the owner to close it without merging; detect that.
 
   At the end it deletes its branches on GitHub and its scratch clone (the merged commit stays on the default branch). If it stops early, it says what it left (branches, pull requests) and how to remove them. Checked in CI with `bash -n` and a dry run against the fake GitHub.
 - The guard of `tools/smoke/lib/` also covers scripts that act on the real GitHub.
 
 **Done when** the fake GitHub tests cover every function and refusal, the script passes its dry run, and **the owner has run it once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
-**The owner's run**: a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. About 5 minutes, 4 CI runs (the skeleton's `docs-links` and `ci` jobs, about 1 minute each). Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>`.
+**The owner's run**: a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. About 10 to 15 minutes, mostly waiting for CI: 5 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair), 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it), and 1 on the second pull request (not waited for either). Actions minutes of a private repository: about 10. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>`.
 
 ### [ ] F. Full submission and the pull request
 
@@ -229,37 +236,31 @@ then check the machine page: online, usable, and the build the same as the serve
   - the per-type form checks;
   - listed paths changed on the branch.
 - The pull request opened or updated by the server on an accepted submission, its description from the template `agents/templates/pull-request.md`; workflow changes flagged in it and on the ticket.
-- Until step G, an accepted submission ends the run and the ticket goes to `in_review` with the pull request link (lot 2's meaning plus the pull request: the owner checks it).
+- Until step G1, an accepted submission ends the run and the ticket goes to `in_review` with the pull request link (lot 2's meaning plus the pull request: the owner checks it).
 - Ticket page: pull request link, DoD report with each check's result. `push_failed` with its "Needs you" item. The template `implement.md` and the common rules updated for the full submission.
 - `docs/user/`: Tickets ("Submission and the pull request"), Needs you, `github-token.md` rewritten for 0.4.0; CHANGELOG.
 
 **Done when** integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed`; Playwright on both viewports shows a submitted ticket with its pull request link and checks.
 
-### [ ] G. CI
+### [ ] G1. CI: waiting and success
 
 - The polling loop (**GitHub check interval**), restored at server start.
-- CI as decided:
-  - `pending_ci`;
-  - the daemon's `waiting_ci` (no nudge, no working time, no idle timeout);
-  - **Wait for CI to start** ("No CI found");
-  - failure through `run.input` (template `ci-failed.md`, **Longest CI log excerpt**);
-  - **Most CI failures per run** (`ci_failed`, counted);
-  - success: `run.stop` `completed` and `in_review`;
-  - **CI wait at submission** (`ci_timeout`, not counted, "CI did not finish" with **Check CI again**).
-- `ci_status` for all roles.
-- Ticket and run pages: "waiting for CI", the CI result per run and job. The settings and their texts; Help; CHANGELOG.
+- An accepted submission answers `pending_ci`; the daemon's `waiting_ci` (no nudge, no working time, no idle timeout); the run counts against its account.
+- The CI result of 04 section 3.1 (every workflow run of the head commit and its statuses) and **Wait for CI to start** ("No CI found", the submission passes).
+- CI passed: `run.stop` `completed`, the run `succeeded`, the ticket `in_review` (replacing step F's end at submission).
+- `ci_status` for all roles, cut to **Longest CI log excerpt**.
+- The new settings of this step; the run page shows "waiting for CI".
 
-**Done when** daemon and server tests show:
+**Done when** daemon and server tests with the fake GitHub show CI passing, no CI found, the idle timeout and working time not counting while waiting, the polling restored after a server restart, and `ci_status` cut to the setting.
 
-- CI passing;
-- CI failing once then passing in the same session;
-- one failure too many;
-- no CI found;
-- the timeout, then **Check CI again** accepting the stored submission without a session;
-- the idle timeout and working time not counting while waiting;
-- `ci_status` cut to the setting.
+### [ ] G2. CI failures, limits and screens
 
-Playwright: a ticket waiting for CI, then in review with its CI result.
+- A failure sent back through `run.input` (template `ci-failed.md`, **Longest CI log excerpt**), the run back to `working`, a new submission checked again from the start.
+- **Most CI failures per run** (`ci_failed`, counted).
+- **CI wait at submission** (`ci_timeout`, not counted, "CI did not finish" with **Check CI again**, which accepts the stored submission without a session when CI has passed since).
+- Ticket and run pages: "waiting for CI", the CI result per run and job; "Needs you"; the settings and their texts (the reworded **CI wait at submission**); Help; CHANGELOG.
+
+**Done when** daemon and server tests show CI failing once then passing in the same session, one failure too many, the timeout then **Check CI again** accepting the stored submission without a session (and finding CI still not finished, changing nothing); Playwright on both viewports shows a ticket waiting for CI, then in review with its CI result, and **Check CI again** from "Needs you".
 
 ### [ ] H. Quality and review runs
 
@@ -308,13 +309,10 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
   - conflicts while `awaiting_merge` → "Needs you" with the filled-in **Request changes**.
 - **Cancel** closes the pull request; the next accepted submission of a reopened ticket reopens it.
 - "Needs you" pull requests to merge (link, review summary or "review skipped", CI, conflicts and workflow flags).
-- Branch and worktree clean-up, as the owner chooses before this step. Options (the worktree itself is already removed at each run's end, except for waiting and paused runs):
-  - A (recommended): after a **merge**, the server deletes the ticket's branch on GitHub, only if no other open pull request uses it (Contents write), and the daemon deletes its local ticket branch at its next fetch of that repository when the branch is gone from GitHub and every one of its commits is in the base branch. After a **cancellation**, nothing is deleted (04 section 2: "closed but kept"), so **Reopen** finds the work.
-  - B: nothing is deleted by the Orchestrator; the owner turns on GitHub's "Automatically delete head branches" if they want; local branches stay until the bare clone is pruned.
-  - C: as A, and a cancellation also deletes the GitHub branch after a delay (a setting); **Reopen** then starts from the base branch.
+- Clean-up after a merge (owner's choice, option A corrected): the server deletes the ticket's branch on GitHub unless another open pull request uses it (Contents write), and a branch GitHub already deleted counts as deleted. The daemon deletes its local ticket branch when the server says the ticket's pull request is merged and the local head is the head that was merged (nothing unpushed): it never compares commits with the base branch, which a squash merge would defeat. The worktree is already removed at each run's end (except for waiting and paused runs). After a cancellation nothing is deleted (04 section 2: "closed but kept"), so **Reopen** finds the work.
 - Help: merging, closed pull requests, conflicts; CHANGELOG.
 
-**Done when** tests with the fake GitHub cover: a merge to `done` (dependents unblocked), a merge during `in_review` with a run active, a pull request closed then reopened, cancel closing it, conflicts, and the clean-up chosen. Playwright: "Needs you" lists a pull request to merge, which becomes `done` after the fake merge without reload.
+**Done when** tests with the fake GitHub cover: a merge to `done` (dependents unblocked), a merge during `in_review` with a run active, a pull request closed then reopened, cancel closing it, conflicts, and the clean-up: the GitHub branch deleted after a merge, a branch GitHub already deleted accepted, a branch another open pull request uses kept, the local branch deleted after a squash merge, a local branch with an unpushed commit kept, nothing deleted after a cancellation. Playwright: "Needs you" lists a pull request to merge, which becomes `done` after the fake merge without reload.
 
 ### [ ] K. Failures and retries
 
@@ -354,7 +352,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - **Ticket 1, CI failing once** (type **Documentation**, assignee **Web Developer**):
   - title `Add a FAQ link to README.md`;
   - description: `This ticket checks the Orchestrator's CI feedback. Add the line "See the [FAQ](docs/user/faq.md)." at the end of README.md and commit it. Do not create docs/user/faq.md and do not run the documentation link check yourself: CI must fail once, on purpose. When the CI result reports the broken link, create docs/user/faq.md containing the line "No questions yet.", commit it and submit again. Do nothing else.`;
-  - criteria, one per box: `README.md ends with a link to docs/user/faq.md`, then `CI passes on the pull request`;
+  - one criterion: `README.md ends with a link to docs/user/faq.md`. CI is the system's check, not the agent's criterion: a criterion is something the agent can show in its own work (Help > Tickets), and a criterion such as "CI passes" could never be reported met at the first submission, which the server would refuse;
   - expected: submission, pull request, CI fails, the agent gets the message, creates the file, submits, CI passes, `in_review`. The owner uses **Skip review**, merges on GitHub, and sees `done` without reloading.
 - **Ticket 2, review and changes** (type **Documentation**, assignee **Web Developer**):
   - title `Add one line to README.md`;
