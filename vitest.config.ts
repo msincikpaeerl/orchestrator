@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // One Vitest project per workspace package, each inheriting the settings below.
@@ -18,6 +19,8 @@ export default defineConfig({
     // An unhandled error or rejection fails the run, in every package (the default, kept on
     // purpose): in the daemon one would stop the Node.js process.
     dangerouslyIgnoreUnhandledErrors: false,
+    // A test that tries to reach the real GitHub fails (working rule 9).
+    setupFiles: [fileURLToPath(new URL('vitest.setup.ts', import.meta.url))],
     projects: packageDirs.map((root) => ({
       extends: true,
       root,

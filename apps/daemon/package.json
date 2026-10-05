@@ -17,6 +17,9 @@
     "./testing/git-http-server": {
       "source": "./test/git-http-server.ts"
     },
+    "./testing/real-github-guard": {
+      "source": "./test/real-github-guard.ts"
+    },
     "./testing/remote": {
       "source": "./test/remote.ts"
     }

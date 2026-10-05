@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { pino, type Logger } from 'pino';
 import { findExecutable } from '../src/exec.js';
 import { daemonPaths, type DaemonPaths } from '../src/paths.js';
+import { REAL_GITHUB_GIT_CONFIG } from './real-github-guard.js';
 
 export { TMUX_SOCKET_NAME } from '../src/paths.js';
 
@@ -53,6 +54,9 @@ export async function createTestHome(): Promise<TestHome> {
     LOG_LEVEL: 'info',
   };
   await mkdir(env.HOME ?? '', { recursive: true });
+  // Git reads `$XDG_CONFIG_HOME/git/config` besides `~/.gitconfig`, which some tests write.
+  await mkdir(join(env.XDG_CONFIG_HOME ?? '', 'git'), { recursive: true });
+  await writeFile(join(env.XDG_CONFIG_HOME ?? '', 'git', 'config'), REAL_GITHUB_GIT_CONFIG);
   return {
     root: folder,
     bin,
