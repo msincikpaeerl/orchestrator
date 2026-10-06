@@ -250,11 +250,56 @@ describe('PUT /api/github/token', () => {
     );
     expect(results(status)).toMatchObject({
       contents: 'ok',
-      pull_requests: 'ok',
+      // Its read probe needs a private repository (lot 3 step E1).
+      pull_requests: 'could_not_verify',
       workflows: 'ok',
       statuses: 'could_not_verify',
       actions: 'could_not_verify',
       metadata: 'could_not_verify',
+    });
+  });
+
+  // Lot 3 step E1 (owner's answer 1): Pull requests is probed for reading and for writing, and
+  // reads OK only when both probes are OK.
+  it('probes Pull requests for reading too, with a list request on a private repository', async () => {
+    await saveToken(fullAccount());
+    expect(
+      github.requests.some(
+        (request) =>
+          request.method === 'GET' && request.path === '/repos/octo-owner/notes/pulls?per_page=1',
+      ),
+    ).toBe(true);
+  });
+
+  it('says Missing for Pull requests when only its read probe is refused', async () => {
+    github.override = (request) =>
+      request.method === 'GET' && request.path.startsWith('/repos/octo-owner/notes/pulls')
+        ? {
+            status: 403,
+            body: { message: 'Resource not accessible by personal access token' },
+            headers: { 'x-accepted-github-permissions': 'pull_requests=read' },
+          }
+        : undefined;
+    const status = connected(await saveToken(fullAccount()));
+    expect(results(status).pull_requests).toBe('missing');
+    expect(status.problems).toEqual([
+      { type: 'permission_missing', permission: 'pull_requests', access: 'write' },
+    ]);
+  });
+
+  it('says Could not verify for Pull requests when its read probe cannot tell', async () => {
+    github.override = (request) =>
+      request.method === 'GET' && request.path.startsWith('/repos/octo-owner/notes/pulls')
+        ? { status: 404, body: { message: 'Not Found' } }
+        : undefined;
+    const pullRequests = connected(await saveToken(fullAccount())).permissions.find(
+      (check) => check.permission === 'pull_requests',
+    );
+    expect(pullRequests).toEqual<PermissionCheck>({
+      permission: 'pull_requests',
+      access: 'write',
+      result: 'could_not_verify',
+      reason: 'Unexpected answer from GitHub (HTTP 404)',
     });
   });
 
