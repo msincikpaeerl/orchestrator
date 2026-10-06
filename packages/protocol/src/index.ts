@@ -196,10 +196,12 @@ export { McpPermission, ROLE_MCP_PERMISSIONS } from './mcp/permissions.js';
 export { parseAgentProfileFile, type AgentProfileFile } from './api/agent-profile-file.js';
 export { Ack, DAEMON_MESSAGE_MAX_BYTES, MessageId, message } from './daemon/envelope.js';
 export {
+  BRANCH_REPORT_MAX_COMMITS,
   BranchReport,
   CommitSummary,
   GitBranchName,
   GitHash,
+  NotOnGitHub,
   PushFailureReason,
   PushResult,
   RepositoryOwner,

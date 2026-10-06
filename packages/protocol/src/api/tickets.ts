@@ -211,8 +211,13 @@ export const TicketBranch = z.object({
   /** That report's head and its commits ahead of the base branch, newest first. */
   head: GitHash.nullable(),
   commits: z.array(CommitSummary),
-  /** The commits of that report no push held: only on `machine`. */
+  /**
+   * The commits of that report not on GitHub: those the machine said were on no branch fetched
+   * from GitHub and no push held. Only on `machine`; never from a review run.
+   */
   notOnGitHub: z.array(GitHash),
+  /** How many: the listed ones plus those beyond the report's ceiling, which count as not on GitHub. */
+  notOnGitHubCount: z.int().min(0),
   /** The last push done: its head, when, from which machine, and the branch's page on GitHub. */
   pushed: z
     .object({

@@ -517,6 +517,11 @@ export const runs = pgTable(
     /** Reported at the end: the branch head and the commits ahead of the base (`CommitSummary[]`). */
     branchHead: text('branch_head'),
     commits: jsonb('commits'),
+    /**
+     * What of that report the machine said was not on GitHub (`NotOnGitHub`); null when it did not
+     * say (protocol 1, runs of 0.3.0): every commit no push held then counts (lot 3 step D3).
+     */
+    notOnGitHub: jsonb('not_on_github'),
     estimatedUsageUsd: doublePrecision('estimated_usage_usd'),
     /** Summary written by the agent: its submission's summary, or why it gave up. */
     outcome: text('outcome'),
