@@ -143,9 +143,11 @@ describe('the push at ticket_submit', () => {
         ],
       });
       const run = await start(manager);
-      await ended(run.runId);
+      const end = await ended(run.runId);
       expect(toolCalls[0]).toMatchObject({ workspace: { clean: false, push: null } });
-      expect(remoteRefs()).toEqual(['refs/heads/main']);
+      // The commit reaches GitHub only with the end push of the run that gave up (lot 3 step D2).
+      expect(end).toMatchObject({ reason: 'gave_up', push: { status: 'pushed' } });
+      expect(remoteRefs()).toEqual(['refs/heads/main', 'refs/heads/t/1-add-notes']);
     },
     TIMEOUT,
   );

@@ -154,6 +154,14 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     runId: '00000000-0000-4000-8000-000000000001',
     text: 'Writing tests for the contact form',
   },
+  'run.git_config_restored': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    machine: 'Laptop',
+    repository: 'octo-owner/web-shop',
+    changes:
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath. Hook files added, removed: pre-commit.',
+  },
   'ticket.submitted': {
     project: 'WEB',
     ticket: 'WEB-12',

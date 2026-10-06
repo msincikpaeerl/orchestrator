@@ -97,6 +97,7 @@ export const EventType = z.enum([
   'run.created',
   'run.status_changed',
   'run.progress',
+  'run.git_config_restored',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -328,6 +329,16 @@ export const EventPayloads = {
   }),
   /** A new progress line shown for the run (06, section 4.2). */
   'run.progress': z.object({ ...TicketFacts, ...AgentFacts, text: z.string() }),
+  /**
+   * The bare clone's Git configuration or hooks were changed during the run, and restored at its
+   * end (05, section 7.1): the settings and hook files named, never their values.
+   */
+  'run.git_config_restored': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    repository: z.string(),
+    changes: z.string(),
+  }),
 } satisfies Record<EventType, z.ZodType>;
 
 export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;

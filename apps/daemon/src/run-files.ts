@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import {
   DaemonRunState,
+  GitHash,
   HookEvent,
   RunEndReason,
   RunStart,
@@ -64,6 +65,11 @@ export const RunStateFile = z.object({
   /** The transcript facts of `TranscriptReader`, kept across a daemon restart. */
   transcriptApiError: z.string().nullable().default(null),
   transcriptCostUsd: z.number().nullable().default(null),
+  /** A review run's heads at the start, compared at its end (05, section 4.2; lot 3 step D2). */
+  reviewStart: z
+    .object({ head: GitHash, localBranch: GitHash.nullable() })
+    .nullable()
+    .default(null),
 });
 export type RunStateFile = z.infer<typeof RunStateFile>;
 

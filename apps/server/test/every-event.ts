@@ -204,6 +204,18 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   await t.db.update(schema.claudeAccounts).set({ limitedUntil: new Date(Date.now() - 1000) });
   await call('POST', `/api/runs/${created.id}/resume`);
   await runState({ state: 'starting', claudeCodeVersion: '2.1.100' });
+  // Its end, reported after the server failed it: the project's Git configuration was restored.
+  await runState({
+    state: 'ended',
+    sessionAlive: false,
+    reason: 'claude_code_unsupported',
+    detail: null,
+    branch: null,
+    push: null,
+    headMoved: null,
+    gitConfigRestored:
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath.',
+  });
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

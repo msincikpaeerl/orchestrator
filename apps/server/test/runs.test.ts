@@ -191,6 +191,7 @@ function state(
         reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
         detail?: string | null;
         branch?: { name: string; head: string; commitsAhead: typeof COMMITS } | null;
+        gitConfigRestored?: string | null;
       },
 ): RunState {
   const base = {
@@ -211,6 +212,7 @@ function state(
         branch: payload.branch ?? null,
         push: null,
         headMoved: null,
+        gitConfigRestored: payload.gitConfigRestored ?? null,
       },
     };
   }
@@ -1012,6 +1014,135 @@ describe('Git credentials (05, section 7)', () => {
     await report(daemon, state(created.id, { state: 'ended', reason: 'gave_up' }));
     expect(await ask(daemon, created.id)).toEqual({ ok: false, message: 'the run is failed' });
     expect(t.logs.text).not.toContain(TOKEN);
+  });
+});
+
+describe('the push credential of an ending run (05, section 7; lot 3 step D2)', () => {
+  const pushAsk = async (
+    from: ScriptedDaemon,
+    runId: string,
+    owner = 'octo-owner',
+    name = 'bakery',
+  ) => {
+    const answer = await from.request({
+      type: 'git.credential_request',
+      id: randomUUID(),
+      payload: { runId, repository: { owner, name }, command: 'push' },
+    });
+    if (answer.type !== 'git.credential') throw new Error(`unexpected ${answer.type}`);
+    return answer.payload;
+  };
+  const granted = { ok: true, username: 'x-access-token', password: TOKEN };
+  const stoppedSecondsAgo = (runId: string, seconds: number) =>
+    t.db
+      .update(schema.runs)
+      .set({ stopSentAt: new Date(Date.now() - seconds * 1000) })
+      .where(eq(schema.runs.id, runId));
+
+  it('gives it after Stop run until the end is reported, within MCP call timeout plus Longest push', async () => {
+    await start({ settings: { mcpCallTimeoutSeconds: 30, pushTimeoutSeconds: 60 } });
+    const { daemon, account } = await laptop();
+    const { run: created } = await started(daemon);
+    const { daemon: other } = await connectedMachine('Desktop', account.id);
+    await working(daemon, created.id);
+    expect((await call('POST', `/api/runs/${created.id}/stop`)).statusCode).toBe(200);
+    await daemon.find(
+      (received) => received.type === 'run.stop' && received.payload.runId === created.id,
+      'run.stop',
+    );
+    expect(await pushAsk(daemon, created.id)).toEqual(granted);
+    // Refused to another machine, for another repository, and for a review run.
+    expect(await pushAsk(other, created.id)).toEqual({ ok: false, message: 'unknown run' });
+    expect(await pushAsk(daemon, created.id, 'octo-owner', 'notes')).toEqual({
+      ok: false,
+      message: "not the run's repository",
+    });
+    await t.db.update(schema.runs).set({ purpose: 'review' }).where(eq(schema.runs.id, created.id));
+    expect(await pushAsk(daemon, created.id)).toEqual({
+      ok: false,
+      message: 'a review run never pushes',
+    });
+    await t.db
+      .update(schema.runs)
+      .set({ purpose: 'implement' })
+      .where(eq(schema.runs.id, created.id));
+    // The bound: 30 + 60 seconds after run.stop.
+    await stoppedSecondsAgo(created.id, 85);
+    expect(await pushAsk(daemon, created.id)).toEqual(granted);
+    await stoppedSecondsAgo(created.id, 95);
+    expect(await pushAsk(daemon, created.id)).toEqual({
+      ok: false,
+      message: 'the run was stopped more than 90 seconds ago (MCP call timeout plus Longest push)',
+    });
+    // Once the end is reported, the run is no longer ending.
+    await stoppedSecondsAgo(created.id, 0);
+    await report(daemon, state(created.id, { state: 'ended', reason: 'stopped' }));
+    expect(await pushAsk(daemon, created.id)).toEqual({
+      ok: false,
+      message: 'the run is cancelled',
+    });
+    expect(t.logs.text).not.toContain(TOKEN);
+  });
+
+  it('gives it after the ticket is cancelled, never a fetch, and never to a run ended by its daemon', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: first } = await started(daemon);
+    await working(daemon, first.id);
+    expect((await call('POST', '/api/projects/WEB/tickets/1/cancel')).statusCode).toBe(200);
+    await daemon.find(
+      (received) => received.type === 'run.stop' && received.payload.reason === 'ticket_cancelled',
+      'run.stop',
+    );
+    expect(await pushAsk(daemon, first.id)).toEqual(granted);
+    const fetch = await daemon.request({
+      type: 'git.credential_request',
+      id: randomUUID(),
+      payload: {
+        runId: first.id,
+        repository: { owner: 'octo-owner', name: 'bakery' },
+        command: 'fetch',
+      },
+    });
+    expect(fetch.type === 'git.credential' && fetch.payload).toEqual({
+      ok: false,
+      message: 'the run is cancelled',
+    });
+
+    // A run its daemon ended (gave up) was running until that report: no window after it.
+    await createTicket({ title: 'Second' });
+    const { run: second } = await started(daemon, 2);
+    await working(daemon, second.id);
+    await report(daemon, state(second.id, { state: 'ended', reason: 'gave_up' }));
+    expect(await pushAsk(daemon, second.id)).toEqual({ ok: false, message: 'the run is failed' });
+  });
+});
+
+describe('a Git configuration restored at a run end (05, section 7.1; lot 3 step D2)', () => {
+  it('writes an event naming what changed, with any credential masked, and nothing else', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    await working(daemon, created.id);
+    const changes = `Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath, url.https://x-access-token:${TOKEN}@example.com/.insteadof.`;
+    await report(
+      daemon,
+      state(created.id, { state: 'ended', reason: 'gave_up', gitConfigRestored: changes }),
+    );
+    const events = await eventTypes('run.git_config_restored');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.payload).toMatchObject({
+      project: 'WEB',
+      ticket: 'WEB-1',
+      machine: 'Laptop',
+      repository: 'octo-owner/bakery',
+    });
+    const written = JSON.stringify(events[0]?.payload);
+    expect(written).toContain('core.hookspath');
+    expect(written).not.toContain(TOKEN);
+    // No "Needs you" item: information only.
+    const items = NeedsYouResponse.parse((await call('GET', '/api/needs-you')).json()).items;
+    expect(JSON.stringify(items)).not.toContain('hookspath');
   });
 });
 

@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C and D1 done; step D split into D1, D2 and D3)
+> Status: in progress (steps A, B, C, D1 and D2 done; step D split into D1, D2 and D3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -246,7 +246,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - **Longest push also limits the download of the project at a run's start** (the session's choice, kept by the owner on conditions): one setting for now, its description saying so and that the first download on a new machine is the longest. A separate fetch limit was deliberately not added; it may be needed later, because the rule tying Longest push to the Claude Code MCP tool timeout concerns only the push at submission, inside the agent's tool call, while a first download of a large project can need far longer than a push. A download stopped by it ends the run `crashed` (failure `crash`, counted as a failed attempt, like any preparation failure), with the machine's words naming the setting and its value, now shown on the run page (`endDetail`) and in Help > Machines > Troubleshooting.
 - ADR 0034 records the isolated credentialed command, the options rejected and what stays open.
 
-### [ ] D2. Run ends, reviews and preparation
+### [x] D2. Run ends, reviews and preparation
 
 - **The push at a run's end**, best effort, for an `implement` or `fix_review` run that ends with commits not on GitHub (failure, give up, timeout, **Stop run**), after the scope stop and the sweep, with the result in `run.state`. A failure never changes the run's outcome.
 - **"Ending"** on the server: a run the server ended by `run.stop` (**Stop run**, ticket cancelled, `not_active`) whose machine has not reported its end yet. The server records when it sent `run.stop`; a `push` credential is given from then until the end report, and at most MCP call timeout plus Longest push after it. A run the daemon ends by itself is still `running` until its end report. Refusals tested: another machine, another repository, a review run, a run ended longer ago than that bound.
@@ -256,6 +256,26 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - `git merge` added to the builders' allowlist; the common rules say how to bring the base branch in (`git merge origin/<base>`).
 
 **Done when** daemon tests show the end push at a failure, a give-up, a timeout and **Stop run**; a failed end push leaving the outcome unchanged; a review run never pushing and reporting a moved head; the fast-forward after **Update branch**; a diverged branch reported and never overwritten; a waiting run's branch left alone; a changed configuration restored with its event; and server tests show the "ending" refusals above.
+
+Added by the owner at the start of the step (2026-10-06):
+
+- the end push gets its credential on every way a run can end with commits not on GitHub: a failure, a give-up, each timeout (idle and Longest run), reminders used up, **Stop run** and a cancelled ticket, one test per way, each waiting for the branch on the Git test server;
+- the end push reports through `run.state` before the end is reported, and a slow or failed end push never keeps the worktree, the session or the run's processes alive beyond Longest push;
+- the Git configuration is restored under the bare clone's lock, and a waiting or paused run of the same repository still works afterwards (its worktree, its commit author); the event says what changed in plain words, with no file content that could hold a secret;
+- `git merge`: the rules added and why those forms are in the summary, and the profiles' versions go up; the allowlist smoke test stays the owner's, in step N;
+- a push answered "not found" (HTTP 404) is `refused`, not `unreachable` (test first).
+
+*Done 2026-10-06.* Choices made in the step:
+
+- **Review runs** (the owner's position, question 5 of the step): the worktree is detached at GitHub's head of the ticket branch as fetched at preparation; the local branch is neither created nor moved, and a local branch ahead of GitHub is left alone. "Head moved" is true when the worktree's head or the local ticket branch differs at the end from the start (both kept in `state.json`; a head that cannot be read counts as moved); a moved head replaces the run's end reason with `review_branch_moved`. The branch reported at the end is the worktree's head. A ticket branch not on GitHub fails the preparation ("nothing to review"). 05 section 4.2 is reworded; no protocol change (`headMoved` and `review_branch_moved` came with step B).
+- **Order at the end**: session closed, scope stopped and processes swept, branch read (review: head moved), worktree removed, configuration restored, end push, end reported. So the session, the processes and the worktree are gone before the push starts; the report waits for the push (at most Longest push, plus the wait for the bare clone's lock). The daemon's acknowledgement of `run.stop` still comes once the run has ended, as in lot 2.
+- **The end push** is tried for every end reason but `submitted`, when the branch holds commits on no branch fetched from GitHub. After any successful push the daemon sets `refs/remotes/origin/<branch>` to the pushed head (no credential), so the end push after a submission push, and `status`, do not count it as not on GitHub.
+- **Ending on the server**: `runs.stop_sent_at` (set at every `run.stop`: **Stop run**, a cancelled ticket or a ticket marked done, `not_active`) and `runs.end_reported_at` (migration 0015). The bound uses the current global settings at the credential request.
+- **Restored by the last run of a repository to end** (owner's change after reading the branch): while another run's worktree of the same repository exists (working, waiting or paused), a run's end restores nothing and sends no event, since every worktree reads the bare clone's configuration and hooks: restoring would silently take away what that run set up (husky's hooks after its `npm install`) and blame the wrong run. The credentialed commands never read that configuration, so waiting costs nothing for the token. The event's words say the change was found when the run ended, by that run or an earlier one, not that the run made it.
+- **The "ending" window** counts from `run.stop`, and the session's close and the process sweep come out of it: with the smallest settings (MCP call timeout 5 seconds, Longest push 10 seconds) a slow stop can close it before the push asks; the end push is then refused, the outcome unchanged and the commits stay on the machine (05 section 7).
+- **The restored configuration's event needs a protocol field**: `run.state` `ended` gains `gitConfigRestored` (plain words, null when nothing changed; protocol 2 is not released, so no version change). The server writes `run.git_config_restored` (Activity: "Git configuration restored"), masked again; no "Needs you" item. What is restored and kept is in 05 section 7.1.
+- **Fast-forward at preparation** uses `update-ref` with the old head; a ticket branch checked out by another worktree (a waiting or paused run) fails the new run's preparation with a plain message instead of Git's, and is never moved.
+- **`git merge` rules**: `Bash(git merge origin/*)`, `Bash(git merge --no-edit origin/*)` and `Bash(git merge --abort)` (03 section 2.2): only branches fetched from GitHub can be merged; `--abort` undoes a merge the agent cannot finish; a conflict is finished with `git add` and `git commit`. The versions of the Architect and the Web Developer go up by themselves at the server's next start (their files and the common rules changed).
 
 ### [ ] D3. Server and ticket page
 
@@ -274,7 +294,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
   - a repository that does not exist.
 
   **The token** is read from the terminal without echo (`read -s`), held only in the script's process memory, passed to its Node.js helper through a pipe on standard input, never written to disk, never in arguments, the environment of child processes, shell history or output, and masked in any message GitHub sends back. Its steps, each printing `PASS` or `FAIL`:
-  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused (A1, A4, A22);
+  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused; a push to a repository name of the owner's account that does not exist answers "Repository not found" (A1, A4, A22, A24);
   2. open a pull request; read it back, printing `mergeable` at the first read and the next ones; a second pull request for the same branch is refused (A5, A6);
   3. wait for CI and read its result (Actions runs and commit statuses): the runs found by the head commit are the `pull_request` runs only; the logs of a job not finished yet; the combined commit status with Actions only (A12, A14, A17);
   4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt through the redirect, and the jobs and steps with their conclusions (A12, A13, A15);
@@ -317,6 +337,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 | A21 | The merge commit's message ("Merge pull request #<n> from <owner>/<branch>") and the squash commit's ("<title> (#<n>)") | nothing (printed only) | 8 |
 | A22 | A wrong token on the REST API: 401 "Bad credentials" | E | 1 |
 | A23 | A refusal names the permission in `X-Accepted-GitHub-Permissions`: `pull_requests=write` to open a pull request, `actions=read` for runs, `statuses=read` for statuses | E | 10 |
+| A24 | A push to a repository that no longer exists, or that the token cannot see: GitHub answers "remote: Repository not found." and Git says "fatal: repository '<url>' not found" (HTTP 404); the push reads `refused`, since GitHub answered | D2 (`pushResult`), F | 1 (a repository name that does not exist, checked at no cost) |
 
 **Done when** the fake GitHub tests cover every function and refusal, the script passes its dry run, and **the owner has run it once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
@@ -414,6 +435,8 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - The counted and not counted failures of lot 3 (`ci_failed`, `ci_timeout`, `push_failed`, review failures), each with its `system` comment.
 - 04 section 5 rewritten from the code; lot 4's rule on blocking items already in 10.
 - Help: "When a ticket keeps failing"; CHANGELOG.
+
+- **A project download at a run's start that fails or is stopped** (GitHub unreachable, the credential refused, **Longest push** reached) is not the agent's failure (owner's decision, lot 3 step D2). It gets a failure reason of its own, is not counted as a failed attempt, and leaves a blocking "Needs you" item, as `push_failed` does. The run page and the ticket's comment say what happened in true words, instead of today's "its Claude Code session stopped unexpectedly or never started". The Help line "Such a run counts as a failed attempt in this version" (Machines > Troubleshooting) is corrected in this step. Until then such a run ends `crashed`, counted, as step D1 left it.
 
 **Done when** tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not as decided, and Run now's refusal naming the setting and its value. Playwright: **Try again** from "Needs you".
 

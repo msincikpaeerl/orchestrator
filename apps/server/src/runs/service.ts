@@ -125,8 +125,8 @@ const TERMINAL = new Set<string>(['succeeded', 'failed', 'cancelled']);
 const FETCHING = new Set<string>(['dispatched', 'starting', 'running']);
 
 /**
- * Runs that may push their ticket branch (05, sections 4.9 and 7): running, at `ticket_submit`.
- * The best-effort push of an ending run comes with lot 3 step D2. A review run never pushes.
+ * Runs that may push their ticket branch (05, sections 4.9 and 7): running, at `ticket_submit` or
+ * at an end the daemon decided, and "ending" runs (`isEnding`). A review run never pushes.
  */
 const PUSHING = new Set<string>(['running']);
 
@@ -177,6 +177,22 @@ export class RunService {
 
   private send(machineId: string, message: ServerMessage): boolean {
     return this.gateway?.send(machineId, message) ?? false;
+  }
+
+  /**
+   * Sends `run.stop`, recording when: the run is "ending" until its end is reported, so its end
+   * push still gets a credential (05, section 7; lot 3 step D2).
+   */
+  private async sendStop(
+    machineId: string,
+    runId: string,
+    reason: 'owner_stopped' | 'ticket_cancelled' | 'not_active',
+  ): Promise<void> {
+    await this.db
+      .update(schema.runs)
+      .set({ stopSentAt: this.now() })
+      .where(eq(schema.runs.id, runId));
+    this.send(machineId, stopMessage(runId, reason));
   }
 
   private files() {
@@ -435,7 +451,7 @@ export class RunService {
     );
     // A late `run.start` or answer reaching the daemon is stopped at once, or at its next `hello`.
     if (undone.run.dispatchKind === 'start' || undone.run.dispatchKind === 'answer') {
-      this.send(undone.machine.id, stopMessage(runId, 'not_active'));
+      await this.sendStop(undone.machine.id, runId, 'not_active');
     }
   }
 
@@ -1348,7 +1364,7 @@ export class RunService {
       return { locked, online };
     });
     if (!stopped) throw runNotFound();
-    if (stopped.online) this.send(stopped.locked.machine.id, stopMessage(runId, 'owner_stopped'));
+    if (stopped.online) await this.sendStop(stopped.locked.machine.id, runId, 'owner_stopped');
     this.log.info(
       { run: runId, ticket: this.reference(stopped.locked), machine: stopped.locked.machine.name },
       'run stopped by the owner',
@@ -1366,7 +1382,7 @@ export class RunService {
     project: ProjectRow,
     ticket: TicketRow,
     cause: 'ticket_cancelled' | 'ticket_done',
-  ): Promise<() => void> {
+  ): Promise<() => Promise<void>> {
     const [run] = await tx
       .select()
       .from(schema.runs)
@@ -1377,7 +1393,7 @@ export class RunService {
         ),
       )
       .for('update');
-    if (!run) return () => undefined;
+    if (!run) return () => Promise.resolve();
     const [machine] = await tx
       .select()
       .from(schema.machines)
@@ -1385,12 +1401,12 @@ export class RunService {
     if (!machine) throw new Error('machine not found');
     const locked: Locked = { run, project, ticket, machine };
     await this.setStatus(tx, locked, 'cancelled', cause, { failureReason: 'cancelled' });
-    return () => {
-      this.send(
+    return () =>
+      this.sendStop(
         machine.id,
-        stopMessage(run.id, cause === 'ticket_cancelled' ? 'ticket_cancelled' : 'owner_stopped'),
+        run.id,
+        cause === 'ticket_cancelled' ? 'ticket_cancelled' : 'owner_stopped',
       );
-    };
   }
 
   /** After **Revoke**: the machine's active runs fail with `machine_revoked`, not counted. */
@@ -1497,7 +1513,7 @@ export class RunService {
       if (locked.run.status === 'queued') await this.setStatus(tx, locked, 'dispatched', 'daemon');
       return ACTIVE.has(locked.run.status) ? 'acknowledged' : 'late';
     });
-    if (result === 'late') this.send(machineId, stopMessage(run.id, 'not_active'));
+    if (result === 'late') await this.sendStop(machineId, run.id, 'not_active');
   }
 
   /** Records a report's id; false when it was handled already (a duplicate, 05 section 3.3). */
@@ -1513,7 +1529,7 @@ export class RunService {
   /** `run.state` (05, section 4.7): the run's status, the Claude Code check, the end. */
   async runState(machineId: string, message: RunState): Promise<Ack['payload']> {
     const { payload } = message;
-    const after: (() => void)[] = [];
+    const after: (() => Promise<void>)[] = [];
     const handled = await this.withRun(payload.runId, async (tx, locked) => {
       if (locked.run.machineId !== machineId) return false;
       if (!(await this.firstTime(tx, machineId, message.id, message.type))) return true;
@@ -1526,6 +1542,24 @@ export class RunService {
       };
 
       if (payload.state === 'ended') {
+        if (payload.gitConfigRestored !== null) {
+          // Information only: never a "Needs you" item, never a refusal (lot 3 step D2).
+          await recordEvent(tx, {
+            actor: 'system',
+            entityType: 'run',
+            entityId: run.id,
+            projectId: locked.project.id,
+            type: 'run.git_config_restored',
+            payload: {
+              project: locked.project.key,
+              ticket: this.reference(locked),
+              machine: locked.machine.name,
+              repository: `${locked.project.repoOwner}/${locked.project.repoName}`,
+              changes: maskSecrets(payload.gitConfigRestored),
+            },
+            at: this.now(),
+          });
+        }
         const branch = payload.branch
           ? { branchHead: payload.branch.head, commits: payload.branch.commitsAhead }
           : {};
@@ -1533,13 +1567,18 @@ export class RunService {
           // Already ended on the server (Stop run, revocation): the report adds the branch only.
           await tx
             .update(schema.runs)
-            .set({ ...branch, sessionAlive: false, updatedAt: this.now() })
+            .set({
+              ...branch,
+              sessionAlive: false,
+              endReportedAt: this.now(),
+              updatedAt: this.now(),
+            })
             .where(eq(schema.runs.id, run.id));
           return true;
         }
         await tx
           .update(schema.runs)
-          .set({ ...session, ...branch })
+          .set({ ...session, ...branch, endReportedAt: this.now() })
           .where(eq(schema.runs.id, run.id));
         const end = endOfReason(payload.reason);
         const detail = payload.detail ?? undefined;
@@ -1577,7 +1616,7 @@ export class RunService {
 
       if (!ACTIVE.has(run.status)) {
         // The server ended it: the daemon stops the session (05, section 6).
-        after.push(() => this.send(machineId, stopMessage(run.id, 'not_active')));
+        after.push(() => this.sendStop(machineId, run.id, 'not_active'));
         return true;
       }
       await tx.update(schema.runs).set(session).where(eq(schema.runs.id, run.id));
@@ -1591,7 +1630,7 @@ export class RunService {
           await this.fail(tx, locked, 'claude_code_unsupported', 'claude_code_unsupported', {
             detail: `Claude Code ${payload.claudeCodeVersion ?? 'missing'}, minimum ${CLAUDE_CODE_MIN_VERSION}`,
           });
-          after.push(() => this.send(machineId, stopMessage(run.id, 'not_active')));
+          after.push(() => this.sendStop(machineId, run.id, 'not_active'));
           return true;
         }
         if (
@@ -1615,7 +1654,7 @@ export class RunService {
       }
       return true;
     });
-    for (const action of after) action();
+    for (const action of after) await action();
     if (!handled) return { ok: false, message: 'unknown run' };
     return { ok: true };
   }
@@ -1790,7 +1829,15 @@ export class RunService {
     };
     if (!row || row.run.machineId !== machineId) return refused('unknown run');
     const { command } = message.payload;
-    if (!(command === 'push' ? PUSHING : FETCHING).has(row.run.status)) {
+    if (command === 'push' && !PUSHING.has(row.run.status)) {
+      const ending = await this.endingWindow(row.run);
+      if (ending === null) return refused(`the run is ${row.run.status}`);
+      if (!ending.open) {
+        return refused(
+          `the run was stopped more than ${String(ending.seconds)} seconds ago (MCP call timeout plus Longest push)`,
+        );
+      }
+    } else if (command === 'fetch' && !FETCHING.has(row.run.status)) {
       return refused(`the run is ${row.run.status}`);
     }
     if (command === 'push' && row.run.purpose === 'review') {
@@ -1815,6 +1862,23 @@ export class RunService {
   }
 
   /**
+   * An "ending" run (05, section 7; lot 3 step D2): ended by the server, which sent `run.stop`,
+   * and whose end the machine has not reported yet. Its end push gets a credential until MCP call
+   * timeout plus Longest push after `run.stop`; null for a run that is not ending.
+   */
+  private async endingWindow(run: RunRow): Promise<{ open: boolean; seconds: number } | null> {
+    if (!TERMINAL.has(run.status) || run.stopSentAt === null || run.endReportedAt !== null) {
+      return null;
+    }
+    const settings = await resolveSettings(this.db, [
+      'mcpCallTimeoutSeconds',
+      'pushTimeoutSeconds',
+    ]);
+    const seconds = settings.mcpCallTimeoutSeconds + settings.pushTimeoutSeconds;
+    return { open: this.now().getTime() - run.stopSentAt.getTime() <= seconds * 1000, seconds };
+  }
+
+  /**
    * At `hello` (05, section 6, lot 2 part): a run the daemon still has but the server no longer
    * considers active is stopped, which also ends a session whose end was never reported.
    */
@@ -1826,7 +1890,7 @@ export class RunService {
         .where(eq(schema.runs.id, reported.runId));
       if (run && run.machineId === machineId && ACTIVE.has(run.status)) continue;
       this.log.info({ machine: machineId, run: reported.runId }, 'run no longer active: stopped');
-      this.send(machineId, stopMessage(reported.runId, 'not_active'));
+      await this.sendStop(machineId, reported.runId, 'not_active');
     }
   }
 }

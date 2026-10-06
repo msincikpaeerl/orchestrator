@@ -72,7 +72,7 @@ The answer is added to the ticket's timeline, the ticket goes back to **In progr
 
 ## Stop a run
 
-On the ticket page or the run page, click **Stop run**, then confirm. The agent stops at once and the ticket goes back to **To do**. The branch and its commits stay on the machine, and the next run goes on from them. A run you stop never counts as a failed attempt.
+On the ticket page or the run page, click **Stop run**, then confirm. The agent stops at once and the ticket goes back to **To do**. The branch and its commits stay on the machine, and the next run goes on from them. From version 0.4.0 the machine also sends the commits GitHub does not have yet to the ticket's branch on GitHub, once the agent's programs are stopped (see [Where the work is](#where-the-work-is)). A run you stop never counts as a failed attempt.
 
 If the machine is offline, the run is marked as failed because of that, and its session is stopped when the machine reconnects.
 
@@ -100,7 +100,7 @@ When an agent finishes, its ticket is **In review** and [Needs you](needs-you.md
 
 ## Where the work is
 
-Agents commit their work on the ticket's branch, for example `t/12-contact-form`. In this version nothing is pushed to GitHub: the branch lives only on the machine that ran the agent.
+Agents commit their work on the ticket's branch, for example `t/12-contact-form`. The branch lives on the machine that ran the agent. From version 0.4.0 the machine also pushes it to GitHub, only that branch and never by force: when the agent submits its work, and when a run ends without a finished submission (the agent gave up, ran out of time or reminders, its session stopped, you stopped the run or cancelled the ticket) while the branch has commits GitHub does not have, so that work is not lost. That last push is a best effort: when it fails (GitHub unreachable, or the branch changed on GitHub meanwhile), the run's outcome is the same and the commits stay on the machine. If the branch changed on GitHub and contains the machine's commits (for example after GitHub's **Update branch**), the next run on that machine starts from GitHub's branch.
 
 The ticket page shows **Branch**: its name, "on machine Laptop, not on GitHub yet", and the commits of the last run that reported them, newest first. The next run of the ticket goes on from them, on that same machine: if it is offline, **Run now** says so.
 

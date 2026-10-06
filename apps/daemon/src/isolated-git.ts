@@ -428,9 +428,12 @@ export async function isolatedPush(
 /** Rejections meaning GitHub's branch has commits the pushed one does not. */
 const DIVERGED = /\[rejected\] \((?:non-fast-forward|fetch first|stale info)\)/;
 
-/** Git's words for a credential refused or missing. */
-const AUTHENTICATION =
-  /Authentication failed|could not read Username|could not read Password|terminal prompts disabled|The requested URL returned error: 40[13]|Permission to \S+ denied/;
+/**
+ * Git's words when GitHub answered and refused: a credential refused or missing, or a repository
+ * that does not exist or the token cannot see (HTTP 404, "Repository not found", A24).
+ */
+const REFUSED_BY_GITHUB =
+  /Authentication failed|could not read Username|could not read Password|terminal prompts disabled|The requested URL returned error: 40[134]|Permission to \S+ denied|Repository not found|repository '[^']*' not found/;
 
 /** Reads a push's outcome (exported for tests of the parsing alone). */
 export function pushResult(
@@ -479,7 +482,7 @@ export function pushResult(
   );
   return {
     status: 'failed',
-    reason: AUTHENTICATION.test(pushed.stderr) ? 'refused' : 'unreachable',
+    reason: REFUSED_BY_GITHUB.test(pushed.stderr) ? 'refused' : 'unreachable',
     message: error || `Git ended with code ${String(pushed.code)} without pushing.`,
   };
 }

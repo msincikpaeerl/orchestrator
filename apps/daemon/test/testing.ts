@@ -38,6 +38,16 @@ export interface TestHome {
   remove(): Promise<void>;
 }
 
+/**
+ * A test's own Git commands start no detached `git maintenance run --auto` or `gc --auto`: one
+ * can outlive the test and write in a repository (a repack writes `info/refs`) while the home
+ * is removed, which fails with ENOTEMPTY (lot 3 step D2, in CI). The daemon's own commands turn
+ * them off by themselves (`git.ts`).
+ */
+const NO_BACKGROUND_GIT_CONFIG = ['[maintenance]', '\tauto = false', '[gc]', '\tauto = 0', ''].join(
+  '\n',
+);
+
 export async function createTestHome(): Promise<TestHome> {
   // Short: a run's socket, `runs/<run id>/daemon.sock` under the home, must fit the 107 bytes
   // of a Unix socket path.
@@ -60,7 +70,10 @@ export async function createTestHome(): Promise<TestHome> {
   await mkdir(env.HOME ?? '', { recursive: true });
   // Git reads `$XDG_CONFIG_HOME/git/config` besides `~/.gitconfig`, which some tests write.
   await mkdir(join(env.XDG_CONFIG_HOME ?? '', 'git'), { recursive: true });
-  await writeFile(join(env.XDG_CONFIG_HOME ?? '', 'git', 'config'), REAL_GITHUB_GIT_CONFIG);
+  await writeFile(
+    join(env.XDG_CONFIG_HOME ?? '', 'git', 'config'),
+    REAL_GITHUB_GIT_CONFIG + NO_BACKGROUND_GIT_CONFIG,
+  );
   return {
     root: folder,
     bin,

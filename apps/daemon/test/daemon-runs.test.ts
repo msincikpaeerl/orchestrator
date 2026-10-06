@@ -198,6 +198,8 @@ describe('daemon runs over the connection', () => {
           },
         ],
       });
+      // The end push refused (lot 3 step D2): the commit stays on this machine only.
+      server.refusePush = true;
       const daemon = startDaemon();
       await waitFor(() => server.hellos().length === 1, 20_000, 'hello');
       const payload = runStartPayload(`${git.url}/owner/notes.git`, {

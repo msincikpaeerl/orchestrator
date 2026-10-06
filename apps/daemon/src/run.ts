@@ -17,6 +17,7 @@ import {
   type HookAnswer,
   type HookEvent,
   type McpCall,
+  type PushResult,
   type RunEndReason,
   type RunLogEvent,
   type RunSocketRequest,
@@ -94,6 +95,9 @@ export interface RunContext {
   onEnded: (run: Run) => void;
 }
 
+/** Purposes whose runs push their ticket branch (05, section 4.9); a review run never does. */
+const PUSHING: readonly RunStart['payload']['purpose'][] = ['implement', 'fix_review'];
+
 /** States whose time counts as working time (05, section 5). */
 const WORKING: readonly DaemonRunState[] = ['starting', 'working', 'idle'];
 
@@ -146,6 +150,7 @@ export class Run {
       pendingInputs: [],
       bare: null,
       worktree: null,
+      reviewStart: null,
       decision: null,
       turnToolUsed: false,
       waitingSince: null,
@@ -317,6 +322,7 @@ export class Run {
       const workspace = await this.context.workspaces.prepare(start, folder);
       this.data.bare = workspace.bare;
       this.data.worktree = workspace.worktree;
+      this.data.reviewStart = workspace.review;
       this.save();
     } catch (error) {
       this.log.error({ err: error }, 'workspace not prepared');
@@ -931,8 +937,17 @@ export class Run {
 
   // End and cleanup (05, section 4.11).
 
-  private end(reason: RunEndReason, detail: string | null): Promise<void> {
+  /**
+   * The end (05, section 4.11): the session closed and the run's processes stopped first, so
+   * nothing of the run still works in the worktree or holds it; then the branch read (for a review
+   * run, whether its head moved), the worktree removed, the bare clone's Git configuration
+   * restored, and the best-effort end push; the end is reported last, with the push's result. A
+   * slow push only delays the report: the session, the processes and the worktree are gone.
+   */
+  private end(endReason: RunEndReason, endDetail: string | null): Promise<void> {
     this.ending ??= (async () => {
+      let reason = endReason;
+      let detail = endDetail;
       clearInterval(this.timer);
       this.releaseStart?.();
       this.releaseStart = null;
@@ -944,19 +959,50 @@ export class Run {
       await this.stopProcesses();
       await this.readTranscript().catch(() => undefined);
       let branch: BranchReport | null = null;
-      const { bare, worktree } = this.data;
+      let push: PushResult | null = null;
+      let headMoved: boolean | null = null;
+      let gitConfigRestored: string | null = null;
+      const { bare, worktree, reviewStart, start } = this.data;
+      const { workspaces } = this.context;
+      const logged =
+        <T>(what: string, fallback: T) =>
+        (error: unknown): T => {
+          this.log.error({ err: error }, what);
+          return fallback;
+        };
       if (bare) {
-        branch = await this.context.workspaces
-          .branchReport(bare, this.data.start.repository)
-          .catch((error: unknown) => {
-            this.log.error({ err: error }, 'branch not read');
-            return null;
-          });
-        if (worktree) {
-          await this.context.workspaces.remove(bare, worktree).catch((error: unknown) => {
-            this.log.error({ err: error }, 'worktree not removed');
-          });
+        let reviewed: string | undefined;
+        if (start.purpose === 'review' && reviewStart && worktree) {
+          const heads = await workspaces
+            .reviewHeads(bare, worktree, start.repository.ticketBranch, reviewStart)
+            .catch(logged('review head not read', { moved: true, head: null }));
+          headMoved = heads.moved;
+          reviewed = heads.head ?? reviewStart.head;
         }
+        branch = await workspaces
+          .branchReport(bare, start.repository, reviewed)
+          .catch(logged('branch not read', null));
+        if (worktree) {
+          await workspaces.remove(bare, worktree).catch(logged('worktree not removed', undefined));
+        }
+        gitConfigRestored = await workspaces
+          .restoreConfig(bare, start.repository.cloneUrl)
+          .catch(logged('Git configuration not restored', null));
+        if (gitConfigRestored !== null) {
+          this.log.warn({ changes: gitConfigRestored }, "bare clone's Git configuration restored");
+        }
+        // Best effort: never changes the outcome. A review run never pushes (05, section 4.9).
+        if (PUSHING.includes(start.purpose) && reason !== 'submitted') {
+          push = await workspaces
+            .endPush(start, bare, runFolder(this.context.paths, this.runId))
+            .catch(logged('end push not attempted', null));
+          if (push) this.log.info({ push }, 'ticket branch pushed at the end of the run');
+        }
+      }
+      if (headMoved) {
+        reason = 'review_branch_moved';
+        detail =
+          "The ticket branch's head moved during the review: a review run must not change the branch, so this review does not count.";
       }
       this.flushEvents();
       this.data.state = 'ended';
@@ -974,9 +1020,9 @@ export class Run {
           reason,
           detail: detail === null ? null : maskSecrets(detail).slice(0, TEXT_CEILING),
           branch,
-          // Pushing at a run's end and review runs come with lot 3's steps D and H.
-          push: null,
-          headMoved: null,
+          push,
+          headMoved,
+          gitConfigRestored,
         },
       });
       await this.closeSocket();
