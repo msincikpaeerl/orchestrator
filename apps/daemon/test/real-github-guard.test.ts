@@ -88,7 +88,12 @@ describe('the real GitHub guard', () => {
       () => 'reached',
       (error: unknown) => String(error),
     );
-    expect(failure).toContain('Failed to connect to github.com port 443 via 127.0.0.1');
+    // Through the proxy at the closed port 9, whatever curl's wording: "Failed to connect to
+    // github.com port 443 via 127.0.0.1" (curl 8.x of the development host) or "Failed to connect
+    // to 127.0.0.1 port 9" (the CI runner's curl). Never a direct connection to github.com.
+    expect(failure).toMatch(
+      /Failed to connect to (?:github\.com port 443 via 127\.0\.0\.1|127\.0\.0\.1 port 9)\b/,
+    );
     expect(asked).toBe(0);
   });
 });
