@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CommitSummary, GitHash } from '../daemon/git.js';
+import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
 import { DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { PauseReason, RunStatus } from './run-status.js';
@@ -182,6 +182,58 @@ export const TimelineEntry = z.discriminatedUnion('type', [
 export type TimelineEntry = z.infer<typeof TimelineEntry>;
 
 /** `GET /api/projects/:key/tickets/:number` (02, section 6.4). */
+/**
+ * Where the ticket branch's commits are (02, section 6.4; lot 3 step D3), from the last branch a
+ * run reported and the last push the daemon reported as done. The server never reads GitHub's
+ * branch here: "pushed" says what was pushed and when, not what GitHub holds now.
+ */
+export const BranchWhere = z.enum([
+  /** No commits reported, nothing pushed. */
+  'no_commits',
+  /** Commits only on a machine: nothing of them pushed. */
+  'machine',
+  /** Every commit reported was pushed. */
+  'github',
+  /** Some commits pushed, newer ones only on a machine. */
+  'machine_ahead',
+  /** Commits only on a machine, and its last push refused: GitHub's branch has others. */
+  'diverged',
+]);
+export type BranchWhere = z.infer<typeof BranchWhere>;
+
+const MachineLink = z.object({ id: z.uuid(), name: z.string() });
+
+export const TicketBranch = z.object({
+  name: z.string(),
+  where: BranchWhere,
+  /** The machine of the last run that reported the branch; null before any report. */
+  machine: MachineLink.nullable(),
+  /** That report's head and its commits ahead of the base branch, newest first. */
+  head: GitHash.nullable(),
+  commits: z.array(CommitSummary),
+  /** The commits of that report no push held: only on `machine`. */
+  notOnGitHub: z.array(GitHash),
+  /** The last push done: its head, when, from which machine, and the branch's page on GitHub. */
+  pushed: z
+    .object({
+      head: GitHash,
+      at: z.iso.datetime(),
+      machine: MachineLink.nullable(),
+      url: z.url(),
+    })
+    .nullable(),
+  /** The latest failed push since the last one done; null after a push is done. */
+  pushFailure: z
+    .object({
+      at: z.iso.datetime(),
+      machine: MachineLink.nullable(),
+      reason: PushFailureReason,
+      message: z.string(),
+    })
+    .nullable(),
+});
+export type TicketBranch = z.infer<typeof TicketBranch>;
+
 export const TicketDetail = TicketSummary.extend({
   description: z.string(),
   acceptanceCriteria: z.array(z.string()),
@@ -192,19 +244,8 @@ export const TicketDetail = TicketSummary.extend({
   timeline: z.array(TimelineEntry),
   /** Failed attempts, for the retry policy (01, section 3.4; 04, section 5). */
   attemptCount: z.int().min(0),
-  /**
-   * The ticket branch, set at the first run. Until pushing exists (lot 3) it lives only on the
-   * machine of the last run that reported it, with its head and the commits ahead of the base
-   * branch (01, section 3.4); `machine` is null before any report.
-   */
-  branch: z
-    .object({
-      name: z.string(),
-      machine: z.object({ id: z.uuid(), name: z.string() }).nullable(),
-      head: GitHash.nullable(),
-      commits: z.array(CommitSummary),
-    })
-    .nullable(),
+  /** The ticket branch, set at the first run, and where its commits are (01, section 3.4). */
+  branch: TicketBranch.nullable(),
   /** The latest Definition of Done report accepted from an agent (04, section 3.1). */
   dodReport: DodReport.nullable(),
 });

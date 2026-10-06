@@ -14,6 +14,7 @@ import {
   RunStatus,
   RunTicketAction,
 } from './api/runs.js';
+import { PushFailureReason } from './daemon/git.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
 import {
@@ -98,6 +99,8 @@ export const EventType = z.enum([
   'run.status_changed',
   'run.progress',
   'run.git_config_restored',
+  'run.branch_pushed',
+  'run.branch_push_failed',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -338,6 +341,24 @@ export const EventPayloads = {
     machine: z.string(),
     repository: z.string(),
     changes: z.string(),
+  }),
+  /** The daemon pushed the ticket branch to GitHub (05, section 4.9; lot 3 step D3). */
+  'run.branch_pushed': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    branch: z.string(),
+    head: z.string(),
+    /** At a submission, or at the run's end. */
+    at: z.enum(['submission', 'end']),
+  }),
+  /** A push of the ticket branch failed: the commits stay on the machine. */
+  'run.branch_push_failed': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    branch: z.string(),
+    at: z.enum(['submission', 'end']),
+    reason: PushFailureReason,
+    message: z.string(),
   }),
 } satisfies Record<EventType, z.ZodType>;
 
