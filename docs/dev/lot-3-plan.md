@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3 and E1 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1 and E2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -383,13 +383,22 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - The token check: without a private repository, Pull requests now reads **Could not verify** (its read probe needs one), as Actions and Commit statuses already did.
 - Two test races fixed on the way, seen in `pnpm verify`: the guard tests' uncaught EPIPE when a refusing script exits before reading its input (regression test added), and the fake `claude` test reading the hook file before its first line.
 
-### [ ] E2. The script's frame and steps 0 to 5
+### [x] E2. The script's frame and steps 0 to 5
 
 - `tools/smoke/github-smoke.sh` and its Node.js helper; the guard of `tools/smoke/lib/` extended to scripts that act on the real GitHub (refuses CI, a run without a terminal, the Orchestrator's own repository, a repository that does not exist; asks for a typed `yes`).
 - Additions 1 to 6 above: the token advice in `--help` and on the first screen, the token read and handled as described and its proof, the daemon's push with the Git version and the daemon's reading of each refusal, A24 and A25, the waits, the clean-up, the result block. Steps 0 to 5; steps 6 to 10 print `NOT ATTEMPTED`, so the script is runnable.
 - `pnpm lint:shell` covers it (`bash -n`); a dry run against the fake GitHub, with the fake playing the owner's part, runs in `pnpm test`.
 
 **Done when** the dry run passes steps 0 to 5 (6 to 10 `NOT ATTEMPTED`) with the leak proof of addition 2 (arguments and environment of every process while it runs, files afterwards, captured output), and each refusal of the guard has a test.
+
+*Done 2026-10-06.* Choices made in the step (details in `docs/dev/testing.md`, "Owner's GitHub smoke test"):
+
+- **Where the token lives**: read with `read -s` in a function run as the left side of the pipe to the helper (`read_token | tsx … github-smoke.ts`), so the script's own shell never holds it; written with the built-in `printf`, unset, never exported; tracing off for the whole script, even under `bash -x`; core dumps off. The helper reads the first line of its standard input and masks the token in everything it prints.
+- **Ctrl+C at the prompt**: the subshell's trap restores the terminal, and the script's shell also saves the terminal's settings before the pipe and puts them back on exit, because `tsx`, started beside the prompt, puts back the settings it found at its start, with the echo off (seen in the test, which failed before this).
+- **The leak proof** uses a dry-run token longer than a pipe's buffer (bash then writes a here-string or here-document to a temporary file, which the test watches for), and also reads the script's shell's memory (`/proc/<pid>/mem`). Mistakes tried, each failing the proof: a here-string, a here-document, `/usr/bin/printf`, the token read in the script's shell (exported; not exported, with or without `unset`), the token as an argument, `set -x` beside the `printf`, no `set +x` with `bash -x`, no terminal restore, `stty -echo` with no trap.
+- **The daemon's push**: the helper uses `Workspaces` (`prepare`, `push`, `remove`), exported as `@orchestrator/daemon/smoke`, with a credential source answering from its memory; two daemon homes play two machines (A25). Its run folder is short, for the socket's 107 bytes.
+- **The repository check** comes after the typed `yes` and the token (it needs the token), before anything is created. The Orchestrator's own repository is read from the checkout's `remote.origin.url`; without one, or not on github.com, the script refuses.
+- **The end**: the script closes its pull request, then deletes the branch twice (A26). A step that cannot go on stops the run (later steps `NOT ATTEMPTED`); the script then cleans nothing and says what it left, with the links. `--ci-wait-minutes` comes now; `--owner-wait-minutes` with step E3, which first waits for the owner. In the dry run a minute lasts a second.
 
 ### [ ] E3. Steps 6 to 10 and the second token
 

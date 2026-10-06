@@ -8,6 +8,9 @@
   ],
   "exports": {
     "./package.json": "./package.json",
+    "./smoke": {
+      "source": "./src/smoke.ts"
+    },
     "./testing": {
       "source": "./test/testing.ts"
     },
