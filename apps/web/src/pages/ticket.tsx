@@ -29,6 +29,7 @@ import {
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { refusalText } from '../refusals';
+import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
 import { BlockedBadge } from '../tickets/board';
 import { useTicketNumber } from '../tickets/params';
 import {
@@ -153,22 +154,56 @@ function ActiveRun({ ticket }: { ticket: TicketDetail }) {
 }
 
 /**
- * The ticket branch: until pushing exists (lot 3), it lives only on the machine of the last run
- * that reported it (02, section 6.4).
+ * The ticket branch and where its commits are (02, section 6.4): on a machine, pushed to GitHub
+ * (with the date of the push), or both. Commits on a machine only are listed apart.
  */
 function Branch({ ticket }: { ticket: TicketDetail }) {
   const { branch } = ticket;
   if (!branch) return null;
+  const pushed = pushedText(branch);
+  const failure = pushFailureText(branch);
+  const onMachine = new Set(branch.notOnGitHub);
+  const pushedCommits = branch.commits.filter((commit) => !onMachine.has(commit.hash));
+  const split = onMachine.size > 0 && pushedCommits.length > 0;
   return (
     <Card className="space-y-2">
       <SectionTitle>Branch</SectionTitle>
       <p className="break-words" aria-label="Branch">
         <code className="rounded bg-slate-100 px-1 text-sm">{branch.name}</code>
-        {branch.machine
-          ? ` on machine ${branch.machine.name}, not on GitHub yet`
-          : ': no commits reported yet'}
+        {branchStateText(branch)}
       </p>
-      {branch.machine && <CommitList commits={branch.commits} />}
+      {pushed && branch.pushed && (
+        <p className="break-words text-slate-700" aria-label="Last push">
+          {pushed}{' '}
+          <a
+            href={branch.pushed.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-700 underline"
+          >
+            Branch on GitHub
+          </a>
+        </p>
+      )}
+      {failure && (
+        <p className="break-words text-slate-700" aria-label="Failed push">
+          {failure}
+        </p>
+      )}
+      {branch.where !== 'no_commits' &&
+        (split ? (
+          <>
+            <h3 className="font-medium text-slate-900">On machine {branch.machine?.name} only</h3>
+            <CommitList
+              label="Commits not on GitHub"
+              commits={branch.commits.filter((commit) => onMachine.has(commit.hash))}
+            />
+            <h3 className="font-medium text-slate-900">Pushed to GitHub</h3>
+            <CommitList label="Commits pushed" commits={pushedCommits} />
+          </>
+        ) : (
+          branch.machine && <CommitList commits={branch.commits} />
+        ))}
       <p className="text-sm text-slate-600">
         <HelpLink page="runs#where-the-work-is">Where the work is</HelpLink>
       </p>

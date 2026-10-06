@@ -71,10 +71,16 @@ export function RunTimes({ run }: { run: Run }) {
 }
 
 /** Commits of a branch, newest first: short hash and subject. */
-export function CommitList({ commits }: { commits: CommitSummary[] }) {
+export function CommitList({
+  commits,
+  label = 'Commits',
+}: {
+  commits: CommitSummary[];
+  label?: string;
+}) {
   if (commits.length === 0) return <p className="text-slate-700">No commits yet.</p>;
   return (
-    <ul aria-label="Commits" className="space-y-1">
+    <ul aria-label={label} className="space-y-1">
       {commits.map((commit) => (
         <li key={commit.hash} className="break-words">
           <code className="rounded bg-slate-100 px-1 text-sm">{shortHash(commit.hash)}</code>{' '}

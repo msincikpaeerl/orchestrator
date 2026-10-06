@@ -11,6 +11,7 @@ import {
   claudeCodeSupport,
   maskSecrets,
   type Ack,
+  type BranchReport,
   type FailureReason,
   type GitCredential,
   type GitCredentialRequest,
@@ -72,6 +73,7 @@ import {
   type CommentRow,
   type TicketRow,
 } from '../tickets/model.js';
+import { commitsNotOnGitHub, pushedCommits, recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
 import {
@@ -329,7 +331,13 @@ export class RunService {
     locked: Locked,
     failureReason: FailureReason,
     cause: RunChangeCause,
-    facts: { endReason?: RunEndReason; detail?: string; comment?: string } = {},
+    facts: {
+      endReason?: RunEndReason;
+      detail?: string;
+      comment?: string;
+      /** Every commit the run reported was pushed: the comment says so (lot 3 step D3). */
+      pushed?: boolean;
+    } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
     await this.setStatus(tx, locked, status, cause, {
@@ -344,7 +352,7 @@ export class RunService {
     const comment =
       facts.comment ??
       (counted
-        ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. The branch ${locked.run.branchName} is kept on that machine.`
+        ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.pushed ? `The branch ${locked.run.branchName} was pushed to GitHub.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
         : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
     await applyRunAction(tx, {
       projectKey: locked.project.key,
@@ -357,6 +365,13 @@ export class RunService {
       comment,
       now: this.now(),
     });
+  }
+
+  /** Whether every commit of a branch report is in the ticket's last push done. */
+  private async allPushed(tx: Executor, ticketId: string, branch: BranchReport): Promise<boolean> {
+    const [ticket] = await tx.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId));
+    if (!ticket) throw new Error(`ticket ${ticketId} not found`);
+    return commitsNotOnGitHub(ticket, branch.commitsAhead).length === 0;
   }
 
   private clearTimer(runId: string): void {
@@ -655,15 +670,20 @@ export class RunService {
         project.id,
       );
 
-      // The ticket's earlier runs, newest first, and the machine holding its commits (07, 3).
+      // The ticket's earlier runs, newest first, and the machine holding its commits not on
+      // GitHub (07, section 3): once pushed, any machine can take the branch from GitHub.
       const earlier = await tx
         .select()
         .from(schema.runs)
         .where(eq(schema.runs.ticketId, ticket.id))
         .orderBy(desc(schema.runs.createdAt));
       const withCommits = earlier.find((run) => (reportedCommits(run)?.length ?? 0) > 0);
+      const held = withCommits
+        ? commitsNotOnGitHub(ticket, reportedCommits(withCommits) ?? []).length
+        : 0;
       const holding =
         withCommits &&
+        held > 0 &&
         !earlier.some(
           (run) => run.createdAt > withCommits.createdAt && run.machineId !== withCommits.machineId,
         )
@@ -686,7 +706,7 @@ export class RunService {
       const holder = holding && machines.find((machine) => machine.id === holding.machineId);
       if (holding && holder && !holder.revokedAt) {
         const unavailable = verdict(holder);
-        const commits = reportedCommits(holding)?.length ?? 0;
+        const commits = held;
         if (unavailable) {
           throw refuse(
             {
@@ -695,13 +715,13 @@ export class RunService {
               commits,
               unavailable,
             },
-            `The ticket's branch is on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
+            `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
           );
         }
         chosen = holder;
       } else {
         if (holding && holder) {
-          lostWork = { machine: holder, commits: reportedCommits(holding)?.length ?? 0 };
+          lostWork = { machine: holder, commits: held };
         }
         const candidates = machines.filter((machine) => !machine.revokedAt);
         const available = candidates.filter((machine) => verdict(machine) === null);
@@ -745,10 +765,13 @@ export class RunService {
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
       const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
+      // Earlier commits: on this machine, or pushed to GitHub, where the daemon takes them from.
       const lastHere = earlier.find((run) => run.machineId === machine.id && run.commits !== null);
       const baseBranch = project.defaultBranch;
       const earlierWorkBase =
-        lastHere && (reportedCommits(lastHere)?.length ?? 0) > 0 ? `origin/${baseBranch}` : null;
+        (lastHere && (reportedCommits(lastHere)?.length ?? 0) > 0) || pushedCommits(ticket).size > 0
+          ? `origin/${baseBranch}`
+          : null;
       let initialPrompt: string;
       try {
         initialPrompt = implementFirstMessage(
@@ -832,7 +855,11 @@ export class RunService {
       if (!started) throw new Error('ticket left todo during Run now');
 
       if (lostWork) {
-        const body = `The earlier work on machine ${lostWork.machine.name} is no longer available: that machine was revoked, and the ${String(lostWork.commits)} commit${lostWork.commits === 1 ? '' : 's'} of the branch ${branchName} on it are lost. This run starts again from the base branch on machine ${machine.name}.`;
+        const from =
+          ticket.githubBranchHead === null
+            ? `starts again from the base branch on machine ${machine.name}`
+            : `starts from the branch as last pushed to GitHub, on machine ${machine.name}`;
+        const body = `The earlier work on machine ${lostWork.machine.name} is no longer available: that machine was revoked, and the ${String(lostWork.commits)} commit${lostWork.commits === 1 ? '' : 's'} of the branch ${branchName} on it${ticket.githubBranchHead === null ? '' : ' not on GitHub'} ${lostWork.commits === 1 ? 'is' : 'are'} lost. This run ${from}.`;
         const [comment] = await tx
           .insert(schema.comments)
           .values({ ticketId: ticket.id, author: 'system', kind: 'note', body, createdAt: now })
@@ -1560,6 +1587,18 @@ export class RunService {
             at: this.now(),
           });
         }
+        if (payload.push !== null && locked.ticket) {
+          await recordPush(tx, {
+            project: locked.project,
+            ticket: locked.ticket,
+            run: locked.run,
+            machine: locked.machine,
+            result: payload.push,
+            branch: payload.branch,
+            when: 'end',
+            now: this.now(),
+          });
+        }
         const branch = payload.branch
           ? { branchHead: payload.branch.head, commits: payload.branch.commitsAhead }
           : {};
@@ -1609,6 +1648,10 @@ export class RunService {
           await this.fail(tx, locked, end.failureReason, 'daemon', {
             endReason: payload.reason,
             detail,
+            pushed:
+              payload.branch !== null &&
+              locked.ticket !== null &&
+              (await this.allPushed(tx, locked.ticket.id, payload.branch)),
           });
         }
         return true;

@@ -187,7 +187,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         head: 'a'.repeat(40),
         commitsAhead: [{ hash: 'a'.repeat(40), subject: 'Do the work' }],
       },
-      push: null,
+      push: { status: 'pushed', head: 'a'.repeat(40) },
       changedFiles: null,
     },
   });
@@ -211,7 +211,11 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     reason: 'claude_code_unsupported',
     detail: null,
     branch: null,
-    push: null,
+    push: {
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    },
     headMoved: null,
     gitConfigRestored:
       'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath.',

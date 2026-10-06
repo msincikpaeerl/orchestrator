@@ -26,6 +26,7 @@ import {
   type McpToolOutput,
   type McpToolName,
   type SettingName,
+  type WorkspaceFacts,
 } from '@orchestrator/protocol';
 import { and, asc, count, eq, gt, ilike, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -44,6 +45,7 @@ import {
   type CommentRow,
   type TicketRow,
 } from '../tickets/model.js';
+import { recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { cutToFit, fitPage, jsonLength } from './output.js';
 
@@ -157,6 +159,10 @@ export class McpBackend {
         .where(eq(schema.runs.runTokenHash, hashCredential(message.payload.runToken)));
       if (!found || found.machineId !== machineId) throw refuse('FORBIDDEN', ENDED_MESSAGE);
       runId = found.id;
+      // The push happened whatever the answer to the call: recorded first, on its own.
+      if (message.payload.tool === 'ticket_submit' && message.payload.workspace.push !== null) {
+        await this.recordSubmissionPush(found.id, message.payload.workspace);
+      }
       const definition = MCP_TOOLS[tool];
       const parsed = definition.input.safeParse(message.payload.input);
       if (!parsed.success) {
@@ -227,6 +233,47 @@ export class McpBackend {
       .where(eq(schema.machines.id, run.machineId));
     if (!project || !ticket || !profile || !machine) throw new Error(`run ${run.id} incomplete`);
     return { run, project, ticket, profile, machineName: machine.name };
+  }
+
+  /** The push the daemon made before forwarding a `ticket_submit` (05, section 4.9). */
+  private async recordSubmissionPush(runId: string, workspace: WorkspaceFacts): Promise<void> {
+    if (workspace.push === null) return;
+    const result = workspace.push;
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ run: schema.runs, project: schema.projects, machineName: schema.machines.name })
+        .from(schema.runs)
+        .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+        .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+        .where(eq(schema.runs.id, runId));
+      if (!row || row.run.ticketId === null) return;
+      // The project's row lock first, then the run's: the order of every ticket change.
+      await tx
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, row.project.id))
+        .for('no key update');
+      await tx
+        .select({ id: schema.runs.id })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, runId))
+        .for('update');
+      const [ticket] = await tx
+        .select({ id: schema.tickets.id, number: schema.tickets.number })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, row.run.ticketId));
+      if (!ticket) throw new Error(`run ${runId} has no ticket`);
+      await recordPush(tx, {
+        project: row.project,
+        ticket,
+        run: row.run,
+        machine: { id: row.run.machineId, name: row.machineName },
+        result,
+        branch: workspace.branch,
+        when: 'submission',
+        now: this.now(),
+      });
+    });
   }
 
   /** The profile's MCP permissions (06, section 5): refused with the role named. */

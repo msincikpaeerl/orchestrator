@@ -87,6 +87,8 @@ export {
   OwnerTicketAction,
   RejectRequest,
   TicketCreator,
+  BranchWhere,
+  TicketBranch,
   TicketDetail,
   TicketLink,
   TicketListResponse,
@@ -198,6 +200,7 @@ export {
   CommitSummary,
   GitBranchName,
   GitHash,
+  PushFailureReason,
   PushResult,
   RepositoryOwner,
 } from './daemon/git.js';

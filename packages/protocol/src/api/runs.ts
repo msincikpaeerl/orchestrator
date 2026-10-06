@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CommitSummary, GitHash } from '../daemon/git.js';
+import { CommitSummary, GitHash, PushResult } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
@@ -102,6 +102,11 @@ export const Run = z.object({
   /** Whether its Claude Code session is running on the machine. */
   sessionAlive: z.boolean(),
   branch: RunBranch,
+  /**
+   * The run's latest push of the ticket branch (at a submission or at its end) and when it was
+   * reported; null when it pushed nothing (05, section 4.9; lot 3 step D3).
+   */
+  push: z.object({ result: PushResult, at: z.iso.datetime() }).nullable(),
   /** US dollars as Claude Code estimates them (05, section 4.5); null when unknown. */
   estimatedUsageUsd: z.number().nullable(),
   /**

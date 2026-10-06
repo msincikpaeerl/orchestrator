@@ -15,7 +15,7 @@ import { afterEach, beforeEach, expect } from 'vitest';
 import type { CredentialSource } from '../src/credentials.js';
 import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
-import { TMUX_SOCKET_NAME } from '../src/paths.js';
+import { TMUX_SOCKET_NAME, daemonPaths, type DaemonPaths } from '../src/paths.js';
 import { RunManager } from '../src/runs.js';
 import { ProcessScopes } from '../src/scopes.js';
 import { tmuxScopeName, unitPrefix, type UserSystemd } from '../src/systemd.js';
@@ -79,6 +79,27 @@ export function useRunnerHarness(): void {
 }
 
 /**
+ * A second machine in the test home: its own `ORCHESTRATOR_HOME` (bare clones, runs) and its own
+ * tmux server, whose sessions' hooks reach that machine's daemon. Pass both to `daemon`; `close`
+ * stops its tmux server.
+ */
+export async function otherMachine(
+  name: string,
+): Promise<{ paths: DaemonPaths; tmux: Tmux; close: () => void }> {
+  // Short: a run's socket under it must fit the 107 bytes of a Unix socket path.
+  const tmuxDir = join(home.root, `${name}-tmux`);
+  await mkdir(tmuxDir, { mode: 0o700 });
+  const env = { ...home.env, ORCHESTRATOR_HOME: join(home.root, name), TMUX_TMPDIR: tmuxDir };
+  return {
+    paths: daemonPaths(env),
+    tmux: new Tmux(join(home.bin, 'tmux'), env),
+    close: () => {
+      spawnSync(join(home.bin, 'tmux'), ['-L', TMUX_SOCKET_NAME, 'kill-server'], { env });
+    },
+  };
+}
+
+/**
  * Adds the system folders to the sessions' `PATH`, for scenarios running `sleep`, `nohup` or
  * `setsid`. tmux gives a new session the `PATH` of its client, so the client is made again.
  */
@@ -102,13 +123,16 @@ export function daemon(
     log?: Logger;
     /** How the scripted server answers credential requests: refused by default. */
     credentials?: CredentialSource;
+    /** Another machine's data folder (`ORCHESTRATOR_HOME`), apart from the test home's own. */
+    paths?: DaemonPaths;
   } = {},
 ): RunManager {
   const log = options.log ?? captureLogger().log;
-  const trust = new TrustRegistry(join(home.paths.claudeConfig, '.claude.json'));
-  const prefix = unitPrefix(home.paths);
+  const paths = options.paths ?? home.paths;
+  const trust = new TrustRegistry(join(paths.claudeConfig, '.claude.json'));
+  const prefix = unitPrefix(paths);
   const manager = new RunManager({
-    paths: home.paths,
+    paths,
     log,
     tmux: options.systemd
       ? new Tmux(join(home.bin, 'tmux'), home.env, {
@@ -120,7 +144,7 @@ export function daemon(
       : (options.tmux ?? tmux),
     trust,
     workspaces: new Workspaces({
-      paths: home.paths,
+      paths,
       git: new Git(join(home.bin, 'git'), home.env),
       trust,
       credentials:

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GitCredentialRequest, RunStart } from '@orchestrator/protocol';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
 import type { CredentialAnswer } from '../src/credentials.js';
 import type { RunManager } from '../src/runs.js';
 import { sessionName } from '../src/tmux.js';
@@ -17,6 +17,7 @@ import {
   ended,
   fake,
   home,
+  otherMachine,
   start,
   states,
   tmux,
@@ -297,6 +298,51 @@ describe('the end push', () => {
           message: 'The push took longer than Longest push (5 seconds) and was stopped.',
         },
       });
+    },
+    TIMEOUT,
+  );
+});
+
+// Lot 3 step D3: once a branch is on GitHub, Run now may give the next run to any machine (07,
+// section 3), which takes the branch from GitHub.
+describe('another machine', () => {
+  it(
+    'takes a branch pushed by the first one from GitHub, and continues it',
+    async () => {
+      const cloneUrl = await serve();
+      // Appends: each run's commit changes the file.
+      const append = 'echo $$ >> notes.md && git add notes.md && git commit -q -m "More notes"';
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'bash', command: append },
+              { do: 'exit', code: 1 },
+            ],
+          },
+        ],
+      });
+      const laptop = credentialedDaemon();
+      const first = await start(laptop, { repository: { cloneUrl } });
+      const pushed = await ended(first.runId);
+      expect(pushed).toMatchObject({ reason: 'crashed', push: { status: 'pushed' } });
+      const head = remoteHead(`refs/heads/${BRANCH}`);
+      expect(head).not.toBeNull();
+
+      // Desk has never cloned the project: no local branch.
+      const machine = await otherMachine('desk');
+      onTestFinished(machine.close);
+      const desk = credentialedDaemon({ paths: machine.paths, tmux: machine.tmux });
+      const second = await start(desk, { repository: { cloneUrl } });
+      const end = await ended(second.runId);
+      expect(end).toMatchObject({ reason: 'crashed', push: { status: 'pushed' } });
+      const next = remoteHead(`refs/heads/${BRANCH}`);
+      expect(next).not.toBe(head);
+      // Desk's commit is on top of Laptop's: the run went on from the branch on GitHub.
+      expect(remoteHead(`${next ?? ''}^`)).toBe(head);
+      expect(end.branch?.commitsAhead.map((commit) => commit.hash)).toEqual([next, head]);
+      expect(existsSync(bareClonePath(machine.paths, second.repository))).toBe(true);
+      expect(existsSync(bareClonePath(home.paths, second.repository))).toBe(true);
     },
     TIMEOUT,
   );

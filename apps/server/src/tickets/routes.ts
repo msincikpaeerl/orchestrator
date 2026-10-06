@@ -20,7 +20,7 @@ import {
   type TicketListResponse,
   type TimelineEntry,
 } from '@orchestrator/protocol';
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
@@ -28,7 +28,6 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
-import { reportedCommits } from '../runs/model.js';
 import type { RunService } from '../runs/service.js';
 import { resolveSettings } from '../settings/store.js';
 import {
@@ -44,6 +43,7 @@ import {
   toTicketSummary,
   type TicketRow,
 } from './model.js';
+import { ticketBranch } from './branch.js';
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
 export interface TicketRoutesOptions {
@@ -301,25 +301,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       }),
     ].sort((a, b) => a.at.localeCompare(b.at));
 
-    // The branch as the last run that reported it saw it, on that run's machine (01, section 3.4).
-    const [reported] = await executor
-      .select({ run: schema.runs, machineName: schema.machines.name })
-      .from(schema.runs)
-      .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
-      .where(and(eq(schema.runs.ticketId, ticket.id), isNotNull(schema.runs.commits)))
-      .orderBy(desc(schema.runs.createdAt))
-      .limit(1);
-    const branch =
-      ticket.branchName === null
-        ? null
-        : reported
-          ? {
-              name: ticket.branchName,
-              machine: { id: reported.run.machineId, name: reported.machineName },
-              head: reported.run.branchHead,
-              commits: reportedCommits(reported.run) ?? [],
-            }
-          : { name: ticket.branchName, machine: null, head: null, commits: [] };
+    const branch = await ticketBranch(executor, project, ticket);
 
     const blockedByLinks = blockedBy.map(toTicketLink);
     return {

@@ -120,7 +120,7 @@ export function runRefusalText(refusal: RunRefusal): string {
     case 'machine_unavailable':
       return refusal.commits === null
         ? `This run can only continue on machine ${refusal.machine.name}, and ${unavailableText(refusal.unavailable)}.`
-        : `The ticket's work (${String(refusal.commits)} commit${refusal.commits === 1 ? '' : 's'}) is on machine ${refusal.machine.name}, and ${unavailableText(refusal.unavailable)}. The run can only continue there.`;
+        : `The ticket's branch has ${String(refusal.commits)} commit${refusal.commits === 1 ? '' : 's'} not on GitHub, only on machine ${refusal.machine.name}, and ${unavailableText(refusal.unavailable)}. The run can only continue there.`;
     case 'no_machine':
       return refusal.machines.length === 0
         ? 'No machine can take the run: add a machine in Machines first.'

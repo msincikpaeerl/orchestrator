@@ -33,7 +33,7 @@ When the run cannot start, the ticket page says why, in plain words. The most co
 - **Choose an assignee first**: edit the ticket and choose the agent.
 - **This ticket waits for …**: finish or remove the tickets it waits for.
 - **No machine can take the run**: each machine is listed with its reason, for example "offline" or "its Claude account reached its usage limit". Start the machine's daemon, or wait for the limit to reset.
-- **The ticket's work is on machine …**: an earlier run left commits on that machine, and only that machine can go on with them. Start it again (see [Where the work is](#where-the-work-is)).
+- **The ticket's branch has … commits not on GitHub, only on machine …**: an earlier run left commits on that machine that are not on GitHub, and only that machine can go on with them. Start it again (see [Where the work is](#where-the-work-is)).
 - **The Claude account already runs its maximum**: wait for a run to finish, or raise the account's **Runs at the same time** in **Machines**.
 - **This ticket is too large for an agent's first message**: shorten its description or its acceptance criteria.
 
@@ -96,12 +96,24 @@ In this version, a paused run never resumes by itself. [Needs you](needs-you.md#
 When an agent finishes, its ticket is **In review** and [Needs you](needs-you.md#agents-work) lists it as **Work finished: check it**, with the agent's summary. Read the summary, the **Agent's report** and the commits on the ticket page (see [Where the work is](#where-the-work-is)), then:
 
 - if the work is right, click **Mark as done manually** and say why (see [Mark as done manually](tickets.md#mark-as-done-manually));
-- if something must change, click **Request changes**, write what should change (required), and confirm. The ticket goes back to **To do** with your comment. Its branch and commits are kept and it does not count as a failed attempt. The next dialog offers **Run now**: click it to start the next run at once, or **Later** to start it from the ticket page. The next run continues the earlier commits, on the same machine, and reads your comment first. If it cannot start (the account is limited, the machine is offline), the dialog says why, as **Run now** does on the ticket page.
+- if something must change, click **Request changes**, write what should change (required), and confirm. The ticket goes back to **To do** with your comment. Its branch and commits are kept and it does not count as a failed attempt. The next dialog offers **Run now**: click it to start the next run at once, or **Later** to start it from the ticket page. The next run continues the earlier commits, on the machine holding them (any machine when they are all on GitHub), and reads your comment first. If it cannot start (the account is limited, the machine is offline), the dialog says why, as **Run now** does on the ticket page.
 
 ## Where the work is
 
 Agents commit their work on the ticket's branch, for example `t/12-contact-form`. The branch lives on the machine that ran the agent. From version 0.4.0 the machine also pushes it to GitHub, only that branch and never by force: when the agent submits its work, and when a run ends without a finished submission (the agent gave up, ran out of time or reminders, its session stopped, you stopped the run or cancelled the ticket) while the branch has commits GitHub does not have, so that work is not lost. That last push is a best effort: when it fails (GitHub unreachable, or the branch changed on GitHub meanwhile), the run's outcome is the same and the commits stay on the machine. If the branch changed on GitHub and contains the machine's commits (for example after GitHub's **Update branch**), the next run on that machine starts from GitHub's branch.
 
-The ticket page shows **Branch**: its name, "on machine Laptop, not on GitHub yet", and the commits of the last run that reported them, newest first. The next run of the ticket goes on from them, on that same machine: if it is offline, **Run now** says so.
+The ticket page shows **Branch**: its name, where its commits are, and the commits of the last run that reported them, newest first.
 
-On the machine itself, `orchestrator-daemon status` lists every ticket branch kept there, for each repository, with its latest commit and the commits not on GitHub yet. It works whether the daemon runs or not, and changes nothing. If that machine was revoked, the next run starts again from the project's default branch on another machine, and a comment says how many commits were lost.
+| The page says | What it means | The next run |
+|---|---|---|
+| no commits reported yet | No run has reported commits, and nothing was pushed. | Any machine that can take it. |
+| on machine Laptop, not on GitHub yet | The commits exist only on Laptop: nothing was pushed (always so for tickets started before version 0.4.0), or the push failed. When it failed, the page says when and why. | Only on Laptop. |
+| every commit reported was pushed to GitHub | Every commit is in a push the Orchestrator made, shown with its date: "Last pushed to GitHub on … from machine Laptop". **Branch on GitHub** opens it. | Any machine that can take it: one that never ran the ticket downloads the branch from GitHub. A machine that already has the project is preferred. |
+| N newer commits on machine Laptop, not on GitHub yet | The older commits were pushed, the newer ones exist only on Laptop, for example a commit the agent made after submitting its work. The two lists are shown apart. | Only on Laptop. |
+| on machine Laptop, not on GitHub yet: GitHub's branch has commits this machine does not have | The branch changed on GitHub since the Orchestrator's last push (a push made by hand, or **Update branch** while Laptop had newer commits), so Laptop's push was refused: the Orchestrator never overwrites GitHub's branch. | Only on Laptop. Until both branches are brought together, its pushes are refused again. |
+
+When only one machine holds commits that are not on GitHub and it cannot take the run (offline, disabled, its account at its limit), **Run now** refuses and says so: "The ticket's branch has 2 commits not on GitHub, only on machine Laptop, and it is offline." Start that machine again.
+
+**What "pushed" means.** In this version the Orchestrator does not read the ticket's branch on GitHub: it knows what its machines pushed, and when. If the branch changes on GitHub (**Update branch**, a push by hand) or is deleted there, the page still shows the last push. A later version reads the branch from GitHub with the pull request. A deleted branch is not brought back: the next run on a machine that does not have the commits starts again from the project's default branch.
+
+On the machine itself, `orchestrator-daemon status` lists every ticket branch kept there, for each repository, with its latest commit and the commits not on GitHub yet. It works whether the daemon runs or not, and changes nothing. If the machine holding commits not on GitHub was revoked, the next run starts on another machine, from the branch as last pushed to GitHub, or from the project's default branch when nothing was pushed, and a comment says how many commits were lost.

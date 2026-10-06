@@ -264,6 +264,20 @@ export const tickets = pgTable(
     branchName: text('branch_name'),
     /** Failed runs, for the retry policy; uncounted ends never change it (04, section 5). */
     attemptCount: integer('attempt_count').notNull().default(0),
+    /**
+     * The last push of the ticket branch the daemon reported as done (submission or run end): the
+     * head pushed, when, from which machine, and the commits ahead of the base that head held
+     * (`string[]`). What was pushed, not what GitHub holds now (01, section 3.4; lot 3 step D3).
+     */
+    githubBranchHead: text('github_branch_head'),
+    githubBranchPushedAt: timestamp('github_branch_pushed_at', { withTimezone: true }),
+    githubBranchPushedBy: uuid('github_branch_pushed_by').references(() => machines.id),
+    githubBranchCommits: jsonb('github_branch_commits'),
+    /**
+     * The latest failed push since the last one done (`BranchPushFailure`): when, the machine,
+     * the reason and the message; null after a push is done.
+     */
+    branchPushFailure: jsonb('branch_push_failure'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -525,6 +539,9 @@ export const runs = pgTable(
     stopSentAt: timestamp('stop_sent_at', { withTimezone: true }),
     /** When the daemon reported the run's end (`run.state` `ended`). */
     endReportedAt: timestamp('end_reported_at', { withTimezone: true }),
+    /** The run's latest push of the ticket branch (`PushResult`) and when it was reported. */
+    push: jsonb('push'),
+    pushAt: timestamp('push_at', { withTimezone: true }),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
