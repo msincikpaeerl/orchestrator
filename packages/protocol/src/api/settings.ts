@@ -318,7 +318,7 @@ const definitions = {
     group: 'runs',
     label: 'Longest push',
     description:
-      "How long a machine lets one fetch from GitHub or one push of a ticket branch take before stopping it. The MCP call timeout plus this limit must stay below the Claude Code MCP tool timeout, since the push at submission happens inside the agent's tool call.",
+      "How long a machine lets one push of a ticket branch take before stopping it. It also limits each download of the project from GitHub when a run starts; the first download on a new machine is the longest, and a run whose download is stopped fails, naming this limit. The MCP call timeout plus this limit must stay below the Claude Code MCP tool timeout, since the push at submission happens inside the agent's tool call.",
     unit: 'seconds',
     min: 10,
     max: 600,

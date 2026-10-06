@@ -325,7 +325,7 @@ export async function isolatedFetch(options: IsolatedGitOptions, bare: string): 
     const { secret } = context.outcome();
     if (fetched.timedOut) {
       throw new Error(
-        `The fetch from GitHub took longer than Longest push (${seconds(options.timeoutSeconds)}) and was stopped.`,
+        `Downloading the project from GitHub took longer than Longest push (${seconds(options.timeoutSeconds)}, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.`,
       );
     }
     if (fetched.code !== 0) {

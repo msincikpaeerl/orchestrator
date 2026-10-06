@@ -69,6 +69,11 @@ function RunContent({ run }: { run: Run }) {
           <p className="font-medium text-slate-900" aria-label="Run status">
             {runStateText(run)}
           </p>
+          {run.endDetail && (run.status === 'failed' || run.status === 'cancelled') && (
+            <p className="break-words whitespace-pre-wrap" aria-label="Why the run ended">
+              {run.endDetail}
+            </p>
+          )}
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
             <dt className="text-slate-600">Purpose</dt>
             <dd>{purposeLabel[run.purpose]}</dd>

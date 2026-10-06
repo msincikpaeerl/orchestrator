@@ -207,6 +207,17 @@ describe('push', () => {
 });
 
 describe('fetch', () => {
+  it('stops a download at Longest push, naming the limit in plain words', async () => {
+    await serve(3_000);
+    const failure = await prepare(workspaces(), { pushTimeoutSeconds: 1 }).then(
+      () => 'prepared',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+    expect(failure).toBe(
+      'Downloading the project from GitHub took longer than Longest push (1 second, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.',
+    );
+  }, 30_000);
+
   it('never runs Git in the bare clone from a process holding the credential', async () => {
     await serve();
     const trace = join(home.root, 'trace.json');

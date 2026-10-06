@@ -243,6 +243,8 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - `credential-leaks.test.ts` removes the test home's proxy variables, because `no_proxy` made curl ignore a planted proxy and hid the attack: the two lot 2 regression tests were checked to fail with `main`'s daemon (the planted proxy received `x-access-token:<token>`; the planted askpass got the token from the socket). With the isolated command allowed to read the global configuration, 6 of the 9 cases fail.
 - A fetch after one new commit brings at most 4 objects: `index-pack --fix-thin` adds the delta base of the new tree.
 - Not run on Git 2.40 itself: the versions are checked against Git's release notes (05 section 7.1).
+- **Longest push also limits the download of the project at a run's start** (the session's choice, kept by the owner on conditions): one setting for now, its description saying so and that the first download on a new machine is the longest. A separate fetch limit was deliberately not added; it may be needed later, because the rule tying Longest push to the Claude Code MCP tool timeout concerns only the push at submission, inside the agent's tool call, while a first download of a large project can need far longer than a push. A download stopped by it ends the run `crashed` (failure `crash`, counted as a failed attempt, like any preparation failure), with the machine's words naming the setting and its value, now shown on the run page (`endDetail`) and in Help > Machines > Troubleshooting.
+- ADR 0034 records the isolated credentialed command, the options rejected and what stays open.
 
 ### [ ] D2. Run ends, reviews and preparation
 
