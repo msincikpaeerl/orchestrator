@@ -165,6 +165,7 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
   const onMachine = new Set(branch.notOnGitHub);
   const pushedCommits = branch.commits.filter((commit) => !onMachine.has(commit.hash));
   const split = onMachine.size > 0 && pushedCommits.length > 0;
+  const unlisted = branch.notOnGitHubCount - branch.notOnGitHub.length;
   return (
     <Card className="space-y-2">
       <SectionTitle>Branch</SectionTitle>
@@ -190,6 +191,12 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
           {failure}
         </p>
       )}
+      {unlisted > 0 && (
+        <p className="text-slate-700">
+          {unlisted} older commit{unlisted === 1 ? ' is' : 's are'} not listed here and not on
+          GitHub either.
+        </p>
+      )}
       {branch.where !== 'no_commits' &&
         (split ? (
           <>
@@ -198,8 +205,8 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
               label="Commits not on GitHub"
               commits={branch.commits.filter((commit) => onMachine.has(commit.hash))}
             />
-            <h3 className="font-medium text-slate-900">Pushed to GitHub</h3>
-            <CommitList label="Commits pushed" commits={pushedCommits} />
+            <h3 className="font-medium text-slate-900">On GitHub</h3>
+            <CommitList label="Commits on GitHub" commits={pushedCommits} />
           </>
         ) : (
           branch.machine && <CommitList commits={branch.commits} />
