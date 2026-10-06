@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2 and D3 done; step D split into D1, D2 and D3)
+> Status: in progress (steps A, B, C, D1, D2 and D3 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -297,19 +297,23 @@ Added by the owner at the start of the step (2026-10-06): one server test per st
 - **Not seen by the server** (written in 01 and Help): a push the daemon made but could not report (the server unreachable during a `ticket_submit`) leaves the page saying "not on GitHub yet", the safe side; the next push or step J's reading corrects it.
 - The daemon needed no change: a machine without the local branch already started from GitHub's (`origin/<branch>`). The daemon test (`run-end.test.ts`, "another machine") passes on `main` too; the step's fix is the server's machine rule. The harness gained `otherMachine` (its own `ORCHESTRATOR_HOME` and tmux server).
 
-### [ ] E. GitHub layer and the owner's check of the real GitHub
+### Step E: GitHub layer and the owner's check of the real GitHub, split in three (rule 15)
 
-- `apps/server/src/github/`: pull requests (open, update, close, reopen, read merged and mergeable), Actions runs, jobs and log excerpts, commit statuses, comment reviews, each with its refusals turned into "Needs you" GitHub items naming the permission. The token check gains the read probes of Actions, Pull requests and Commit statuses.
+Split approved by the owner on 2026-10-06, with the additions below. The owner runs the script on the real GitHub once, after E3 (a run after E2 would spend Actions minutes twice); after E2 the script is runnable, steps 6 to 10 printing `NOT ATTEMPTED`, for an early look if the owner wants one. A difference the owner's run finds is fixed in the fake, with its test, by a later session before step F.
+
+**What the script does** (E2 and E3; the owner's additions of 2026-10-06 follow the list):
+
 - `tools/smoke/github-smoke.sh`, for the owner only (rule 9), with no Claude quota. It uses this layer and the daemon's push code on a repository the owner names, after a typed `yes`. It refuses:
   - the Orchestrator's own repository (read from this checkout's `origin`);
   - CI, or a run without a terminal;
   - a repository that does not exist.
 
   **The token** is read from the terminal without echo (`read -s`), held only in the script's process memory, passed to its Node.js helper through a pipe on standard input, never written to disk, never in arguments, the environment of child processes, shell history or output, and masked in any message GitHub sends back. Its steps, each printing `PASS` or `FAIL`:
+  0. *the token check* (owner's answer 2): the Orchestrator's token check (`checkToken`) on the dedicated token, printing each permission's result (OK, Missing or Could not verify) without `PASS` or `FAIL`; beforehand the script says which ones will read Missing because the dedicated token does not have them (Administration and Workflows);
   1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused; a push to a repository name of the owner's account that does not exist answers "Repository not found" (A1, A4, A22, A24);
   2. open a pull request; read it back, printing `mergeable` at the first read and the next ones; a second pull request for the same branch is refused (A5, A6);
   3. wait for CI and read its result (Actions runs and commit statuses): the runs found by the head commit are the `pull_request` runs only; the logs of a job not finished yet; the combined commit status with Actions only (A12, A14, A17);
-  4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt through the redirect, and the jobs and steps with their conclusions (A12, A13, A15);
+  4. push a commit with a broken documentation link; then two pushes of a commit made on step 1's head, which GitHub must reject without starting CI (A25): one from a second scratch clone made at step 1, which does not have the broken-link commit (expected `fetch first`), one from the first scratch clone, which has it (expected `non-fast-forward`), each printed with the daemon's reading (`diverged`); wait for the failure; read the failed job's log excerpt through the redirect, and the jobs and steps with their conclusions (A12, A13, A15);
   5. push a commit that repairs the link; wait for CI to pass (the owner's projects require the `ci` check to merge);
   6. post a comment review; check that an approval and a request-changes review on your own pull request are refused as expected (A11);
   7. read the mergeable flag and `mergeable_state` (A10);
@@ -321,6 +325,14 @@ Added by the owner at the start of the step (2026-10-06): one server test per st
 
   At the end it deletes its branches on GitHub and its scratch clone (the merged commit stays on the default branch). If it stops early, it says what it left (branches, pull requests) and how to remove them. Checked in CI with `bash -n` and a dry run against the fake GitHub.
 - The guard of `tools/smoke/lib/` also covers scripts that act on the real GitHub.
+
+- **Additions of the owner (2026-10-06)**:
+  1. **Which token.** The Orchestrator never shows its saved token again, so the owner creates one for this check. `--help` and the script's first screen recommend a dedicated **fine-grained** token, limited to the test repository only ("Only select repositories"), with the shortest expiry, and with these permissions, listed one by one: Metadata (Read-only), Contents (Read and write), Pull requests (Read and write), Actions (Read-only), Commit statuses (Read-only). They note that the Orchestrator's own token also has Administration and Workflows (Read and write), which the script does not use (owner's answer 3: the minimal set). They remind the owner to delete the token on GitHub at the end, with the link to the token list (`https://github.com/settings/personal-access-tokens`). The optional second token of step 10 stays as planned.
+  2. **The token in the script, proven.** The dry run against the fake GitHub proves, with a fake token, what the paragraph above says, as D1's leak tests do: no process shows the token in its arguments or its environment while the script runs, no file holds it afterwards, and the captured output does not contain it. The same holds for the second token.
+  3. **The daemon's real push code on the owner's Git.** Every push uses the isolated command of D1 (`isolatedPush`). The script prints the Git version next to `doctor`'s minimum (`GIT_MINIMUM`, 2.40). For every push GitHub refuses, it prints the reason the daemon's own parsing gives (`refused`, `diverged`, `unreachable`) next to what Git and GitHub printed, masked: D1 was checked against the Git test server only.
+  4. **Two more assumptions**: A24 (already above), and A25 (new, step 4): both rejections of a diverged branch, `fetch first` and `non-fast-forward`, each with the daemon's reading (owner's answer 4: the second one is the daemon's usual case, since it fetches before every run). Two extra pushes in step 4, no extra CI run.
+  5. **What the owner sees while it runs.** Each wait says what it waits for, what the owner must do on GitHub with the exact link (merge this pull request, close that one, add Contents write to the second token), and how long it waits before giving up: 15 minutes for CI (`--ci-wait-minutes`), 30 minutes for the owner's actions (`--owner-wait-minutes`) (owner's answer 5). A wait that gives up says what was left on GitHub and how to remove it.
+  6. **The result.** At the end the script prints one block to paste back: each step and each assumption with `PASS`, `FAIL` (with GitHub's answer, masked) or `NOT ATTEMPTED`, the Git version, and the script's version: the checkout's commit hash, followed by "with local changes" when the checkout has uncommitted changes (owner's answer 6). No token in it.
 
 **Assumptions to confirm on the real GitHub** (written in step C): what the fake does that GitHub's documentation does not say, or that later steps depend on. The documented behaviours are cited in `apps/server/test/fake-github/` and `docs/dev/testing.md`. "Step" is the smoke script's.
 
@@ -350,10 +362,30 @@ Added by the owner at the start of the step (2026-10-06): one server test per st
 | A22 | A wrong token on the REST API: 401 "Bad credentials" | E | 1 |
 | A23 | A refusal names the permission in `X-Accepted-GitHub-Permissions`: `pull_requests=write` to open a pull request, `actions=read` for runs, `statuses=read` for statuses | E | 10 |
 | A24 | A push to a repository that no longer exists, or that the token cannot see: GitHub answers "remote: Repository not found." and Git says "fatal: repository '<url>' not found" (HTTP 404); the push reads `refused`, since GitHub answered | D2 (`pushResult`), F | 1 (a repository name that does not exist, checked at no cost) |
+| A25 | A push to a branch whose head on GitHub has commits the pushed one lacks is rejected with the porcelain summary `fetch first` when the local side does not have GitHub's head, and `non-fast-forward` when it has it (the daemon's usual case, since it fetches before every run); the daemon reads both as `diverged` | D2 (`pushResult`), D3, F | 4 |
 
-**Done when** the fake GitHub tests cover every function and refusal, the script passes its dry run, and **the owner has run it once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
+**The owner's run** (after E3): a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 10 to 15 minutes, mostly waiting for CI: 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>` (add `--restricted-token` for step 10).
 
-**The owner's run**: a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 10 to 15 minutes, mostly waiting for CI: 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>` (add `--restricted-token` for step 10).
+### [ ] E1. GitHub layer and token check
+
+- `apps/server/src/github/`: pull requests (open, update, close, reopen, read merged and mergeable, find by branch with `state=all`), comment reviews, Actions runs by head commit, their jobs and steps, job log excerpts (through the redirect, without the API's `Authorization`), commit statuses. Each answer checked with a schema; each refusal (401, 403 naming the permission, 404, 422) returned as a result, not thrown. A refusal for a missing permission already gives a "Needs you" GitHub item naming it, for every request sent with the saved token (`storedTokenClient`, lot 1, ADR 0022): the new functions use it.
+- The token check: Actions and Commit statuses already have read probes (lot 1); Pull requests gains a read probe (`GET /pulls?per_page=1` on a private repository) beside its write probe, and reads OK only when both are OK, Missing when either is missing (owner's answer 1).
+
+**Done when** tests against the fake GitHub cover every function and each of its refusals, and the token check's Pull requests line with each probe missing in turn.
+
+### [ ] E2. The script's frame and steps 0 to 5
+
+- `tools/smoke/github-smoke.sh` and its Node.js helper; the guard of `tools/smoke/lib/` extended to scripts that act on the real GitHub (refuses CI, a run without a terminal, the Orchestrator's own repository, a repository that does not exist; asks for a typed `yes`).
+- Additions 1 to 6 above: the token advice in `--help` and on the first screen, the token read and handled as described and its proof, the daemon's push with the Git version and the daemon's reading of each refusal, A24 and A25, the waits, the clean-up, the result block. Steps 0 to 5; steps 6 to 10 print `NOT ATTEMPTED`, so the script is runnable.
+- `pnpm lint:shell` covers it (`bash -n`); a dry run against the fake GitHub, with the fake playing the owner's part, runs in `pnpm test`.
+
+**Done when** the dry run passes steps 0 to 5 (6 to 10 `NOT ATTEMPTED`) with the leak proof of addition 2 (arguments and environment of every process while it runs, files afterwards, captured output), and each refusal of the guard has a test.
+
+### [ ] E3. Steps 6 to 10 and the second token
+
+- Steps 6 to 10 (reviews, merge detection, the second, conflicting pull request, closing and reopening it) and `--restricted-token` with its pause while the owner adds Contents write.
+
+**Done when** the dry run passes every step, with and without the second token (the leak proof covering it too), and **the owner has run the script once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
 ### [ ] F. Full submission and the pull request
 
