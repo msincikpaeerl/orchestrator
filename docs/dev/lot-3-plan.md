@@ -32,7 +32,7 @@ Confirmed by the owner in step A and written into the specs (01, 02, 03, 04, 05,
 - While CI runs, the session stays open; the run shows "waiting for CI", with no working time and no idle timeout, and still counts against the account's maximum concurrent runs (Q6).
 - The CI result is every GitHub Actions run for the pull request's head commit, plus that commit's statuses: passed when all are completed and successful (skipped or neutral count as passed); failed when all are completed and one failed, was cancelled or timed out (Q8).
 - No run within **Wait for CI to start**: the check reads "No CI found", the submission passes, and Quality is told (Q9).
-- A failure is sent with `run.input` from the template `agents/templates/ci-failed.md`: each failed job and step, with the end of its log cut to the setting **Longest CI log excerpt** (Q10: a setting, not a new constant). `ci_status` returns the same for the run's pull request. One failure more than **Most CI failures per run** (default 2) ends the run with `ci_failed`, counted as an attempt.
+- A failure is sent with `run.input` from the template `agents/templates/ci-failed.md`: each failed job and step, with the step's own part of the job's log cut to the setting **Longest CI log excerpt** (Q10: a setting, not a new constant; per failed step since the owner's third smoke run, see step E2's fixes). `ci_status` returns the same for the run's pull request. One failure more than **Most CI failures per run** (default 2) ends the run with `ci_failed`, counted as an attempt.
 - **CI wait at submission** reached: the run fails with `ci_timeout`, not counted; the ticket returns to `todo` with its branch and pull request; "Needs you" shows "CI did not finish" with **Check CI again**, which starts no session (one GitHub read): when CI has passed since, the stored submission is accepted and the ticket goes to `in_review` (Q7). The setting's description is reworded.
 - Polling: **GitHub check interval** (60 s), only for tickets waiting on GitHub (Q11).
 
@@ -91,11 +91,12 @@ The end-to-end server uses it.
 |---|---|---|---|---|
 | Wait for CI to start | `ciStartWaitMinutes` | 5 minutes | 1 to 60 minutes | Yes |
 | Most CI failures per run | `maxCiFailuresPerRun` | 2 | 1 to 10 | Yes |
-| Longest CI log excerpt | `ciLogExcerptMaxLength` | 4,000 characters | 500 to 20,000 characters | No |
+| Longest CI log excerpt | `ciLogExcerptMaxLength` (per failed step) | 4,000 characters | 500 to 20,000 characters | No |
+| Longest CI log read | `ciLogReadMaxMegabytes` (added after the owner's third smoke run) | 20 MB | 1 to 500 MB | No |
 | GitHub check interval | `githubPollSeconds` | 60 seconds | 15 to 600 seconds | No |
 | Most review rounds per ticket | `maxReviewRounds` | 2 | 1 to 10 | Yes |
 
-`maxFailedAttempts` and `ciWaitTimeoutMinutes` are already marked "used from 0.4.0". A CI result message and `ci_status` hold at most one excerpt per failed job, and their whole text stays within `MCP_OUTPUT_MAX_CHARACTERS` and the `run.input` ceiling: excerpts are cut further, the longest first, with a marker.
+`maxFailedAttempts` and `ciWaitTimeoutMinutes` are already marked "used from 0.4.0". A CI result message and `ci_status` hold one excerpt per failed step, and their whole text stays within `MCP_OUTPUT_MAX_CHARACTERS` and the `run.input` ceiling: excerpts are cut further, the longest first, with a marker.
 
 **What a ticket costs** (Sonnet, the model of every default profile; each message reloads the session's context):
 
@@ -350,7 +351,7 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 | A10 | `mergeable_state` is `clean` when mergeable, `dirty` on a conflict, `unknown` while computed | nothing (only `mergeable` is used) | 7, 9 |
 | A11 | A review on your own pull request: APPROVE answers 422 with `errors` `["Review Can not approve your own pull request"]`, REQUEST_CHANGES `["Review Can not request changes on your own pull request"]`; COMMENT is accepted with state `COMMENTED` | H | 6 |
 | A12 | A `pull_request` run's `head_sha` is the pull request's head commit, and `GET /actions/runs?head_sha=` finds the runs of that commit; a push to a branch the workflow does not list starts no run | G1 | 3, 4 |
-| A13 | Job logs: 302 to another host, downloaded without the API's `Authorization`; each line starts with a timestamp with seven decimals (`2026-10-05T10:00:00.0000000Z`); steps open with `##[group]`; a failing step ends with `##[error]Process completed with exit code 1.`; the later steps are `skipped` | G2 | 4 |
+| A13 | Job logs: 302 to another host, downloaded without the API's `Authorization`; every line starts with a timestamp with seven decimals (`2026-10-05T10:00:00.0000000Z`); a failed step's part ends with a `##[error]` line (`Process completed with exit code 1.`); after the failure the post steps still run (success, or skipped when their action runs them only after success) and `Complete job` succeeds; the failed step's excerpt, cut by its times and its `##[error]` line, holds the failure (the broken link's file name). The script prints the counts (lines, timestamped, `##[group]`, `##[error]`), whether the log starts with a byte order mark and how many escape characters it holds (reworded after the owner's third run) | G1, G2 | 4 |
 | A14 | The logs of a job not finished yet: 404 | G2 | 3 |
 | A15 | The skeleton's CI failing on a link: job `docs-links` fails at step "Check documentation links", and job `ci` fails too | G2 | 4 |
 | A16 | A merge into the default branch starts its `push` runs on the merge commit | J (not waited for) | 8 |
@@ -406,6 +407,7 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - **The layer against the documentation**: every schema compared field by field with GitHub's OpenAPI description of 2026-03-10. Changed: pull requests no longer read `merge_commit_sha` (`mergeCommitSha` removed, unused); a run's `name` optional and nullable; a listed repository's `created_at` nullable. Kept stricter on purpose: the `state` of commit statuses and of listed pull requests, typed as plain strings while the documentation's text lists the values the Orchestrator decides from. Checked against the plainest documented bodies (`test/github-documented.test.ts`).
 - **The fake answers GitHub's documented shapes** (ADR 0035): completed and checked against the description, nulls included; a field GitHub does not document is refused. Lists give the simple pull request (no `mergeable`), 422 bodies carry `documentation_url`.
 - **The script after an unreadable answer**: a pull request GitHub created is found by its branch, listed in what is left and closed like the rest; the step fails naming the fields (also in the result block) and the following steps run; it stops only when going on is impossible.
+- **The owner's third run** (script 25e2303): steps 1, 2, 3 and 5 PASS, step 4 FAIL on A13 only. The real finding: the end of a failed job's log is the clean-up of its post steps (GitHub still runs them after a failure, then `Complete job`), not the failure, so an agent given "the end of the log" could fix nothing. Measured on the real log (191 lines, kept as `apps/server/test/fixtures/github-job-log/docs-links.log`, rebuilt from a paste: see its README): the checks read false because the script looked only at the log's last 4,000 characters, whose first line was cut mid-line; every line has a timestamp; the step's section is not named after the workflow's step; the post steps run in the same second as the failure, so neither the step's times nor the `##[error]` line alone find the step. Owner's answers: the cut of 04 section 3.1 (the step's times to its last `##[error]` line; the end of the job, said as such, when impossible), the fixture made anonymous, masking in the layer. Done: `apps/server/src/github/job-log.ts` and `readFailedStepLogs` (one excerpt per failed step, streamed, secrets masked); the setting **Longest CI log read** (04 section 8: a setting, since it changes what the agent gets; wired in G1 with **Longest CI log excerpt**, the layer taking both as parameters); the fake's jobs with post steps, whole-second step times and the real log format; A13 reworded with counts.
 - **For E3**: step 8 cannot read the merge commit from the pull request any more (`merge_commit_sha` is gone). The merge commit is the default branch's head right after the owner's merge (the script reads it with `git/ref`), which E3 uses for A16 and A21; step J reads neither (it uses `merged`).
 
 ### [ ] E3. Steps 6 to 10 and the second token
@@ -435,14 +437,15 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - An accepted submission answers `pending_ci`; the daemon's `waiting_ci` (no nudge, no working time, no idle timeout); the run counts against its account.
 - The CI result of 04 section 3.1 (every workflow run of the head commit and its statuses) and **Wait for CI to start** ("No CI found", the submission passes).
 - CI passed: `run.stop` `completed`, the run `succeeded`, the ticket `in_review` (replacing step F's end at submission).
-- `ci_status` for all roles, cut to **Longest CI log excerpt**.
-- The new settings of this step; the run page shows "waiting for CI".
+- `ci_status` for all roles, cut to **Longest CI log excerpt**, read with **Longest CI log read** (`readFailedStepLogs`).
+- The new settings of this step, with **Longest CI log excerpt** and **Longest CI log read**; the run page shows "waiting for CI".
 
 **Done when** daemon and server tests with the fake GitHub show CI passing, no CI found, the idle timeout and working time not counting while waiting, the polling restored after a server restart, and `ci_status` cut to the setting.
 
 ### [ ] G2. CI failures, limits and screens
 
 - A failure sent back through `run.input` (template `ci-failed.md`, **Longest CI log excerpt**), the run back to `working`, a new submission checked again from the start.
+- **The excerpts** (owner's decisions after the third smoke run): one per failed step, each with its step's name, from `readFailedStepLogs` (04 section 3.1); the whole-job fallback is introduced as such with its reason (`excerptHeading`), so the agent knows it is not the step's part. Every excerpt passes through the secret masking (`maskSecrets`, done by the layer) before it reaches an agent or a screen. The total size rule applies across all of them: the CI result message keeps its whole text within the `run.input` ceiling and `ci_status` within `MCP_OUTPUT_MAX_CHARACTERS`, the excerpts of all failed steps cut further, the longest first, with a marker.
 - **Most CI failures per run** (`ci_failed`, counted).
 - **CI wait at submission** (`ci_timeout`, not counted, "CI did not finish" with **Check CI again**, which accepts the stored submission without a session when CI has passed since).
 - Ticket and run pages: "waiting for CI", the CI result per run and job; "Needs you"; the settings and their texts (the reworded **CI wait at submission**); Help; CHANGELOG.
