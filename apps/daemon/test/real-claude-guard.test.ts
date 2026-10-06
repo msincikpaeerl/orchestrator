@@ -67,6 +67,8 @@ function run(
       // No terminal: stdin is closed, or the given input.
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    // A script that exits first closes the pipe: the rest of the input is not needed.
+    child.stdin.on('error', () => undefined);
     child.stdin.end(input ?? '');
     let output = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (output += chunk));
@@ -76,6 +78,12 @@ function run(
     });
   });
 }
+
+// A script that refuses exits before reading its input; writing to it then fails with EPIPE,
+// which must not end the test run as an uncaught error (seen in lot 3 step E1).
+it('runs a script that exits without reading its input', async () => {
+  expect((await run(['bash', '-c', 'exit 0'], {}, 'yes\n'.repeat(1 << 18))).code).toBe(0);
+});
 
 /** Nothing started and nothing left: no session of the fake, no folder in TMPDIR or HOME. */
 async function nothingStarted(): Promise<void> {

@@ -59,12 +59,14 @@ Each test file calls `createTestDatabase()` from `@orchestrator/db/testing`: it 
 | Area | Endpoints | Permission |
 |---|---|---|
 | Account and repositories | `GET /user`, `GET`/`POST /user/repos`, `GET /repos/{o}/{r}` | Administration write to create |
-| Files and Git database | `PUT .../contents/{path}`, `GET .../git/ref/heads/{b}`, `PATCH .../git/refs/heads/{b}`, `GET`/`POST .../git/commits`, `POST .../git/trees`, `GET .../git/trees/{sha}` (`recursive`) | Contents; Workflows write for `.github/workflows/` |
+| Files and Git database | `PUT .../contents/{path}`, `GET .../git/ref/heads/{b}`, `PATCH`/`DELETE .../git/refs/heads/{b}` (deleting a missing branch: 422 "Reference does not exist"), `GET`/`POST .../git/commits`, `POST .../git/trees`, `GET .../git/trees/{sha}` (`recursive`) | Contents; Workflows write for `.github/workflows/` |
 | Rulesets | `GET`/`POST .../rulesets` | Administration write; paid plan for a private repository |
 | Pull requests | `GET`/`POST .../pulls` (`state`, `head`, `base`), `GET`/`PATCH .../pulls/{n}` (title, body, base, state), `GET .../pulls/{n}/merge` | Pull requests; read one with Pull requests or Contents read |
 | Reviews | `GET`/`POST .../pulls/{n}/reviews` (APPROVE and REQUEST_CHANGES refused on your own pull request, COMMENT needs a body) | Pull requests |
 | Actions | `GET .../actions/runs` (`head_sha`, `branch`, `event`, `status`), `GET .../actions/runs/{id}`, `.../runs/{id}/jobs`, `GET .../actions/jobs/{id}`, `.../jobs/{id}/logs` (302 to the fake's log host, a link valid one minute) | Actions read |
 | Commit statuses | `GET .../commits/{ref}/status` (combined), `GET .../commits/{ref}/statuses` | Commit statuses read |
+
+`github.logRequests` records each download from the log host with its `Authorization` header, so a test can check the token never goes there.
 
 A pull request's `mergeable` is `null` at the first read after its head or its base changed, then computed (`git merge-tree`); `mergeable_state` follows (`unknown`, `clean`, `dirty`).
 
@@ -72,7 +74,7 @@ A pull request's `mergeable` is `null` at the first read after its head or its b
 
 **Scripting CI.** A repository lists its workflows: `workflows: [skeletonWorkflow()]` is the skeleton's CI (`pull_request`, and `push` to the default branch; jobs `docs-links` and `ci`); without workflows no run ever exists ("No CI found"). Runs start as on GitHub: a `pull_request` workflow when a pull request is opened, reopened or its head branch moves (by a push, a REST write or **Update branch**), never while it has a conflict; a `push` workflow when a listed branch moves. The repository's `ci` says what a new run does: `queued` (the default) waits for the test, `success` completes it at once, `{ failures: [{ job, step, log }] }` completes it with those steps failing (their log printed, later steps skipped), `none` starts nothing (Actions never starts). A test moves queued runs with `github.runs(repo, ref)`, `github.startRun(run)` and `github.completeRun(run, failures)`, and sets commit statuses with `github.setStatus(repo, ref, { context, state })`.
 
-**The owner's actions on GitHub.** `github.commit(repo, branch, files, message)` (someone else's commit, for example on the base branch to make a conflict; a file set to `null` is removed), `mergePullRequest(repo, n, 'merge' | 'squash')`, `closePullRequest(repo, n)` and `updatePullRequestBranch(repo, n)` (merges the base into the head). Each throws when GitHub would not offer it (a merge or **Update branch** with conflicts, a closed pull request). `github.repository(owner, name)`, `branches(repo)` and `pullRequest(repo, n)` read the state.
+**The owner's actions on GitHub.** `github.commit(repo, branch, files, message, from?)` (someone else's commit, for example on the base branch to make a conflict; a file set to `null` is removed; a missing branch starts from the branch `from`, or with no parent), `mergePullRequest(repo, n, 'merge' | 'squash')`, `closePullRequest(repo, n)` and `updatePullRequestBranch(repo, n)` (merges the base into the head). Each throws when GitHub would not offer it (a merge or **Update branch** with conflicts, a closed pull request). `github.repository(owner, name)`, `branches(repo)` and `pullRequest(repo, n)` read the state.
 
 **From the end-to-end server.** The control address offers the same functions on the full account's repositories (`apps/server/test/fake-github-controls.ts`): `POST /github/commit`, `/github/ci` (`action` `start` or `complete`, with `failures`), `/github/status`, `/github/merge`, `/github/close` and `/github/update-branch`, described in `e2e-server.ts`; a refusal answers 409 with the reason.
 

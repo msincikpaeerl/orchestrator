@@ -113,10 +113,13 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
 
   // Read probes need a private repository: any token can read public ones.
   const readRepo = pick(repositories, (repo) => repo.private, 'No private repository to test on');
+  // Pull requests is probed for reading here and for writing below: OK only when both are.
+  let pullRequestsRead: Outcome;
   if (typeof readRepo === 'string') {
     for (const permission of ['metadata', 'actions', 'statuses'] as const) {
       outcomes.set(permission, unverified(readRepo));
     }
+    pullRequestsRead = unverified(readRepo);
   } else {
     outcomes.set('metadata', ok);
     const base = repoPath(readRepo);
@@ -134,6 +137,10 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
         path: `${base}/commits/${encodeURIComponent(readRepo.default_branch)}/status`,
       }),
     );
+    pullRequestsRead = await probe(client, 'pull_requests', 'read', {
+      method: 'GET',
+      path: `${base}/pulls?per_page=1`,
+    });
   }
 
   // An empty name is invalid: GitHub cannot create a repository from this request.
@@ -156,6 +163,7 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
     for (const permission of ['contents', 'pull_requests', 'workflows'] as const) {
       outcomes.set(permission, unverified(writeRepo));
     }
+    outcomes.set('pull_requests', both(pullRequestsRead, unverified(writeRepo)));
   } else {
     const base = repoPath(writeRepo);
     // Without `message` and `content`, GitHub cannot write the file.
@@ -170,11 +178,14 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
     // Without `head` and `base`, GitHub cannot open a pull request.
     outcomes.set(
       'pull_requests',
-      await probe(client, 'pull_requests', 'write', {
-        method: 'POST',
-        path: `${base}/pulls`,
-        body: {},
-      }),
+      both(
+        pullRequestsRead,
+        await probe(client, 'pull_requests', 'write', {
+          method: 'POST',
+          path: `${base}/pulls`,
+          body: {},
+        }),
+      ),
     );
     outcomes.set(
       'workflows',
@@ -235,6 +246,12 @@ function pick(
 
 function repoPath(repo: Repository): string {
   return `/repos/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}`;
+}
+
+/** A permission probed twice: Missing when either probe says so, OK only when both do. */
+function both(first: Outcome, second: Outcome): Outcome {
+  if (first.result === 'missing' || second.result === 'missing') return { result: 'missing' };
+  return first.result === 'ok' ? second : first;
 }
 
 /**

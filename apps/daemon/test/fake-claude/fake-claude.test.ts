@@ -151,7 +151,12 @@ describe('fake claude', () => {
     const debugFile = join(root, 'debug.log');
     const args = launchArgs(settings, mcp, 'unused').slice(0, -2);
     const run = runFake([...args, '--debug-file', debugFile]);
-    await waitFor(() => existsSync(join(root, 'hooks.jsonl')), 10_000, 'SessionStart');
+    // The hook's line, not the file: it exists before the line is written (lot 3 step E1).
+    await waitFor(
+      async () => existsSync(join(root, 'hooks.jsonl')) && (await hookInputs()).length > 0,
+      10_000,
+      'SessionStart',
+    );
     expect(await readFile(debugFile, 'utf8')).toBe('Settings Warning: unknown key\n');
     expect((await hookInputs()).map((input) => input.hook_event_name)).toEqual(['SessionStart']);
     run.child.kill();

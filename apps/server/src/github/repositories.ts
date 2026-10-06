@@ -6,6 +6,7 @@ import {
   type GitHubClient,
   type GitHubResponse,
 } from './client.js';
+import { ErrorBody, errorText } from './answers.js';
 import type { SkeletonFile } from './skeleton.js';
 
 // Repository operations of project creation (08, sections 3.1 and 3.4; ADR 0023). Every function
@@ -40,22 +41,6 @@ const Repository = z.object({
   default_branch: z.string(),
   created_at: z.string(),
 });
-
-const ErrorBody = z.object({
-  message: z.string(),
-  // Details of a 422, for example "name already exists on this account".
-  errors: z.array(z.unknown()).optional(),
-});
-
-const ErrorDetail = z.string().or(z.object({ message: z.string() }).transform((e) => e.message));
-
-function errorText(body: z.infer<typeof ErrorBody>): string {
-  const details = (body.errors ?? []).flatMap((error) => {
-    const detail = ErrorDetail.safeParse(error);
-    return detail.success ? [detail.data] : [];
-  });
-  return [body.message, ...details].join(': ');
-}
 
 function toRepository(body: z.infer<typeof Repository>): GitHubRepository {
   return {
@@ -96,12 +81,12 @@ function parsed<T>(schema: z.ZodType<T>, action: string, response: GitHubRespons
   return result.data;
 }
 
-function repoPath(repo: RepositoryRef): string {
+export function repoPath(repo: RepositoryRef): string {
   return `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
 }
 
 /** A branch name in a URL: each segment encoded, slashes kept (`git/ref/heads/feature/x`). */
-function branchPath(branch: string): string {
+export function branchPath(branch: string): string {
   return branch.split('/').map(encodeURIComponent).join('/');
 }
 

@@ -19,15 +19,25 @@ export interface GitHubResponse {
 }
 
 export interface GitHubRequest {
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Path and query, for example `/user/repos?per_page=1`. */
   path: string;
   body?: unknown;
 }
 
+/** A file GitHub serves through a redirect: its end, or GitHub's answer when there is none. */
+export type GitHubDownload =
+  { ok: true; text: string; truncated: boolean } | { ok: false; response: GitHubResponse };
+
 export interface GitHubClient {
   /** Never throws for an HTTP status; throws `GitHubUnreachableError` when no answer comes. */
   request(request: GitHubRequest): Promise<GitHubResponse>;
+  /**
+   * A `GET` GitHub answers with a redirect to a file on another host (a job's log): the file is
+   * downloaded without the API's Authorization header, and only its last `maxCharacters`
+   * characters are kept. Throws `GitHubUnreachableError` like `request`.
+   */
+  download(path: string, maxCharacters: number): Promise<GitHubDownload>;
 }
 
 export interface GitHubClientOptions {
@@ -40,48 +50,112 @@ export interface GitHubClientOptions {
 }
 
 export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
+  const headers = (body: boolean) => ({
+    accept: 'application/vnd.github+json',
+    authorization: `Bearer ${options.token}`,
+    'user-agent': 'orchestrator',
+    'x-github-api-version': API_VERSION,
+    ...(body ? { 'content-type': 'application/json' } : {}),
+  });
+
+  async function send(request: GitHubRequest, redirect: 'follow' | 'manual'): Promise<Response> {
+    try {
+      return await fetch(new URL(request.path, options.apiUrl), {
+        method: request.method,
+        headers: headers(request.body !== undefined),
+        body: request.body === undefined ? undefined : JSON.stringify(request.body),
+        redirect,
+        signal: AbortSignal.timeout(options.timeoutSeconds * 1000),
+      });
+    } catch (error) {
+      // The cause is a network or timeout error from fetch; it never contains the headers.
+      throw new GitHubUnreachableError(`${request.method} ${request.path}: no answer from GitHub`, {
+        cause: error,
+      });
+    }
+  }
+
+  async function finish(request: GitHubRequest, response: Response): Promise<GitHubResponse> {
+    const text = await response.text();
+    let body: unknown;
+    try {
+      body = text === '' ? null : JSON.parse(text);
+    } catch {
+      body = null;
+    }
+    const result = { status: response.status, headers: response.headers, body };
+    if (response.status >= 500) {
+      throw new GitHubUnreachableError(
+        `${request.method} ${request.path}: GitHub answered HTTP ${String(response.status)}`,
+      );
+    }
+    await options.onResponse?.(request, result);
+    return result;
+  }
+
   return {
     async request(request) {
-      let response: Response;
+      return finish(request, await send(request, 'follow'));
+    },
+
+    async download(path, maxCharacters) {
+      const request: GitHubRequest = { method: 'GET', path };
+      const redirect = await send(request, 'manual');
+      const location = redirect.headers.get('location');
+      if (redirect.status !== 302 || location === null) {
+        return { ok: false, response: await finish(request, redirect) };
+      }
+      await redirect.body?.cancel();
+      let file: Response;
       try {
-        response = await fetch(new URL(request.path, options.apiUrl), {
-          method: request.method,
-          headers: {
-            accept: 'application/vnd.github+json',
-            authorization: `Bearer ${options.token}`,
-            'user-agent': 'orchestrator',
-            'x-github-api-version': API_VERSION,
-            ...(request.body === undefined ? {} : { 'content-type': 'application/json' }),
-          },
-          body: request.body === undefined ? undefined : JSON.stringify(request.body),
+        // A signed link to another host: no Authorization, never the token (lot 3 plan, A13).
+        file = await fetch(location, {
+          headers: { 'user-agent': 'orchestrator' },
           signal: AbortSignal.timeout(options.timeoutSeconds * 1000),
         });
       } catch (error) {
-        // The cause is a network or timeout error from fetch; it never contains the headers.
-        throw new GitHubUnreachableError(
-          `${request.method} ${request.path}: no answer from GitHub`,
-          {
-            cause: error,
-          },
-        );
+        throw new GitHubUnreachableError(`GET ${path}: the file GitHub links to did not come`, {
+          cause: error,
+        });
       }
-      const text = await response.text();
-      let body: unknown;
-      try {
-        body = text === '' ? null : JSON.parse(text);
-      } catch {
-        body = null;
+      if (file.status !== 200) {
+        const message = (await file.text()).slice(0, 200);
+        if (file.status >= 500) {
+          throw new GitHubUnreachableError(
+            `GET ${path}: the file GitHub links to answered HTTP ${String(file.status)}`,
+          );
+        }
+        return {
+          ok: false,
+          response: { status: file.status, headers: file.headers, body: { message } },
+        };
       }
-      const result = { status: response.status, headers: response.headers, body };
-      if (response.status >= 500) {
-        throw new GitHubUnreachableError(
-          `${request.method} ${request.path}: GitHub answered HTTP ${String(response.status)}`,
-        );
-      }
-      await options.onResponse?.(request, result);
-      return result;
+      return { ok: true, ...(await tail(file, maxCharacters)) };
     },
   };
+}
+
+/** The last `maxCharacters` characters of a body, read as it comes. */
+async function tail(
+  response: Response,
+  maxCharacters: number,
+): Promise<{ text: string; truncated: boolean }> {
+  const decoder = new TextDecoder();
+  let text = '';
+  let truncated = false;
+  const keep = () => {
+    if (text.length > maxCharacters) {
+      text = text.slice(-maxCharacters);
+      truncated = true;
+    }
+  };
+  for await (const chunk of response.body ?? []) {
+    text += decoder.decode(chunk as Uint8Array, { stream: true });
+    if (text.length > 2 * maxCharacters) keep();
+  }
+  text += decoder.decode();
+  keep();
+  return { text, truncated };
 }
 
 /**
