@@ -274,7 +274,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
   - a repository that does not exist.
 
   **The token** is read from the terminal without echo (`read -s`), held only in the script's process memory, passed to its Node.js helper through a pipe on standard input, never written to disk, never in arguments, the environment of child processes, shell history or output, and masked in any message GitHub sends back. Its steps, each printing `PASS` or `FAIL`:
-  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused (A1, A4, A22);
+  1. push a branch `orchestrator-smoke-<time>` with one commit through the per-command credential helper; no credential left in the scratch clone's configuration; a push and a REST request with a wrong token are refused; a push to a repository name of the owner's account that does not exist answers "Repository not found" (A1, A4, A22, A24);
   2. open a pull request; read it back, printing `mergeable` at the first read and the next ones; a second pull request for the same branch is refused (A5, A6);
   3. wait for CI and read its result (Actions runs and commit statuses): the runs found by the head commit are the `pull_request` runs only; the logs of a job not finished yet; the combined commit status with Actions only (A12, A14, A17);
   4. push a commit with a broken documentation link; wait for the failure; read the failed job's log excerpt through the redirect, and the jobs and steps with their conclusions (A12, A13, A15);
@@ -317,6 +317,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 | A21 | The merge commit's message ("Merge pull request #<n> from <owner>/<branch>") and the squash commit's ("<title> (#<n>)") | nothing (printed only) | 8 |
 | A22 | A wrong token on the REST API: 401 "Bad credentials" | E | 1 |
 | A23 | A refusal names the permission in `X-Accepted-GitHub-Permissions`: `pull_requests=write` to open a pull request, `actions=read` for runs, `statuses=read` for statuses | E | 10 |
+| A24 | A push to a repository that no longer exists, or that the token cannot see: GitHub answers "remote: Repository not found." and Git says "fatal: repository '<url>' not found" (HTTP 404); the push reads `refused`, since GitHub answered | D2 (`pushResult`), F | 1 (a repository name that does not exist, checked at no cost) |
 
 **Done when** the fake GitHub tests cover every function and refusal, the script passes its dry run, and **the owner has run it once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
@@ -414,6 +415,8 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - The counted and not counted failures of lot 3 (`ci_failed`, `ci_timeout`, `push_failed`, review failures), each with its `system` comment.
 - 04 section 5 rewritten from the code; lot 4's rule on blocking items already in 10.
 - Help: "When a ticket keeps failing"; CHANGELOG.
+
+- **A project download at a run's start that fails or is stopped** (GitHub unreachable, the credential refused, **Longest push** reached) is not the agent's failure (owner's decision, lot 3 step D2). It gets a failure reason of its own, is not counted as a failed attempt, and leaves a blocking "Needs you" item, as `push_failed` does. The run page and the ticket's comment say what happened in true words, instead of today's "its Claude Code session stopped unexpectedly or never started". The Help line "Such a run counts as a failed attempt in this version" (Machines > Troubleshooting) is corrected in this step. Until then such a run ends `crashed`, counted, as step D1 left it.
 
 **Done when** tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not as decided, and Run now's refusal naming the setting and its value. Playwright: **Try again** from "Needs you".
 
