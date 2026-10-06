@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { basename, dirname, join } from 'node:path';
@@ -175,12 +176,14 @@ export async function startGitHttpServer(
       const authenticated =
         request.credential?.username === credential.username &&
         request.credential.password === credential.password;
-      return authenticated
-        ? {
-            repository: join(root, request.owner, `${request.name}.git`),
-            user: credential.username,
-          }
-        : { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="test"' } };
+      if (!authenticated) {
+        return { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="test"' } };
+      }
+      const repository = join(root, request.owner, `${request.name}.git`);
+      // As GitHub answers for a repository that does not exist or the token cannot see.
+      return existsSync(repository)
+        ? { repository, user: credential.username }
+        : { status: 404, message: 'Repository not found.' };
     },
   });
   const server: Server = createServer((request, response) => {

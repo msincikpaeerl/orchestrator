@@ -170,6 +170,21 @@ describe('push', () => {
     expect(remoteRef(`refs/heads/${BRANCH}`)).toBeNull();
   }, 30_000);
 
+  it('reads a repository GitHub says is not found as refused, since GitHub answered', async () => {
+    await serve();
+    const spaces = workspaces();
+    const run = await prepare(spaces);
+    const head = commit(run.worktree, 'Agent work');
+    // The repository was deleted, or the token cannot see it: GitHub answers 404 (A24).
+    const gone = {
+      ...run.start,
+      repository: { ...run.start.repository, cloneUrl: `${server.url}/owner/gone.git` },
+    };
+    const result = await spaces.push(gone, run.bare, run.folder, head);
+    expect(result).toMatchObject({ status: 'failed', reason: 'refused' });
+    expect(result.status === 'failed' && result.message).toContain('Repository not found.');
+  }, 30_000);
+
   it('stops a push at Longest push, with every process it started', async () => {
     await serve();
     const spaces = workspaces();
