@@ -12,6 +12,7 @@ import type {
 } from '@orchestrator/protocol';
 import type { Logger } from 'pino';
 import { afterEach, beforeEach, expect } from 'vitest';
+import type { CredentialSource } from '../src/credentials.js';
 import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
 import { TMUX_SOCKET_NAME } from '../src/paths.js';
@@ -99,6 +100,8 @@ export function daemon(
     scopes?: ProcessScopes;
     tmux?: Tmux;
     log?: Logger;
+    /** How the scripted server answers credential requests: refused by default. */
+    credentials?: CredentialSource;
   } = {},
 ): RunManager {
   const log = options.log ?? captureLogger().log;
@@ -120,7 +123,9 @@ export function daemon(
       paths: home.paths,
       git: new Git(join(home.bin, 'git'), home.env),
       trust,
-      credentials: () => Promise.resolve({ ok: false, message: 'no credential in these tests' }),
+      credentials:
+        options.credentials ??
+        (() => Promise.resolve({ ok: false, message: 'no credential in these tests' })),
       selfCommand: DAEMON_COMMAND,
       log,
     }),

@@ -19,6 +19,8 @@ export const TOKEN = 'ghp_ScriptedServerToken0123456789abcdefgh';
 export class ScriptedServer {
   received: DaemonMessage[] = [];
   acknowledge = true;
+  /** Refuses the credential of a push (a run's end push), so commits stay on the machine. */
+  refusePush = false;
   /** What to do with each next `mcp.call`: answer it, never answer, or drop the connection. */
   mcpScript: ('answer' | 'silent' | 'drop')[] = [];
   private socket: WebSocket | null = null;
@@ -59,7 +61,10 @@ export class ScriptedServer {
         send({
           type: 'git.credential',
           id: message.id,
-          payload: { ok: true, username: 'x-access-token', password: TOKEN },
+          payload:
+            this.refusePush && message.payload.command === 'push'
+              ? { ok: false, message: 'refused by the test' }
+              : { ok: true, username: 'x-access-token', password: TOKEN },
         });
         return;
       case 'mcp.call': {

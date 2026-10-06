@@ -265,10 +265,12 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       const status = await runDaemon(['status'], home.env);
       expect(status.code).toBe(0);
       expect(status.stdout).toContain('octo-owner/bakery');
+      // Pushed at the submission (lot 3 step D1), which the machine knows (step D2).
       expect(status.stdout).toMatch(
-        new RegExp(`${BRANCH} {2}head ${(done.branch?.head ?? '').slice(0, 7)}`),
+        new RegExp(
+          `${BRANCH} {2}head ${(done.branch?.head ?? '').slice(0, 7)}\n {6}nothing that is not on GitHub`,
+        ),
       );
-      expect(status.stdout).toContain('Add the contact form');
       // The session is closed and nothing of the run is left running.
       expect(sessionAlive(started.id)).toBe(false);
     },

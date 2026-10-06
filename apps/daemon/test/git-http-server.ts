@@ -11,8 +11,8 @@ import { basename, dirname, join } from 'node:path';
 export interface GitHttpServer {
   /** `http://127.0.0.1:<port>`. */
   url: string;
-  /** Requests received: whether each carried the right credential. */
-  requests: { path: string; authenticated: boolean }[];
+  /** Requests received: whether each carried the right credential, and whether it pushes. */
+  requests: { path: string; authenticated: boolean; push: boolean }[];
   close(): Promise<void>;
 }
 
@@ -163,12 +163,13 @@ export function createGitHttpHandler(options: {
 
 /**
  * Serves the repositories under `root` to `username` and `password` only. `delayMs` holds each
- * request that long first, for tests that watch a command while it runs.
+ * request that long first, `delayPushMs` each push request, for tests that watch a command while
+ * it runs.
  */
 export async function startGitHttpServer(
   root: string,
   credential: { username: string; password: string },
-  options: { delayMs?: number } = {},
+  options: { delayMs?: number; delayPushMs?: number } = {},
 ): Promise<GitHttpServer> {
   const requests: GitHttpServer['requests'] = [];
   const handler = createGitHttpHandler({
@@ -189,15 +190,20 @@ export async function startGitHttpServer(
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const sent = parseCredential(request.headers.authorization);
+    const push =
+      url.searchParams.get('service') === 'git-receive-pack' ||
+      url.pathname.endsWith('/git-receive-pack');
     requests.push({
       path: url.pathname,
       authenticated:
         sent?.username === credential.username && sent.password === credential.password,
+      push,
     });
-    if (options.delayMs) {
+    const delay = (push ? options.delayPushMs : undefined) ?? options.delayMs;
+    if (delay) {
       setTimeout(() => {
         handler.handle(request, response);
-      }, options.delayMs);
+      }, delay);
     } else {
       handler.handle(request, response);
     }

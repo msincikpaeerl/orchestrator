@@ -10,6 +10,7 @@ import {
 import type { Logger } from 'pino';
 import type { CredentialSource } from './credentials.js';
 import type { Git } from './git.js';
+import { ORIGIN_FETCH, restoreBareConfig } from './bare-config.js';
 import { isolatedFetch, isolatedPush, type IsolatedGitOptions } from './isolated-git.js';
 import type { DaemonPaths } from './paths.js';
 import { RUN_MARKER } from './processes.js';
@@ -42,6 +43,22 @@ export function worktreePath(paths: DaemonPaths, runId: string): string {
   return join(paths.home, 'worktrees', runId);
 }
 
+/**
+ * Where a review run started (05, section 4.2): its worktree's head, GitHub's head of the ticket
+ * branch as fetched at preparation, and the local ticket branch's head (null without one).
+ */
+export interface ReviewStart {
+  head: string;
+  localBranch: string | null;
+}
+
+/** A prepared workspace; `review` for a review run. */
+export interface PreparedWorkspace {
+  bare: string;
+  worktree: string;
+  review: ReviewStart | null;
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path);
@@ -71,15 +88,13 @@ export class Workspaces {
    * Clones the repository if needed, fetches it, makes sure it is trusted, and creates the run's
    * worktree (or keeps it, for a resumed run). `runFolder` receives the credential socket.
    */
-  async prepare(
-    start: RunStart['payload'],
-    runFolder: string,
-  ): Promise<{ bare: string; worktree: string }> {
+  async prepare(start: RunStart['payload'], runFolder: string): Promise<PreparedWorkspace> {
     const { git, paths } = this.options;
     const { repository } = start;
     const bare = bareClonePath(paths, repository);
     const worktree = worktreePath(paths, start.runId);
     const marker = { [RUN_MARKER]: start.runId };
+    let review: ReviewStart | null = null;
     await this.locked(bare, async () => {
       if (!(await exists(join(bare, 'HEAD')))) await this.init(bare, repository.cloneUrl);
       // Every value replaced: an agent may have added more, which `remote set-url` refuses.
@@ -102,16 +117,10 @@ export class Workspaces {
       await mkdir(dirname(worktree), { recursive: true, mode: 0o700 });
       await git.run(['-C', bare, 'worktree', 'prune'], marker);
       const branch = repository.ticketBranch;
-      if (await git.hasRef(bare, `refs/heads/${branch}`)) {
-        await git.run(['-C', bare, 'worktree', 'add', worktree, branch], marker);
+      if (start.purpose === 'review') {
+        review = await this.addReviewWorktree(bare, worktree, branch, marker);
       } else {
-        const from = (await git.hasRef(bare, `refs/remotes/origin/${branch}`))
-          ? `origin/${branch}`
-          : `origin/${repository.baseBranch}`;
-        await git.run(
-          ['-C', bare, 'worktree', 'add', '--no-track', '-b', branch, worktree, from],
-          marker,
-        );
+        await this.addWorktree(bare, worktree, start, marker);
       }
       // The commit author, for this worktree only (04, section 4).
       await git.run(['-C', worktree, 'config', '--worktree', 'user.name', start.commitAuthor.name]);
@@ -125,7 +134,153 @@ export class Workspaces {
       ]);
     });
     await this.options.trust.ensure(bare);
-    return { bare, worktree };
+    return { bare, worktree, review };
+  }
+
+  /** A ref's commit in the bare clone; null when the ref does not exist. */
+  private async head(bare: string, ref: string): Promise<string | null> {
+    const read = await this.options.git.exec([
+      '-C',
+      bare,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `${ref}^{commit}`,
+    ]);
+    return read.code === 0 ? read.stdout.trim() : null;
+  }
+
+  /** The worktree, other than the bare clone itself, that has `branch` checked out; null if none. */
+  private async checkedOutBy(bare: string, branch: string): Promise<string | null> {
+    const listed = await this.options.git.run(['-C', bare, 'worktree', 'list', '--porcelain']);
+    let path: string | null = null;
+    for (const line of listed.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice('worktree '.length);
+      else if (line === `branch refs/heads/${branch}`) return path;
+    }
+    return null;
+  }
+
+  /**
+   * The worktree of an `implement` or `fix_review` run (05, section 4.2): on the local ticket
+   * branch, fast-forwarded first to GitHub's when GitHub's contains it (after **Update branch**);
+   * else on GitHub's ticket branch; else a new branch from GitHub's base branch. A diverged branch
+   * is left as it is (its push reports `diverged`), and a branch another worktree has checked out
+   * (a waiting or paused run) is never moved.
+   */
+  private async addWorktree(
+    bare: string,
+    worktree: string,
+    start: RunStart['payload'],
+    marker: Record<string, string>,
+  ): Promise<void> {
+    const { git } = this.options;
+    const { repository } = start;
+    const branch = repository.ticketBranch;
+    const local = await this.head(bare, `refs/heads/${branch}`);
+    if (local !== null) {
+      const holder = await this.checkedOutBy(bare, branch);
+      if (holder !== null) {
+        throw new Error(
+          `The ticket branch ${branch} is checked out by another run on this machine (${basename(holder)}), waiting for an answer or paused: it is left as it is. Stop that run first.`,
+        );
+      }
+      const github = await this.head(bare, `refs/remotes/origin/${branch}`);
+      if (github !== null && github !== local) {
+        const contained =
+          (await git.exec(['-C', bare, 'merge-base', '--is-ancestor', local, github])).code === 0;
+        if (contained) {
+          // The old value makes Git refuse the update if the branch moved meanwhile.
+          await git.run(['-C', bare, 'update-ref', `refs/heads/${branch}`, github, local], marker);
+          this.options.log.info(
+            { branch, from: local, to: github },
+            "ticket branch fast-forwarded to GitHub's",
+          );
+        }
+      }
+      await git.run(['-C', bare, 'worktree', 'add', worktree, branch], marker);
+      return;
+    }
+    const from = (await git.hasRef(bare, `refs/remotes/origin/${branch}`))
+      ? `origin/${branch}`
+      : `origin/${repository.baseBranch}`;
+    await git.run(
+      ['-C', bare, 'worktree', 'add', '--no-track', '-b', branch, worktree, from],
+      marker,
+    );
+  }
+
+  /**
+   * The worktree of a review run (05, section 4.2): detached at GitHub's head of the ticket
+   * branch as fetched just now, so the review sees what the pull request holds, never commits
+   * only this machine has. The local ticket branch is neither created nor moved.
+   */
+  private async addReviewWorktree(
+    bare: string,
+    worktree: string,
+    branch: string,
+    marker: Record<string, string>,
+  ): Promise<ReviewStart> {
+    const head = await this.head(bare, `refs/remotes/origin/${branch}`);
+    if (head === null) {
+      throw new Error(`The ticket branch ${branch} is not on GitHub: there is nothing to review.`);
+    }
+    const localBranch = await this.head(bare, `refs/heads/${branch}`);
+    await this.options.git.run(['-C', bare, 'worktree', 'add', '--detach', worktree, head], marker);
+    return { head, localBranch };
+  }
+
+  /**
+   * Whether a review run moved the branch (05, section 4.2): its worktree's head or the local
+   * ticket branch differs from what it was at the start. A head that cannot be read counts as
+   * moved. Also gives the worktree's head, null when unreadable.
+   */
+  async reviewHeads(
+    bare: string,
+    worktree: string,
+    branch: string,
+    started: ReviewStart,
+  ): Promise<{ moved: boolean; head: string | null }> {
+    const read = await this.options.git.exec([
+      '--git-dir',
+      join(bare, 'worktrees', basename(worktree)),
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      'HEAD^{commit}',
+    ]);
+    const head = read.code === 0 ? read.stdout.trim() : null;
+    const localBranch = await this.head(bare, `refs/heads/${branch}`);
+    return { moved: head !== started.head || localBranch !== started.localBranch, head };
+  }
+
+  /**
+   * At a run's end (05, section 7.1): the bare clone's configuration and hooks restored to what
+   * the daemon wrote, under the bare clone's lock; what changed in plain words, null if nothing.
+   */
+  restoreConfig(bare: string, cloneUrl: string): Promise<string | null> {
+    return this.locked(bare, () => restoreBareConfig(this.options.git, bare, cloneUrl));
+  }
+
+  /**
+   * The best-effort push at a run's end (05, section 4.9): the ticket branch's head, read once,
+   * pushed when it holds commits on no branch fetched from GitHub; null when there is nothing to
+   * push. Never throws.
+   */
+  async endPush(
+    start: RunStart['payload'],
+    bare: string,
+    runFolder: string,
+  ): Promise<PushResult | null> {
+    const head = await this.head(bare, `refs/heads/${start.repository.ticketBranch}`).catch(
+      () => null,
+    );
+    if (head === null) return null;
+    const notOnGitHub = await this.options.git
+      .run(['-C', bare, 'rev-list', '-n', '1', head, '--not', '--remotes=origin'])
+      .catch(() => '');
+    if (notOnGitHub.trim() === '') return null;
+    return this.push(start, bare, runFolder, head);
   }
 
   private async init(bare: string, cloneUrl: string): Promise<void> {
@@ -134,13 +289,7 @@ export class Workspaces {
     try {
       await git.run(['init', '--quiet', '--bare', bare]);
       await git.run(['-C', bare, 'remote', 'add', 'origin', cloneUrl]);
-      await git.run([
-        '-C',
-        bare,
-        'config',
-        'remote.origin.fetch',
-        '+refs/heads/*:refs/remotes/origin/*',
-      ]);
+      await git.run(['-C', bare, 'config', 'remote.origin.fetch', ORIGIN_FETCH]);
       // Per-worktree configuration for the commit author. Git then reads `core.bare` of the
       // shared configuration in every worktree, so it moves to the bare clone's own file.
       await git.run(['-C', bare, 'config', 'extensions.worktreeConfig', 'true']);
@@ -180,10 +329,23 @@ export class Workspaces {
     runFolder: string,
     head: string,
   ): Promise<PushResult> {
+    const branch = start.repository.ticketBranch;
     try {
-      return await this.locked(bare, () =>
-        isolatedPush(this.isolated(start, runFolder), bare, start.repository.ticketBranch, head),
-      );
+      return await this.locked(bare, async () => {
+        const result = await isolatedPush(this.isolated(start, runFolder), bare, branch, head);
+        if (result.status === 'pushed') {
+          // As Git does after a push: the bare clone knows the head is on GitHub now, so the end
+          // push and `status` do not count it as not on GitHub (no credential: a local command).
+          await this.options.git
+            .run(['-C', bare, 'update-ref', `refs/remotes/origin/${branch}`, head], {
+              [RUN_MARKER]: start.runId,
+            })
+            .catch((error: unknown) => {
+              this.options.log.warn({ err: error }, 'remote branch not updated after the push');
+            });
+        }
+        return result;
+      });
     } catch (error) {
       this.options.log.error({ err: error }, 'push not attempted');
       return {
@@ -198,18 +360,19 @@ export class Workspaces {
     }
   }
 
-  /** The ticket branch's head and its commits ahead of the remote's base branch; null without it. */
+  /**
+   * The ticket branch's head and its commits ahead of the remote's base branch; null without it.
+   * `at` reports another head under the branch's name: a review run's worktree head.
+   */
   async branchReport(
     bare: string,
     repository: Pick<Repository, 'baseBranch' | 'ticketBranch'>,
+    at?: string,
   ): Promise<BranchReport | null> {
     const { git } = this.options;
-    const branch = `refs/heads/${repository.ticketBranch}`;
-    if (!(await git.hasRef(bare, branch))) return null;
     // Read once: the commits listed, the head reported and the hash pushed are this one.
-    const head = (
-      await git.run(['-C', bare, 'rev-parse', '--verify', `${branch}^{commit}`])
-    ).trim();
+    const head = at ?? (await this.head(bare, `refs/heads/${repository.ticketBranch}`));
+    if (head === null) return null;
     const base = `refs/remotes/origin/${repository.baseBranch}`;
     const range = (await git.hasRef(bare, base)) ? `${base}..${head}` : head;
     const log = await git.run(['-C', bare, 'log', '--format=%H%x00%s', range]);
