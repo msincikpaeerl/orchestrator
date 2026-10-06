@@ -445,7 +445,8 @@ function unreadableFirstPullRequest(): (request: RecordedRequest, reply: FakeRep
     if (done || request.method !== 'POST' || !request.path.endsWith('/pulls')) return reply;
     if (reply.status !== 201) return reply;
     done = true;
-    const { head: _head, ...body } = reply.body as Record<string, unknown>;
+    const body = { ...(reply.body as Record<string, unknown>) };
+    delete body.head;
     return { ...reply, body };
   };
 }
