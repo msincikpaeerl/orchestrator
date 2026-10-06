@@ -701,7 +701,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       await requireSession(db, request);
       const text = comment(request.body);
       if (text !== undefined) await checkCommentLength(text, 'comment');
-      let afterCommit: () => void = () => undefined;
+      let afterCommit: () => Promise<void> = () => Promise.resolve();
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
         if (
@@ -724,7 +724,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         });
         return detail(tx, project, updated);
       });
-      afterCommit();
+      await afterCommit();
       request.log.info(
         { project: result.projectKey, ticket: result.number, action, status: result.status },
         'ticket status changed by the owner',

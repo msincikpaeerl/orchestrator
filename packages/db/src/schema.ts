@@ -518,6 +518,14 @@ export const runs = pgTable(
     /** The `run.input` carrying the owner's answer, until the daemon acknowledges it. */
     answerInputId: uuid('answer_input_id'),
     /**
+     * When the server last sent `run.stop` for the run: until its end is reported, and at most
+     * MCP call timeout plus Longest push after this, the run is "ending" and may still get a push
+     * credential for its end push (05, sections 4.9 and 7; lot 3 step D2).
+     */
+    stopSentAt: timestamp('stop_sent_at', { withTimezone: true }),
+    /** When the daemon reported the run's end (`run.state` `ended`). */
+    endReportedAt: timestamp('end_reported_at', { withTimezone: true }),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */
