@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { BRANCH_REPORT_MAX_COMMITS } from '@orchestrator/protocol';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -158,4 +159,87 @@ describe('preparation', () => {
       'Web Developer (Orchestrator)',
     );
   }, 30_000);
+});
+
+// What a branch report says is not on GitHub, and the end push's decision: one rule, computed by
+// the same code (05, section 4.9; lot 3 step D3).
+describe('commits not on GitHub', () => {
+  /** The report's list, and whether the end push then pushes: they must always agree. */
+  async function both(run: Awaited<ReturnType<typeof prepare>>) {
+    const report = await spaces.branchReport(run.bare, run.start.repository);
+    if (!report) throw new Error('no branch report');
+    const push = await spaces.endPush(run.start, run.bare, run.folder);
+    expect(report.notOnGitHub).not.toBeNull();
+    expect((report.notOnGitHub?.count ?? 0) > 0).toBe(push !== null);
+    return { report, push };
+  }
+
+  it('agrees with the end push in every case', async () => {
+    // A new branch from GitHub's base: nothing.
+    const fresh = await prepare();
+    expect((await both(fresh)).report.notOnGitHub).toEqual({ listed: [], count: 0 });
+
+    // A commit of this machine: listed, and pushed.
+    const local = commit(fresh.worktree, 'Agent work');
+    const pushed = await both(fresh);
+    expect(pushed.report.notOnGitHub).toEqual({ listed: [local], count: 1 });
+    expect(pushed.push).toEqual({ status: 'pushed', head: local });
+    // Pushed: nothing left, as the end report reads it again after the push.
+    expect((await both(fresh)).report.notOnGitHub).toEqual({ listed: [], count: 0 });
+    await spaces.remove(fresh.bare, fresh.worktree);
+
+    // GitHub's Update branch, taken at preparation: its merge commit came from GitHub.
+    const updated = await onGitHub(updateBranch);
+    const second = await prepare();
+    const afterUpdate = await both(second);
+    expect(afterUpdate.report.head).toBe(updated);
+    expect(afterUpdate.report.commitsAhead.map((each) => each.hash)).toContain(updated);
+    expect(afterUpdate.report.notOnGitHub).toEqual({ listed: [], count: 0 });
+    expect(afterUpdate.push).toBeNull();
+    await spaces.remove(second.bare, second.worktree);
+
+    // A commit on another branch fetched from GitHub only: on GitHub, so nothing to push.
+    const clone = await mkdtemp(join(home.root, 'github-'));
+    gitIn(clone, ['clone', '--quiet', remote, '.'], home.env);
+    gitIn(clone, ['checkout', '--quiet', '-b', 'other', `origin/${BRANCH}`], home.env);
+    const elsewhere = commit(clone, 'On another branch');
+    gitIn(clone, ['push', '--quiet', 'origin', 'other'], home.env);
+    await rm(clone, { recursive: true, force: true });
+    const third = await prepare();
+    gitIn(third.worktree, ['merge', '--quiet', '--ff-only', 'origin/other'], home.env);
+    const otherBranch = await both(third);
+    expect(otherBranch.report.head).toBe(elsewhere);
+    expect(otherBranch.report.notOnGitHub).toEqual({ listed: [], count: 0 });
+    expect(otherBranch.push).toBeNull();
+  }, 60_000);
+
+  /** Adds `count` commits of this machine on top of the ticket branch, in one Git command. */
+  function manyCommits(bare: string, from: string, count: number): void {
+    let stream = '';
+    for (let index = 0; index < count; index++) {
+      const message = `Commit ${String(index)}`;
+      stream += `commit refs/heads/${BRANCH}\ncommitter Test <test@example.com> ${String(1_700_000_000 + index)} +0000\ndata ${String(Buffer.byteLength(message))}\n${message}\n`;
+      if (index === 0) stream += `from ${from}\n`;
+      stream += '\n';
+    }
+    execFileSync('git', ['-C', bare, 'fast-import', '--quiet'], { input: stream, env: home.env });
+  }
+
+  for (const extra of [0, 1]) {
+    it(`lists the ${String(BRANCH_REPORT_MAX_COMMITS)} newest commits and counts all ${String(BRANCH_REPORT_MAX_COMMITS + extra)}`, async () => {
+      const run = await prepare();
+      manyCommits(
+        run.bare,
+        head(run.bare, `refs/heads/${BRANCH}`),
+        BRANCH_REPORT_MAX_COMMITS + extra,
+      );
+      const report = await spaces.branchReport(run.bare, run.start.repository);
+      expect(report?.commitsAhead).toHaveLength(BRANCH_REPORT_MAX_COMMITS);
+      expect(report?.commitsAhead[0]?.subject).toBe(
+        `Commit ${String(BRANCH_REPORT_MAX_COMMITS + extra - 1)}`,
+      );
+      expect(report?.notOnGitHub?.listed).toEqual(report?.commitsAhead.map((each) => each.hash));
+      expect(report?.notOnGitHub?.count).toBe(BRANCH_REPORT_MAX_COMMITS + extra);
+    }, 60_000);
+  }
 });

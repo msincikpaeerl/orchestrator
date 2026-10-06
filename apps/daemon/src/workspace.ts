@@ -1,8 +1,10 @@
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
+  BRANCH_REPORT_MAX_COMMITS,
   TEXT_CEILING,
   type BranchReport,
+  type NotOnGitHub,
   type PushResult,
   type RunStart,
   type WorkspaceFacts,
@@ -309,11 +311,46 @@ export class Workspaces {
       () => null,
     );
     if (head === null) return null;
-    const notOnGitHub = await this.options.git
-      .run(['-C', bare, 'rev-list', '-n', '1', head, '--not', '--remotes=origin'])
-      .catch(() => '');
-    if (notOnGitHub.trim() === '') return null;
+    const unpushed = await this.unpushed(bare, head).catch(() => []);
+    if (unpushed.length === 0) return null;
     return this.push(start, bare, runFolder, head);
+  }
+
+  /**
+   * The commits of `head` on no branch fetched from GitHub (`refs/remotes/origin/*`, as fetched at
+   * preparation or moved by a push), newest first: what the end push pushes, and what a branch
+   * report says is not on GitHub (05, section 4.9). One rule, in one place.
+   */
+  private async unpushed(bare: string, head: string): Promise<string[]> {
+    const listed = await this.options.git.run([
+      '-C',
+      bare,
+      'rev-list',
+      head,
+      '--not',
+      '--remotes=origin',
+    ]);
+    return listed.split('\n').filter(Boolean);
+  }
+
+  /**
+   * What of a branch report is not on GitHub now (lot 3 step D3): the listed commits on no branch
+   * fetched from GitHub, and how many there are in all. Null when it cannot be read: the server
+   * then counts every commit no push held.
+   */
+  async notOnGitHub(bare: string, report: BranchReport): Promise<NotOnGitHub | null> {
+    try {
+      const unpushed = new Set(await this.unpushed(bare, report.head));
+      return {
+        listed: report.commitsAhead
+          .map((commit) => commit.hash)
+          .filter((hash) => unpushed.has(hash)),
+        count: unpushed.size,
+      };
+    } catch (error) {
+      this.options.log.warn({ err: error }, 'commits not on GitHub not read');
+      return null;
+    }
   }
 
   private async init(bare: string, cloneUrl: string): Promise<void> {
@@ -408,8 +445,16 @@ export class Workspaces {
     if (head === null) return null;
     const base = `refs/remotes/origin/${repository.baseBranch}`;
     const range = (await git.hasRef(bare, base)) ? `${base}..${head}` : head;
-    const log = await git.run(['-C', bare, 'log', '--format=%H%x00%s', range]);
-    return {
+    // The newest commits only: those beyond the ceiling are counted in `notOnGitHub`.
+    const log = await git.run([
+      '-C',
+      bare,
+      'log',
+      `--max-count=${String(BRANCH_REPORT_MAX_COMMITS)}`,
+      '--format=%H%x00%s',
+      range,
+    ]);
+    const report: BranchReport = {
       name: repository.ticketBranch,
       head,
       commitsAhead: log
@@ -419,7 +464,10 @@ export class Workspaces {
           const [hash = '', subject = ''] = line.split('\0');
           return { hash, subject: subject.slice(0, TEXT_CEILING) };
         }),
+      notOnGitHub: null,
     };
+    report.notOnGitHub = await this.notOnGitHub(bare, report);
+    return report;
   }
 
   /**
