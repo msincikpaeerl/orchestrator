@@ -22,7 +22,12 @@ import {
 import pino from 'pino';
 import { z } from 'zod';
 import type { GitHubRefusal, GitHubResult } from '../src/github/answers.js';
-import { listCommitRuns, listRunJobs, readCommitStatus, readJobLogEnd } from '../src/github/ci.js';
+import {
+  listCommitRuns,
+  listRunJobs,
+  readCommitStatus,
+  readFailedStepLogs,
+} from '../src/github/ci.js';
 import type { WorkflowJob, WorkflowRun } from '../src/github/ci.js';
 import { createGitHubClient, type GitHubClient } from '../src/github/client.js';
 import {
@@ -34,6 +39,7 @@ import {
   type PullRequest,
 } from '../src/github/pull-requests.js';
 import { branchPath, findRepository, repoPath } from '../src/github/repositories.js';
+import { excerptHeading } from '../src/github/job-log.js';
 import { checkToken, inspectToken } from '../src/github/token-check.js';
 
 // The Node.js helper of tools/smoke/github-smoke.sh (lot 3 plan, step E): the owner's check of
@@ -73,6 +79,9 @@ const CHECKOUT = resolve(import.meta.dirname, '..', '..', '..');
 const PAGE = 'docs/orchestrator-smoke.md';
 /** The size of a log end kept, as **Longest CI log excerpt** gives it by default. */
 const LOG_EXCERPT = 4_000;
+/** How much of a job's log is read, as **Longest CI log read** gives it by default (20 MB). */
+const LOG_READ = 20 * 1_048_576;
+const LOG_LIMITS = { maxCharacters: LOG_EXCERPT, maxReadBytes: LOG_READ };
 
 // ---------------------------------------------------------------------------------------------
 // Output, masked
@@ -449,7 +458,7 @@ async function waitForCi(
         }
         const job = jobs.find((each) => each.status !== 'completed');
         if (job) {
-          unfinishedLog = await readJobLogEnd(client, REPO, job.id, LOG_EXCERPT);
+          unfinishedLog = await readFailedStepLogs(client, REPO, job, LOG_LIMITS);
           break;
         }
       }
@@ -851,29 +860,47 @@ async function stepFour(context: Context): Promise<void> {
     jobs.map((job) => `${job.name}: ${String(job.conclusion)}`).join(', '),
   );
   if (!links) return stop('no docs-links job to read the log of');
-  const later = links.steps.slice(failedStep + 1);
-  const log = await readJobLogEnd(context.client, REPO, links.id, LOG_EXCERPT);
-  if (!log.ok) {
-    check('A13', false, "the failed job's log through the redirect", refusalText(log.refusal));
+  // After the failure GitHub still runs the post steps (or skips those its action runs only
+  // after success) and Complete job; the end of the log is their clean-up, so the excerpt an agent
+  // gets is the failed step's own part (owner's third run, 2026-10-06).
+  const post = links.steps.filter((step) => step.name.startsWith('Post '));
+  const complete = links.steps.find((step) => step.name === 'Complete job');
+  const reading = await readFailedStepLogs(context.client, REPO, links, LOG_LIMITS);
+  if (!reading.ok) {
+    check('A13', false, "the failed job's log through the redirect", refusalText(reading.refusal));
   } else {
-    const lines = log.value.text.split('\n').filter((line) => line.trim() !== '');
-    say(`  The end of the docs-links log (${String(lines.length)} lines kept):`);
-    say(quoted(log.value.text, 15));
-    const stamped = lines.every((line) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z /.test(line));
+    const { facts, excerpts } = reading.value;
+    const excerpt = excerpts.find((each) => each.step === 'Check documentation links');
+    const counts = [
+      `lines: ${String(facts.lines)}, with a timestamp: ${String(facts.timestamped)}, ##[group]: ${String(facts.groups)}, ##[error]: ${String(facts.errors)}`,
+      `byte order mark at the start: ${facts.byteOrderMark ? 'yes' : 'no'}; escape characters (colour codes): ${String(facts.escapes)}`,
+      `post steps: ${post.map((step) => `${step.name} ${String(step.conclusion)}`).join(', ') || 'none'}; Complete job: ${String(complete?.conclusion)}`,
+      `excerpt of "Check documentation links": ${
+        excerpt === undefined
+          ? 'none'
+          : excerpt.cut === 'step'
+            ? `cut by the step, ${String(excerpt.text.split('\n').length)} lines`
+            : `the end of the job instead (${excerpt.reason})`
+      }; holds orchestrator-smoke-missing.md: ${excerpt?.text.includes('orchestrator-smoke-missing.md') ? 'yes' : 'no'}`,
+    ];
+    say('  The docs-links log, as the Orchestrator reads it:');
+    for (const line of counts) say(`    ${line}`);
+    if (excerpt) {
+      say(`  ${excerptHeading(excerpt)}`);
+      say(quoted(excerpt.text, 15));
+    }
     check(
       'A13',
-      stamped &&
-        log.value.text.includes('##[group]') &&
-        log.value.text.includes('##[error]Process completed with exit code 1.') &&
-        failedStep >= 0 &&
-        later.every((step) => step.conclusion === 'skipped'),
-      'the log comes through the redirect; each line starts with a timestamp with seven decimals; steps open with ##[group]; the failure ends with "##[error]Process completed with exit code 1."; the later steps are skipped',
-      [
-        `timestamps on every line: ${String(stamped)}`,
-        `##[group]: ${String(log.value.text.includes('##[group]'))}`,
-        `##[error]Process completed with exit code 1.: ${String(log.value.text.includes('##[error]Process completed with exit code 1.'))}`,
-        `later steps: ${later.map((step) => `${step.name} ${String(step.conclusion)}`).join(', ') || 'none'}`,
-      ].join('\n'),
+      facts.lines > 0 &&
+        facts.timestamped === facts.lines &&
+        facts.errors >= 1 &&
+        post.length > 0 &&
+        post.every((step) => step.conclusion === 'success' || step.conclusion === 'skipped') &&
+        complete?.conclusion === 'success' &&
+        excerpt?.cut === 'step' &&
+        excerpt.text.includes('orchestrator-smoke-missing.md'),
+      "the log comes through the redirect; every line starts with a timestamp with seven decimals; after the failure the post steps run (success or skipped) and Complete job succeeds; the failed step's excerpt, cut from the log by its times and its ##[error] line, holds the broken link's file name",
+      counts.join('\n'),
     );
   }
   endStep();

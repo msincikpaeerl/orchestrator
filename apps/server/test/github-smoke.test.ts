@@ -492,6 +492,18 @@ describe('the dry run of the GitHub smoke script', () => {
       for (const assumption of ['A2', 'A3', 'A7', 'A8', 'A9', 'A10', 'A11', 'A16', 'A18']) {
         expect(output).toMatch(new RegExp(`^${assumption}: NOT ATTEMPTED$`, 'm'));
       }
+      // A13: the counts on the log, and the failed step's own part with the broken link.
+      expect(output).toMatch(/with a timestamp: (\d+), ##\[group\]: \d+, ##\[error\]: 1/);
+      expect(output).toContain(
+        'byte order mark at the start: no; escape characters (colour codes): 0',
+      );
+      expect(output).toContain(
+        'post steps: Post Run actions/setup-node@v7.0.0 skipped, Post Run actions/checkout@v7.0.1 success; Complete job: success',
+      );
+      expect(output).toMatch(
+        /excerpt of "Check documentation links": cut by the step, \d+ lines; holds orchestrator-smoke-missing\.md: yes/,
+      );
+      expect(output).toContain(`Step "Check documentation links": its part of the job's log.`);
       // The daemon's reading of each diverged push, with Git's words.
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*fetch first/);
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*non-fast-forward/);
