@@ -8,6 +8,7 @@ import { createTestHome, linkSystemTool, type TestHome } from '@orchestrator/dae
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { takeRealGitHubAttempts } from '@orchestrator/daemon/testing/real-github-guard';
 import { githubControl } from './fake-github-controls.js';
+import { documentedBody, shapeProblems, shaped } from './fake-github/documented.js';
 import {
   fullAccount,
   skeletonWorkflow,
@@ -158,7 +159,7 @@ describe('Git over HTTP', () => {
 
     const ref = await api('GET', `${REPO}/git/ref/heads/t/1-cart`);
     expect(ref.status).toBe(200);
-    expect(json(ref).object).toEqual({ sha, type: 'commit' });
+    expect(json(ref).object).toMatchObject({ sha, type: 'commit' });
     const commit = json(await api('GET', `${REPO}/git/commits/${sha}`));
     expect(commit.message).toBe('Work');
     expect(github.gitRequests.at(-1)).toMatchObject({ access: 'push', outcome: 'served' });
@@ -289,7 +290,9 @@ describe('pull requests', () => {
 
     const merge = github.mergePullRequest(repo, 1, 'squash');
     const merged = json(await api('GET', `${REPO}/pulls/1`));
-    expect(merged).toMatchObject({ state: 'closed', merged: true, merge_commit_sha: merge });
+    expect(merged).toMatchObject({ state: 'closed', merged: true });
+    // Removed from pull requests in REST API version 2026-03-10.
+    expect(merged).not.toHaveProperty('merge_commit_sha');
     expect(merged.merged_at).toEqual(expect.any(String));
     expect((await api('GET', `${REPO}/pulls/1/merge`)).status).toBe(204);
     // Squashed: one commit on main holding the change, whose parent is the old main.
@@ -321,6 +324,47 @@ describe('pull requests', () => {
       merged: false,
     });
     expect(() => github.mergePullRequest(repo, 1)).toThrow('is not open');
+  });
+});
+
+describe("GitHub's documented shapes", () => {
+  it('answer a new pull request with every documented field, nulls included', async () => {
+    await cloneWithToken();
+    await pushCommit('t/1-cart', { 'cart.md': 'Cart\n' });
+    const body = await openPull('t/1-cart');
+    expect(shapeProblems(documentedBody('POST /repos/{owner}/{repo}/pulls', 201), body)).toEqual(
+      [],
+    );
+    // What a new pull request has no value for yet, as GitHub documents it.
+    expect(body).toMatchObject({
+      mergeable: null,
+      merged: false,
+      merged_at: null,
+      closed_at: null,
+      milestone: null,
+      auto_merge: null,
+      merged_by: null,
+    });
+    expect(body).not.toHaveProperty('merge_commit_sha');
+    expect(body).not.toHaveProperty('assignee');
+    const listed = (await api('GET', `${REPO}/pulls`)).body as Record<string, unknown>[];
+    expect(listed[0]).not.toHaveProperty('mergeable');
+  });
+
+  it('refuse a field GitHub does not document, a missing one, and a null not documented', () => {
+    const operation = 'POST /repos/{owner}/{repo}/pulls';
+    expect(() => shaped(operation, 201, { number: 1, merge_commit_sha: null })).toThrow(
+      /merge_commit_sha: not documented/,
+    );
+    const schema = documentedBody(operation, 201);
+    const body = shaped(operation, 201, { number: 1 }) as Record<string, unknown>;
+    expect(shapeProblems(schema, { ...body, number: undefined })).toContain('number: missing');
+    expect(shapeProblems(schema, { ...body, number: null })).toContain(
+      'number: null, not documented as nullable',
+    );
+    expect(shapeProblems(schema, { ...body, number: '1' })).toContain(
+      'number: string, documented as integer',
+    );
   });
 });
 

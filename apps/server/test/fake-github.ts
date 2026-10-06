@@ -24,6 +24,7 @@ import {
   isObject,
   notFound,
   refuse,
+  unprocessable,
   type CiFailure,
   type FakeAccount,
   type FakePullRequest,
@@ -34,6 +35,7 @@ import {
   type RecordedRequest,
   type RepositoryState,
 } from './fake-github/common.js';
+import { documentedOperation, shaped } from './fake-github/documented.js';
 import { GitStore, type FakeCommit } from './fake-github/git-store.js';
 import { closePull, mergePull, pullsApi, updatePullBranch } from './fake-github/pulls.js';
 
@@ -88,6 +90,11 @@ export interface FakeGitHub {
   logRequests: { path: string; authorization: string | undefined }[];
   /** Answers instead of the normal behaviour when it returns a reply (REST only). */
   override: ((request: RecordedRequest) => FakeReply | undefined) | undefined;
+  /**
+   * Changes the normal answer, once GitHub's action is done (REST only): for example a body the
+   * layer cannot read for a pull request the fake created.
+   */
+  alter: ((request: RecordedRequest, reply: FakeReply) => FakeReply) | undefined;
   /** The folder holding the bare repositories, removed by `close()`. */
   root: string;
 
@@ -331,20 +338,14 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       const { name } = body;
       if (typeof name !== 'string' || !/^[A-Za-z0-9._-]+$/.test(name)) return invalid;
       if (account.repositories.some((repo) => repo.name.toLowerCase() === name.toLowerCase())) {
-        return {
-          status: 422,
-          body: {
-            message: 'Repository creation failed.',
-            errors: [
-              {
-                resource: 'Repository',
-                code: 'custom',
-                field: 'name',
-                message: 'name already exists on this account',
-              },
-            ],
+        return unprocessable('Repository creation failed.', [
+          {
+            resource: 'Repository',
+            code: 'custom',
+            field: 'name',
+            message: 'name already exists on this account',
           },
-        };
+        ]);
       }
       const description = typeof body.description === 'string' ? body.description : '';
       const repo: FakeRepository = {
@@ -419,11 +420,11 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
         const current = store.branch(branch);
         const target = typeof body.sha === 'string' ? store.commit(body.sha) : undefined;
         if (current === undefined) {
-          return { status: 422, body: { message: 'Reference does not exist' } };
+          return unprocessable('Reference does not exist');
         }
         if (!target) return invalid;
         if (body.force !== true && !store.isAncestor(current, target.sha)) {
-          return { status: 422, body: { message: 'Update is not a fast forward' } };
+          return unprocessable('Update is not a fast forward');
         }
         const workflowChanged = store
           .changedFiles(current, target.sha)
@@ -440,7 +441,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       if (method === 'DELETE' && refMatch && gitPath.startsWith('/refs/')) {
         const branch = decodeURIComponent(refMatch[1] ?? '');
         if (store.branch(branch) === undefined) {
-          return { status: 422, body: { message: 'Reference does not exist' } };
+          return unprocessable('Reference does not exist');
         }
         store.deleteBranch(branch);
         syncBranches(ctx, state);
@@ -519,10 +520,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       }
       const name = body.name;
       if (repo.rulesets?.some((ruleset) => ruleset.name === name)) {
-        return {
-          status: 422,
-          body: { message: 'Validation Failed', errors: ['Name must be unique'] },
-        };
+        return unprocessable('Validation Failed', ['Name must be unique']);
       }
       repo.rulesets = [...(repo.rulesets ?? []), { name, body }];
       return { status: 201, body: { id: repo.rulesets.length - 1, name } };
@@ -616,6 +614,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     gitRequests,
     logRequests: [] as FakeGitHub['logRequests'],
     override: undefined as FakeGitHub['override'],
+    alter: undefined as FakeGitHub['alter'],
     root,
   };
 
@@ -638,7 +637,12 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       const account = accounts.get(token);
       let reply: FakeReply;
       try {
-        reply = fake.override?.(request) ?? (account ? answer(account, request) : badCredentials);
+        const overridden = fake.override?.(request);
+        if (overridden) reply = overridden;
+        else {
+          reply = account ? documentedReply(request, answer(account, request)) : badCredentials;
+          reply = fake.alter?.(request, reply) ?? reply;
+        }
       } catch (error) {
         // A fault of the fake, not an answer of GitHub: shown in the test's output.
         console.error(error);
@@ -733,6 +737,25 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       rmSync(root, { recursive: true, force: true });
     },
   });
+}
+
+/**
+ * The fake's answer completed to GitHub's documented shape (fake-github/documented.ts): each
+ * answer with a body that GitHub documents is shaped, so tests read what GitHub sends. An answer
+ * with a body that is not in the extract is a fault of the fake: add its operation to
+ * fake-github/documented/operations.ts and extract again.
+ */
+function documentedReply(request: RecordedRequest, reply: FakeReply): FakeReply {
+  if (reply.body === undefined) return reply;
+  const path = new URL(request.path, 'http://fake').pathname;
+  const found = documentedOperation(request.method, path, reply.status);
+  if (found) return { ...reply, body: shaped(found, reply.status, reply.body) };
+  if (reply.status >= 200 && reply.status < 300) {
+    throw new Error(
+      `${request.method} ${path} (${String(reply.status)}) is not in github-rest.json`,
+    );
+  }
+  return reply;
 }
 
 /** Entries of a tree, with GitHub's `truncated` flag. */

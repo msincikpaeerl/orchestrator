@@ -105,7 +105,6 @@ export interface FakePullRequest {
   headSha: string;
   merged: boolean;
   mergedAt: string | null;
-  mergeCommitSha: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -210,11 +209,18 @@ export const notFound: FakeReply = { status: 404, body: { message: 'Not Found' }
 
 export const badCredentials: FakeReply = { status: 401, body: { message: 'Bad credentials' } };
 
-/** 422 with GitHub's error list (`errors`), for a request GitHub cannot carry out. */
+/**
+ * 422 with GitHub's error list (`errors`), for a request GitHub cannot carry out. GitHub's
+ * "validation-error" body also requires `documentation_url`, a link the Orchestrator never reads.
+ */
 export function unprocessable(message: string, errors?: unknown[]): FakeReply {
   return {
     status: 422,
-    body: { message, ...(errors ? { errors } : {}) },
+    body: {
+      message,
+      documentation_url: 'https://docs.github.com/rest',
+      ...(errors ? { errors } : {}),
+    },
   };
 }
 
