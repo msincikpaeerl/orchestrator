@@ -7,6 +7,7 @@ import { useRun, useTicket } from '../queries';
 import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/components';
 import { useRunLog } from '../runs/log';
 import { isActive, purposeLabel, runStateText, usageText } from '../runs/text';
+import { runPushText } from '../tickets/branch-text';
 import { ticketPath } from '../tickets/text';
 
 /** The ticket's number in `WEB-12`. */
@@ -122,10 +123,15 @@ function RunContent({ run }: { run: Run }) {
         </Card>
         <Card className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">Branch</h2>
-          <p className="break-words">
+          <p className="break-words" aria-label="Branch">
             <code className="rounded bg-slate-100 px-1 text-sm">{run.branch.name}</code> on machine{' '}
-            {run.machine.name}, not on GitHub yet
+            {run.machine.name}, as this run left it
           </p>
+          {run.push && (
+            <p className="break-words text-slate-700" aria-label="Push">
+              {runPushText(run.push)}
+            </p>
+          )}
           {run.branch.head === null && isActive(run.status) ? (
             <p className="text-slate-700">The commits are shown when the run ends.</p>
           ) : (

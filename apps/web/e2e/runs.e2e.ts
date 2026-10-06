@@ -218,6 +218,131 @@ test('a finished run shows the branch and its commits on the ticket page', async
   await expectFitsScreen(page);
 });
 
+test('the ticket page says where the branch is: on the machine, pushed, both, or diverged', async ({
+  page,
+}) => {
+  // Lot 3 step D3: each wording of the Branch card, from the pushes the daemon reports.
+  const ticketPage = await readyForRuns(page);
+  const branch = page.getByLabel('Branch', { exact: true });
+  const hash = (digit: string) => digit.repeat(40);
+  const commit = (digit: string, subject: string) => ({ hash: hash(digit), subject });
+  const D = commit('d', 'Show a thank-you message');
+  const E = commit('e', 'Fix the button colour');
+  const F = commit('f', 'Translate the form');
+  const ended = (runId: string, extra: Record<string, unknown>) =>
+    reportState(page, runId, 'ended', { reason: 'crashed', detail: null, ...extra });
+  async function nextRun(): Promise<{ runId: string; runToken: string }> {
+    await page.goto(ticketPage);
+    const runId = await runNow(page);
+    return { runId, runToken: await startRun(page, runId) };
+  }
+
+  // No commits reported yet.
+  const first = await nextRun();
+  await page.goto(ticketPage);
+  await expect(branch).toHaveText('t/1-contact-form: no commits reported yet');
+  await expectFitsScreen(page);
+
+  // On the machine only, its push failed.
+  await ended(first.runId, {
+    branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+    push: {
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    },
+  });
+  await page.goto(ticketPage);
+  await expect(branch).toHaveText('t/1-contact-form on machine Laptop, not on GitHub yet');
+  await expect(page.getByLabel('Failed push')).toContainText(
+    'from machine Laptop failed: Could not resolve host: github.com',
+  );
+  await expect(page.getByLabel('Last push')).toBeHidden();
+  await expectFitsScreen(page);
+
+  // Pushed: every commit, with the date of the push and the branch's page on GitHub.
+  const second = await nextRun();
+  await ended(second.runId, {
+    branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+    push: { status: 'pushed', head: BRANCH_HEAD },
+  });
+  await expect(page.getByLabel('Push')).toContainText('This run pushed it to GitHub on');
+  await page.goto(ticketPage);
+  await expect(branch).toHaveText('t/1-contact-form: every commit reported was pushed to GitHub');
+  const lastPush = page.getByLabel('Last push');
+  await expect(lastPush).toContainText(
+    /^Last pushed to GitHub on .+ from machine Laptop \(latest commit aaaaaaa\)\./,
+  );
+  await expect(lastPush.getByRole('link', { name: 'Branch on GitHub' })).toHaveAttribute(
+    'href',
+    /^https:\/\/github\.com\/[^/]+\/bakery\/tree\/t\/1-contact-form$/,
+  );
+  await expect(page.getByLabel('Failed push')).toBeHidden();
+  await expectFitsScreen(page);
+
+  // Both: a commit made after an accepted submission stays on the machine.
+  const third = await nextRun();
+  await callTool(
+    page,
+    third.runToken,
+    'ticket_submit',
+    {
+      criteria: [
+        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
+        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+      ],
+      tests: { paths: ['src/contact.test.ts'], justification: null },
+      docs: { paths: [], justification: 'No user documentation in this project yet.' },
+      adrs: [],
+      summary: 'Adds the thank-you message.',
+    },
+    {
+      clean: true,
+      branch: { name: 't/1-contact-form', head: D.hash, commitsAhead: [D, ...COMMITS] },
+      push: { status: 'pushed', head: D.hash },
+    },
+  );
+  await reportState(page, third.runId, 'ended', {
+    branch: { name: 't/1-contact-form', head: E.hash, commitsAhead: [E, D, ...COMMITS] },
+  });
+  await page.goto(ticketPage);
+  await expect(branch).toHaveText(
+    't/1-contact-form: 1 newer commit on machine Laptop, not on GitHub yet',
+  );
+  await expect(
+    page.getByRole('list', { name: 'Commits not on GitHub' }).getByRole('listitem'),
+  ).toHaveText(['eeeeeee Fix the button colour']);
+  await expect(page.getByRole('list', { name: 'Commits pushed' }).getByRole('listitem')).toHaveText(
+    [
+      'ddddddd Show a thank-you message',
+      'ccccccc Add the contact form',
+      'bbbbbbb Check the e-mail address',
+    ],
+  );
+  await expect(page.getByLabel('Last push')).toContainText('(latest commit ddddddd)');
+  await expectFitsScreen(page);
+
+  // Diverged: the next push is refused, GitHub's branch having commits the machine lacks.
+  const changes = await page.request.post('/api/projects/WEB/tickets/1/request-changes', {
+    data: { comment: 'Translate the form too' },
+  });
+  expect(changes.status()).toBe(200);
+  const fourth = await nextRun();
+  await ended(fourth.runId, {
+    branch: { name: 't/1-contact-form', head: F.hash, commitsAhead: [F, E, D, ...COMMITS] },
+    push: { status: 'failed', reason: 'diverged', message: 'Updates were rejected (fetch first)' },
+  });
+  await page.goto(ticketPage);
+  await expect(branch).toHaveText(
+    "t/1-contact-form on machine Laptop, not on GitHub yet: GitHub's branch has commits this machine does not have, so the push was refused. The Orchestrator never overwrites GitHub's branch.",
+  );
+  await expect(
+    page.getByRole('list', { name: 'Commits not on GitHub' }).getByRole('listitem'),
+  ).toHaveText(['fffffff Translate the form', 'eeeeeee Fix the button colour']);
+  await expect(page.getByLabel('Failed push')).toContainText('Updates were rejected (fetch first)');
+  await expectFitsScreen(page);
+});
+
 test('a run whose download was stopped by Longest push says so on its page', async ({ page }) => {
   const ticketPage = await readyForRuns(page);
   await page.goto(ticketPage);

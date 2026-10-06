@@ -62,7 +62,7 @@ describe('run refusals in plain words (07, section 3)', () => {
     expect(runRefusalText(refusals.account_busy)).toContain('its maximum of 1 run at a time');
     expect(unavailableText(unavailable.account_busy)).toContain('its maximum of 2 runs at a time');
     expect(runRefusalText(refusals.machine_unavailable)).toBe(
-      "The ticket's work (2 commits) is on machine Laptop, and it is offline. The run can only continue there.",
+      "The ticket's branch has 2 commits not on GitHub, only on machine Laptop, and it is offline. The run can only continue there.",
     );
     expect(runRefusalText(refusals.blocked)).toBe(
       'This ticket waits for WEB-3, WEB-4, which are not done yet.',

@@ -162,6 +162,23 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     changes:
       'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath. Hook files added, removed: pre-commit.',
   },
+  'run.branch_pushed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    machine: 'Laptop',
+    branch: 't/12-contact-form',
+    head: 'a'.repeat(40),
+    at: 'submission',
+  },
+  'run.branch_push_failed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    machine: 'Laptop',
+    branch: 't/12-contact-form',
+    at: 'end',
+    reason: 'unreachable',
+    message: 'Could not resolve host: github.com',
+  },
   'ticket.submitted': {
     project: 'WEB',
     ticket: 'WEB-12',

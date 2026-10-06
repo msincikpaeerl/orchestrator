@@ -75,6 +75,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'run.status_changed': 'Run status changed',
   'run.progress': 'Run progress',
   'run.git_config_restored': 'Git configuration restored',
+  'run.branch_pushed': 'Branch pushed to GitHub',
+  'run.branch_push_failed': 'Branch push failed',
 };
 
 /** Kinds of entity, for the filter. */
@@ -487,7 +489,23 @@ const describe: { [T in EventType]: Describe<T> } = {
     quote(p.machine, null),
     `: at its end, the Git configuration of ${p.repository} on that machine was found changed and restored (information only) — ${shorten(p.changes)}`,
   ],
+  'run.branch_pushed': (p, c) => [
+    'Run of ',
+    c.ticket,
+    ' on ',
+    quote(p.machine, null),
+    `: branch ${p.branch} pushed to GitHub ${pushMoment[p.at]} (latest commit ${p.head.slice(0, 7)})`,
+  ],
+  'run.branch_push_failed': (p, c) => [
+    'Run of ',
+    c.ticket,
+    ' on ',
+    quote(p.machine, null),
+    `: the push of branch ${p.branch} to GitHub ${pushMoment[p.at]} failed; its new commits stay on that machine — ${shorten(p.message)}`,
+  ],
 };
+
+const pushMoment = { submission: 'at the submission', end: "at the run's end" } as const;
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {
   const parsed = EventPayloads[type].safeParse(payload);
