@@ -465,7 +465,15 @@ describe('Actions runs and commit statuses', () => {
     expect(failed?.steps).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'Check documentation links', conclusion: 'failure' }),
-        expect.objectContaining({ name: 'Complete job', conclusion: 'skipped' }),
+        expect.objectContaining({
+          name: 'Post Run actions/setup-node@v7.0.0',
+          conclusion: 'skipped',
+        }),
+        expect.objectContaining({
+          name: 'Post Run actions/checkout@v7.0.1',
+          conclusion: 'success',
+        }),
+        expect.objectContaining({ name: 'Complete job', conclusion: 'success' }),
       ]),
     );
 
@@ -482,6 +490,18 @@ describe('Actions runs and commit statuses', () => {
     expect(text).toMatch(
       /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z ##\[error\]Process completed with exit code 1\.$/m,
     );
+    // GitHub's shape (test/fixtures/github-job-log/): every line stamped, the post step's
+    // clean-up after the failure in the same second, the log ending with Complete job.
+    const lines = text.trimEnd().split('\n');
+    expect(lines.every((line) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z /.test(line))).toBe(true);
+    const error = lines.findIndex((line) => line.includes('##[error]'));
+    expect(lines[error + 1]).toMatch(/Z Post job cleanup\.$/);
+    expect(lines[error + 1]?.slice(0, 19)).toBe(lines[error]?.slice(0, 19));
+    expect(lines.at(-1)).toMatch(/Z Cleaning up orphan processes$/);
+    const steps = (failed?.steps ?? []) as JsonObject[];
+    const check = steps.find((step) => step.name === 'Check documentation links');
+    expect(check?.started_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    expect(check?.completed_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
   });
 
   it('start no run when Actions never starts, and none while the pull request has a conflict', async () => {

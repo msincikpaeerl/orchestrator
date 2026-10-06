@@ -49,7 +49,18 @@ export interface FakeWorkflow {
     /** Runs on a push to one of these branches. */
     pushBranches?: string[];
   };
-  jobs: { name: string; steps: string[] }[];
+  /**
+   * Each job's steps by name, as GitHub lists them: `Set up job` first, `Complete job` last, a
+   * `Post <step>` after the steps for each action with a post step. `commands` gives the command
+   * a named `run:` step shows in the log; `postIfSuccess` lists the post steps whose action runs
+   * them only after success (`post-if: success()`).
+   */
+  jobs: {
+    name: string;
+    steps: string[];
+    commands?: Record<string, string>;
+    postIfSuccess?: string[];
+  }[];
 }
 
 /** A failed step: its job, its name and the lines it printed. */
@@ -121,7 +132,15 @@ export interface FakeJob {
   conclusion: string | null;
   startedAt: string | null;
   completedAt: string | null;
-  steps: { name: string; number: number; status: string; conclusion: string | null }[];
+  steps: {
+    name: string;
+    number: number;
+    status: string;
+    conclusion: string | null;
+    /** Whole seconds, as GitHub gives them. */
+    startedAt: string | null;
+    completedAt: string | null;
+  }[];
   /** The job's log once completed. */
   log: string | null;
 }

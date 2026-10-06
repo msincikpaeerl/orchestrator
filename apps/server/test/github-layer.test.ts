@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { GitHubRefusal, GitHubResult } from '../src/github/answers.js';
-import { listCommitRuns, listRunJobs, readCommitStatus, readJobLogEnd } from '../src/github/ci.js';
+import {
+  listCommitRuns,
+  listRunJobs,
+  readCommitStatus,
+  readFailedStepLogs,
+  type WorkflowJob,
+} from '../src/github/ci.js';
 import {
   createGitHubClient,
   GitHubUnreachableError,
@@ -56,6 +62,22 @@ function clientWith(token: string, apiUrl = github.url): GitHubClient {
 function value<T>(result: GitHubResult<T>): T {
   if (!result.ok) throw new Error(`GitHub refused: ${JSON.stringify(result.refusal)}`);
   return result.value;
+}
+
+const LIMITS = { maxCharacters: 4000, maxReadBytes: 20 * 1_048_576 };
+
+/** A job as the jobs answer gives it; a test's error when there is none. */
+function job(found: Partial<WorkflowJob> | undefined): WorkflowJob {
+  if (found?.id === undefined) throw new Error('no job');
+  return {
+    name: 'job',
+    status: 'completed',
+    conclusion: null,
+    url: null,
+    steps: [],
+    ...found,
+    id: found.id,
+  };
 }
 
 function refusal(result: GitHubResult<unknown>): GitHubRefusal {
@@ -355,21 +377,28 @@ describe('CI', () => {
       ['docs-links', 'in_progress'],
       ['ci', 'in_progress'],
     ]);
-    expect(jobs[0]?.steps[0]).toEqual({
+    const [setUp] = jobs[0]?.steps ?? [];
+    // Whole seconds, as GitHub gives a step's times.
+    expect(setUp?.startedAt).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    expect({ ...setUp, startedAt: 'checked' }).toEqual({
       name: 'Set up job',
       number: 1,
       status: 'in_progress',
       conclusion: null,
+      startedAt: 'checked',
+      completedAt: null,
     });
   });
 
-  it("reads the end of a failed job's log through the redirect, without the token", async () => {
+  it("reads each failed step's part of its job's log through the redirect, without the token", async () => {
     const { head } = await openCart();
     const [run] = github.runs(repo, head);
     if (!run) throw new Error('no run');
-    const docsLinks = run.jobs[0]?.id ?? 0;
+    const unfinished = value(
+      await listRunJobs(client, SHOP, value(await listCommitRuns(client, SHOP, head))[0]?.id ?? 0),
+    )[0];
     // A job not finished yet has no log (A14).
-    expect(refusal(await readJobLogEnd(client, SHOP, docsLinks, 4000))).toMatchObject({
+    expect(refusal(await readFailedStepLogs(client, SHOP, job(unfinished), LIMITS))).toMatchObject({
       kind: 'not_found',
       status: 404,
     });
@@ -383,28 +412,72 @@ describe('CI', () => {
     ]);
     const [completed] = value(await listCommitRuns(client, SHOP, head));
     expect(completed).toMatchObject({ status: 'completed', conclusion: 'failure' });
-    const failed = value(await listRunJobs(client, SHOP, completed?.id ?? 0)).find(
-      (job) => job.conclusion === 'failure',
+    const failed = job(
+      value(await listRunJobs(client, SHOP, completed?.id ?? 0)).find(
+        (each) => each.conclusion === 'failure',
+      ),
     );
-    expect(failed?.steps.map((step) => [step.name, step.conclusion])).toEqual([
+    // As GitHub does: the post steps still run after the failure, and Complete job succeeds.
+    expect(failed.steps.map((step) => [step.name, step.conclusion])).toEqual([
       ['Set up job', 'success'],
       ['Run actions/checkout@v7.0.1', 'success'],
       ['Run actions/setup-node@v7.0.0', 'success'],
       ['Check documentation links', 'failure'],
-      ['Complete job', 'skipped'],
+      ['Post Run actions/setup-node@v7.0.0', 'skipped'],
+      ['Post Run actions/checkout@v7.0.1', 'success'],
+      ['Complete job', 'success'],
     ]);
 
-    const log = value(await readJobLogEnd(client, SHOP, failed?.id ?? 0, 4000));
-    expect(log.truncated).toBe(false);
-    expect(log.text).toContain('Link to unknown file: `docs/user/faq.md`');
-    expect(log.text).toMatch(/##\[error\]Process completed with exit code 1\.\n$/);
-    const end = value(await readJobLogEnd(client, SHOP, failed?.id ?? 0, 60));
-    expect(end).toEqual({ text: log.text.slice(-60), truncated: true });
-    expect(github.logRequests).toHaveLength(2);
-    expect(github.logRequests.map((request) => request.authorization)).toEqual([
-      undefined,
-      undefined,
+    const reading = value(await readFailedStepLogs(client, SHOP, failed, LIMITS));
+    expect(reading.excerpts).toEqual([
+      {
+        step: 'Check documentation links',
+        cut: 'step',
+        truncated: false,
+        text: [
+          '##[group]Run npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout',
+          'npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout',
+          'shell: /usr/bin/bash -e {0}',
+          '##[endgroup]',
+          'README.md',
+          '  1:5  warning  Link to unknown file: `docs/user/faq.md`',
+          '##[error]Process completed with exit code 1.',
+        ].join('\n'),
+      },
     ]);
+    expect(reading.facts).toMatchObject({ errors: 1, byteOrderMark: false, escapes: 0 });
+    expect(reading.facts.timestamped).toBe(reading.facts.lines);
+    expect(github.logRequests.map((request) => request.authorization)).toEqual([undefined]);
+  });
+
+  it('reads at most Longest CI log read, and says so beyond it', async () => {
+    const { head } = await openCart();
+    const [run] = github.runs(repo, head);
+    if (!run) throw new Error('no run');
+    github.completeRun(run, [
+      { job: 'docs-links', step: 'Check documentation links', log: 'a broken link' },
+    ]);
+    const failed = run.jobs.find((each) => each.conclusion === 'failure');
+    const size = Buffer.byteLength(failed?.log ?? '');
+    const [completed] = value(await listCommitRuns(client, SHOP, head));
+    const jobs = value(await listRunJobs(client, SHOP, completed?.id ?? 0));
+    const docsLinks = job(jobs.find((each) => each.conclusion === 'failure'));
+    // The step ends at the log's last lines (its post steps run in the same second): exactly the
+    // ceiling reads the whole log, a byte less does not.
+    const whole = value(
+      await readFailedStepLogs(client, SHOP, docsLinks, { ...LIMITS, maxReadBytes: size }),
+    );
+    expect(whole.excerpts[0]).toMatchObject({ cut: 'step' });
+    expect(whole.excerpts[0]?.text).toContain('a broken link');
+    const cut = value(
+      await readFailedStepLogs(client, SHOP, docsLinks, { ...LIMITS, maxReadBytes: size - 1 }),
+    );
+    expect(cut.excerpts[0]).toMatchObject({
+      cut: 'job',
+      readToEnd: false,
+      reason: `the job's log is larger than Longest CI log read (${String(size - 1)} bytes), and the step's part does not end within its first ${String(size - 1)} bytes`,
+    });
+    expect(cut.excerpts[0]?.text).not.toContain('Cleaning up orphan processes');
   });
 
   it('reads the combined commit status: pending with no statuses, then each context', async () => {
@@ -430,7 +503,7 @@ describe('CI', () => {
     for (const result of [
       await listCommitRuns(client, SHOP, head),
       await listRunJobs(client, SHOP, run?.id ?? 0),
-      await readJobLogEnd(client, SHOP, run?.jobs[0]?.id ?? 0, 100),
+      await readFailedStepLogs(client, SHOP, job({ id: run?.jobs[0]?.id ?? 0 }), LIMITS),
     ]) {
       expect(refusal(result)).toMatchObject({
         kind: 'permission_missing',
@@ -448,5 +521,7 @@ describe('CI', () => {
 it('throws GitHubUnreachableError when GitHub does not answer', async () => {
   const away = clientWith(TOKEN, 'http://127.0.0.1:9');
   await expect(readPullRequest(away, SHOP, 1)).rejects.toBeInstanceOf(GitHubUnreachableError);
-  await expect(readJobLogEnd(away, SHOP, 1, 100)).rejects.toBeInstanceOf(GitHubUnreachableError);
+  await expect(readFailedStepLogs(away, SHOP, job({ id: 1 }), LIMITS)).rejects.toBeInstanceOf(
+    GitHubUnreachableError,
+  );
 });
