@@ -619,7 +619,9 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     root,
   };
 
-  const server: Server = createServer((incoming, response) => {
+  // Larger headers than Node.js's default 16 KiB: the smoke script's dry run uses a token longer
+  // than a pipe's buffer, so a here-string carrying it would be seen (github-smoke.test.ts).
+  const server: Server = createServer({ maxHeaderSize: 1 << 20 }, (incoming, response) => {
     if (isGitPath(new URL(incoming.url ?? '/', 'http://fake').pathname)) {
       git.handle(incoming, response);
       return;
