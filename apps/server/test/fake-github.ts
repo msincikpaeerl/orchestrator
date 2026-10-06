@@ -84,6 +84,8 @@ export interface FakeGitHub {
   accounts: Map<string, FakeAccount>;
   requests: RecordedRequest[];
   gitRequests: RecordedGitRequest[];
+  /** Downloads from the log host, with the Authorization header they carried (none expected). */
+  logRequests: { path: string; authorization: string | undefined }[];
   /** Answers instead of the normal behaviour when it returns a reply (REST only). */
   override: ((request: RecordedRequest) => FakeReply | undefined) | undefined;
   /** The folder holding the bare repositories, removed by `close()`. */
@@ -94,12 +96,16 @@ export interface FakeGitHub {
   repository(owner: string, name: string): FakeRepository;
   /** Branch names and their commits. */
   branches(repo: FakeRepository): Map<string, string>;
-  /** Someone else's commit on a branch (created when missing), for example on the base branch. */
+  /**
+   * Someone else's commit on a branch, for example on the base branch. A missing branch is
+   * created from `from` (a branch), or with no parent when `from` is not given.
+   */
   commit(
     repo: FakeRepository,
     branch: string,
     files: Record<string, string | null>,
     message: string,
+    from?: string,
   ): string;
   pullRequest(repo: FakeRepository, number: number): FakePullRequest;
   /** The owner merges on GitHub: a merge commit, or one squashed commit. */
@@ -429,6 +435,17 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
         syncBranches(ctx, state);
         return { status: 200, body: { ref: `refs/heads/${branch}`, object: { sha: target.sha } } };
       }
+      // "Delete a reference": 204, or 422 "Reference does not exist" ("REST API endpoints for Git
+      // references", https://docs.github.com/en/rest/git/refs; the text is A26).
+      if (method === 'DELETE' && refMatch && gitPath.startsWith('/refs/')) {
+        const branch = decodeURIComponent(refMatch[1] ?? '');
+        if (store.branch(branch) === undefined) {
+          return { status: 422, body: { message: 'Reference does not exist' } };
+        }
+        store.deleteBranch(branch);
+        syncBranches(ctx, state);
+        return { status: 204 };
+      }
       const commitMatch = /^\/commits\/([0-9a-f]+)$/.exec(gitPath);
       if (method === 'GET' && commitMatch) {
         const commit = store.commit(commitMatch[1] ?? '');
@@ -597,6 +614,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     accounts,
     requests: [] as RecordedRequest[],
     gitRequests,
+    logRequests: [] as FakeGitHub['logRequests'],
     override: undefined as FakeGitHub['override'],
     root,
   };
@@ -636,6 +654,10 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
   // The host the job logs redirect to: another origin, as GitHub's log storage is, so a client
   // must follow the redirect without the API's Authorization header.
   const logServer: Server = createServer((request, response) => {
+    fake.logRequests.push({
+      path: request.url ?? '/',
+      authorization: request.headers.authorization,
+    });
     const key = /^\/job-logs\/([0-9a-f]+)$/.exec(request.url ?? '')?.[1] ?? '';
     const log = logs.get(key);
     if (!log) {
@@ -659,8 +681,13 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       throw new Error(`no repository ${owner}/${name} in the fake GitHub`);
     },
     branches: (repo) => control(repo).store.branches(),
-    commit(repo, branch, files, message) {
+    commit(repo, branch, files, message, from) {
       const state = control(repo);
+      const start = from === undefined ? undefined : state.store.branch(from);
+      if (from !== undefined && start === undefined) throw new Error(`no branch ${from}`);
+      if (start !== undefined && state.store.branch(branch) === undefined) {
+        state.store.setBranch(branch, start, null);
+      }
       const sha = state.store.commitFiles(branch, files, message);
       syncBranches(ctx, state);
       return sha;
