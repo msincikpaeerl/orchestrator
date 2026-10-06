@@ -74,6 +74,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'run.created': 'Run started',
   'run.status_changed': 'Run status changed',
   'run.progress': 'Run progress',
+  'run.git_config_restored': 'Git configuration restored',
 };
 
 /** Kinds of entity, for the filter. */
@@ -479,6 +480,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     ];
   },
   'run.progress': (p, c) => ['Run of ', c.ticket, ': ', quote(p.text, null)],
+  'run.git_config_restored': (p, c) => [
+    'Run of ',
+    c.ticket,
+    ' on ',
+    quote(p.machine, null),
+    `: the Git configuration of ${p.repository} on that machine was changed during the run and restored at its end (information only) — ${shorten(p.changes)}`,
+  ],
 };
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {

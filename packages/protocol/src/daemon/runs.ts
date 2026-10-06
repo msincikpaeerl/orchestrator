@@ -240,6 +240,13 @@ export const RunState = message(
        * protocol 2). Null for other runs, and absent from protocol 1.
        */
       headMoved: z.boolean().nullable().default(null),
+      /**
+       * What the daemon found changed in the bare clone's Git configuration and hooks at the
+       * run's end, and restored, in plain words: the settings and hook files named, never their
+       * values or content (05, section 7.1; protocol 2). Null when nothing changed, and absent
+       * from protocol 1.
+       */
+      gitConfigRestored: boundedText().nullable().default(null),
     }),
   ]),
 );

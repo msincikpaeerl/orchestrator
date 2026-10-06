@@ -191,6 +191,7 @@ function state(
         reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
         detail?: string | null;
         branch?: { name: string; head: string; commitsAhead: typeof COMMITS } | null;
+        gitConfigRestored?: string | null;
       },
 ): RunState {
   const base = {
@@ -211,6 +212,7 @@ function state(
         branch: payload.branch ?? null,
         push: null,
         headMoved: null,
+        gitConfigRestored: payload.gitConfigRestored ?? null,
       },
     };
   }
@@ -1070,8 +1072,7 @@ describe('the push credential of an ending run (05, section 7; lot 3 step D2)', 
     await stoppedSecondsAgo(created.id, 95);
     expect(await pushAsk(daemon, created.id)).toEqual({
       ok: false,
-      message:
-        'the run was stopped more than 90 seconds ago (MCP call timeout plus Longest push)',
+      message: 'the run was stopped more than 90 seconds ago (MCP call timeout plus Longest push)',
     });
     // Once the end is reported, the run is no longer ending.
     await stoppedSecondsAgo(created.id, 0);
@@ -1090,15 +1091,18 @@ describe('the push credential of an ending run (05, section 7; lot 3 step D2)', 
     await working(daemon, first.id);
     expect((await call('POST', '/api/projects/WEB/tickets/1/cancel')).statusCode).toBe(200);
     await daemon.find(
-      (received) =>
-        received.type === 'run.stop' && received.payload.reason === 'ticket_cancelled',
+      (received) => received.type === 'run.stop' && received.payload.reason === 'ticket_cancelled',
       'run.stop',
     );
     expect(await pushAsk(daemon, first.id)).toEqual(granted);
     const fetch = await daemon.request({
       type: 'git.credential_request',
       id: randomUUID(),
-      payload: { runId: first.id, repository: { owner: 'octo-owner', name: 'bakery' }, command: 'fetch' },
+      payload: {
+        runId: first.id,
+        repository: { owner: 'octo-owner', name: 'bakery' },
+        command: 'fetch',
+      },
     });
     expect(fetch.type === 'git.credential' && fetch.payload).toEqual({
       ok: false,
@@ -1111,6 +1115,34 @@ describe('the push credential of an ending run (05, section 7; lot 3 step D2)', 
     await working(daemon, second.id);
     await report(daemon, state(second.id, { state: 'ended', reason: 'gave_up' }));
     expect(await pushAsk(daemon, second.id)).toEqual({ ok: false, message: 'the run is failed' });
+  });
+});
+
+describe('a Git configuration restored at a run end (05, section 7.1; lot 3 step D2)', () => {
+  it('writes an event naming what changed, with any credential masked, and nothing else', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    await working(daemon, created.id);
+    const changes = `Settings added and removed: core.hookspath, url.https://x-access-token:${TOKEN}@example.com/.insteadof.`;
+    await report(
+      daemon,
+      state(created.id, { state: 'ended', reason: 'gave_up', gitConfigRestored: changes }),
+    );
+    const events = await eventTypes('run.git_config_restored');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.payload).toMatchObject({
+      project: 'WEB',
+      ticket: 'WEB-1',
+      machine: 'Laptop',
+      repository: 'octo-owner/bakery',
+    });
+    const written = JSON.stringify(events[0]?.payload);
+    expect(written).toContain('core.hookspath');
+    expect(written).not.toContain(TOKEN);
+    // No "Needs you" item: information only.
+    const items = NeedsYouResponse.parse((await call('GET', '/api/needs-you')).json()).items;
+    expect(JSON.stringify(items)).not.toContain('hookspath');
   });
 });
 

@@ -1542,6 +1542,24 @@ export class RunService {
       };
 
       if (payload.state === 'ended') {
+        if (payload.gitConfigRestored !== null) {
+          // Information only: never a "Needs you" item, never a refusal (lot 3 step D2).
+          await recordEvent(tx, {
+            actor: 'system',
+            entityType: 'run',
+            entityId: run.id,
+            projectId: locked.project.id,
+            type: 'run.git_config_restored',
+            payload: {
+              project: locked.project.key,
+              ticket: this.reference(locked),
+              machine: locked.machine.name,
+              repository: `${locked.project.repoOwner}/${locked.project.repoName}`,
+              changes: maskSecrets(payload.gitConfigRestored),
+            },
+            at: this.now(),
+          });
+        }
         const branch = payload.branch
           ? { branchHead: payload.branch.head, commits: payload.branch.commitsAhead }
           : {};
@@ -1852,7 +1870,10 @@ export class RunService {
     if (!TERMINAL.has(run.status) || run.stopSentAt === null || run.endReportedAt !== null) {
       return null;
     }
-    const settings = await resolveSettings(this.db, ['mcpCallTimeoutSeconds', 'pushTimeoutSeconds']);
+    const settings = await resolveSettings(this.db, [
+      'mcpCallTimeoutSeconds',
+      'pushTimeoutSeconds',
+    ]);
     const seconds = settings.mcpCallTimeoutSeconds + settings.pushTimeoutSeconds;
     return { open: this.now().getTime() - run.stopSentAt.getTime() <= seconds * 1000, seconds };
   }

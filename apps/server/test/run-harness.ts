@@ -248,6 +248,7 @@ export function state(
         branch: { name: 't/1-contact-form', head: HEAD, commitsAhead: COMMITS },
         push: null,
         headMoved: null,
+        gitConfigRestored: null,
       },
     };
   }
