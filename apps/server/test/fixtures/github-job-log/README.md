@@ -1,6 +1,6 @@
 # A real GitHub Actions job log, rebuilt
 
-`docs-links.log` is the log of the skeleton's `docs-links` job failing on a broken documentation link, from the owner's run of the GitHub smoke script on 2026-10-06 (lot 3, after step E2), as GitHub's job page gives it ("View raw logs"). The parser of `apps/server/src/github/job-log.ts` is tested on it.
+`docs-links.txt` is the log of the skeleton's `docs-links` job failing on a broken documentation link, from the owner's run of the GitHub smoke script on 2026-10-06 (lot 3, after step E2), as GitHub's job page gives it ("View raw logs"). The parser of `apps/server/src/github/job-log.ts` is tested on it. It is a `.txt` file because the repository ignores `*.log` files (`.gitignore`): named `.log`, it was left out of the commit and CI could not find it.
 
 It is **rebuilt, not GitHub's exact bytes**. It came through a paste, which:
 

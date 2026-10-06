@@ -6,7 +6,7 @@ import { JobLogReader, excerptHeading, type FailedStep, type LogEnd } from './jo
 // The real log of the skeleton's docs-links job failing on a broken link (owner's run of
 // 2026-10-06), rebuilt from a paste: see test/fixtures/github-job-log/README.md.
 const REAL = readFileSync(
-  join(import.meta.dirname, '..', '..', 'test', 'fixtures', 'github-job-log', 'docs-links.log'),
+  join(import.meta.dirname, '..', '..', 'test', 'fixtures', 'github-job-log', 'docs-links.txt'),
   'utf8',
 );
 
