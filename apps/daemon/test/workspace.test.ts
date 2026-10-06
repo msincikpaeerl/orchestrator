@@ -24,7 +24,7 @@ import {
 // commit author. The token never lands in a Git configuration or a remote URL.
 
 const TOKEN = 'ghp_TestTokenThatMustNeverBeStored0123456789';
-const CREDENTIAL = { username: 'x-access-token', password: TOKEN };
+const CREDENTIAL = { ok: true as const, username: 'x-access-token', password: TOKEN };
 
 let home: TestHome;
 let git: Git;
@@ -217,8 +217,10 @@ describe('the one-shot credential socket', () => {
     return answers;
   }
 
-  it("answers one credential for the clone URL's protocol and host", async () => {
-    const [first, second, wrongKey, store] = await helper('protocol=https\nhost=github.com\n');
+  it("answers one credential for the clone URL's protocol, host and repository", async () => {
+    const [first, second, wrongKey, store] = await helper(
+      'protocol=https\nhost=github.com\npath=owner/notes.git\n',
+    );
     expect(first).toBe(`username=x-access-token\npassword=${TOKEN}\n`);
     expect(second).toBe('');
     expect(wrongKey).toBe('');
@@ -226,14 +228,55 @@ describe('the one-shot credential socket', () => {
     expect(asked).toHaveLength(1);
   });
 
-  it('refuses another host or protocol, logging it without the token', async () => {
-    expect(await helper('protocol=https\nhost=evil.example.com\n')).toEqual(['', '', '', '']);
-    expect(await helper('protocol=http\nhost=github.com\n')).toEqual(['', '', '', '']);
+  it('refuses another host, protocol or repository, logging it without the token', async () => {
+    const refused = ['', '', '', ''];
+    expect(await helper('protocol=https\nhost=evil.example.com\npath=owner/notes.git\n')).toEqual(
+      refused,
+    );
+    expect(await helper('protocol=http\nhost=github.com\npath=owner/notes.git\n')).toEqual(refused);
+    expect(await helper('protocol=https\nhost=github.com\npath=owner/other.git\n')).toEqual(
+      refused,
+    );
+    expect(await helper('protocol=https\nhost=github.com\n')).toEqual(refused);
     expect(asked).toEqual([]);
     const log = logs.lines().join('');
     expect(log).toContain('evil.example.com');
-    expect(log).toContain('another protocol or host');
+    expect(log).toContain('another protocol, host or repository');
     expect(log).not.toContain(TOKEN);
+  });
+
+  it('closes for good at the first refused request: a later right one gets nothing', async () => {
+    const folder = await runFolder('00000000-0000-4000-8000-000000000000');
+    const answers: string[] = [];
+    await withCredentialHelper(
+      {
+        folder,
+        cloneUrl: 'https://github.com/owner/notes.git',
+        request: {
+          runId: '00000000-0000-4000-8000-000000000000',
+          repository: { owner: 'owner', name: 'notes' },
+          command: 'push',
+        },
+        source: (request) => {
+          asked.push(request);
+          return Promise.resolve(CREDENTIAL);
+        },
+        selfCommand: DAEMON_COMMAND,
+        log: logs.log,
+      },
+      async ({ env }) => {
+        answers.push(
+          await gitCredentialHelper('get', 'protocol=https\nhost=evil.example.com\n', env),
+          await gitCredentialHelper(
+            'get',
+            'protocol=https\nhost=github.com\npath=owner/notes.git\n',
+            env,
+          ),
+        );
+      },
+    );
+    expect(answers).toEqual(['', '']);
+    expect(asked).toEqual([]);
   });
 });
 

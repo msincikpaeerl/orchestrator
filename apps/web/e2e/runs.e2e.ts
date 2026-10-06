@@ -218,6 +218,23 @@ test('a finished run shows the branch and its commits on the ticket page', async
   await expectFitsScreen(page);
 });
 
+test('a run whose download was stopped by Longest push says so on its page', async ({ page }) => {
+  const ticketPage = await readyForRuns(page);
+  await page.goto(ticketPage);
+  const runId = await runNow(page);
+  await runSent(page, runId);
+  await reportState(page, runId, 'preparing');
+  const detail =
+    'The workspace could not be prepared: Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.';
+  await reportState(page, runId, 'ended', { reason: 'crashed', detail, branch: null });
+
+  await expect(runStatus(page)).toHaveText(
+    'Failed: its Claude Code session stopped unexpectedly or never started',
+  );
+  await expect(page.getByLabel('Why the run ended')).toHaveText(detail);
+  await expectFitsScreen(page);
+});
+
 test('a run paused on a suspected usage limit is resumed', async ({ page }) => {
   const ticketPage = await readyForRuns(page);
   await page.goto(ticketPage);

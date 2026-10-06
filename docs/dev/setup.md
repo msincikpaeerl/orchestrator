@@ -6,7 +6,7 @@
 |---|---|---|
 | Node.js | 24 LTS, exact version in `.nvmrc` | `nvm install` reads `.nvmrc`. |
 | pnpm | pinned by `packageManager` in `package.json` | `corepack enable`, or the standalone pnpm installer. |
-| Git | 2.40 or later, with `git http-backend` (part of Git) | The daemon's tests use bare clones and worktrees (from lot 2); the fake GitHub keeps its repositories as bare repositories and serves them with `git http-backend` (lot 3 step C, ADR 0033). |
+| Git | 2.40 or later, with `git http-backend` (part of Git) | The daemon's tests use bare clones and worktrees (from lot 2); the fake GitHub keeps its repositories as bare repositories and serves them with `git http-backend` (lot 3 step C, ADR 0033). The daemon's Git commands ignore the global and system Git configuration (05, section 7.1): a Git proxy (`http.proxy`) set there is not used, only the proxy variables (`https_proxy`, `no_proxy`) of the daemon's environment. |
 | tmux | 3.2 or later (`tmux -V`) | The daemon's tests drive real tmux sessions with a fake `claude` (from lot 2 step F). Installed from the system's packages, so the version cannot be pinned; CI prints `tmux -V` in its log. |
 | `tar`, `openssl` | from the system | `tar` packs the daemon in `pnpm build`; `openssl` makes the test certificates of the daemon's `doctor` tests. Both come with Ubuntu and the CI runner. |
 | Docker | Engine or Docker Desktop with Compose v2.24 or later | Database for development and tests, end-to-end tests, full stack. |

@@ -64,7 +64,7 @@ In this version, the daemon runs under your own Linux user, so agents work with 
 - `tmux`, so an agent cannot reach its own session or another one.
 - the container tools `docker`, `docker-compose`, `podman`, `nerdctl` and `kubectl`: your user can use them, and the Orchestrator itself may run in Docker on the same computer, so a container's configuration could show the Orchestrator's secret key.
 
-An agent may still read public GitHub pages in its web browsing tool. The checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly, while text that only looks like a path, such as a web route in `grep "/api/users"`, is not refused: something counts as a path only when its first folder exists on the computer (`/home`, `/mnt`, `/usr`, …). Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version.
+An agent may still read public GitHub pages in its web browsing tool. The checks on shell commands are **best effort**: a command could still read a file of your user that it does not name directly, while text that only looks like a path, such as a web route in `grep "/api/users"`, is not refused: something counts as a path only when its first folder exists on the computer (`/home`, `/mnt`, `/usr`, …). Keep secrets you care about off this machine, or use a computer dedicated to the Orchestrator. A guide for running the daemon under its own user comes in a later version: it protects your personal files, not the daemon's own key or your GitHub token (see "What stays possible" below).
 
 The list of commands an agent may run (see [Agents](agents.md)) saves time, since a command outside it is refused at once, but it does not protect your computer: the tools it allows, such as `node`, `npx` and `pnpm`, can run any program. The protection comes from the refusals above.
 
@@ -76,7 +76,14 @@ For the same reason, an agent could pretend to be its own session and send the O
 
 When a run's session closes (the run ends, or a run waiting for your answer is paused), the Orchestrator stops every program the agent left running, even one started to keep running on its own (with `nohup` or `setsid`), so nothing goes on working in a folder that is then removed.
 
-Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents.
+Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents. From version 0.4.0 the daemon fetches and pushes in a separate place it prepares itself: it never reads the Git settings of the project, of your user or of your computer, which an agent can change, so a setting an agent added cannot send the token to another computer or to another program.
+
+**What stays possible in this version.** Because agents run under the same Linux user as the daemon, a determined agent, or instructions hidden in a web page it read, could still take the token:
+
+- by reading the daemon's own key in `~/.orchestrator` (the refusals above stop the usual ways, but not every program an allowed tool like `node` can run) and asking the Orchestrator for the token as if it were the daemon, while one of its runs is active;
+- by leaving a program running that watches the daemon's Git commands while they run.
+
+A stolen token allows **writing to and administering every repository of your GitHub account**: the token covers "All repositories" with Administration, because the Orchestrator creates repositories ([Connect GitHub](github-token.md)). Running the daemon under a separate Linux user does not change this, since the agents run under the daemon's user; it only keeps them away from your personal files. A later version runs the agents under a user of their own, apart from the daemon. Until then, give agents tickets on projects you trust, and if you suspect a token was taken, delete it on GitHub at once (Settings > Developer settings > Personal access tokens > Fine-grained tokens), then create a new one with **Replace the token**.
 
 ## Add a machine
 
@@ -273,5 +280,9 @@ Type these commands on the machine, in its Ubuntu terminal:
 | Check the machine: tools and versions, Claude Code login, systemd, the service and its process scopes, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
 | See whether the daemon runs (as the service or in a terminal), its version and build, its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
+
+If a run fails at its start with "Downloading the project from GitHub took longer than Longest push": the machine could not download the project from GitHub within that limit. The first download of a project on a new machine is the longest, since it brings the project's whole history; later runs download only what changed. Try **Run now** again, or raise **Longest push** in Settings > Limits (the MCP call timeout plus Longest push must stay below the Claude Code MCP tool timeout, so raise that one first if the Orchestrator refuses). Such a run counts as a failed attempt in this version.
+
+If the machine can reach GitHub only through a proxy: from version 0.4.0 the daemon ignores Git's own settings (`~/.gitconfig` and the computer's Git settings), so a proxy set there with `git config --global http.proxy` is not used when it fetches or pushes. Set the proxy in the daemon's environment instead (`https_proxy`, and `no_proxy` for the addresses to reach directly) and restart the daemon.
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.

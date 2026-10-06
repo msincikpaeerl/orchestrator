@@ -309,6 +309,8 @@ describe('settings that must stay in order', () => {
   it('keeps the MCP call timeout strictly below the Claude Code MCP tool timeout, naming both', async () => {
     const callTimeout = 'settings/mcpCallTimeoutSeconds';
     const tool = 'settings/claudeCodeMcpToolTimeoutSeconds';
+    // Longest push at its minimum, so only this order is tested here (see the sum below).
+    expect((await call('PUT', 'settings/pushTimeoutSeconds', { value: 10 })).statusCode).toBe(200);
     // Equal is refused: the machine must answer before Claude Code gives up.
     const equal = await call('PUT', callTimeout, { value: 120 });
     expect(equal.statusCode).toBe(409);
@@ -326,13 +328,47 @@ describe('settings that must stay in order', () => {
     expect(error(equal).message).toBe(
       'claudeCodeMcpToolTimeoutSeconds (120) must be above mcpCallTimeoutSeconds (120)',
     );
-    expect((await call('PUT', callTimeout, { value: 119 })).statusCode).toBe(200);
-    expect((await call('PUT', tool, { value: 119 })).statusCode).toBe(409);
+    expect((await call('PUT', callTimeout, { value: 109 })).statusCode).toBe(200);
+    expect((await call('PUT', tool, { value: 109 })).statusCode).toBe(409);
     expect((await call('PUT', tool, { value: 120 })).statusCode).toBe(200);
     // A Reset to default of the tool timeout (120) is refused above a 150-second call timeout.
     expect((await call('PUT', tool, { value: 300 })).statusCode).toBe(200);
     expect((await call('PUT', callTimeout, { value: 150 })).statusCode).toBe(200);
     expect((await call('DELETE', tool)).statusCode).toBe(409);
+  });
+
+  it('keeps the MCP call timeout plus Longest push below the Claude Code MCP tool timeout, naming all three', async () => {
+    const callTimeout = 'settings/mcpCallTimeoutSeconds';
+    const push = 'settings/pushTimeoutSeconds';
+    const tool = 'settings/claudeCodeMcpToolTimeoutSeconds';
+    // The defaults fit: 30 + 60 < 120. Equal to the tool timeout is refused.
+    const equal = await call('PUT', push, { value: 90 });
+    expect(equal.statusCode).toBe(409);
+    expect(error(equal)).toMatchObject({
+      code: 'setting_sum_invalid',
+      settingSum: {
+        parts: [
+          { name: 'mcpCallTimeoutSeconds', value: 30 },
+          { name: 'pushTimeoutSeconds', value: 90 },
+        ],
+        below: { name: 'claudeCodeMcpToolTimeoutSeconds', value: 120 },
+      },
+    });
+    expect(error(equal).message).toBe(
+      'mcpCallTimeoutSeconds (30) plus pushTimeoutSeconds (90) must be below claudeCodeMcpToolTimeoutSeconds (120)',
+    );
+    expect((await call('PUT', push, { value: 89 })).statusCode).toBe(200);
+    // Each of the three settings is checked.
+    expect((await call('PUT', callTimeout, { value: 31 })).statusCode).toBe(409);
+    expect((await call('PUT', tool, { value: 119 })).statusCode).toBe(409);
+    // A Reset to default of the tool timeout (120) is refused under a 200-second push.
+    expect((await call('PUT', tool, { value: 300 })).statusCode).toBe(200);
+    expect((await call('PUT', push, { value: 200 })).statusCode).toBe(200);
+    const reset = await call('DELETE', tool);
+    expect(reset.statusCode).toBe(409);
+    expect(error(reset).code).toBe('setting_sum_invalid');
+    expect((await call('DELETE', push)).statusCode).toBe(200);
+    expect((await call('DELETE', tool)).statusCode).toBe(200);
   });
 
   it('never lets two changes that are each in order break the order together', async () => {

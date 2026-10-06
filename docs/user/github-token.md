@@ -49,6 +49,8 @@ The button fills these in. They are listed here if you create the token by hand.
 
 Organizations are not supported: the token must belong to your personal account.
 
+**What the token gives.** With these permissions on all your repositories, anyone holding the token can change and administer every repository of your account. The Orchestrator keeps it encrypted on the server and gives it to a machine only for one fetch or push at a time; in this version an agent running on that machine could still find a way to take it while its run is active ([Agents on your own user](machines.md#agents-on-your-own-user)). Keep the expiry date, and delete the token on GitHub at once if you suspect it was taken.
+
 ## Check or replace the token
 
 In **Settings > GitHub connection** you see the GitHub account, the expiry date, when the token was saved and last checked, and the result of each permission.

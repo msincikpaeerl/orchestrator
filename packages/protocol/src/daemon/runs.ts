@@ -90,6 +90,8 @@ export const RunLimits = z.object({
   sessionStartTimeoutSeconds: z.int().positive(),
   mcpCallTimeoutSeconds: z.int().positive(),
   claudeCodeMcpToolTimeoutSeconds: z.int().positive(),
+  /** **Longest push**: every fetch and push of the run (protocol 2, lot 3 step D). */
+  pushTimeoutSeconds: z.int().positive(),
 });
 export type RunLimits = z.infer<typeof RunLimits>;
 

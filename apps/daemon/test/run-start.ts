@@ -46,6 +46,7 @@ export function runStartPayload(
       sessionStartTimeoutSeconds: 30,
       mcpCallTimeoutSeconds: 30,
       claudeCodeMcpToolTimeoutSeconds: 120,
+      pushTimeoutSeconds: 60,
       ...limits,
     },
     resumeSessionId: null,

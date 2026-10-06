@@ -254,6 +254,7 @@ function session(layout: Layout, profile: AgentProfileFile, model: string): stri
     mcpConfig,
     runMcpConfig(profile.key, selfCommand, {
       claudeCodeMcpToolTimeoutSeconds: SETTINGS.claudeCodeMcpToolTimeoutSeconds.default,
+      pushTimeoutSeconds: SETTINGS.pushTimeoutSeconds.default,
     } as Parameters<typeof runMcpConfig>[2]),
   );
   writeUserSettings(layout.claudeConfig);

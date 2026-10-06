@@ -124,6 +124,12 @@ const TERMINAL = new Set<string>(['succeeded', 'failed', 'cancelled']);
 /** Runs a machine can be working on: fetching with a credential is allowed only for them. */
 const FETCHING = new Set<string>(['dispatched', 'starting', 'running']);
 
+/**
+ * Runs that may push their ticket branch (05, sections 4.9 and 7): running, at `ticket_submit`.
+ * The best-effort push of an ending run comes with lot 3 step D2. A review run never pushes.
+ */
+const PUSHING = new Set<string>(['running']);
+
 const refuse = (refusal: RunRefusal, message: string) =>
   new HttpError(409, 'run_not_possible', message, { runRefusal: refusal });
 
@@ -579,6 +585,7 @@ export class RunService {
       'sessionStartTimeoutSeconds',
       'mcpCallTimeoutSeconds',
       'claudeCodeMcpToolTimeoutSeconds',
+      'pushTimeoutSeconds',
       'dispatchAckTimeoutSeconds',
     ]);
 
@@ -866,6 +873,7 @@ export class RunService {
             sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
             mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
             claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
+            pushTimeoutSeconds: settings.pushTimeoutSeconds,
           },
           resumeSessionId: null,
         },
@@ -1781,7 +1789,13 @@ export class RunService {
       return { ok: false, message: why };
     };
     if (!row || row.run.machineId !== machineId) return refused('unknown run');
-    if (!FETCHING.has(row.run.status)) return refused(`the run is ${row.run.status}`);
+    const { command } = message.payload;
+    if (!(command === 'push' ? PUSHING : FETCHING).has(row.run.status)) {
+      return refused(`the run is ${row.run.status}`);
+    }
+    if (command === 'push' && row.run.purpose === 'review') {
+      return refused('a review run never pushes');
+    }
     if (
       row.owner.toLowerCase() !== repository.owner.toLowerCase() ||
       row.name.toLowerCase() !== repository.name.toLowerCase()
@@ -1796,7 +1810,7 @@ export class RunService {
       return refused('the saved GitHub token cannot be read');
     }
     if (token === null) return refused('GitHub is not connected');
-    this.log.info({ machine: machineId, run: runId }, 'git credential sent for a fetch');
+    this.log.info({ machine: machineId, run: runId }, `git credential sent for a ${command}`);
     return { ok: true, username: 'x-access-token', password: token };
   }
 

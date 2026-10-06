@@ -966,6 +966,53 @@ describe('Git credentials (05, section 7)', () => {
     expect(await ask(created.id)).toEqual({ ok: false, message: 'the run is cancelled' });
     expect(t.logs.text).not.toContain(TOKEN);
   });
+
+  it('gives a push credential only to a running run of the asking machine, never a review', async () => {
+    await start();
+    const { daemon, account } = await laptop();
+    const { run: created } = await started(daemon);
+    // Connected once the run is on the laptop, so Run now could not choose it.
+    const { daemon: other } = await connectedMachine('Desktop', account.id);
+    const ask = async (
+      from: ScriptedDaemon,
+      runId: string,
+      owner = 'octo-owner',
+      name = 'bakery',
+    ) => {
+      const answer = await from.request({
+        type: 'git.credential_request',
+        id: randomUUID(),
+        payload: { runId, repository: { owner, name }, command: 'push' },
+      });
+      if (answer.type !== 'git.credential') throw new Error(`unexpected ${answer.type}`);
+      return answer.payload;
+    };
+    // Dispatched, not running yet: a fetch only.
+    expect(await ask(daemon, created.id)).toEqual({ ok: false, message: 'the run is dispatched' });
+    await working(daemon, created.id);
+    expect(await ask(daemon, created.id)).toEqual({
+      ok: true,
+      username: 'x-access-token',
+      password: TOKEN,
+    });
+    expect(await ask(other, created.id)).toEqual({ ok: false, message: 'unknown run' });
+    expect(await ask(daemon, created.id, 'octo-owner', 'notes')).toEqual({
+      ok: false,
+      message: "not the run's repository",
+    });
+    await t.db.update(schema.runs).set({ purpose: 'review' }).where(eq(schema.runs.id, created.id));
+    expect(await ask(daemon, created.id)).toEqual({
+      ok: false,
+      message: 'a review run never pushes',
+    });
+    await t.db
+      .update(schema.runs)
+      .set({ purpose: 'implement' })
+      .where(eq(schema.runs.id, created.id));
+    await report(daemon, state(created.id, { state: 'ended', reason: 'gave_up' }));
+    expect(await ask(daemon, created.id)).toEqual({ ok: false, message: 'the run is failed' });
+    expect(t.logs.text).not.toContain(TOKEN);
+  });
 });
 
 describe('usage limits (07, section 5.2)', () => {

@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B and C done)
+> Status: in progress (steps A, B, C and D1 done; step D split into D1, D2 and D3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -201,26 +201,69 @@ then check the machine page: online, usable, and the build the same as the serve
 - What GitHub's documentation does not say, or what later steps depend on, is listed under step E, "Assumptions to confirm on the real GitHub".
 - **For step H**: every agent sees the review tools in its tool list since step B, and the server refuses them by role (06, section 4.5). Step H decides whether the relay should list only the tools of the run's purpose.
 
-### [ ] D. Push by the daemon
+### Step D: Push by the daemon, split in three (rule 15)
 
-- `git.credential` for `push`: the server gives it only for the run's own repository while the run is active or ending.
-- The push with the per-command credential helper and an explicit refspec of the ticket branch, never `--force`, never tags. It happens:
-  - at `ticket_submit`, with the result in the facts;
-  - at every run end with commits not on GitHub, best effort;
-  - never for a review run, which reports whether the head moved.
-- Preparation: the local branch is fast-forwarded to GitHub's when GitHub's contains it; a diverged branch is reported.
-- `git merge` added to the builders' allowlist; the common rules say how to bring the base branch in.
-- Server: the branch head on GitHub stored per ticket; the ticket page shows "on GitHub" or "on machine X, not on GitHub yet"; Run now's machine rule (07 section 3) applies only to commits not on GitHub.
+Split approved by the owner on 2026-10-06. The token is used by the daemon, under the owner's user, in a repository an agent has just worked in. The agent, or instructions hidden in a page it read, can change that repository's Git configuration and files, the owner's global Git configuration, `~/.netrc`, and anything else the owner's user can write. So no command holding the credential ever reads a file an agent can change (**isolation by construction**, 05 section 7). This applies to lot 2's fetch as well: it ran in the bare clone and read that configuration, so `http.proxy` with `http.sslVerify=false` could send the token to another host, and a program started by Git after the helper refused another host (`core.askPass`, `core.sshCommand`, a remote helper) could ask the daemon's socket for it.
 
-**Done when** daemon tests (fake `claude`, the fake GitHub's Git server) show:
+What stays open, written in 05 section 7 and Help: an agent runs as the owner's user. It can read the daemon's machine token (`~/.orchestrator/config.json`) and connect to the server in the daemon's place, and a process it leaves running can read the environment of Git processes started at the same time. A stolen GitHub token allows writing to and administering every repository of the owner's account (`docs/user/github-token.md` asks for "All repositories" and Administration). The fix, agents running under a separate system user from the daemon, is in lot 7's scope (10); lot 4's plan decides whether to bring it forward.
 
-- the push at submission and at a failed run's end;
-- a branch and a tag the agent created not pushed;
-- no token in any Git configuration, remote URL or file after a push;
-- a failed end push leaving the outcome unchanged;
-- a review run never pushing and reporting a moved head;
-- the fast-forward after **Update branch**, and a diverged branch reported;
-- Run now taking a pushed branch on another machine.
+### [x] D1. Credentialed Git isolated, and the push at submission
+
+- **The isolated credentialed command** (05 section 7), used by every fetch and push:
+  - a new bare repository per command in the run folder (`git init --bare --template=`), with a random name, removed afterwards. Its configuration is written by the daemon only. It borrows the bare clone's objects through `objects/info/alternates`, and `core.alternateRefsCommand` is set to a shell built-in that prints nothing, so Git never starts `for-each-ref` in the bare clone. The commits it already has come from refs the daemon writes into it before a fetch (`refs/orchestrator/have/*`, read from the bare clone by a local command without the credential);
+  - Git is given the run's URL from `run.start`, never a remote name: `https`, or `http` only to a loopback address (tests). On the command line: `-c credential.helper=` then the daemon's helper, `credential.useHttpPath=true`, `http.followRedirects=false`, `protocol.allow=never` with only `https` (or `http` in tests) allowed, `core.hooksPath=/dev/null`, `push.recurseSubmodules=no`, `gc.auto=0`;
+  - the environment is an allowlist: `PATH`, `LC_ALL=C`, `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, `HOME=/nonexistent` (a folder the owner's user cannot create, so `~/.gitconfig`, `~/.netrc` and `~/.git-credentials` are never read), the proxy variables of the daemon's own environment, and the helper's socket and key. The owner's global and system Git configuration is ignored (Help > Troubleshooting and `docs/dev/setup.md` say so, for a Git proxy setting);
+  - **the helper** answers only for the exact protocol, host (port included) and repository path of the run's URL, and only the first request: any refused request closes the socket for good;
+  - **time limit**: the new global setting **Longest push** (`pushTimeoutSeconds`, default 60 seconds, 10 to 600) bounds every credentialed command (fetch included). The command runs in its own process group, which is stopped when the limit is reached; a push then reads `failed`, `unreachable`, with a message giving the limit. A change or reset is refused unless MCP call timeout plus Longest push stays below the Claude Code MCP tool timeout (a message names the three settings). `run.start` limits carry the value (protocol 2 is not released yet: no version change).
+- **Fetch**: the fetched pack stays a pack (`fetch.unpackLimit=1`) and is moved into the bare clone's `objects/pack` (`.pack` first, then `.rev`, then `.idx`). The daemon then sets `refs/remotes/origin/*` to the fetched refs with one `update-ref --stdin` transaction, deleting the ones no longer on GitHub. Those local commands never carry the credential environment.
+- **Push**: the ticket branch's head is read **once** from the bare clone; that hash is pushed (`<hash>:refs/heads/<ticket branch>`, no `+`, `--no-follow-tags`, `--porcelain`), and it is the one reported, as the facts' head and as `pushed.head`. The result is read from the porcelain lines and the exit code, never from translated text: `!` with `non-fast-forward` or `fetch first` is `diverged`; any other refusal is `refused` with GitHub's own message, masked; no ref line is `unreachable` (or `refused` for an authentication failure). The isolated repository holds no other branch or tag, so nothing else can be pushed.
+- **At `ticket_submit`**: when the worktree is clean and the branch has commits ahead, the daemon pushes before forwarding the call, with the result in the facts.
+- **The daemon's local Git commands** (in the bare clone and the worktree) run with `core.hooksPath=/dev/null`, `core.fsmonitor=false`, `gc.auto=0`, `maintenance.auto=false`, the same `HOME` and global and system configuration ignored, and `ORCHESTRATOR_RUN_ID` for a run's commands, so a program they start is stopped with the run. `git status` for the facts runs with an explicit `--git-dir` and `--work-tree`, never following the worktree's `.git` file. What stays open (filters and other programs named in the bare clone's configuration) is a known limit in 05 section 7.
+- **Server**: `git.credential` for `push` only for a run with status `running`, of the asking machine, for the run's own repository, and never for a `review` run; `fetch` stays allowed for `dispatched`, `starting` and `running`.
+- **Specs and docs**: 05 sections 4.2, 4.9 and 7 (the isolated command, how the fetched objects and refs reach the bare clone, the known limits, and "Dedicated user recommended" corrected: a dedicated user for the daemon protects the owner's personal files, not the machine token from agents); 10, lot 7 (agents under a separate system user, lot 4 may bring it forward); 04 section 8 (Longest push); Help: Troubleshooting, Settings, the known limit; CHANGELOG.
+
+**Done when** daemon tests (real Git, the fake GitHub's Git server, the fake `claude` for the submission) show:
+
+- for each way to leak (hooks; `credential.*` helpers; `url.*.insteadOf`, `pushInsteadOf` and a changed remote URL; `http.proxy`, `http.sslVerify`, `http.curloptResolve`, `http.extraHeader`; `core.sshCommand`, `core.gitProxy`, `remote.*.vcs`, `remote.*.uploadpack`; `core.askPass`; `include.path` and `includeIf`; the same in the test home's global configuration and `~/.netrc`), the changed configuration in place and the token not leaving: a listener on another host receives nothing; spy programs never run or receive nothing; the fake GitHub sees only the expected requests; no file under the test home or the run folder holds the token afterwards; `/proc` sampled during a slowed push shows no token in any process's arguments or environment;
+- regression tests of lot 2's fetch (a proxy with `sslVerify=false`; `core.askPass` after a refused host) that fail on `main`;
+- no process holding the credential environment runs Git with the bare clone as its repository (Git's trace2 events of the whole command tree); a fetch after one new commit on GitHub downloads only that commit's objects;
+- the push at submission, with the facts' head equal to `pushed.head`, and the hash read once even when the branch moves between the read and the push;
+- a branch and an annotated tag on the branch's own commit not pushed, with `push.followTags=true` in the bare clone and in the test home's global configuration;
+- never forced: a GitHub branch with commits the local one lacks is `diverged` and left unchanged;
+- a push stopped at **Longest push** reported `unreachable`, its process group gone; the settings rule refusing a sum too large;
+- the server refusing a push credential for a run of another machine, another repository, a review run and a finished run;
+- every feature used exists in Git 2.40 (doctor's minimum), checked against Git's release notes and recorded in 05.
+
+*Done 2026-10-06.* Choices made in the step:
+
+- `HOME=/nonexistent` instead of an empty private folder: the owner's user cannot create it, so nothing can be planted in it while a command runs.
+- `maintenance.auto=false` matters: without it a fetch starts `git maintenance run --auto --detach`, a detached process holding the credential's variables.
+- A `file://` URL (the runner tests' remotes) runs in the isolated repository without a credential helper; `http` is allowed only to a loopback address.
+- The bare clone's `remote.origin.url` and `credential.helper` are now set with `--replace-all`: an agent adding a second value made preparation fail ("has multiple values").
+- `credential-leaks.test.ts` removes the test home's proxy variables, because `no_proxy` made curl ignore a planted proxy and hid the attack: the two lot 2 regression tests were checked to fail with `main`'s daemon (the planted proxy received `x-access-token:<token>`; the planted askpass got the token from the socket). With the isolated command allowed to read the global configuration, 6 of the 9 cases fail.
+- A fetch after one new commit brings at most 4 objects: `index-pack --fix-thin` adds the delta base of the new tree.
+- Not run on Git 2.40 itself: the versions are checked against Git's release notes (05 section 7.1).
+- **Longest push also limits the download of the project at a run's start** (the session's choice, kept by the owner on conditions): one setting for now, its description saying so and that the first download on a new machine is the longest. A separate fetch limit was deliberately not added; it may be needed later, because the rule tying Longest push to the Claude Code MCP tool timeout concerns only the push at submission, inside the agent's tool call, while a first download of a large project can need far longer than a push. A download stopped by it ends the run `crashed` (failure `crash`, counted as a failed attempt, like any preparation failure), with the machine's words naming the setting and its value, now shown on the run page (`endDetail`) and in Help > Machines > Troubleshooting.
+- ADR 0034 records the isolated credentialed command, the options rejected and what stays open.
+
+### [ ] D2. Run ends, reviews and preparation
+
+- **The push at a run's end**, best effort, for an `implement` or `fix_review` run that ends with commits not on GitHub (failure, give up, timeout, **Stop run**), after the scope stop and the sweep, with the result in `run.state`. A failure never changes the run's outcome.
+- **"Ending"** on the server: a run the server ended by `run.stop` (**Stop run**, ticket cancelled, `not_active`) whose machine has not reported its end yet. The server records when it sent `run.stop`; a `push` credential is given from then until the end report, and at most MCP call timeout plus Longest push after it. A run the daemon ends by itself is still `running` until its end report. Refusals tested: another machine, another repository, a review run, a run ended longer ago than that bound.
+- **A review run** never pushes; at its end the daemon compares the branch head with the one it started from, and a moved head ends it with `review_branch_moved` and "head moved".
+- **Preparation**: when a new worktree is made, the local ticket branch is fast-forwarded to GitHub's when GitHub's contains it (after **Update branch**); a branch checked out by a waiting or paused run is never moved. A diverged branch is left as is; its push reports `failed`, `diverged` (the `push_failed` failure and its "Needs you" item come with step F).
+- **Changed Git configuration**: at each run's end the daemon compares the bare clone's configuration and hooks with what it wrote, restores them, and writes an event saying what changed. No "Needs you" item, and the push is never refused for it (common tools such as husky set `core.hooksPath` on their own).
+- `git merge` added to the builders' allowlist; the common rules say how to bring the base branch in (`git merge origin/<base>`).
+
+**Done when** daemon tests show the end push at a failure, a give-up, a timeout and **Stop run**; a failed end push leaving the outcome unchanged; a review run never pushing and reporting a moved head; the fast-forward after **Update branch**; a diverged branch reported and never overwritten; a waiting run's branch left alone; a changed configuration restored with its event; and server tests show the "ending" refusals above.
+
+### [ ] D3. Server and ticket page
+
+- The branch head on GitHub stored per ticket from every `pushed` result (submission and end), with the machine holding commits not on GitHub.
+- The ticket page shows "on GitHub" or "on machine X, not on GitHub yet"; **Run now**'s machine rule (07 section 3) applies only to commits not on GitHub, and the next run takes a pushed branch from GitHub on any machine.
+- Help (Tickets), CHANGELOG.
+
+**Done when** a daemon test shows **Run now** taking a pushed branch on another machine; server tests show the stored head and the machine rule; the end-to-end test shows both states on the ticket page, on desktop and phone.
 
 ### [ ] E. GitHub layer and the owner's check of the real GitHub
 
@@ -240,7 +283,7 @@ then check the machine page: online, usable, and the build the same as the serve
   7. read the mergeable flag and `mergeable_state` (A10);
   8. ask the owner to merge it on GitHub (the script waits), then detect the merge (`merged`, `GET .../merge` 204); reopening it is refused; list the push runs of the merge commit without waiting for them (A9, A16, A20, A21);
   9. open a second pull request from a second branch made from the default branch as it was before step 8, changing the same line as the first: it conflicts (`mergeable` false after `null`, `mergeable_state`), no `pull_request` run starts, and **Update branch** through the API is refused; ask the owner to close it without merging; detect that, find it with `state=all`, reopen it through the API and close it again (A8, A9, A10, A18, A19, A20);
-  10. *only when the owner gives a second token* (`--restricted-token`, read like the first; Metadata read and Contents read only, on the test repository): a push is refused, and opening a pull request, reading Actions runs and reading commit statuses each answer 403 with `X-Accepted-GitHub-Permissions` naming the permission; with Contents write added to it by the owner, a push changing `.github/workflows/` is refused with GitHub's text (A2, A3, A23). Without that token the step prints `NOT ATTEMPTED`.
+  10. *only when the owner gives a second token* (`--restricted-token`, read and handled like the first: never on disk, in arguments, history or output; the script says exactly which permissions to give it, the test repository only and the shortest expiry, and reminds the owner to delete it afterwards; Metadata read and Contents read only, on the test repository): a push is refused, and opening a pull request, reading Actions runs and reading commit statuses each answer 403 with `X-Accepted-GitHub-Permissions` naming the permission; with Contents write added to it by the owner, a push changing `.github/workflows/` is refused with GitHub's text (A2, A3, A23). Without that token the step prints `NOT ATTEMPTED`.
 
   It also prints each assumption below with `PASS`, `FAIL` (with what GitHub answered) or `NOT ATTEMPTED`: a difference is fixed in the fake, with its test, before step F.
 

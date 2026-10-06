@@ -621,10 +621,11 @@ export class Run {
     const timeout = start.limits.mcpCallTimeoutSeconds;
     let call: McpCall['payload'];
     if (tool.data === 'ticket_submit') {
+      const { bare, worktree } = this.data;
       const facts =
-        this.data.bare && this.data.worktree
+        bare && worktree
           ? await this.context.workspaces
-              .facts(this.data.bare, this.data.worktree, start.repository)
+              .facts(bare, worktree, start.repository, this.runId)
               .catch((error: unknown) => {
                 this.log.error({ err: error }, 'worktree facts not read');
                 return null;
@@ -639,6 +640,17 @@ export class Run {
               'The Orchestrator could not read your worktree and branch. Check that your work is committed on the ticket branch, then try again.',
           },
         };
+      }
+      // Pushed before the call is forwarded, when there is something to push (05, section 4.9):
+      // the head read with the facts is the one pushed.
+      if (bare && facts.clean && facts.branch.commitsAhead.length > 0) {
+        facts.push = await this.context.workspaces.push(
+          start,
+          bare,
+          runFolder(this.context.paths, this.runId),
+          facts.branch.head,
+        );
+        this.log.info({ push: facts.push }, 'ticket branch pushed at submission');
       }
       call = { tool: 'ticket_submit', runToken: start.runToken, input: args, workspace: facts };
     } else {

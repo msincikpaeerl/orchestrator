@@ -120,7 +120,7 @@ export function daemon(
       paths: home.paths,
       git: new Git(join(home.bin, 'git'), home.env),
       trust,
-      credentials: () => Promise.resolve(null),
+      credentials: () => Promise.resolve({ ok: false, message: 'no credential in these tests' }),
       selfCommand: DAEMON_COMMAND,
       log,
     }),
