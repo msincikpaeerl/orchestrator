@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { answer, refused, refusalOf, type GitHubResult } from './answers.js';
+import { ask, refused, refusalOf, type GitHubResult } from './answers.js';
 import type { GitHubClient } from './client.js';
 import { branchPath, repoPath, type RepositoryRef } from './repositories.js';
 
@@ -14,6 +14,12 @@ import { branchPath, repoPath, type RepositoryRef } from './repositories.js';
 
 const Branch = z.object({ ref: z.string(), sha: z.string() });
 
+// Only the fields the Orchestrator uses are read, every other one is ignored; each is read as
+// GitHub documents it, nullable or optional included (checked against GitHub's OpenAPI
+// description in test/github-documented.test.ts). `merge_commit_sha` is not read: version
+// 2026-03-10 removed it from pull requests ("Breaking changes",
+// https://docs.github.com/en/rest/about-the-rest-api/breaking-changes).
+
 /** "pull-request-simple", as lists return it: no `merged` or `mergeable`. */
 const PullRequestSimple = z.object({
   number: z.int().positive(),
@@ -24,7 +30,6 @@ const PullRequestSimple = z.object({
   head: Branch,
   base: Branch,
   merged_at: z.string().nullable(),
-  merge_commit_sha: z.string().nullable(),
 });
 
 /** "pull-request", as get, create and update return it. */
@@ -47,7 +52,6 @@ export interface PullRequestSummary {
   baseBranch: string;
   /** When it was merged; null when it was not (open, or closed without merging). */
   mergedAt: string | null;
-  mergeCommitSha: string | null;
 }
 
 export interface PullRequest extends PullRequestSummary {
@@ -69,7 +73,6 @@ function summary(body: z.infer<typeof PullRequestSimple>): PullRequestSummary {
     headSha: body.head.sha,
     baseBranch: body.base.ref,
     mergedAt: body.merged_at,
-    mergeCommitSha: body.merge_commit_sha,
   };
 }
 
@@ -100,12 +103,13 @@ export async function openPullRequest(
   repo: RepositoryRef,
   pull: { head: string; base: string; title: string; body: string },
 ): Promise<GitHubResult<PullRequest>> {
-  const response = await client.request({
-    method: 'POST',
-    path: `${repoPath(repo)}/pulls`,
-    body: { ...pull, draft: false },
-  });
-  return mapped(answer(response, 201, PullRequestFull), full);
+  const opened = await ask(
+    client,
+    { method: 'POST', path: `${repoPath(repo)}/pulls`, body: { ...pull, draft: false } },
+    201,
+    PullRequestFull,
+  );
+  return mapped(opened, full);
 }
 
 /** Reads one pull request, with `merged` and `mergeable`. */
@@ -114,8 +118,13 @@ export async function readPullRequest(
   repo: RepositoryRef,
   number: number,
 ): Promise<GitHubResult<PullRequest>> {
-  const response = await client.request({ method: 'GET', path: pullPath(repo, number) });
-  return mapped(answer(response, 200, PullRequestFull), full);
+  const read = await ask(
+    client,
+    { method: 'GET', path: pullPath(repo, number) },
+    200,
+    PullRequestFull,
+  );
+  return mapped(read, full);
 }
 
 async function editPullRequest(
@@ -124,8 +133,13 @@ async function editPullRequest(
   number: number,
   body: Record<string, string>,
 ): Promise<GitHubResult<PullRequest>> {
-  const response = await client.request({ method: 'PATCH', path: pullPath(repo, number), body });
-  return mapped(answer(response, 200, PullRequestFull), full);
+  const edited = await ask(
+    client,
+    { method: 'PATCH', path: pullPath(repo, number), body },
+    200,
+    PullRequestFull,
+  );
+  return mapped(edited, full);
 }
 
 /** Changes the title and the description. */
@@ -174,11 +188,15 @@ export async function findPullRequests(
   const found: PullRequestSummary[] = [];
   const head = encodeURIComponent(`${repo.owner}:${branch}`);
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/pulls?head=${head}&state=${state}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, z.array(PullRequestSimple));
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/pulls?head=${head}&state=${state}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.array(PullRequestSimple),
+    );
     if (!batch.ok) return batch;
     found.push(...batch.value.map(summary));
     if (batch.value.length < PAGE_SIZE) return { ok: true, value: found };
@@ -224,12 +242,13 @@ export async function postReview(
   number: number,
   review: { event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'; body: string },
 ): Promise<GitHubResult<PullRequestReview>> {
-  const response = await client.request({
-    method: 'POST',
-    path: `${pullPath(repo, number)}/reviews`,
-    body: review,
-  });
-  return mapped(answer(response, 200, Review), (body) => ({
+  const posted = await ask(
+    client,
+    { method: 'POST', path: `${pullPath(repo, number)}/reviews`, body: review },
+    200,
+    Review,
+  );
+  return mapped(posted, (body) => ({
     id: body.id,
     state: body.state,
     url: body.html_url,

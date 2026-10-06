@@ -55,7 +55,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
   async function github(): Promise<{ client: GitHubClient; account: string }> {
     let client: GitHubClient | null;
     try {
-      client = await storedTokenClient(options);
+      client = await storedTokenClient({ ...options, log: app.log });
     } catch (error) {
       if (!(error instanceof SecretUnreadableError)) throw error;
       throw new HttpError(

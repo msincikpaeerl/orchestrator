@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { answer, refusalOf, type GitHubResult } from './answers.js';
+import { ask, refusalOf, type GitHubResult } from './answers.js';
 import type { GitHubClient } from './client.js';
 import { repoPath, type RepositoryRef } from './repositories.js';
 
@@ -12,11 +12,16 @@ import { repoPath, type RepositoryRef } from './repositories.js';
 // statuses" (https://docs.github.com/en/rest/commits/statuses). What the documentation does not
 // say is in the lot 3 plan's assumptions (A12 to A17), checked by the owner's smoke script.
 
+// Only the fields the Orchestrator uses are read, every other one is ignored; each is read as
+// GitHub documents it, nullable or optional included (checked against GitHub's OpenAPI
+// description in test/github-documented.test.ts).
+
 const PAGE_SIZE = 100;
 
 const Run = z.object({
   id: z.int().positive(),
-  name: z.string().nullable(),
+  // Optional and nullable: a run of a workflow file without `name:` (the file's path is shown).
+  name: z.string().nullish(),
   event: z.string(),
   status: z.string().nullable(),
   conclusion: z.string().nullable(),
@@ -52,11 +57,15 @@ export async function listCommitRuns(
   const runs: WorkflowRun[] = [];
   const filter = `head_sha=${encodeURIComponent(headSha)}${event ? `&event=${encodeURIComponent(event)}` : ''}`;
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/actions/runs?${filter}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, z.object({ workflow_runs: z.array(Run) }));
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/actions/runs?${filter}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.object({ workflow_runs: z.array(Run) }),
+    );
     if (!batch.ok) return batch;
     runs.push(
       ...batch.value.workflow_runs.map((run) => ({
@@ -108,11 +117,15 @@ export async function listRunJobs(
 ): Promise<GitHubResult<WorkflowJob[]>> {
   const jobs: WorkflowJob[] = [];
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/actions/runs/${String(runId)}/jobs?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, z.object({ jobs: z.array(Job) }));
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/actions/runs/${String(runId)}/jobs?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.object({ jobs: z.array(Job) }),
+    );
     if (!batch.ok) return batch;
     jobs.push(
       ...batch.value.jobs.map((job) => ({
@@ -182,11 +195,15 @@ export async function readCommitStatus(
 ): Promise<GitHubResult<CommitStatus>> {
   const statuses: CommitStatus['statuses'] = [];
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/commits/${encodeURIComponent(ref)}/status?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, CombinedStatus);
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/commits/${encodeURIComponent(ref)}/status?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      CombinedStatus,
+    );
     if (!batch.ok) return batch;
     statuses.push(
       ...batch.value.statuses.map((status) => ({

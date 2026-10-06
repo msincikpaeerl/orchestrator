@@ -144,12 +144,11 @@ describe('pull requests', () => {
 
   it('are read as merged after the owner merges, and cannot be reopened', async () => {
     await openCart();
-    const merge = github.mergePullRequest(repo, 1);
+    github.mergePullRequest(repo, 1);
     expect(value(await isPullRequestMerged(client, SHOP, 1))).toBe(true);
     expect(value(await readPullRequest(client, SHOP, 1))).toMatchObject({
       state: 'closed',
       merged: true,
-      mergeCommitSha: merge,
     });
     expect(value(await findPullRequests(client, SHOP, 't/1-cart'))[0]?.mergedAt).not.toBeNull();
     expect(refusal(await reopenPullRequest(client, SHOP, 1))).toMatchObject({
@@ -212,13 +211,69 @@ describe('pull requests', () => {
     }
   });
 
-  it('say so when GitHub answers with a body it does not document', async () => {
-    github.override = () => ({ status: 200, body: { number: 'one' } });
-    expect(refusal(await readPullRequest(client, SHOP, 1))).toEqual({
-      kind: 'unexpected',
-      status: 200,
-      message: 'The answer is not what GitHub documents',
+  it("are read from GitHub's documented answer, without merge_commit_sha (the owner's run)", async () => {
+    // The fake answers the full documented shape of version 2026-03-10, which has no
+    // merge_commit_sha: the layer required it, and every pull request answer failed (HTTP 201).
+    const { head } = await openCart();
+    expect(value(await readPullRequest(client, SHOP, 1))).toMatchObject({
+      number: 1,
+      headSha: head,
+      mergedAt: null,
     });
+  });
+
+  it('name the fields that did not fit, by type, in the refusal and the log', async () => {
+    const logged: { object: object; message: string }[] = [];
+    const logging = createGitHubClient({
+      apiUrl: github.url,
+      token: TOKEN,
+      timeoutSeconds: 10,
+      log: { warn: (object, message) => logged.push({ object, message }) },
+    });
+    const secret = 'github_pat_never_shown_0123456789';
+    github.override = () => ({
+      status: 201,
+      body: {
+        number: secret,
+        html_url: 'https://github.com/octo-owner/shop/pull/1',
+        state: 'opened',
+        title: 'Cart',
+        body: null,
+        head: { ref: 't/1-cart' },
+        base: { ref: 'main', sha: 'abc' },
+        merged_at: null,
+        merged: false,
+        mergeable: null,
+      },
+    });
+    const refused = refusal(
+      await openPullRequest(logging, SHOP, {
+        head: 't/1-cart',
+        base: 'main',
+        title: 'C',
+        body: '',
+      }),
+    );
+    const fields = [
+      'number: expected number, received a string',
+      'state: expected one of open, closed, received a string not among them',
+      'head.sha: expected string, received nothing',
+      'mergeable_state: expected string, received nothing',
+    ];
+    expect(refused).toEqual({
+      kind: 'unreadable',
+      status: 201,
+      message: `GitHub's answer does not fit what the Orchestrator reads: ${fields.join('; ')}`,
+      fields,
+    });
+    expect(logged).toEqual([
+      {
+        object: { request: 'POST /repos/octo-owner/shop/pulls', status: 201, fields },
+        message: "GitHub's answer does not fit what the Orchestrator reads",
+      },
+    ]);
+    expect(JSON.stringify([refused, logged])).not.toContain(secret);
+    expect(JSON.stringify([refused, logged])).not.toContain('opened');
   });
 });
 

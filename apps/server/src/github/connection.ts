@@ -9,8 +9,10 @@ import { resolveSettings } from '../settings/store.js';
 import {
   acceptedPermissions,
   createGitHubClient,
+  describeRequest,
   isNotAccessible,
   type GitHubClient,
+  type GitHubLog,
   type GitHubRequest,
   type GitHubResponse,
 } from './client.js';
@@ -262,14 +264,12 @@ async function recordRefusal(db: Database, refusal: Refusal): Promise<void> {
   });
 }
 
-function describe(request: GitHubRequest): string {
-  return `${request.method} ${request.path.split('?')[0] ?? request.path}`;
-}
-
 export interface StoredTokenOptions {
   db: Database;
   key: SecretKey;
   apiUrl: string;
+  /** Where answers the Orchestrator cannot read are logged (`GitHubClient.unreadable`). */
+  log?: GitHubLog;
 }
 
 /**
@@ -288,13 +288,14 @@ export async function storedTokenClient(options: StoredTokenOptions): Promise<Gi
     apiUrl: options.apiUrl,
     token,
     timeoutSeconds: githubRequestTimeoutSeconds,
+    log: options.log,
     onResponse: async (request: GitHubRequest, response: GitHubResponse) => {
       if (response.status === 401) {
-        await markTokenInvalid(options.db, 'system', describe(request));
+        await markTokenInvalid(options.db, 'system', describeRequest(request));
       } else if (isNotAccessible(response)) {
         await recordRefusal(options.db, {
           permissions: acceptedPermissions(response.headers),
-          request: describe(request),
+          request: describeRequest(request),
           at: new Date().toISOString(),
         });
       }

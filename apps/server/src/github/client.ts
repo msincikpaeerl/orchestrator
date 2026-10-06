@@ -16,6 +16,8 @@ export interface GitHubResponse {
   headers: Headers;
   /** Parsed JSON, or null when the body is empty or not JSON. */
   body: unknown;
+  /** The request answered, when the client sent it (for logs). */
+  request?: GitHubRequest;
 }
 
 export interface GitHubRequest {
@@ -38,6 +40,16 @@ export interface GitHubClient {
    * characters are kept. Throws `GitHubUnreachableError` like `request`.
    */
   download(path: string, maxCharacters: number): Promise<GitHubDownload>;
+  /**
+   * Logs an answer the Orchestrator could not read (`answers.ts`): the request, GitHub's status
+   * and the fields that did not fit, never the body.
+   */
+  unreadable(request: GitHubRequest, status: number, fields: string[]): void;
+}
+
+/** Where the client logs (the server's Pino logger). */
+export interface GitHubLog {
+  warn(object: object, message: string): void;
 }
 
 export interface GitHubClientOptions {
@@ -47,6 +59,13 @@ export interface GitHubClientOptions {
   timeoutSeconds: number;
   /** Called with every answer, for example to record refusals (ADR 0022). */
   onResponse?: (request: GitHubRequest, response: GitHubResponse) => Promise<void>;
+  /** Where answers the Orchestrator cannot read are logged; nowhere when not given. */
+  log?: GitHubLog;
+}
+
+/** `GET /repos/o/r/pulls`: the method and the path, without the query. */
+export function describeRequest(request: GitHubRequest): string {
+  return `${request.method} ${request.path.split('?')[0] ?? request.path}`;
 }
 
 export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
@@ -83,7 +102,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
     } catch {
       body = null;
     }
-    const result = { status: response.status, headers: response.headers, body };
+    const result = { status: response.status, headers: response.headers, body, request };
     if (response.status >= 500) {
       throw new GitHubUnreachableError(
         `${request.method} ${request.path}: GitHub answered HTTP ${String(response.status)}`,
@@ -96,6 +115,13 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
   return {
     async request(request) {
       return finish(request, await send(request, 'follow'));
+    },
+
+    unreadable(request, status, fields) {
+      options.log?.warn(
+        { request: describeRequest(request), status, fields },
+        "GitHub's answer does not fit what the Orchestrator reads",
+      );
     },
 
     async download(path, maxCharacters) {

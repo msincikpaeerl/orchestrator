@@ -8,3 +8,5 @@ packages/db/migrations/meta
 
 # Browsers of `pnpm test:e2e:host` (ADR 0021).
 .playwright-browsers
+# GitHub's documented answers, extracted from its OpenAPI description (ADR 0035).
+apps/server/test/fake-github/documented/github-rest.json
