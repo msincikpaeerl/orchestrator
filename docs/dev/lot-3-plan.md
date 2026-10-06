@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2 and D3 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
+> Status: in progress (steps A, B, C, D1, D2, D3 and E1 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -367,12 +367,21 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 
 **The owner's run** (after E3): a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 10 to 15 minutes, mostly waiting for CI: 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>` (add `--restricted-token` for step 10).
 
-### [ ] E1. GitHub layer and token check
+### [x] E1. GitHub layer and token check
 
 - `apps/server/src/github/`: pull requests (open, update, close, reopen, read merged and mergeable, find by branch with `state=all`), comment reviews, Actions runs by head commit, their jobs and steps, job log excerpts (through the redirect, without the API's `Authorization`), commit statuses, and deleting a branch (the script's clean-up, then step J; A26). Each answer checked with a schema; each refusal (401, 403 naming the permission, 404, 422) returned as a result, not thrown. A refusal for a missing permission already gives a "Needs you" GitHub item naming it, for every request sent with the saved token (`storedTokenClient`, lot 1, ADR 0022): the new functions use it.
 - The token check: Actions and Commit statuses already have read probes (lot 1); Pull requests gains a read probe (`GET /pulls?per_page=1` on a private repository) beside its write probe, and reads OK only when both are OK, Missing when either is missing (owner's answer 1).
 
 **Done when** tests against the fake GitHub cover every function and each of its refusals, and the token check's Pull requests line with each probe missing in turn.
+
+*Done 2026-10-06.* Choices made in the step:
+
+- **Results, not exceptions**: `apps/server/src/github/answers.ts` gives every new function a `GitHubResult` (the value, or GitHub's refusal as `token_invalid`, `permission_missing` with the permissions named, `rate_limited`, `not_found`, `invalid` with the 422's details, `unexpected`), so a caller reads "a pull request already exists" or "a log not ready yet" itself; no answer at all still throws `GitHubUnreachableError`. Project creation keeps its errors.
+- **Files**: `pull-requests.ts` (pull requests, comment reviews, `deleteBranch`), `ci.ts` (runs by head commit, jobs and steps, `readJobLogEnd`, commit statuses). Lists read GitHub's "simple" pull request, without `merged` and `mergeable`.
+- **Job logs**: the client's `download` asks the API without following the redirect and fetches the link with no `Authorization`, keeping only the end of the log (its length is the caller's: step G2 gives **Longest CI log excerpt**). The fake records each download's header (`github.logRequests`).
+- **A26**, new, for the owner's run: deleting a branch already gone answers 422 "Reference does not exist", read as already gone.
+- The token check: without a private repository, Pull requests now reads **Could not verify** (its read probe needs one), as Actions and Commit statuses already did.
+- Two test races fixed on the way, seen in `pnpm verify`: the guard tests' uncaught EPIPE when a refusing script exits before reading its input (regression test added), and the fake `claude` test reading the hook file before its first line.
 
 ### [ ] E2. The script's frame and steps 0 to 5
 
