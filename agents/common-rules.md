@@ -29,6 +29,8 @@ A turn that ends without one of them gets a reminder, and after a few reminders 
 
 Commit your work on the current branch, in small commits with clear messages. Never push, never switch or create branches, and never change the remotes: the Orchestrator handles the branch and GitHub.
 
+To bring in the latest changes of the base branch (the project's default branch, usually `main`), for example when you are told your branch conflicts with it, run `git merge origin/<base branch>`: the Orchestrator downloads it before your run starts. Resolve any conflict with your file tools, then `git add` and `git commit`; `git merge --abort` undoes a merge you cannot finish. Never rebase: the Orchestrator never force-pushes, so rewritten commits could not reach GitHub.
+
 ## Files and commands
 
 - Change files with the `Edit` and `Write` tools, never with the shell: no `>`, `>>`, `tee`, `sed -i` or here-documents.
