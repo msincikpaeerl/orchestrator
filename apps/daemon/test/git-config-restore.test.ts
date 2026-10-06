@@ -34,7 +34,7 @@ const GIVE_UP = {
 
 describe('the Git configuration at a run end', () => {
   it(
-    'is restored with what changed named, and a waiting run of the same repository keeps working',
+    'is restored by the last run of the repository to end, never under a waiting run, which keeps working',
     async () => {
       const manager = daemon();
       answerTools(() => ({ ok: true, output: {} }));
@@ -90,16 +90,17 @@ describe('the Git configuration at a run end', () => {
         subject: { kind: 'ticket', id: randomUUID(), number: 'NOTES-2' },
         repository: { ticketBranch: 't/2-other' },
       });
-      const end = await ended(changing.runId);
-      expect(end.gitConfigRestored).toBe(
-        'Settings added during the run, removed: alias.secret, core.hookspath. Settings changed, set back: credential.helper, remote.origin.url. Hook files added, removed: post-commit.',
-      );
-
+      // Another run of the repository still has its worktree: nothing is restored yet, so its
+      // hooks and settings (husky's, for example) keep working, and no event is sent.
+      expect(await ended(changing.runId)).toMatchObject({
+        reason: 'gave_up',
+        gitConfigRestored: null,
+      });
       const bare = bareClonePath(home.paths, changing.repository);
-      const config = gitIn(bare, ['config', '--file', 'config', '--list'], home.env);
-      expect(config).not.toMatch(/hookspath|alias|planted/);
-      expect(config).toContain(`remote.origin.url=${cloneUrl}`);
-      expect(await readdir(join(bare, 'hooks'))).not.toContain('post-commit');
+      const config = () => gitIn(bare, ['config', '--file', 'config', '--list'], home.env);
+      expect(config()).toMatch(/core\.hookspath=\.husky/);
+      expect(config()).toContain('alias.secret=');
+      expect(await readdir(join(bare, 'hooks'))).toContain('post-commit');
 
       // The waiting run is answered: its worktree is there, and it commits with its author.
       expect(existsSync(worktreePath(home.paths, waiting.runId))).toBe(true);
@@ -110,10 +111,15 @@ describe('the Git configuration at a run end', () => {
           payload: { runId: waiting.runId, text: 'This one.' },
         }),
       ).toEqual({ ok: true });
-      expect(await ended(waiting.runId)).toMatchObject({
-        reason: 'gave_up',
-        gitConfigRestored: null,
-      });
+      // The last run of the repository to end restores, and says what it found.
+      const end = await ended(waiting.runId);
+      expect(end.reason).toBe('gave_up');
+      expect(end.gitConfigRestored).toBe(
+        'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: alias.secret, core.hookspath. Settings changed, set back: credential.helper, remote.origin.url. Hook files added, removed: post-commit.',
+      );
+      expect(config()).not.toMatch(/hookspath|alias|planted/);
+      expect(config()).toContain(`remote.origin.url=${cloneUrl}`);
+      expect(await readdir(join(bare, 'hooks'))).not.toContain('post-commit');
       expect(
         gitIn(
           bare,
@@ -121,7 +127,6 @@ describe('the Git configuration at a run end', () => {
           home.env,
         ).trim(),
       ).toBe('Web Developer (Orchestrator) <1+owner@users.noreply.github.com>|After the answer');
-      expect(existsSync(marker)).toBe(false);
     },
     TIMEOUT,
   );

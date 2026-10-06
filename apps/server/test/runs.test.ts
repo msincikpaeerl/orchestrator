@@ -1124,7 +1124,7 @@ describe('a Git configuration restored at a run end (05, section 7.1; lot 3 step
     const { daemon } = await laptop();
     const { run: created } = await started(daemon);
     await working(daemon, created.id);
-    const changes = `Settings added and removed: core.hookspath, url.https://x-access-token:${TOKEN}@example.com/.insteadof.`;
+    const changes = `Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath, url.https://x-access-token:${TOKEN}@example.com/.insteadof.`;
     await report(
       daemon,
       state(created.id, { state: 'ended', reason: 'gave_up', gitConfigRestored: changes }),

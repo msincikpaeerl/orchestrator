@@ -76,7 +76,7 @@ describe('restoreBareConfig', () => {
     await rm(join(bare, 'hooks'), { recursive: true });
     await symlink(folder, join(bare, 'hooks'));
     expect(await restoreBareConfig(git, bare, URL)).toBe(
-      'Hook files added, removed: hooks (not a folder). Files Git could not read, written again: config.',
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Hook files added, removed: hooks (not a folder). Files Git could not read, written again: config.',
     );
     expect(list()).toContain(`remote.origin.url=${URL}`);
     expect(await readdir(join(bare, 'hooks'))).toEqual([]);
@@ -85,7 +85,7 @@ describe('restoreBareConfig', () => {
   it("puts back the bare clone's own per-worktree configuration", async () => {
     run(['-C', bare, 'config', '--worktree', 'core.hooksPath', '/tmp']);
     expect(await restoreBareConfig(git, bare, URL)).toBe(
-      'Settings added during the run, removed: core.hookspath (config.worktree).',
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath (config.worktree).',
     );
     expect(run(['config', '--file', join(bare, 'config.worktree'), '--list'])).toBe(
       'core.bare=true\n',

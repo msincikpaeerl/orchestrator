@@ -255,11 +255,44 @@ export class Workspaces {
   }
 
   /**
-   * At a run's end (05, section 7.1): the bare clone's configuration and hooks restored to what
-   * the daemon wrote, under the bare clone's lock; what changed in plain words, null if nothing.
+   * At a run's end (05, section 7.1), once its worktree is removed: the bare clone's configuration
+   * and hooks restored to what the daemon wrote, under the bare clone's lock; what changed in
+   * plain words, null if nothing. Skipped while another run's worktree of the repository exists
+   * (working, waiting or paused): what it set up (husky's hooks, for example) keeps working, and
+   * the last run to end restores. Credentialed commands never read that configuration, so
+   * waiting costs nothing for the token.
    */
   restoreConfig(bare: string, cloneUrl: string): Promise<string | null> {
-    return this.locked(bare, () => restoreBareConfig(this.options.git, bare, cloneUrl));
+    return this.locked(bare, async () => {
+      const others = await this.otherWorktrees(bare);
+      if (others.length > 0) {
+        this.options.log.info(
+          { worktrees: others },
+          "Git configuration not restored: another run's worktree of the repository exists",
+        );
+        return null;
+      }
+      return restoreBareConfig(this.options.git, bare, cloneUrl);
+    });
+  }
+
+  /** The worktrees of the bare clone, after forgetting those whose folder is gone. */
+  private async otherWorktrees(bare: string): Promise<string[]> {
+    const { git } = this.options;
+    await git.exec(['-C', bare, 'worktree', 'prune']);
+    const listed = await git.run(['-C', bare, 'worktree', 'list', '--porcelain']);
+    const worktrees: string[] = [];
+    let path: string | null = null;
+    for (const line of listed.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice('worktree '.length);
+      // The bare clone itself is listed first, marked `bare`.
+      else if (line === '' && path !== null) {
+        worktrees.push(path);
+        path = null;
+      } else if (line === 'bare') path = null;
+    }
+    if (path !== null) worktrees.push(path);
+    return worktrees;
   }
 
   /**

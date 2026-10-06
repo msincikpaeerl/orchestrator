@@ -485,7 +485,7 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.ticket,
     ' on ',
     quote(p.machine, null),
-    `: the Git configuration of ${p.repository} on that machine was changed during the run and restored at its end (information only) — ${shorten(p.changes)}`,
+    `: at its end, the Git configuration of ${p.repository} on that machine was found changed and restored (information only) — ${shorten(p.changes)}`,
   ],
 };
 

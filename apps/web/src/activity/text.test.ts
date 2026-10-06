@@ -159,7 +159,8 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     ticket: 'WEB-12',
     machine: 'Laptop',
     repository: 'octo-owner/web-shop',
-    changes: 'Settings added and removed: core.hookspath. Hook files removed: pre-commit.',
+    changes:
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath. Hook files added, removed: pre-commit.',
   },
   'ticket.submitted': {
     project: 'WEB',

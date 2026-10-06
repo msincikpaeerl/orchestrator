@@ -213,7 +213,8 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     branch: null,
     push: null,
     headMoved: null,
-    gitConfigRestored: 'Settings added during the run, removed: core.hookspath.',
+    gitConfigRestored:
+      'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath.',
   });
 
   // A run's process scope could not be created: the checks again while connected.

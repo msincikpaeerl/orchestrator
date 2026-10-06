@@ -240,12 +240,20 @@ export async function restoreBareConfig(
   await restoreMainWorktree(git, bare, changes);
   await restoreHooks(bare, changes);
   const parts: string[] = [];
-  if (changes.added.size > 0)
-    parts.push(`Settings added during the run, removed: ${list(changes.added)}.`);
+  if (changes.added.size > 0) parts.push(`Settings added, removed: ${list(changes.added)}.`);
   if (changes.setBack.size > 0) parts.push(`Settings changed, set back: ${list(changes.setBack)}.`);
   if (changes.hooks.size > 0) parts.push(`Hook files added, removed: ${list(changes.hooks)}.`);
   if (changes.unreadable.size > 0) {
     parts.push(`Files Git could not read, written again: ${list(changes.unreadable)}.`);
   }
-  return parts.length === 0 ? null : parts.join(' ').slice(0, TEXT_CEILING);
+  // Found at the end, not necessarily made by this run: the restore waits for the last run of
+  // the repository to end, so another one may have made the change.
+  return parts.length === 0
+    ? null
+    : [
+        'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored.',
+        ...parts,
+      ]
+        .join(' ')
+        .slice(0, TEXT_CEILING);
 }
