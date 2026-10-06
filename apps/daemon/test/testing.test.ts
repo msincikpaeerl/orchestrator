@@ -1,4 +1,7 @@
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeConfig } from '../src/config.js';
@@ -40,6 +43,32 @@ async function closedPort(): Promise<number> {
 }
 
 describe('test helpers', () => {
+  it("starts no background Git maintenance from a test's own commits", async () => {
+    // Git starts a detached `git maintenance run --auto` after a commit, which can outlive the
+    // test and write in a repository while its home is removed (ENOTEMPTY, lot 3 step D2 in CI).
+    const repository = join(home.root, 'repository');
+    await mkdir(repository);
+    const git = (args: string[]) =>
+      spawnSync('git', args, {
+        cwd: repository,
+        env: {
+          ...home.env,
+          PATH: process.env.PATH,
+          GIT_TRACE: '1',
+          GIT_AUTHOR_NAME: 'Test',
+          GIT_AUTHOR_EMAIL: 'test@example.com',
+          GIT_COMMITTER_NAME: 'Test',
+          GIT_COMMITTER_EMAIL: 'test@example.com',
+        },
+        encoding: 'utf8',
+      });
+    expect(git(['init', '--quiet']).status).toBe(0);
+    const committed = git(['commit', '--quiet', '--allow-empty', '-m', 'One']);
+    expect(committed.status).toBe(0);
+    expect(committed.stderr).toContain('built-in: git commit');
+    expect(committed.stderr).not.toMatch(/maintenance run|gc --auto/);
+  });
+
   it.each(['SIGKILL', 'SIGTERM'] as const)(
     'a daemon stopped with %s leaves no process of its test home',
     async (signal) => {

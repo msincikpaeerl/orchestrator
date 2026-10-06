@@ -18,6 +18,7 @@ import {
   createTestHome,
   fakeExecutable,
   linkSystemTool,
+  stopHomeProcesses,
   waitFor,
   type TestHome,
 } from './testing.js';
@@ -45,6 +46,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await server.close();
+  await stopHomeProcesses(home);
   await home.remove();
 });
 

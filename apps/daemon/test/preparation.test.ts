@@ -12,6 +12,7 @@ import {
   captureLogger,
   createTestHome,
   linkSystemTool,
+  stopHomeProcesses,
   type TestHome,
 } from './testing.js';
 
@@ -41,6 +42,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await stopHomeProcesses(home);
   await home.remove();
 });
 
