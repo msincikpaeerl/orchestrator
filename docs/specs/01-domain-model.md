@@ -179,6 +179,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | claude_session_id | Claude Code session, used to resume after a pause. |
 | worktree_path | Git worktree used by the run. |
 | started_at, ended_at | Timestamps. |
+| stop_sent_at, end_reported_at | When the server sent `run.stop`, and when the daemon reported the run's end: between them, and at most MCP call timeout plus Longest push after `run.stop`, a run the server ended is **ending** and may still get a push credential for its end push (05, section 7; lot 3 step D2). |
 | working_time, waiting_time | Totals kept by the server at each status change (owner's decision, lot 2 step L): working counts the time in `starting` and `running`, waiting the time in `waiting_human` and `paused_quota`; `queued` and `dispatched` count in neither. With `status_since` (when the current status began), a screen adds the current period of an active run when it shows it. |
 | outcome | Summary written by the agent at the end. |
 | branch_head, commits | Reported by the daemon at the end of the run: the ticket branch's head and the commits ahead of the base branch (hash, subject). |

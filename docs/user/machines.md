@@ -74,6 +74,8 @@ Claude Code itself tells every agent the e-mail address of the Claude account it
 
 For the same reason, an agent could pretend to be its own session and send the Orchestrator false news about its run (for example that it finished a step). The Orchestrator limits the harm: each run's key only allows actions on that run's own ticket, so an agent can never change another ticket or touch another project. It can only propose new tickets in its project, which wait for you to accept or reject them.
 
+At the end of every run, the daemon also puts back the Git settings and hooks of its copy of the project, which every run of that project on this machine shares, as it wrote them: an agent may have changed them, on purpose or through a tool (husky, for example, sets where Git finds its hooks). When something had changed, [Activity](activity.md) shows "Git configuration restored", naming the settings and hook files, never their values. This is information only: nothing is refused, and nothing needs you. A run waiting for your answer on the same project keeps its copy and its own commit author.
+
 When a run's session closes (the run ends, or a run waiting for your answer is paused), the Orchestrator stops every program the agent left running, even one started to keep running on its own (with `nohup` or `setsid`), so nothing goes on working in a folder that is then removed.
 
 Your GitHub token is never stored on the machine. The daemon receives it from the Orchestrator for one Git command at a time, keeps it only in memory during that command, and never shows it to the agents. From version 0.4.0 the daemon fetches and pushes in a separate place it prepares itself: it never reads the Git settings of the project, of your user or of your computer, which an agent can change, so a setting an agent added cannot send the token to another computer or to another program.
@@ -282,6 +284,8 @@ Type these commands on the machine, in its Ubuntu terminal:
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
 If a run fails at its start with "Downloading the project from GitHub took longer than Longest push": the machine could not download the project from GitHub within that limit. The first download of a project on a new machine is the longest, since it brings the project's whole history; later runs download only what changed. Try **Run now** again, or raise **Longest push** in Settings > Limits (the MCP call timeout plus Longest push must stay below the Claude Code MCP tool timeout, so raise that one first if the Orchestrator refuses). Such a run counts as a failed attempt in this version.
+
+If a run fails at its start with "The ticket branch … is checked out by another run on this machine": a run of the same ticket on that machine still waits for your answer or is paused, holding the branch (this happens only when that run was stopped while the machine was offline). Its branch is left as it is. Wait until the machine is online again: the old run is stopped when it reconnects, and **Run now** works again.
 
 If the machine can reach GitHub only through a proxy: from version 0.4.0 the daemon ignores Git's own settings (`~/.gitconfig` and the computer's Git settings), so a proxy set there with `git config --global http.proxy` is not used when it fetches or pushes. Set the proxy in the daemon's environment instead (`https_proxy`, and `no_proxy` for the addresses to reach directly) and restart the daemon.
 

@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C and D1 done; step D split into D1, D2 and D3)
+> Status: in progress (steps A, B, C, D1 and D2 done; step D split into D1, D2 and D3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -246,7 +246,7 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - **Longest push also limits the download of the project at a run's start** (the session's choice, kept by the owner on conditions): one setting for now, its description saying so and that the first download on a new machine is the longest. A separate fetch limit was deliberately not added; it may be needed later, because the rule tying Longest push to the Claude Code MCP tool timeout concerns only the push at submission, inside the agent's tool call, while a first download of a large project can need far longer than a push. A download stopped by it ends the run `crashed` (failure `crash`, counted as a failed attempt, like any preparation failure), with the machine's words naming the setting and its value, now shown on the run page (`endDetail`) and in Help > Machines > Troubleshooting.
 - ADR 0034 records the isolated credentialed command, the options rejected and what stays open.
 
-### [ ] D2. Run ends, reviews and preparation
+### [x] D2. Run ends, reviews and preparation
 
 - **The push at a run's end**, best effort, for an `implement` or `fix_review` run that ends with commits not on GitHub (failure, give up, timeout, **Stop run**), after the scope stop and the sweep, with the result in `run.state`. A failure never changes the run's outcome.
 - **"Ending"** on the server: a run the server ended by `run.stop` (**Stop run**, ticket cancelled, `not_active`) whose machine has not reported its end yet. The server records when it sent `run.stop`; a `push` credential is given from then until the end report, and at most MCP call timeout plus Longest push after it. A run the daemon ends by itself is still `running` until its end report. Refusals tested: another machine, another repository, a review run, a run ended longer ago than that bound.
@@ -256,6 +256,24 @@ What stays open, written in 05 section 7 and Help: an agent runs as the owner's 
 - `git merge` added to the builders' allowlist; the common rules say how to bring the base branch in (`git merge origin/<base>`).
 
 **Done when** daemon tests show the end push at a failure, a give-up, a timeout and **Stop run**; a failed end push leaving the outcome unchanged; a review run never pushing and reporting a moved head; the fast-forward after **Update branch**; a diverged branch reported and never overwritten; a waiting run's branch left alone; a changed configuration restored with its event; and server tests show the "ending" refusals above.
+
+Added by the owner at the start of the step (2026-10-06):
+
+- the end push gets its credential on every way a run can end with commits not on GitHub: a failure, a give-up, each timeout (idle and Longest run), reminders used up, **Stop run** and a cancelled ticket, one test per way, each waiting for the branch on the Git test server;
+- the end push reports through `run.state` before the end is reported, and a slow or failed end push never keeps the worktree, the session or the run's processes alive beyond Longest push;
+- the Git configuration is restored under the bare clone's lock, and a waiting or paused run of the same repository still works afterwards (its worktree, its commit author); the event says what changed in plain words, with no file content that could hold a secret;
+- `git merge`: the rules added and why those forms are in the summary, and the profiles' versions go up; the allowlist smoke test stays the owner's, in step N;
+- a push answered "not found" (HTTP 404) is `refused`, not `unreachable` (test first).
+
+*Done 2026-10-06.* Choices made in the step:
+
+- **Review runs** (the owner's position, question 5 of the step): the worktree is detached at GitHub's head of the ticket branch as fetched at preparation; the local branch is neither created nor moved, and a local branch ahead of GitHub is left alone. "Head moved" is true when the worktree's head or the local ticket branch differs at the end from the start (both kept in `state.json`; a head that cannot be read counts as moved); a moved head replaces the run's end reason with `review_branch_moved`. The branch reported at the end is the worktree's head. A ticket branch not on GitHub fails the preparation ("nothing to review"). 05 section 4.2 is reworded; no protocol change (`headMoved` and `review_branch_moved` came with step B).
+- **Order at the end**: session closed, scope stopped and processes swept, branch read (review: head moved), worktree removed, configuration restored, end push, end reported. So the session, the processes and the worktree are gone before the push starts; the report waits for the push (at most Longest push, plus the wait for the bare clone's lock). The daemon's acknowledgement of `run.stop` still comes once the run has ended, as in lot 2.
+- **The end push** is tried for every end reason but `submitted`, when the branch holds commits on no branch fetched from GitHub. After any successful push the daemon sets `refs/remotes/origin/<branch>` to the pushed head (no credential), so the end push after a submission push, and `status`, do not count it as not on GitHub.
+- **Ending on the server**: `runs.stop_sent_at` (set at every `run.stop`: **Stop run**, a cancelled ticket or a ticket marked done, `not_active`) and `runs.end_reported_at` (migration 0015). The bound uses the current global settings at the credential request.
+- **The restored configuration's event needs a protocol field**: `run.state` `ended` gains `gitConfigRestored` (plain words, null when nothing changed; protocol 2 is not released, so no version change). The server writes `run.git_config_restored` (Activity: "Git configuration restored"), masked again; no "Needs you" item. What is restored and kept is in 05 section 7.1.
+- **Fast-forward at preparation** uses `update-ref` with the old head; a ticket branch checked out by another worktree (a waiting or paused run) fails the new run's preparation with a plain message instead of Git's, and is never moved.
+- **`git merge` rules**: `Bash(git merge origin/*)`, `Bash(git merge --no-edit origin/*)` and `Bash(git merge --abort)` (03 section 2.2): only branches fetched from GitHub can be merged; `--abort` undoes a merge the agent cannot finish; a conflict is finished with `git add` and `git commit`. The versions of the Architect and the Web Developer go up by themselves at the server's next start (their files and the common rules changed).
 
 ### [ ] D3. Server and ticket page
 
