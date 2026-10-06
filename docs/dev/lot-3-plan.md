@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1 and D2 done; step D split into D1, D2 and D3)
+> Status: in progress (steps A, B, C, D1, D2 and D3 done; step D split into D1, D2 and D3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -277,13 +277,25 @@ Added by the owner at the start of the step (2026-10-06):
 - **Fast-forward at preparation** uses `update-ref` with the old head; a ticket branch checked out by another worktree (a waiting or paused run) fails the new run's preparation with a plain message instead of Git's, and is never moved.
 - **`git merge` rules**: `Bash(git merge origin/*)`, `Bash(git merge --no-edit origin/*)` and `Bash(git merge --abort)` (03 section 2.2): only branches fetched from GitHub can be merged; `--abort` undoes a merge the agent cannot finish; a conflict is finished with `git add` and `git commit`. The versions of the Architect and the Web Developer go up by themselves at the server's next start (their files and the common rules changed).
 
-### [ ] D3. Server and ticket page
+### [x] D3. Server and ticket page
 
 - The branch head on GitHub stored per ticket from every `pushed` result (submission and end), with the machine holding commits not on GitHub.
 - The ticket page shows "on GitHub" or "on machine X, not on GitHub yet"; **Run now**'s machine rule (07 section 3) applies only to commits not on GitHub, and the next run takes a pushed branch from GitHub on any machine.
 - Help (Tickets), CHANGELOG.
 
 **Done when** a daemon test shows **Run now** taking a pushed branch on another machine; server tests show the stored head and the machine rule; the end-to-end test shows both states on the ticket page, on desktop and phone.
+
+Added by the owner at the start of the step (2026-10-06): one server test per state of the branch, and the end-to-end test showing each wording on the ticket page, on desktop and phone; the stored head worded as what was pushed and when, never as GitHub's branch now; tickets left by 0.3.0 reading as before, with Run now's machine rule.
+
+*Done 2026-10-06.* Choices made in the step:
+
+- **What the server stores**: per ticket, the last push done (head, when, machine, and the commits ahead of the base the pushed head held, taken from the branch report read with it: the facts at a submission, the end report at a run's end) and the latest failed push since (reason, masked message, when, machine), cleared by the next push done; per run, its latest push and when (migration 0016). A reported commit is "not on GitHub" when no push held it: compared by commit, not by head, so a report older than the push (a submission push before the run's end report) or a commit made after an accepted submission reads right. Events `run.branch_pushed` and `run.branch_push_failed`.
+- **The five states** (01, 02 and 07 updated): no commits reported yet; only on a machine (nothing pushed, the 0.3.0 wording, with the failure when a push failed); every commit pushed; newer commits only on a machine; diverged (only known from a push refused as `diverged`). Run now takes any machine for the first and third, and only the holding machine for the others; its refusal counts the commits not on GitHub. A revoked holder loses only those, and the run starts from the branch as last pushed.
+- **The push before a `ticket_submit`** is recorded in its own transaction before the call is checked, so a refused submission (or a call refused for any reason) still records it.
+- **The first message** says the branch already has commits when a push holds some, so a run on a machine that never ran the ticket continues them.
+- **The run page** no longer says "not on GitHub yet" (false after a push): "on machine X, as this run left it", with the run's own push. The comment of a counted failure says "The branch … was pushed to GitHub" when every reported commit is.
+- **Not seen by the server** (written in 01 and Help): a push the daemon made but could not report (the server unreachable during a `ticket_submit`) leaves the page saying "not on GitHub yet", the safe side; the next push or step J's reading corrects it.
+- The daemon needed no change: a machine without the local branch already started from GitHub's (`origin/<branch>`). The daemon test (`run-end.test.ts`, "another machine") passes on `main` too; the step's fix is the server's machine rule. The harness gained `otherMachine` (its own `ORCHESTRATOR_HOME` and tmux server).
 
 ### [ ] E. GitHub layer and the owner's check of the real GitHub
 
@@ -353,6 +365,7 @@ Added by the owner at the start of the step (2026-10-06):
 - The pull request opened or updated by the server on an accepted submission, its description from the template `agents/templates/pull-request.md`; workflow changes flagged in it and on the ticket.
 - Until step G1, an accepted submission ends the run and the ticket goes to `in_review` with the pull request link (lot 2's meaning plus the pull request: the owner checks it).
 - Ticket page: pull request link, DoD report with each check's result. `push_failed` with its "Needs you" item. The template `implement.md` and the common rules updated for the full submission.
+- **A diverged branch** (from step D3): a ticket whose last push was refused as `diverged` runs only on the machine holding its commits, and every push is refused again until the branches are joined. Decide here how the run gets out of it: its first message telling the agent to `git merge origin/<ticket branch>` (allowed since D2), and the `push_failed` "Needs you" item saying what happened.
 - `docs/user/`: Tickets ("Submission and the pull request"), Needs you, `github-token.md` rewritten for 0.4.0; CHANGELOG.
 
 **Done when** integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed`; Playwright on both viewports shows a submitted ticket with its pull request link and checks.
@@ -425,6 +438,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - **Cancel** closes the pull request; the next accepted submission of a reopened ticket reopens it.
 - "Needs you" pull requests to merge (link, review summary or "review skipped", CI, conflicts and workflow flags).
 - Clean-up after a merge (owner's choice, option A corrected): the server deletes the ticket's branch on GitHub unless another open pull request uses it (Contents write), and a branch GitHub already deleted counts as deleted. The daemon deletes its local ticket branch when the server says the ticket's pull request is merged and the local head is the head that was merged (nothing unpushed): it never compares commits with the base branch, which a squash merge would defeat. The worktree is already removed at each run's end (except for waiting and paused runs). After a cancellation nothing is deleted (04 section 2: "closed but kept"), so **Reopen** finds the work.
+- **The stored GitHub head refreshed** (from step D3): at each read of a ticket's pull request (G1's CI poll and this step's poll), the server compares the pull request's `head.sha` with the last push it recorded. A head GitHub moved (**Update branch**, a push by hand) or a deleted branch is shown on the ticket page as a change made on GitHub; this step decides with the owner whether the machine rule and the "not on GitHub" commits use it. A ticket without a pull request is not read: its page keeps the D3 wording ("Last pushed to GitHub on …").
 - Help: merging, closed pull requests, conflicts; CHANGELOG.
 
 **Done when** tests with the fake GitHub cover: a merge to `done` (dependents unblocked), a merge during `in_review` with a run active, a pull request closed then reopened, cancel closing it, conflicts, and the clean-up: the GitHub branch deleted after a merge, a branch GitHub already deleted accepted, a branch another open pull request uses kept, the local branch deleted after a squash merge, a local branch with an unpushed commit kept, nothing deleted after a cancellation. Playwright: "Needs you" lists a pull request to merge, which becomes `done` after the fake merge without reload.
