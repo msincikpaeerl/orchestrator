@@ -12,6 +12,7 @@ import {
   RunLogResponse,
   TicketDetail,
   type McpResult,
+  type PushResult,
   type RunRefusal,
   type RunStart,
   type RunState,
@@ -191,6 +192,7 @@ function state(
         reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
         detail?: string | null;
         branch?: { name: string; head: string; commitsAhead: typeof COMMITS } | null;
+        push?: PushResult | null;
         gitConfigRestored?: string | null;
       },
 ): RunState {
@@ -210,7 +212,7 @@ function state(
         reason: payload.reason,
         detail: payload.detail ?? null,
         branch: payload.branch ?? null,
-        push: null,
+        push: payload.push ?? null,
         headMoved: null,
         gitConfigRestored: payload.gitConfigRestored ?? null,
       },
@@ -311,9 +313,13 @@ describe('Run now', () => {
     expect(detail.status).toBe('in_progress');
     expect(detail.branch).toEqual({
       name: 't/1-contact-form',
+      where: 'no_commits',
       machine: null,
       head: null,
       commits: [],
+      notOnGitHub: [],
+      pushed: null,
+      pushFailure: null,
     });
     const statuses = (await eventTypes('run.status_changed')).map(({ payload: p }) => p);
     expect(statuses).toEqual([
@@ -926,6 +932,306 @@ describe('revoking a machine (01, section 3.8)', () => {
     await call('POST', `/api/runs/${second.id}/stop`);
     await started(other.daemon);
     expect(comments(await ticket()).filter((body) => body === lost)).toHaveLength(1);
+  });
+});
+
+const C1 = '1'.repeat(40);
+const C2 = '2'.repeat(40);
+const ONE = { hash: C1, subject: 'Add the contact form' };
+const TWO = { hash: C2, subject: 'Test the e-mail check' };
+/** The branch with its first commit, then with a second one on top. */
+const first = { name: 't/1-contact-form', head: C1, commitsAhead: [ONE] };
+const second = { name: 't/1-contact-form', head: C2, commitsAhead: [TWO, ONE] };
+const BRANCH_URL = 'https://github.com/octo-owner/bakery/tree/t/1-contact-form';
+
+/** A `ticket_submit` with the daemon's facts: its push made before the call (05, section 4.9). */
+async function submit(
+  daemon: ScriptedDaemon,
+  runToken: string,
+  workspace: { branch: typeof first; push: PushResult | null },
+  status: 'met' | 'not_met' = 'met',
+): Promise<McpResult['payload']> {
+  const answer: ServerMessage = await daemon.request({
+    type: 'mcp.call',
+    id: randomUUID(),
+    payload: {
+      tool: 'ticket_submit',
+      runToken,
+      input: {
+        criteria: [{ index: 0, status, justification: 'Checked by its test' }],
+        tests: { paths: ['src/contact.test.ts'], justification: null },
+        docs: { paths: [], justification: 'Nothing user-facing' },
+        adrs: [],
+        summary: 'The contact form is done',
+      },
+      workspace: { clean: true, changedFiles: null, ...workspace },
+    },
+  });
+  if (answer.type !== 'mcp.result') throw new Error(`unexpected ${answer.type}`);
+  return answer.payload;
+}
+
+/** A run of the ticket on `daemon` that ends `crashed` with this branch and end push. */
+async function crashed(
+  daemon: ScriptedDaemon,
+  reported: typeof first,
+  push: PushResult | null,
+): Promise<Run> {
+  const { run: created } = await started(daemon);
+  await working(daemon, created.id);
+  await report(
+    daemon,
+    state(created.id, { state: 'ended', reason: 'crashed', branch: reported, push }),
+  );
+  return run(created.id);
+}
+
+describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
+  it('no commits: nothing reported or pushed yet', async () => {
+    await start();
+    const { daemon } = await laptop();
+    expect((await ticket()).branch).toBeNull();
+    await started(daemon);
+    expect((await ticket()).branch).toEqual({
+      name: 't/1-contact-form',
+      where: 'no_commits',
+      machine: null,
+      head: null,
+      commits: [],
+      notOnGitHub: [],
+      pushed: null,
+      pushFailure: null,
+    });
+  });
+
+  it('only on a machine, as tickets left by 0.3.0 read: Run now needs that machine', async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    // A protocol 1 end report has no push field: nothing was pushed.
+    const { run: created } = await started(daemon);
+    await connectedMachine('Desk', account.id);
+    await working(daemon, created.id);
+    const end = state(created.id, { state: 'ended', reason: 'crashed', branch: second });
+    if (end.payload.state !== 'ended') throw new Error('not an end');
+    const protocol1: Record<string, unknown> = { ...end.payload };
+    delete protocol1.push;
+    await report(daemon, { ...end, payload: protocol1 } as RunState);
+
+    expect((await ticket()).branch).toMatchObject({
+      where: 'machine',
+      machine: { id, name: 'Laptop' },
+      head: C2,
+      commits: [TWO, ONE],
+      notOnGitHub: [C2, C1],
+      pushed: null,
+      pushFailure: null,
+    });
+    expect((await run(created.id)).push).toBeNull();
+    expect(comments(await ticket()).at(-1)).toContain(
+      'The branch t/1-contact-form is kept on that machine.',
+    );
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect(await refusal()).toEqual({
+      reason: 'machine_unavailable',
+      machine: { id, name: 'Laptop' },
+      commits: 2,
+      unavailable: { why: 'disabled' },
+    });
+    expect((await call('POST', `/api/machines/${id}/enable`)).statusCode).toBe(200);
+    expect((await started(daemon)).run.machine.name).toBe('Laptop');
+  });
+
+  it('only on a machine after a failed push, with the failure shown', async () => {
+    await start();
+    const { id, daemon } = await laptop();
+    const ended = await crashed(daemon, second, {
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    });
+    const detail = await ticket();
+    expect(detail.branch).toMatchObject({
+      where: 'machine',
+      notOnGitHub: [C2, C1],
+      pushed: null,
+      pushFailure: {
+        machine: { id, name: 'Laptop' },
+        reason: 'unreachable',
+        message: 'Could not resolve host: github.com',
+      },
+    });
+    expect(ended.push).toMatchObject({ result: { status: 'failed', reason: 'unreachable' } });
+    expect(comments(detail).at(-1)).toContain(
+      'The branch t/1-contact-form is kept on that machine.',
+    );
+    expect((await eventTypes('run.branch_push_failed')).map(({ payload }) => payload)).toEqual([
+      {
+        project: 'WEB',
+        ticket: 'WEB-1',
+        machine: 'Laptop',
+        branch: 't/1-contact-form',
+        at: 'end',
+        reason: 'unreachable',
+        message: 'Could not resolve host: github.com',
+      },
+    ]);
+  });
+
+  it('pushed: shown with its date, and Run now takes the branch from GitHub on another machine', async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    const ended = await crashed(daemon, second, { status: 'pushed', head: C2 });
+    const desk = await connectedMachine('Desk', account.id);
+    const detail = await ticket();
+    expect(detail.branch).toMatchObject({
+      where: 'github',
+      machine: { id, name: 'Laptop' },
+      commits: [TWO, ONE],
+      notOnGitHub: [],
+      pushed: { head: C2, machine: { id, name: 'Laptop' }, url: BRANCH_URL },
+      pushFailure: null,
+    });
+    expect(Date.parse(detail.branch?.pushed?.at ?? '')).toBeLessThanOrEqual(Date.now());
+    expect(ended.push).toMatchObject({ result: { status: 'pushed', head: C2 } });
+    expect(comments(detail).at(-1)).toContain('The branch t/1-contact-form was pushed to GitHub.');
+    expect((await eventTypes('run.branch_pushed')).map(({ payload }) => payload)).toEqual([
+      {
+        project: 'WEB',
+        ticket: 'WEB-1',
+        machine: 'Laptop',
+        branch: 't/1-contact-form',
+        at: 'end',
+        head: C2,
+      },
+    ]);
+
+    // Laptop cannot take the run: Desk takes it, and continues the pushed commits.
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    const { run: next, start: message } = await started(desk.daemon);
+    expect(next.machine.name).toBe('Desk');
+    expect(message.payload.repository.ticketBranch).toBe('t/1-contact-form');
+    expect(message.payload.initialPrompt).toContain(
+      "The ticket's branch already has commits from an earlier attempt.",
+    );
+  });
+
+  it('part pushed: a commit made after an accepted submission stays on the machine', async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    const { run: created, start: message } = await started(daemon);
+    await connectedMachine('Desk', account.id);
+    await working(daemon, created.id);
+    const { runToken } = message.payload;
+    expect(
+      await submit(daemon, runToken, { branch: first, push: { status: 'pushed', head: C1 } }),
+    ).toMatchObject({ ok: true });
+    // Known before the run's end.
+    expect((await ticket()).branch).toMatchObject({
+      where: 'github',
+      pushed: { head: C1 },
+    });
+    expect((await eventTypes('run.branch_pushed')).map(({ payload }) => payload)).toMatchObject([
+      { at: 'submission', head: C1 },
+    ]);
+    // The agent committed again in the same turn; an accepted submission has no end push.
+    await report(
+      daemon,
+      state(created.id, { state: 'ended', reason: 'submitted', branch: second }),
+    );
+    const detail = await ticket();
+    expect(detail).toMatchObject({ status: 'in_review' });
+    expect(detail.branch).toMatchObject({
+      where: 'machine_ahead',
+      machine: { id, name: 'Laptop' },
+      commits: [TWO, ONE],
+      notOnGitHub: [C2],
+      pushed: { head: C1, machine: { id, name: 'Laptop' } },
+      pushFailure: null,
+    });
+
+    const changes = await call('POST', '/api/projects/WEB/tickets/1/request-changes', {
+      comment: 'Keep the newer commit',
+    });
+    expect(changes.statusCode, changes.body).toBe(200);
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect(await refusal()).toEqual({
+      reason: 'machine_unavailable',
+      machine: { id, name: 'Laptop' },
+      commits: 1,
+      unavailable: { why: 'disabled' },
+    });
+  });
+
+  it("diverged: the push refused because GitHub's branch has other commits; Run now needs the machine", async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    await crashed(daemon, first, { status: 'pushed', head: C1 });
+    await connectedMachine('Desk', account.id);
+    await crashed(daemon, second, {
+      status: 'failed',
+      reason: 'diverged',
+      message: 'GitHub has commits this branch does not have',
+    });
+    expect((await ticket()).branch).toMatchObject({
+      where: 'diverged',
+      notOnGitHub: [C2],
+      pushed: { head: C1 },
+      pushFailure: { reason: 'diverged', machine: { id, name: 'Laptop' } },
+    });
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect(await refusal()).toEqual({
+      reason: 'machine_unavailable',
+      machine: { id, name: 'Laptop' },
+      commits: 1,
+      unavailable: { why: 'disabled' },
+    });
+
+    // A later push done clears the failure.
+    expect((await call('POST', `/api/machines/${id}/enable`)).statusCode).toBe(200);
+    await crashed(daemon, second, { status: 'pushed', head: C2 });
+    expect((await ticket()).branch).toMatchObject({
+      where: 'github',
+      notOnGitHub: [],
+      pushed: { head: C2 },
+      pushFailure: null,
+    });
+  });
+
+  it('records the push made before a submission the server refuses', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created, start: message } = await started(daemon);
+    await working(daemon, created.id);
+    const answer = await submit(
+      daemon,
+      message.payload.runToken,
+      { branch: first, push: { status: 'pushed', head: C1 } },
+      'not_met',
+    );
+    expect(answer).toMatchObject({ ok: false, error: { code: 'DOD_FAILED' } });
+    expect((await ticket()).branch).toMatchObject({ where: 'github', pushed: { head: C1 } });
+    expect((await run(created.id)).push).toMatchObject({
+      result: { status: 'pushed', head: C1 },
+    });
+  });
+
+  it('a revoked machine loses only its commits not on GitHub; the run starts from GitHub', async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    await crashed(daemon, first, { status: 'pushed', head: C1 });
+    const desk = await connectedMachine('Desk', account.id);
+    await crashed(daemon, second, {
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Timed out',
+    });
+    expect((await call('POST', `/api/machines/${id}/revoke`)).statusCode).toBe(200);
+    const { run: next, start: message } = await started(desk.daemon);
+    expect(next.machine.name).toBe('Desk');
+    expect(message.payload.initialPrompt).toContain('from an earlier attempt.');
+    expect(comments(await ticket())).toContain(
+      'The earlier work on machine Laptop is no longer available: that machine was revoked, and the 1 commit of the branch t/1-contact-form on it not on GitHub is lost. This run starts from the branch as last pushed to GitHub, on machine Desk.',
+    );
   });
 });
 

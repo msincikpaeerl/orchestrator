@@ -4,6 +4,7 @@ import {
   CommitSummary,
   FailureReason,
   PauseReason,
+  PushResult,
   RunEndReason,
   RunPurpose,
   RunStatus,
@@ -173,6 +174,10 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     attempt: row.attempt,
     sessionAlive: row.sessionAlive,
     branch: { name: row.branchName, head: row.branchHead, commits: reportedCommits(row) ?? [] },
+    push:
+      row.push === null || row.pushAt === null
+        ? null
+        : { result: PushResult.parse(row.push), at: row.pushAt.toISOString() },
     estimatedUsageUsd: row.estimatedUsageUsd,
     progress:
       row.progressShown === null || row.progressShownAt === null
