@@ -3,10 +3,13 @@
 # GitHub code and the daemon's push rely on, with no Claude quota. For the owner only (working
 # rule 9): sessions never run it; CI runs its dry run against the tests' fake GitHub.
 #
-# Usage: tools/smoke/github-smoke.sh --repository <owner>/<name> [--ci-wait-minutes <n>]
-#   --repository       a test repository of your account with the project skeleton (for example
-#                      the one of a test project), never the Orchestrator's own repository
-#   --ci-wait-minutes  how long to wait for CI each time before giving up (default 15)
+# Usage: tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token]
+#          [--ci-wait-minutes <n>] [--owner-wait-minutes <n>]
+#   --repository          a test repository of your account with the project skeleton (for
+#                         example the one of a test project), never the Orchestrator's own
+#   --restricted-token    also ask for the second, restricted token of step 10 (see below)
+#   --ci-wait-minutes     how long to wait for CI each time before giving up (default 15)
+#   --owner-wait-minutes  how long to wait for each of your actions on GitHub (default 30)
 #   --dry-run, --github-url <address>   for the tests only: against the fake GitHub
 #
 # The token: create one for this check only. The Orchestrator never shows its saved token again.
@@ -23,14 +26,31 @@
 # script does not use them, so the token check of step 0 shows them Missing. Delete the token at
 # the end: https://github.com/settings/personal-access-tokens
 #
+# The second token (--restricted-token, step 10, optional): on the same page, a second
+# fine-grained token named orchestrator-smoke-restricted:
+#   Repository access: Only select repositories, the test repository only
+#   Expiration: the shortest
+#   Permissions (Repositories), at first only:
+#     Metadata         Read-only (added by GitHub)
+#     Contents         Read-only
+# The script checks that GitHub refuses it a push, a pull request, Actions runs and commit
+# statuses. Then it pauses and asks you to change Contents to Read and write on that token's
+# page (never Workflows, and never "Regenerate token": its value must stay the same); it then
+# checks that a push adding a workflow file is refused. Delete it at the end too.
+#
 # The token is typed or pasted without being shown, kept only in memory, given to the script's
 # Node.js helper through a pipe, and never written to disk, put in an argument or in the
 # environment of another program, or printed: anything GitHub sends back is masked.
 #
 # What it does in the repository: a branch orchestrator-smoke-<time> with a few commits to
-# docs/orchestrator-smoke.md, one pull request, 3 CI runs (about 2 minutes each). At the end it
-# closes the pull request and deletes the branch. If it stops early, it says what it left.
-# Steps 6 to 10 come with step E3 and print NOT ATTEMPTED.
+# docs/orchestrator-smoke.md and its pull request, 3 CI runs (about 2 minutes each), reviews
+# (one comment review stays), then asks you to merge it (a 4th CI run starts on the default
+# branch; the script does not wait for it). Then a second branch from the default branch as it
+# was before, whose pull request conflicts (no CI run): the script asks you to close it. At the
+# end it deletes its branches. What stays: the merge on the default branch (with
+# docs/orchestrator-smoke.md), the two closed pull requests and the workflow runs. If it stops
+# early, it says what it left. You act on GitHub twice (three times with the second token); each
+# time the script says what to click, with the link.
 #
 # The result block at the end lists each step and assumption with PASS, FAIL or NOT ATTEMPTED;
 # paste it back. Exit code: 0 when everything attempted passes, 1 when something fails, 3 when the
@@ -44,6 +64,8 @@ ulimit -c 0
 
 REPOSITORY=""
 CI_WAIT_MINUTES=15
+OWNER_WAIT_MINUTES=30
+RESTRICTED=0
 DRY_RUN=0
 GITHUB_URL=""
 
@@ -56,9 +78,11 @@ while (($# > 0)); do
   case "$1" in
     --repository) REPOSITORY="${2:?--repository needs a value}"; shift ;;
     --ci-wait-minutes) CI_WAIT_MINUTES="${2:?--ci-wait-minutes needs a value}"; shift ;;
+    --owner-wait-minutes) OWNER_WAIT_MINUTES="${2:?--owner-wait-minutes needs a value}"; shift ;;
+    --restricted-token) RESTRICTED=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --github-url) GITHUB_URL="${2:?--github-url needs a value}"; shift ;;
-    -h | --help) sed -n '2,37p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,57p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -83,6 +107,8 @@ fi
   guard_refuse "--repository needs <owner>/<name> (see --help)."
 [[ "$CI_WAIT_MINUTES" =~ ^[1-9][0-9]{0,2}$ ]] ||
   guard_refuse "--ci-wait-minutes needs a number of minutes, from 1 to 999."
+[[ "$OWNER_WAIT_MINUTES" =~ ^[1-9][0-9]{0,2}$ ]] ||
+  guard_refuse "--owner-wait-minutes needs a number of minutes, from 1 to 999."
 guard_not_own_repository "$REPO" "$REPOSITORY"
 
 TSX="$REPO/apps/server/node_modules/.bin/tsx"
@@ -102,9 +128,17 @@ echo "  Permissions: Metadata Read-only, Contents Read and write, Pull requests 
 echo "               Actions Read-only, Commit statuses Read-only"
 echo "  (not Administration or Workflows: the Orchestrator's token has them, this script does not"
 echo "  use them, and step 0 shows them Missing)"
-echo "Delete it when the script has finished: https://github.com/settings/personal-access-tokens"
+if ((RESTRICTED)); then
+  echo
+  echo "And a second fine-grained token, named orchestrator-smoke-restricted, for step 10:"
+  echo "  Repository access: Only select repositories, $REPOSITORY only"
+  echo "  Expiration: the shortest"
+  echo "  Permissions: Metadata Read-only and Contents Read-only, nothing else for now"
+  echo "  (the script pauses later and tells you how to change Contents to Read and write)"
+fi
+echo "Delete them when the script has finished: https://github.com/settings/personal-access-tokens"
 echo
-guard_confirm "in $REPOSITORY, a branch orchestrator-smoke-<time>, a pull request and 3 CI runs (Actions minutes), closed and deleted at the end."
+guard_confirm "in $REPOSITORY, branches orchestrator-smoke-<time>, two pull requests (you merge the first, the second stays closed), and 4 CI runs (Actions minutes, about 8 on a private repository); the merge stays on the default branch."
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/github-smoke.XXXXXX")" || stop "cannot create the scratch folder."
 chmod 700 "$SCRATCH"
@@ -120,7 +154,8 @@ trap 'exit 3' INT TERM
 # printf, to standard output: the pipe to the helper. Run as the left side of that pipe, so the
 # token lives only in this short-lived subshell, never in the script's own shell: no here-string
 # or here-document (bash may write those to a temporary file), no external command, no export.
-# If Ctrl+C comes while the token is typed, the terminal's echo is restored first.
+# If Ctrl+C comes while a token is typed, the terminal's echo is restored first. With
+# --restricted-token, the second token follows the same way, as the pipe's second line.
 read_token() {
   local token="" saved=""
   { set +x; } 2> /dev/null
@@ -131,11 +166,20 @@ read_token() {
   IFS= read -rs -p 'Paste the token (it is not shown), then press Enter: ' token
   [[ -t 0 ]] && echo >&2
   printf '%s\n' "$token"
+  token=""
+  if ((RESTRICTED)); then
+    IFS= read -rs -p 'Paste the second, restricted token (it is not shown), then press Enter: ' token
+    [[ -t 0 ]] && echo >&2
+    printf '%s\n' "$token"
+    token=""
+  fi
   unset token
 }
 
 HELPER_ARGS=(--repository "$REPOSITORY" --api-url "$API_URL" --git-url "$GIT_URL"
-  --scratch "$SCRATCH" --ci-wait-minutes "$CI_WAIT_MINUTES")
+  --scratch "$SCRATCH" --ci-wait-minutes "$CI_WAIT_MINUTES"
+  --owner-wait-minutes "$OWNER_WAIT_MINUTES")
 ((DRY_RUN)) && HELPER_ARGS+=(--dry-run)
+((RESTRICTED)) && HELPER_ARGS+=(--restricted-token)
 read_token | "$TSX" --conditions=source "$HELPER" "${HELPER_ARGS[@]}"
 exit "${PIPESTATUS[1]}"
