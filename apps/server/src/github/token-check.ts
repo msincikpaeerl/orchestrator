@@ -14,6 +14,7 @@ import {
   type GitHubResponse,
   GitHubUnreachableError,
 } from './client.js';
+import { unfitFields, unreadableText } from './answers.js';
 
 // The token check of 02, section 3.2 and ADR 0022. It never creates or changes anything on
 // GitHub: write permissions are probed with requests GitHub must refuse as invalid.
@@ -48,10 +49,15 @@ export async function inspectToken(client: GitHubClient, now = new Date()): Prom
   const response = await client.request({ method: 'GET', path: '/user' });
   if (response.status === 401) return { valid: false };
   const user = User.safeParse(response.body);
-  if (response.status !== 200 || !user.success) {
+  if (response.status !== 200) {
     throw new GitHubUnreachableError(
       `GET /user: unexpected answer HTTP ${String(response.status)}`,
     );
+  }
+  if (!user.success) {
+    const fields = unfitFields(user.error, response.body);
+    client.unreadable({ method: 'GET', path: '/user' }, response.status, fields);
+    throw new GitHubUnreachableError(`GET /user: ${unreadableText(fields)}`);
   }
   return {
     valid: true,
@@ -220,10 +226,15 @@ async function listOwnedRepositories(client: GitHubClient): Promise<RepositoryLi
       path: '/user/repos?affiliation=owner&sort=pushed&per_page=100',
     });
     const repositories = z.array(Repository).safeParse(response.body);
-    if (response.status !== 200 || !repositories.success) {
+    if (response.status !== 200) {
       return {
         unavailable: `GitHub did not list the repositories (HTTP ${String(response.status)})`,
       };
+    }
+    if (!repositories.success) {
+      const fields = unfitFields(repositories.error, response.body);
+      if (response.request) client.unreadable(response.request, response.status, fields);
+      return { unavailable: `GitHub did not list the repositories: ${unreadableText(fields)}` };
     }
     return repositories.data;
   } catch (error) {

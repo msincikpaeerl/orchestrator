@@ -16,6 +16,8 @@ export interface GitHubResponse {
   headers: Headers;
   /** Parsed JSON, or null when the body is empty or not JSON. */
   body: unknown;
+  /** The request answered, when the client sent it (for logs). */
+  request?: GitHubRequest;
 }
 
 export interface GitHubRequest {
@@ -25,19 +27,39 @@ export interface GitHubRequest {
   body?: unknown;
 }
 
-/** A file GitHub serves through a redirect: its end, or GitHub's answer when there is none. */
+/**
+ * A file GitHub serves through a redirect: how its reading ended (`end` of the file, `enough` when
+ * the reader needed no more, `ceiling` when `maxBytes` came first) and the bytes read; or GitHub's
+ * answer when there is no file.
+ */
 export type GitHubDownload =
-  { ok: true; text: string; truncated: boolean } | { ok: false; response: GitHubResponse };
+  | { ok: true; ended: 'end' | 'enough' | 'ceiling'; bytes: number }
+  | { ok: false; response: GitHubResponse };
 
 export interface GitHubClient {
   /** Never throws for an HTTP status; throws `GitHubUnreachableError` when no answer comes. */
   request(request: GitHubRequest): Promise<GitHubResponse>;
   /**
    * A `GET` GitHub answers with a redirect to a file on another host (a job's log): the file is
-   * downloaded without the API's Authorization header, and only its last `maxCharacters`
-   * characters are kept. Throws `GitHubUnreachableError` like `request`.
+   * downloaded without the API's Authorization header and given to `read` as it comes, at most
+   * `maxBytes` bytes; `read` returns false when it needs no more. Throws `GitHubUnreachableError`
+   * like `request`.
    */
-  download(path: string, maxCharacters: number): Promise<GitHubDownload>;
+  download(
+    path: string,
+    read: (chunk: Uint8Array) => boolean,
+    maxBytes: number,
+  ): Promise<GitHubDownload>;
+  /**
+   * Logs an answer the Orchestrator could not read (`answers.ts`): the request, GitHub's status
+   * and the fields that did not fit, never the body.
+   */
+  unreadable(request: GitHubRequest, status: number, fields: string[]): void;
+}
+
+/** Where the client logs (the server's Pino logger). */
+export interface GitHubLog {
+  warn(object: object, message: string): void;
 }
 
 export interface GitHubClientOptions {
@@ -47,6 +69,13 @@ export interface GitHubClientOptions {
   timeoutSeconds: number;
   /** Called with every answer, for example to record refusals (ADR 0022). */
   onResponse?: (request: GitHubRequest, response: GitHubResponse) => Promise<void>;
+  /** Where answers the Orchestrator cannot read are logged; nowhere when not given. */
+  log?: GitHubLog;
+}
+
+/** `GET /repos/o/r/pulls`: the method and the path, without the query. */
+export function describeRequest(request: GitHubRequest): string {
+  return `${request.method} ${request.path.split('?')[0] ?? request.path}`;
 }
 
 export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
@@ -83,7 +112,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
     } catch {
       body = null;
     }
-    const result = { status: response.status, headers: response.headers, body };
+    const result = { status: response.status, headers: response.headers, body, request };
     if (response.status >= 500) {
       throw new GitHubUnreachableError(
         `${request.method} ${request.path}: GitHub answered HTTP ${String(response.status)}`,
@@ -98,7 +127,14 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       return finish(request, await send(request, 'follow'));
     },
 
-    async download(path, maxCharacters) {
+    unreadable(request, status, fields) {
+      options.log?.warn(
+        { request: describeRequest(request), status, fields },
+        "GitHub's answer does not fit what the Orchestrator reads",
+      );
+    },
+
+    async download(path, read, maxBytes) {
       const request: GitHubRequest = { method: 'GET', path };
       const redirect = await send(request, 'manual');
       const location = redirect.headers.get('location');
@@ -130,32 +166,37 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
           response: { status: file.status, headers: file.headers, body: { message } },
         };
       }
-      return { ok: true, ...(await tail(file, maxCharacters)) };
+      return { ok: true, ...(await stream(file, read, maxBytes)) };
     },
   };
 }
 
-/** The last `maxCharacters` characters of a body, read as it comes. */
-async function tail(
+/** Gives the body to `read` as it comes, at most `maxBytes` bytes. */
+async function stream(
   response: Response,
-  maxCharacters: number,
-): Promise<{ text: string; truncated: boolean }> {
-  const decoder = new TextDecoder();
-  let text = '';
-  let truncated = false;
-  const keep = () => {
-    if (text.length > maxCharacters) {
-      text = text.slice(-maxCharacters);
-      truncated = true;
+  read: (chunk: Uint8Array) => boolean,
+  maxBytes: number,
+): Promise<{ ended: 'end' | 'enough' | 'ceiling'; bytes: number }> {
+  // A fetch body gives bytes.
+  const reader = (response.body as ReadableStream<Uint8Array> | null)?.getReader();
+  let bytes = 0;
+  if (!reader) return { ended: 'end', bytes };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return { ended: 'end', bytes };
+    if (bytes + value.length > maxBytes) {
+      const kept = value.subarray(0, maxBytes - bytes);
+      bytes += kept.length;
+      read(kept);
+      await reader.cancel();
+      return { ended: 'ceiling', bytes };
     }
-  };
-  for await (const chunk of response.body ?? []) {
-    text += decoder.decode(chunk as Uint8Array, { stream: true });
-    if (text.length > 2 * maxCharacters) keep();
+    bytes += value.length;
+    if (!read(value)) {
+      await reader.cancel();
+      return { ended: 'enough', bytes };
+    }
   }
-  text += decoder.decode();
-  keep();
-  return { text, truncated };
 }
 
 /**

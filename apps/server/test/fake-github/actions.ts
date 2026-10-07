@@ -59,10 +59,23 @@ export function skeletonWorkflow(defaultBranch = 'main'): FakeWorkflow {
           'Run actions/checkout@v7.0.1',
           'Run actions/setup-node@v7.0.0',
           'Check documentation links',
+          'Post Run actions/setup-node@v7.0.0',
+          'Post Run actions/checkout@v7.0.1',
           'Complete job',
         ],
+        commands: {
+          'Check documentation links':
+            'npm install --no-save --no-package-lock remark-cli@12.0.1 remark-validate-links@13.1.0 && npx remark . --frail --quiet --no-stdout',
+        },
+        // actions/setup-node declares `post-if: success()`; actions/checkout's post step always
+        // runs (the owner's run of 2026-10-06: skipped and success after the failure).
+        postIfSuccess: ['Post Run actions/setup-node@v7.0.0'],
       },
-      { name: 'ci', steps: ['Set up job', 'Check that every job passed', 'Complete job'] },
+      {
+        name: 'ci',
+        steps: ['Set up job', 'Check that every job passed', 'Complete job'],
+        commands: { 'Check that every job passed': 'exit 1' },
+      },
     ],
   };
 }
@@ -166,19 +179,67 @@ export function startRun(ctx: FakeContext, run: FakeRun): void {
       number: index + 1,
       status: index === 0 ? 'in_progress' : 'queued',
       conclusion: null,
+      startedAt: index === 0 ? now : null,
+      completedAt: null,
     }));
   }
 }
 
-/** A line of a job log: a timestamp with seven decimals, a space, the text (step E confirms). */
-function logLine(time: string, text: string): string {
-  return `${time.slice(0, 19)}.0000000Z ${text}`;
+/**
+ * A line of a job log as GitHub writes it: a timestamp with seven decimals, a space, the text
+ * (test/fixtures/github-job-log/, the owner's run of 2026-10-06).
+ */
+function logLine(time: number, text: string): string {
+  return `${new Date(time).toISOString().replace(/Z$/, '0000Z')} ${text}`;
+}
+
+/** Whole seconds, as the jobs answer gives a step's times. */
+function wholeSeconds(time: number): string {
+  return new Date(Math.floor(time / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+type StepKind = 'setup' | 'main' | 'post' | 'complete';
+
+function kindOf(name: string): StepKind {
+  if (name === 'Set up job') return 'setup';
+  if (name === 'Complete job') return 'complete';
+  return name.startsWith('Post ') ? 'post' : 'main';
+}
+
+/** What a step prints, as in the real log: the runner's lines, a step's group, a post step's. */
+function stepLines(job: FakeWorkflow['jobs'][number], name: string): string[] {
+  switch (kindOf(name)) {
+    case 'setup':
+      return [
+        "Current runner version: '2.337.0'",
+        '##[group]Operating System',
+        'Ubuntu',
+        '24.04.5',
+        'LTS',
+        '##[endgroup]',
+        `Complete job name: ${job.name}`,
+      ];
+    case 'complete':
+      return ['Cleaning up orphan processes'];
+    case 'post':
+      return ['Post job cleanup.', '[command]/usr/bin/git version', 'git version 2.55.0'];
+    case 'main': {
+      const command = job.commands?.[name];
+      if (command === undefined) {
+        return [`##[group]${name}`, 'with:', '  token: ***', '##[endgroup]'];
+      }
+      return [`##[group]Run ${command}`, command, 'shell: /usr/bin/bash -e {0}', '##[endgroup]'];
+    }
+  }
 }
 
 /**
  * Completes a run: every job succeeds except those with a failure, whose failing step fails
- * after printing its log and whose later steps are skipped. The run's conclusion is `failure`
- * when a job failed, else `success`.
+ * after printing its log. As on GitHub (the owner's run of 2026-10-06): the later steps are
+ * skipped, but the post steps of the actions that ran still run (skipped when their action runs
+ * them only after success) and `Complete job` succeeds. Steps get whole-second times; the log
+ * gets GitHub's format, the post steps in the same second as the failure. The run's conclusion
+ * is `failure` when a job failed, else `success`.
  */
 export function completeRun(ctx: FakeContext, run: FakeRun, failures: CiFailure[]): void {
   for (const failure of failures) {
@@ -190,24 +251,42 @@ export function completeRun(ctx: FakeContext, run: FakeRun, failures: CiFailure[
   if (run.status === 'queued') startRun(ctx, run);
   const now = ctx.now();
   for (const job of run.jobs) {
+    const plan = run.workflow.jobs.find((each) => each.name === job.name);
+    if (!plan) continue;
     const failure = failures.find((candidate) => candidate.job === job.name);
     const lines: string[] = [];
+    // The job's clock: a millisecond a line, more than a second for a step's command.
+    let clock = Date.parse(now) - 20_000 + 272;
+    const ran = new Set<string>();
     let failed = false;
     for (const step of job.steps) {
       step.status = 'completed';
-      if (failed) {
+      const kind = kindOf(step.name);
+      const skipped =
+        (kind === 'main' && failed) ||
+        (kind === 'post' &&
+          (!ran.has(step.name.slice('Post '.length)) ||
+            (failed && (plan.postIfSuccess ?? []).includes(step.name))));
+      if (skipped) {
         step.conclusion = 'skipped';
+        step.startedAt = null;
+        step.completedAt = null;
         continue;
       }
-      lines.push(logLine(now, `##[group]${step.name}`), logLine(now, '##[endgroup]'));
+      clock += kind === 'post' ? 15 : 20;
+      step.startedAt = wholeSeconds(clock);
+      for (const text of stepLines(plan, step.name)) lines.push(logLine((clock += 1), text));
+      if (kind === 'main') clock += 1_300;
+      ran.add(step.name);
       if (failure && failure.step === step.name) {
-        for (const text of failure.log.split('\n')) lines.push(logLine(now, text));
-        lines.push(logLine(now, '##[error]Process completed with exit code 1.'));
+        for (const text of failure.log.split('\n')) lines.push(logLine((clock += 1), text));
+        lines.push(logLine((clock += 1), '##[error]Process completed with exit code 1.'));
         step.conclusion = 'failure';
         failed = true;
       } else {
         step.conclusion = 'success';
       }
+      step.completedAt = wholeSeconds(clock);
     }
     job.status = 'completed';
     job.conclusion = failed ? 'failure' : 'success';
@@ -292,7 +371,14 @@ function jobJson(ctx: FakeContext, state: RepositoryState, job: FakeJob, run: Fa
     started_at: job.startedAt ?? run.createdAt,
     completed_at: job.completedAt,
     name: job.name,
-    steps: job.steps.map((step) => ({ ...step, started_at: null, completed_at: null })),
+    steps: job.steps.map((step) => ({
+      name: step.name,
+      number: step.number,
+      status: step.status,
+      conclusion: step.conclusion,
+      started_at: step.startedAt,
+      completed_at: step.completedAt,
+    })),
     labels: ['ubuntu-24.04'],
   };
 }

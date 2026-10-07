@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { answer, refusalOf, type GitHubResult } from './answers.js';
+import { ask, refusalOf, type GitHubResult } from './answers.js';
 import type { GitHubClient } from './client.js';
+import { JobLogReader, type JobLogReading } from './job-log.js';
 import { repoPath, type RepositoryRef } from './repositories.js';
 
 // What GitHub says about CI for a commit (04 section 3.1, 06 section 4.1; lot 3 step E1): its
@@ -12,11 +13,16 @@ import { repoPath, type RepositoryRef } from './repositories.js';
 // statuses" (https://docs.github.com/en/rest/commits/statuses). What the documentation does not
 // say is in the lot 3 plan's assumptions (A12 to A17), checked by the owner's smoke script.
 
+// Only the fields the Orchestrator uses are read, every other one is ignored; each is read as
+// GitHub documents it, nullable or optional included (checked against GitHub's OpenAPI
+// description in test/github-documented.test.ts).
+
 const PAGE_SIZE = 100;
 
 const Run = z.object({
   id: z.int().positive(),
-  name: z.string().nullable(),
+  // Optional and nullable: a run of a workflow file without `name:` (the file's path is shown).
+  name: z.string().nullish(),
   event: z.string(),
   status: z.string().nullable(),
   conclusion: z.string().nullable(),
@@ -52,11 +58,15 @@ export async function listCommitRuns(
   const runs: WorkflowRun[] = [];
   const filter = `head_sha=${encodeURIComponent(headSha)}${event ? `&event=${encodeURIComponent(event)}` : ''}`;
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/actions/runs?${filter}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, z.object({ workflow_runs: z.array(Run) }));
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/actions/runs?${filter}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.object({ workflow_runs: z.array(Run) }),
+    );
     if (!batch.ok) return batch;
     runs.push(
       ...batch.value.workflow_runs.map((run) => ({
@@ -80,7 +90,19 @@ const Step = z.object({
   number: z.int(),
   status: z.string(),
   conclusion: z.string().nullable(),
+  // Optional and nullable; whole seconds. They cut a failed step's part of the log.
+  started_at: z.string().nullish(),
+  completed_at: z.string().nullish(),
 });
+
+export interface WorkflowStep {
+  name: string;
+  number: number;
+  status: string;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
 
 const Job = z.object({
   id: z.int().positive(),
@@ -97,7 +119,7 @@ export interface WorkflowJob {
   status: string;
   conclusion: string | null;
   url: string | null;
-  steps: z.infer<typeof Step>[];
+  steps: WorkflowStep[];
 }
 
 /** The jobs of a run, with their steps and conclusions. */
@@ -108,11 +130,15 @@ export async function listRunJobs(
 ): Promise<GitHubResult<WorkflowJob[]>> {
   const jobs: WorkflowJob[] = [];
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/actions/runs/${String(runId)}/jobs?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, z.object({ jobs: z.array(Job) }));
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/actions/runs/${String(runId)}/jobs?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.object({ jobs: z.array(Job) }),
+    );
     if (!batch.ok) return batch;
     jobs.push(
       ...batch.value.jobs.map((job) => ({
@@ -121,30 +147,49 @@ export async function listRunJobs(
         status: job.status,
         conclusion: job.conclusion,
         url: job.html_url,
-        steps: job.steps ?? [],
+        steps: (job.steps ?? []).map((step) => ({
+          name: step.name,
+          number: step.number,
+          status: step.status,
+          conclusion: step.conclusion,
+          startedAt: step.started_at ?? null,
+          completedAt: step.completed_at ?? null,
+        })),
       })),
     );
     if (batch.value.jobs.length < PAGE_SIZE) return { ok: true, value: jobs };
   }
 }
 
+/** A step that failed: GitHub's conclusions other than success, skipped and neutral. */
+export function isFailedStep(step: WorkflowStep): boolean {
+  return ['failure', 'cancelled', 'timed_out'].includes(step.conclusion ?? '');
+}
+
 /**
- * The end of a job's log, at most `maxCharacters` characters. GitHub answers with a redirect to
- * a link valid one minute, downloaded without the API's Authorization header (A13); a job not
+ * The part of a finished job's log that belongs to each failed step (job-log.ts), at most
+ * `maxCharacters` characters each (**Longest CI log excerpt**), reading at most `maxReadBytes`
+ * bytes of the log (**Longest CI log read**), secrets masked. GitHub answers with a redirect to a
+ * link valid one minute, downloaded without the API's Authorization header (A13); a job not
  * finished yet has no log, 404 (A14).
  */
-export async function readJobLogEnd(
+export async function readFailedStepLogs(
   client: GitHubClient,
   repo: RepositoryRef,
-  jobId: number,
-  maxCharacters: number,
-): Promise<GitHubResult<{ text: string; truncated: boolean }>> {
+  job: WorkflowJob,
+  limits: { maxCharacters: number; maxReadBytes: number },
+): Promise<GitHubResult<JobLogReading>> {
+  const reader = new JobLogReader(job.steps.filter(isFailedStep), limits);
+  // Kept as it is: the reader notes a byte order mark and removes it.
+  const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
   const downloaded = await client.download(
-    `${repoPath(repo)}/actions/jobs/${String(jobId)}/logs`,
-    maxCharacters,
+    `${repoPath(repo)}/actions/jobs/${String(job.id)}/logs`,
+    (chunk) => reader.push(decoder.decode(chunk, { stream: true })),
+    limits.maxReadBytes,
   );
   if (!downloaded.ok) return { ok: false, refusal: refusalOf(downloaded.response) };
-  return { ok: true, value: { text: downloaded.text, truncated: downloaded.truncated } };
+  if (downloaded.ended === 'end') reader.push(decoder.decode());
+  return { ok: true, value: reader.finish(downloaded.ended) };
 }
 
 const Status = z.object({
@@ -182,11 +227,15 @@ export async function readCommitStatus(
 ): Promise<GitHubResult<CommitStatus>> {
   const statuses: CommitStatus['statuses'] = [];
   for (let page = 1; ; page++) {
-    const response = await client.request({
-      method: 'GET',
-      path: `${repoPath(repo)}/commits/${encodeURIComponent(ref)}/status?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
-    });
-    const batch = answer(response, 200, CombinedStatus);
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/commits/${encodeURIComponent(ref)}/status?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      CombinedStatus,
+    );
     if (!batch.ok) return batch;
     statuses.push(
       ...batch.value.statuses.map((status) => ({

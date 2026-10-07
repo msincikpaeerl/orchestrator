@@ -213,7 +213,7 @@ export class ProjectSetupRunner {
       'githubClockToleranceSeconds',
     ]);
     const tolerance = githubClockToleranceSeconds * 1000;
-    const createdAt = Date.parse(repo.createdAt);
+    const createdAt = Date.parse(repo.createdAt ?? '');
     if (Number.isNaN(createdAt) || createdAt < project.repoRequestedAt.getTime() - tolerance) {
       return false;
     }

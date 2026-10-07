@@ -6,7 +6,7 @@ import {
   type GitHubClient,
   type GitHubResponse,
 } from './client.js';
-import { ErrorBody, errorText } from './answers.js';
+import { ErrorBody, errorText, unfitFields, unreadableText } from './answers.js';
 import type { SkeletonFile } from './skeleton.js';
 
 // Repository operations of project creation (08, sections 3.1 and 3.4; ADR 0023). Every function
@@ -29,8 +29,8 @@ export interface GitHubRepository extends RepositoryRef {
   private: boolean;
   archived: boolean;
   defaultBranch: string;
-  /** When GitHub created the repository, ISO 8601 (GitHub's clock). */
-  createdAt: string;
+  /** When GitHub created the repository, ISO 8601 (GitHub's clock); null when GitHub does not say. */
+  createdAt: string | null;
 }
 
 const Repository = z.object({
@@ -39,7 +39,8 @@ const Repository = z.object({
   private: z.boolean(),
   archived: z.boolean(),
   default_branch: z.string(),
-  created_at: z.string(),
+  // Nullable in lists ("repository"), never null for one repository ("full-repository").
+  created_at: z.string().nullable(),
 });
 
 function toRepository(body: z.infer<typeof Repository>): GitHubRepository {
@@ -73,10 +74,18 @@ function refused(action: string, response: GitHubResponse): GitHubOperationError
   );
 }
 
-function parsed<T>(schema: z.ZodType<T>, action: string, response: GitHubResponse): T {
+/** The body read with `schema`; else an error naming the fields that did not fit, also logged. */
+function parsed<T>(
+  client: GitHubClient,
+  schema: z.ZodType<T>,
+  action: string,
+  response: GitHubResponse,
+): T {
   const result = schema.safeParse(response.body);
   if (!result.success) {
-    throw new GitHubOperationError(`Could not ${action}: unexpected answer from GitHub`);
+    const fields = unfitFields(result.error, response.body);
+    if (response.request) client.unreadable(response.request, response.status, fields);
+    throw new GitHubOperationError(`Could not ${action}: ${unreadableText(fields)}`);
   }
   return result.data;
 }
@@ -102,7 +111,7 @@ export async function listOwnerRepositories(client: GitHubClient): Promise<GitHu
       path: `/user/repos?affiliation=owner&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
     });
     if (response.status !== 200) throw refused(action, response);
-    const batch = parsed(z.array(Repository), action, response);
+    const batch = parsed(client, z.array(Repository), action, response);
     repositories.push(...batch.map(toRepository));
     if (batch.length < PAGE_SIZE) return repositories;
   }
@@ -117,7 +126,7 @@ export async function findRepository(
   const response = await client.request({ method: 'GET', path: repoPath(repo) });
   if (response.status === 404) return null;
   if (response.status !== 200) throw refused(action, response);
-  return toRepository(parsed(Repository, action, response));
+  return toRepository(parsed(client, Repository, action, response));
 }
 
 /**
@@ -140,7 +149,7 @@ export async function createRepository(
     },
   });
   if (response.status !== 201) throw refused(action, response);
-  return toRepository(parsed(Repository, action, response));
+  return toRepository(parsed(client, Repository, action, response));
 }
 
 const Ref = z.object({ object: z.object({ sha: z.string() }) });
@@ -169,13 +178,13 @@ async function readHead(
   });
   if (refResponse.status === 409) return null;
   if (refResponse.status !== 200) throw refused(`read the branch ${branch}`, refResponse);
-  const { sha } = parsed(Ref, `read the branch ${branch}`, refResponse).object;
+  const { sha } = parsed(client, Ref, `read the branch ${branch}`, refResponse).object;
   const commitResponse = await client.request({
     method: 'GET',
     path: `${repoPath(repo)}/git/commits/${sha}`,
   });
   if (commitResponse.status !== 200) throw refused(`read the commit ${sha}`, commitResponse);
-  const commit = parsed(Commit, `read the commit ${sha}`, commitResponse);
+  const commit = parsed(client, Commit, `read the commit ${sha}`, commitResponse);
   return { commit: sha, tree: commit.tree.sha, parents: commit.parents.length };
 }
 
@@ -224,7 +233,7 @@ export async function applySkeleton(
     },
   });
   if (treeResponse.status !== 201) throw refused('write the skeleton files', treeResponse);
-  const tree = parsed(Tree, 'write the skeleton files', treeResponse).sha;
+  const tree = parsed(client, Tree, 'write the skeleton files', treeResponse).sha;
   if (tree === head.tree) return { commit: head.commit, alreadyApplied: true };
 
   const commitResponse = await client.request({
@@ -233,7 +242,7 @@ export async function applySkeleton(
     body: { message: SKELETON_MESSAGE, tree, parents: [head.commit] },
   });
   if (commitResponse.status !== 201) throw refused('commit the skeleton', commitResponse);
-  const commit = parsed(Commit, 'commit the skeleton', commitResponse).sha;
+  const commit = parsed(client, Commit, 'commit the skeleton', commitResponse).sha;
 
   const refResponse = await client.request({
     method: 'PATCH',
@@ -263,7 +272,7 @@ export async function holdsOnlyInitialCommit(
     path: `${repoPath(repo)}/git/trees/${head.tree}`,
   });
   if (response.status !== 200) throw refused(action, response);
-  const { tree } = parsed(Tree, action, response);
+  const { tree } = parsed(client, Tree, action, response);
   return tree.length === 1 && tree[0]?.path === 'README.md' && tree[0].type === 'blob';
 }
 
@@ -301,7 +310,7 @@ export async function applyBranchProtection(
   const action = 'protect the default branch';
   const existing = await client.request({ method: 'GET', path: `${repoPath(repo)}/rulesets` });
   if (existing.status === 200) {
-    const rulesets = parsed(z.array(Ruleset), action, existing);
+    const rulesets = parsed(client, z.array(Ruleset), action, existing);
     if (rulesets.some((ruleset) => ruleset.name === RULESET_NAME)) return { status: 'applied' };
   } else if (!isPlanRefusal(existing)) {
     return { status: 'failed', reason: refused(action, existing).message };
@@ -369,7 +378,7 @@ export async function findMissingHarness(
   if (response.status !== 200) throw refused(action, response);
   // A truncated listing (over 100,000 entries) may miss files: such repositories are not
   // expected here, so elements not listed are reported missing.
-  const files = parsed(Tree, action, response)
+  const files = parsed(client, Tree, action, response)
     .tree.filter((entry) => entry.type === 'blob')
     .map((entry) => entry.path);
   return HARNESS_RULES.filter(([, found]) => !files.some(found)).map(([element]) => element);

@@ -10,7 +10,9 @@ import {
   startFakeGitHub,
   type FakeAccount,
   type FakeGitHub,
+  type FakeReply,
   type FakeRepository,
+  type RecordedRequest,
 } from './fake-github.js';
 
 // The owner's GitHub smoke script (lot 3 plan, steps E2 and E3) against the fake GitHub: its
@@ -433,6 +435,22 @@ function playActions(): () => void {
   };
 }
 
+/**
+ * The fake GitHub's answer to the first pull request opened, without its `head`: GitHub created
+ * it (201), but the GitHub layer cannot read the answer.
+ */
+function unreadableFirstPullRequest(): (request: RecordedRequest, reply: FakeReply) => FakeReply {
+  let done = false;
+  return (request, reply) => {
+    if (done || request.method !== 'POST' || !request.path.endsWith('/pulls')) return reply;
+    if (reply.status !== 201) return reply;
+    done = true;
+    const body = { ...(reply.body as Record<string, unknown>) };
+    delete body.head;
+    return { ...reply, body };
+  };
+}
+
 describe('the dry run of the GitHub smoke script', () => {
   it(
     'passes steps 1 to 5 with the daemon push, the token staying in memory only',
@@ -474,6 +492,18 @@ describe('the dry run of the GitHub smoke script', () => {
       for (const assumption of ['A2', 'A3', 'A7', 'A8', 'A9', 'A10', 'A11', 'A16', 'A18']) {
         expect(output).toMatch(new RegExp(`^${assumption}: NOT ATTEMPTED$`, 'm'));
       }
+      // A13: the counts on the log, and the failed step's own part with the broken link.
+      expect(output).toMatch(/with a timestamp: (\d+), ##\[group\]: \d+, ##\[error\]: 1/);
+      expect(output).toContain(
+        'byte order mark at the start: no; escape characters (colour codes): 0',
+      );
+      expect(output).toContain(
+        'post steps: Post Run actions/setup-node@v7.0.0 skipped, Post Run actions/checkout@v7.0.1 success; Complete job: success',
+      );
+      expect(output).toMatch(
+        /excerpt of "Check documentation links": cut by the step, \d+ lines; holds orchestrator-smoke-missing\.md: yes/,
+      );
+      expect(output).toContain(`Step "Check documentation links": its part of the job's log.`);
       // The daemon's reading of each diverged push, with Git's words.
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*fetch first/);
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*non-fast-forward/);
@@ -542,6 +572,84 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).not.toContain(PROBE);
       expect(code).toBe(3);
       expect(await leftInTemporaryFolder()).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'goes on after an unreadable 201, naming the fields, and cleans the pull request it found',
+    async () => {
+      // GitHub creates the pull request, but answers a body the layer cannot read (as the
+      // owner's first runs did): the script finds it by its branch, fails step 2 naming the
+      // field, and runs every later step.
+      github.alter = unreadableFirstPullRequest();
+      const stopActions = playActions();
+      const { code, output } = await run(dryRun(), `yes\n${TOKEN}\n`);
+      stopActions();
+      expect(output, output).toMatch(
+        /FAIL {2}open the pull request: GitHub answered HTTP 201, but the answer cannot be read/,
+      );
+      expect(output).toContain('head: expected object, received nothing');
+      expect(output).toMatch(/Pull request #1: /);
+      expect(output).toMatch(/NOT ATTEMPTED {2}A5: the creation answer could not be read/);
+      // The result block names the field under the failed step.
+      expect(output).toMatch(
+        /^Step 2: FAIL .*\n {6}\| open the pull request: .*\n.*head: expected object, received nothing/m,
+      );
+      for (const step of [1, 3, 4, 5]) expect(output).toContain(`Step ${String(step)}: PASS`);
+      expect(output).toMatch(/^A6: PASS$/m);
+      expect(output).toMatch(/Pull request #1 closed/);
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(output).not.toContain(PROBE);
+      expect(code).toBe(1);
+      expect(github.pullRequest(repo, 1).state).toBe('closed');
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'lists a pull request created with an unreadable 201 among what it left, when it stops',
+    async () => {
+      github.alter = unreadableFirstPullRequest();
+      // No workflow: CI never finishes, and the script stops at step 3.
+      repo.workflows = [];
+      const { code, output } = await run(
+        [...dryRun(), '--ci-wait-minutes', '1'],
+        `yes\n${TOKEN}\n`,
+      );
+      expect(output, output).toMatch(/STOPPED at step 3\./);
+      expect(output).toMatch(/^Step 2: FAIL/m);
+      expect(output).toMatch(/Left on GitHub by this run, to remove by hand:/);
+      expect(output).toContain(`- pull request #1: ${github.url}/octo-owner/smoke-test/pull/1`);
+      expect(output).toMatch(/- branch orchestrator-smoke-\S+: /);
+      expect(code).toBe(1);
+      expect(github.pullRequest(repo, 1).state).toBe('open');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'stops when the pull request it created cannot be found either, saying it is left',
+    async () => {
+      const first = unreadableFirstPullRequest();
+      // The list of the branch's pull requests cannot be read either.
+      github.alter = (request, reply) =>
+        request.method === 'GET' && /\/pulls\?/.test(request.path)
+          ? { ...reply, body: (reply.body as Record<string, unknown>[]).map(() => ({})) }
+          : first(request, reply);
+      const { code, output } = await run(dryRun(), `yes\n${TOKEN}\n`);
+      expect(output, output).toMatch(
+        /FAIL {2}find the pull request of branch orchestrator-smoke-\S+: GitHub answered HTTP 200, but the answer cannot be read/,
+      );
+      expect(output).toContain('0.number: expected number, received nothing');
+      expect(output).toMatch(/STOPPED at step 2\./);
+      expect(output).toMatch(
+        /- a pull request from branch orchestrator-smoke-\S+, whose number could not be read: .*\/octo-owner\/smoke-test\/pulls\?q=is%3Apr%20is%3Aopen%20head%3Aorchestrator-smoke-/,
+      );
+      expect(output).toMatch(/- branch orchestrator-smoke-\S+: /);
+      expect(code).toBe(1);
+      expect(github.pullRequest(repo, 1).state).toBe('open');
     },
     TIMEOUT,
   );

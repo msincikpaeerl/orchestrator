@@ -42,6 +42,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Everything CI runs | `pnpm verify` then `pnpm test:e2e` (never `pnpm ci`: built-in pnpm command) |
 | Reset the owner password (dev) | `pnpm --filter server orchestrator reset-password` |
 | Database migration (new) | `pnpm --filter db migrate:generate` |
+| GitHub's documented answers for the fake GitHub (new endpoint or API version; downloads) | `pnpm --filter server exec tsx test/fake-github/documented/extract.ts` |
 | Claude Code probe (owner only, real Claude Code, lot 2 step H) | `tools/smoke/claude-code-probe.sh` (`--help`) |
 | Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
 | GitHub smoke test (owner only, real GitHub, lot 3 step E) | `tools/smoke/github-smoke.sh --repository <owner>/<name>` (`--help`) |

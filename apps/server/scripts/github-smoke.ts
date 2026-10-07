@@ -22,16 +22,24 @@ import {
 import pino from 'pino';
 import { z } from 'zod';
 import type { GitHubRefusal, GitHubResult } from '../src/github/answers.js';
-import { listCommitRuns, listRunJobs, readCommitStatus, readJobLogEnd } from '../src/github/ci.js';
+import {
+  listCommitRuns,
+  listRunJobs,
+  readCommitStatus,
+  readFailedStepLogs,
+} from '../src/github/ci.js';
 import type { WorkflowJob, WorkflowRun } from '../src/github/ci.js';
 import { createGitHubClient, type GitHubClient } from '../src/github/client.js';
 import {
   closePullRequest,
   deleteBranch,
+  findPullRequests,
   openPullRequest,
   readPullRequest,
+  type PullRequest,
 } from '../src/github/pull-requests.js';
 import { branchPath, findRepository, repoPath } from '../src/github/repositories.js';
+import { excerptHeading } from '../src/github/job-log.js';
 import { checkToken, inspectToken } from '../src/github/token-check.js';
 
 // The Node.js helper of tools/smoke/github-smoke.sh (lot 3 plan, step E): the owner's check of
@@ -71,6 +79,9 @@ const CHECKOUT = resolve(import.meta.dirname, '..', '..', '..');
 const PAGE = 'docs/orchestrator-smoke.md';
 /** The size of a log end kept, as **Longest CI log excerpt** gives it by default. */
 const LOG_EXCERPT = 4_000;
+/** How much of a job's log is read, as **Longest CI log read** gives it by default (20 MB). */
+const LOG_READ = 20 * 1_048_576;
+const LOG_LIMITS = { maxCharacters: LOG_EXCERPT, maxReadBytes: LOG_READ };
 
 // ---------------------------------------------------------------------------------------------
 // Output, masked
@@ -115,7 +126,11 @@ const ASSUMPTIONS = [
   'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26',
 ]; // prettier-ignore
 
-const stepVerdicts = new Map<number, { verdict: Verdict; answer: string }>();
+const stepVerdicts = new Map<number, { verdict: Verdict; failures: string[] }>();
+/** What failed in the current step, each with what GitHub answered: shown in the result. */
+let currentFailures: string[] = [];
+/** What failed while cleaning up, shown in the result. */
+const cleanUpFailures: string[] = [];
 const assumptionVerdicts = new Map<string, { verdict: Verdict; answers: string[] }>();
 const tokenLines: string[] = [];
 let currentStep = 0;
@@ -126,7 +141,10 @@ let gitVersion = 'unknown';
 function check(assumption: string | null, ok: boolean, what: string, answer = ''): boolean {
   say(`  ${ok ? 'PASS' : 'FAIL'}  ${assumption ? `${assumption}: ` : ''}${what}`);
   if (!ok && answer) say(quoted(answer));
-  if (!ok) currentFailed = true;
+  if (!ok) {
+    currentFailed = true;
+    if (!assumption) currentFailures.push(answer ? `${what}\n${answer}` : what);
+  }
   if (assumption) {
     const kept = assumptionVerdicts.get(assumption) ?? { verdict: 'PASS', answers: [] };
     if (!ok) {
@@ -146,13 +164,17 @@ function notAttempted(assumption: string, why: string): void {
 function startStep(step: number): void {
   currentStep = step;
   currentFailed = false;
+  currentFailures = [];
   const title = STEPS.find(([number]) => number === step)?.[1] ?? '';
   say();
   say(`Step ${String(step)}: ${title}`);
 }
 
 function endStep(): void {
-  stepVerdicts.set(currentStep, { verdict: currentFailed ? 'FAIL' : 'PASS', answer: '' });
+  stepVerdicts.set(currentStep, {
+    verdict: currentFailed ? 'FAIL' : 'PASS',
+    failures: currentFailures,
+  });
 }
 
 /** A step that cannot go on: the run stops here. */
@@ -168,28 +190,57 @@ function refusalText(refusal: GitHubRefusal): string {
   return `HTTP ${String(refusal.status)} ${refusal.kind}: ${refusal.message}`;
 }
 
-/** The value of a GitHub answer, or the step stops with GitHub's refusal. */
-function needed<T>(result: GitHubResult<T>, what: string): T {
+/** GitHub did what was asked (a 2xx), but the GitHub layer cannot read its answer. */
+function unreadable(refusal: GitHubRefusal): boolean {
+  return refusal.kind === 'unreadable';
+}
+
+/**
+ * The value of a GitHub answer; null when GitHub answered but the layer cannot read it: the step
+ * fails, naming the fields, and goes on without it. Any other refusal stops the step.
+ */
+function readable<T>(result: GitHubResult<T>, what: string): T | null {
   if (result.ok) return result.value;
-  return stop(what, refusalText(result.refusal));
+  if (!unreadable(result.refusal)) return stop(what, refusalText(result.refusal));
+  check(
+    null,
+    false,
+    `${what}: GitHub answered HTTP ${String(result.refusal.status)}, but the answer cannot be read`,
+    refusalText(result.refusal),
+  );
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------
 // What is left on GitHub, said when the script stops early
 
-const left = { branch: null as string | null, pullRequest: null as number | null };
+const left = {
+  branch: null as string | null,
+  pullRequests: [] as number[],
+  /** A pull request GitHub created whose number the script could not read nor find. */
+  unknownPullRequest: false,
+};
+
+function nothingLeft(): boolean {
+  return left.branch === null && left.pullRequests.length === 0 && !left.unknownPullRequest;
+}
 const WEB_URL = DRY_RUN ? GIT_URL : 'https://github.com';
 const repoWeb = `${WEB_URL}/${OWNER}/${NAME}`;
 
 function sayLeft(): void {
-  if (left.branch === null && left.pullRequest === null) {
+  if (nothingLeft()) {
     say('Nothing of this run is left on GitHub.');
     return;
   }
   say('Left on GitHub by this run, to remove by hand:');
-  if (left.pullRequest !== null) {
+  for (const number of left.pullRequests) {
     say(
-      `- pull request #${String(left.pullRequest)}: ${repoWeb}/pull/${String(left.pullRequest)} ("Close pull request" at the bottom of its page; GitHub keeps closed pull requests)`,
+      `- pull request #${String(number)}: ${repoWeb}/pull/${String(number)} ("Close pull request" at the bottom of its page; GitHub keeps closed pull requests)`,
+    );
+  }
+  if (left.unknownPullRequest) {
+    say(
+      `- a pull request from branch ${BRANCH}, whose number could not be read: ${repoWeb}/pulls?q=${encodeURIComponent(`is:pr is:open head:${BRANCH}`)} (open it, then "Close pull request")`,
     );
   }
   if (left.branch !== null) {
@@ -377,30 +428,37 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Waits for every Actions run of `head` to complete, at most **--ci-wait-minutes**. While a job
- * is not finished, reads its log once when `tryUnfinishedLog` (A14).
+ * is not finished, reads its log once when `tryUnfinishedLog` (A14). Null when the runs' answer
+ * cannot be read (the step has failed, naming the fields).
  */
 async function waitForCi(
   client: GitHubClient,
   head: string,
   pull: number,
   tryUnfinishedLog: boolean,
-): Promise<{ runs: WorkflowRun[]; unfinishedLog: GitHubResult<unknown> | null }> {
+): Promise<{ runs: WorkflowRun[]; unfinishedLog: GitHubResult<unknown> | null } | null> {
   const until = Date.now() + CI_WAIT_MINUTES * MINUTE_MS;
   say(
     `  Waiting for CI on ${head.slice(0, 7)} (at most ${String(CI_WAIT_MINUTES)} minutes, --ci-wait-minutes): ${repoWeb}/pull/${String(pull)}/checks`,
   );
   let unfinishedLog: GitHubResult<unknown> | null = null;
+  let tryLog = tryUnfinishedLog;
   for (;;) {
-    const runs = needed(await listCommitRuns(client, REPO, head), 'read the runs of the commit');
+    const runs = readable(await listCommitRuns(client, REPO, head), 'read the runs of the commit');
+    if (runs === null) return null;
     if (runs.length > 0 && runs.every((run) => run.status === 'completed')) {
       return { runs, unfinishedLog };
     }
-    if (tryUnfinishedLog && unfinishedLog === null) {
+    if (tryLog && unfinishedLog === null) {
       for (const run of runs.filter((each) => each.status !== 'completed')) {
-        const jobs = needed(await listRunJobs(client, REPO, run.id), 'read the jobs of a run');
+        const jobs = readable(await listRunJobs(client, REPO, run.id), 'read the jobs of a run');
+        if (jobs === null) {
+          tryLog = false;
+          break;
+        }
         const job = jobs.find((each) => each.status !== 'completed');
         if (job) {
-          unfinishedLog = await readJobLogEnd(client, REPO, job.id, LOG_EXCERPT);
+          unfinishedLog = await readFailedStepLogs(client, REPO, job, LOG_LIMITS);
           break;
         }
       }
@@ -552,47 +610,86 @@ async function filesHolding(folders: string[], text: string): Promise<string[]> 
   return found;
 }
 
+/**
+ * The open pull request of the run's branch that is not among `known`, found by its branch:
+ * the way to a pull request GitHub created with an answer the layer cannot read. Null when
+ * there is none, or when the list cannot be read either (the step fails, naming the fields).
+ */
+async function pullOfBranch(context: Context, known: number[]): Promise<number | null> {
+  const found = readable(
+    await findPullRequests(context.client, REPO, BRANCH, 'open'),
+    `find the pull request of branch ${BRANCH}`,
+  );
+  return found?.find((pull) => !known.includes(pull.number))?.number ?? null;
+}
+
 async function stepTwo(context: Context): Promise<void> {
   startStep(2);
-  const opened = needed(
-    await openPullRequest(context.client, REPO, {
-      head: BRANCH,
-      base: context.baseBranch,
-      title: `Orchestrator smoke test ${stamp}`,
-      body: "Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh). The script closes it and deletes its branch when it finishes; if it stopped early, close this pull request and delete the branch.",
-    }),
-    'open the pull request',
-  );
-  left.pullRequest = opened.number;
-  context.pull = opened.number;
-  say(`  Pull request #${String(opened.number)}: ${opened.url}`);
-  const reads = [`at creation: mergeable ${String(opened.mergeable)} (${opened.mergeableState})`];
-  let mergeable = opened.mergeable;
+  const opening = await openPullRequest(context.client, REPO, {
+    head: BRANCH,
+    base: context.baseBranch,
+    title: `Orchestrator smoke test ${stamp}`,
+    body: "Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh). The script closes it and deletes its branch when it finishes; if it stopped early, close this pull request and delete the branch.",
+  });
+  let opened: PullRequest | null = null;
+  if (opening.ok) {
+    opened = opening.value;
+  } else if (unreadable(opening.refusal)) {
+    // GitHub created it: the step fails, naming the fields; found by its branch, the pull
+    // request is used and cleaned up like the rest.
+    left.unknownPullRequest = true;
+    readable(opening, 'open the pull request');
+  } else {
+    stop('open the pull request', refusalText(opening.refusal));
+  }
+  const number = opened?.number ?? (await pullOfBranch(context, []));
+  if (number === null) {
+    return stop(`find the pull request GitHub created for ${BRANCH}: steps 3 to 5 need it`);
+  }
+  left.unknownPullRequest = false;
+  left.pullRequests.push(number);
+  context.pull = number;
+  say(`  Pull request #${String(number)}: ${opened?.url ?? `${repoWeb}/pull/${String(number)}`}`);
+  const reads = opened
+    ? [`at creation: mergeable ${String(opened.mergeable)} (${opened.mergeableState})`]
+    : [];
+  let mergeable = opened ? opened.mergeable : null;
   for (let read = 0; read < 20 && mergeable === null; read++) {
     await sleep(DRY_RUN ? POLL_MS : 2_000);
-    const again = needed(
-      await readPullRequest(context.client, REPO, opened.number),
+    const again = readable(
+      await readPullRequest(context.client, REPO, number),
       'read the pull request',
     );
+    if (again === null) break;
     mergeable = again.mergeable;
     reads.push(
       `read ${String(read + 1)}: mergeable ${String(again.mergeable)} (${again.mergeableState})`,
     );
   }
   for (const line of reads) say(`  ${line}`);
-  check(
-    'A5',
-    opened.mergeable === null && mergeable !== null,
-    'mergeable is null in the creation answer, then true or false at a later read',
-    reads.join('\n'),
-  );
+  if (opened === null) {
+    notAttempted('A5', 'the creation answer could not be read, so its mergeable is unknown');
+  } else {
+    check(
+      'A5',
+      opened.mergeable === null && mergeable !== null,
+      'mergeable is null in the creation answer, then true or false at a later read',
+      reads.join('\n'),
+    );
+  }
   const second = await openPullRequest(context.client, REPO, {
     head: BRANCH,
     base: context.baseBranch,
     title: 'Orchestrator smoke test: a second pull request (must be refused)',
     body: 'GitHub must refuse this one.',
   });
-  if (second.ok) left.pullRequest = second.value.number;
+  if (second.ok) left.pullRequests.push(second.value.number);
+  else if (unreadable(second.refusal)) {
+    // Created after all: found by its branch, or listed as unknown.
+    const other = await pullOfBranch(context, left.pullRequests);
+    if (other === null) left.unknownPullRequest = true;
+    else left.pullRequests.push(other);
+  }
   const expected = `A pull request already exists for ${OWNER}:${BRANCH}.`;
   check(
     'A6',
@@ -608,16 +705,27 @@ async function stepTwo(context: Context): Promise<void> {
 async function stepThree(context: Context): Promise<void> {
   startStep(3);
   const head = context.stepOneHead ?? '';
-  const { runs, unfinishedLog } = await waitForCi(context.client, head, context.pull ?? 0, true);
-  say(`  Runs of ${head.slice(0, 7)}: ${conclusions(runs)}`);
-  check(
-    'A12',
-    runs.every((run) => run.event === 'pull_request' && run.headSha === head),
-    "the runs found by the head commit are the pull request's runs only (no push run for this branch)",
-    conclusions(runs),
-  );
+  const ci = await waitForCi(context.client, head, context.pull ?? 0, true);
+  const runs = ci?.runs ?? null;
+  const unfinishedLog = ci?.unfinishedLog ?? null;
+  if (runs === null) {
+    notAttempted('A12', 'the runs could not be read');
+  } else {
+    say(`  Runs of ${head.slice(0, 7)}: ${conclusions(runs)}`);
+    check(
+      'A12',
+      runs.every((run) => run.event === 'pull_request' && run.headSha === head),
+      "the runs found by the head commit are the pull request's runs only (no push run for this branch)",
+      conclusions(runs),
+    );
+  }
   if (unfinishedLog === null) {
-    notAttempted('A14', 'every job had finished before the script could read its log');
+    notAttempted(
+      'A14',
+      runs === null
+        ? 'the runs or jobs could not be read'
+        : 'every job had finished before the script could read its log',
+    );
   } else {
     check(
       'A14',
@@ -626,18 +734,24 @@ async function stepThree(context: Context): Promise<void> {
       unfinishedLog.ok ? 'a log came' : refusalText(unfinishedLog.refusal),
     );
   }
-  const status = needed(
+  const status = readable(
     await readCommitStatus(context.client, REPO, head),
     'read the combined commit status',
   );
-  check(
-    'A17',
-    status.state === 'pending' && status.statuses.length === 0,
-    'with Actions only, the combined commit status is pending with no statuses',
-    `${status.state}, ${String(status.statuses.length)} statuses`,
-  );
-  const passed = runs.every((run) => run.conclusion === 'success');
-  check(null, passed, 'CI passed on the first commit', conclusions(runs));
+  if (status === null) {
+    notAttempted('A17', 'the combined commit status could not be read');
+  } else {
+    check(
+      'A17',
+      status.state === 'pending' && status.statuses.length === 0,
+      'with Actions only, the combined commit status is pending with no statuses',
+      `${status.state}, ${String(status.statuses.length)} statuses`,
+    );
+  }
+  // CI that fails on the first commit makes the later steps meaningless; runs that cannot be
+  // read do not: the later steps still check the pushes and what can be read.
+  const passed = runs?.every((run) => run.conclusion === 'success') ?? true;
+  if (runs !== null) check(null, passed, 'CI passed on the first commit', conclusions(runs));
   endStep();
   if (!passed) throw new Stop('CI did not pass on the first commit');
 }
@@ -653,13 +767,16 @@ async function divergedPush(
   say(`  Push from ${machine.name} of ${head.slice(0, 7)}, made on step 1's head:`);
   say(`    the daemon's reading: ${result.status === 'pushed' ? 'pushed' : result.reason}`);
   if (result.status === 'failed') say(`    Git and GitHub said:\n${quoted(result.message)}`);
-  const runs = await listCommitRuns(context.client, REPO, head);
+  const runs = readable(
+    await listCommitRuns(context.client, REPO, head),
+    `read the runs of ${head.slice(0, 7)}`,
+  );
   return (
     result.status === 'failed' &&
     result.reason === 'diverged' &&
     result.message.includes(summary) &&
-    runs.ok &&
-    runs.value.length === 0
+    runs !== null &&
+    runs.length === 0
   );
 }
 
@@ -695,7 +812,14 @@ async function stepFour(context: Context): Promise<void> {
     `fetch first ${fetchFirst ? 'as expected' : 'not as expected'}, non-fast-forward ${nonFastForward ? 'as expected' : 'not as expected'}, branch on GitHub at ${githubNow ?? 'none'}`,
   );
 
-  const { runs } = await waitForCi(context.client, broken, context.pull ?? 0, false);
+  const runs = (await waitForCi(context.client, broken, context.pull ?? 0, false))?.runs ?? null;
+  if (runs === null) {
+    for (const assumption of ['A12', 'A13', 'A15']) {
+      notAttempted(assumption, 'the runs could not be read');
+    }
+    endStep();
+    return;
+  }
   say(`  Runs of ${broken.slice(0, 7)}: ${conclusions(runs)}`);
   check(
     'A12',
@@ -703,9 +827,22 @@ async function stepFour(context: Context): Promise<void> {
     "the runs found by the new head commit are the pull request's runs only",
     conclusions(runs),
   );
+  check(
+    null,
+    runs.some((run) => run.conclusion === 'failure'),
+    'CI failed on the broken link',
+    conclusions(runs),
+  );
   const jobs: WorkflowJob[] = [];
   for (const run of runs) {
-    jobs.push(...needed(await listRunJobs(context.client, REPO, run.id), 'read the jobs'));
+    const read = readable(await listRunJobs(context.client, REPO, run.id), 'read the jobs');
+    if (read === null) {
+      notAttempted('A15', 'the jobs could not be read');
+      notAttempted('A13', 'the jobs could not be read');
+      endStep();
+      return;
+    }
+    jobs.push(...read);
   }
   for (const job of jobs) {
     say(`  Job ${job.name}: ${job.conclusion ?? job.status}`);
@@ -723,37 +860,49 @@ async function stepFour(context: Context): Promise<void> {
     jobs.map((job) => `${job.name}: ${String(job.conclusion)}`).join(', '),
   );
   if (!links) return stop('no docs-links job to read the log of');
-  const later = links.steps.slice(failedStep + 1);
-  const log = await readJobLogEnd(context.client, REPO, links.id, LOG_EXCERPT);
-  if (!log.ok) {
-    check('A13', false, "the failed job's log through the redirect", refusalText(log.refusal));
+  // After the failure GitHub still runs the post steps (or skips those its action runs only
+  // after success) and Complete job; the end of the log is their clean-up, so the excerpt an agent
+  // gets is the failed step's own part (owner's third run, 2026-10-06).
+  const post = links.steps.filter((step) => step.name.startsWith('Post '));
+  const complete = links.steps.find((step) => step.name === 'Complete job');
+  const reading = await readFailedStepLogs(context.client, REPO, links, LOG_LIMITS);
+  if (!reading.ok) {
+    check('A13', false, "the failed job's log through the redirect", refusalText(reading.refusal));
   } else {
-    const lines = log.value.text.split('\n').filter((line) => line.trim() !== '');
-    say(`  The end of the docs-links log (${String(lines.length)} lines kept):`);
-    say(quoted(log.value.text, 15));
-    const stamped = lines.every((line) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z /.test(line));
+    const { facts, excerpts } = reading.value;
+    const excerpt = excerpts.find((each) => each.step === 'Check documentation links');
+    const counts = [
+      `lines: ${String(facts.lines)}, with a timestamp: ${String(facts.timestamped)}, ##[group]: ${String(facts.groups)}, ##[error]: ${String(facts.errors)}`,
+      `byte order mark at the start: ${facts.byteOrderMark ? 'yes' : 'no'}; escape characters (colour codes): ${String(facts.escapes)}`,
+      `post steps: ${post.map((step) => `${step.name} ${String(step.conclusion)}`).join(', ') || 'none'}; Complete job: ${String(complete?.conclusion)}`,
+      `excerpt of "Check documentation links": ${
+        excerpt === undefined
+          ? 'none'
+          : excerpt.cut === 'step'
+            ? `cut by the step, ${String(excerpt.text.split('\n').length)} lines`
+            : `the end of the job instead (${excerpt.reason})`
+      }; holds orchestrator-smoke-missing.md: ${excerpt?.text.includes('orchestrator-smoke-missing.md') ? 'yes' : 'no'}`,
+    ];
+    say('  The docs-links log, as the Orchestrator reads it:');
+    for (const line of counts) say(`    ${line}`);
+    if (excerpt) {
+      say(`  ${excerptHeading(excerpt)}`);
+      say(quoted(excerpt.text, 15));
+    }
     check(
       'A13',
-      stamped &&
-        log.value.text.includes('##[group]') &&
-        log.value.text.includes('##[error]Process completed with exit code 1.') &&
-        failedStep >= 0 &&
-        later.every((step) => step.conclusion === 'skipped'),
-      'the log comes through the redirect; each line starts with a timestamp with seven decimals; steps open with ##[group]; the failure ends with "##[error]Process completed with exit code 1."; the later steps are skipped',
-      [
-        `timestamps on every line: ${String(stamped)}`,
-        `##[group]: ${String(log.value.text.includes('##[group]'))}`,
-        `##[error]Process completed with exit code 1.: ${String(log.value.text.includes('##[error]Process completed with exit code 1.'))}`,
-        `later steps: ${later.map((step) => `${step.name} ${String(step.conclusion)}`).join(', ') || 'none'}`,
-      ].join('\n'),
+      facts.lines > 0 &&
+        facts.timestamped === facts.lines &&
+        facts.errors >= 1 &&
+        post.length > 0 &&
+        post.every((step) => step.conclusion === 'success' || step.conclusion === 'skipped') &&
+        complete?.conclusion === 'success' &&
+        excerpt?.cut === 'step' &&
+        excerpt.text.includes('orchestrator-smoke-missing.md'),
+      "the log comes through the redirect; every line starts with a timestamp with seven decimals; after the failure the post steps run (success or skipped) and Complete job succeeds; the failed step's excerpt, cut from the log by its times and its ##[error] line, holds the broken link's file name",
+      counts.join('\n'),
     );
   }
-  check(
-    null,
-    runs.some((run) => run.conclusion === 'failure'),
-    'CI failed on the broken link',
-    conclusions(runs),
-  );
   endStep();
 }
 
@@ -768,29 +917,51 @@ async function stepFive(context: Context): Promise<void> {
   );
   const pushed = await first.spaces.push(first.start, first.bare, first.folder, repaired);
   if (pushed.status !== 'pushed') stop('the push of the repair failed', pushText(pushed));
-  const { runs } = await waitForCi(context.client, repaired, context.pull ?? 0, false);
-  check(
-    null,
-    runs.every((run) => run.conclusion === 'success'),
-    'CI passed on the repaired link (the ci check your projects require to merge)',
-    conclusions(runs),
-  );
+  const runs = (await waitForCi(context.client, repaired, context.pull ?? 0, false))?.runs;
+  if (runs) {
+    check(
+      null,
+      runs.every((run) => run.conclusion === 'success'),
+      'CI passed on the repaired link (the ci check your projects require to merge)',
+      conclusions(runs),
+    );
+  }
   endStep();
 }
 
-/** Closes the pull request and deletes the branch, the second time already gone (A26). */
+function cleanUpFailed(what: string, answer: string): void {
+  say(`  FAIL  ${what}`);
+  say(quoted(answer));
+  cleanUpFailures.push(`${what}\n${answer}`);
+}
+
+/**
+ * Closes the pull requests (also one GitHub created with an answer the script could not read,
+ * found by its branch) and deletes the branch, the second time already gone (A26).
+ */
 async function cleanUp(context: Context): Promise<void> {
   say();
   say('Clean-up');
-  if (left.pullRequest !== null) {
-    const closed = await closePullRequest(context.client, REPO, left.pullRequest);
-    if (closed.ok) {
-      say(
-        `  Pull request #${String(left.pullRequest)} closed (GitHub keeps closed pull requests).`,
-      );
-      left.pullRequest = null;
+  if (left.unknownPullRequest) {
+    const found = await findPullRequests(context.client, REPO, BRANCH, 'open');
+    if (found.ok) {
+      for (const pull of found.value) {
+        if (!left.pullRequests.includes(pull.number)) left.pullRequests.push(pull.number);
+      }
+      left.unknownPullRequest = false;
     } else {
-      say(`  The pull request could not be closed: ${refusalText(closed.refusal)}`);
+      cleanUpFailed(`find the pull requests of ${BRANCH}`, refusalText(found.refusal));
+    }
+  }
+  for (const number of [...left.pullRequests]) {
+    const closed = await closePullRequest(context.client, REPO, number);
+    // An answer that cannot be read still means GitHub closed it.
+    if (closed.ok || unreadable(closed.refusal)) {
+      say(`  Pull request #${String(number)} closed (GitHub keeps closed pull requests).`);
+      left.pullRequests = left.pullRequests.filter((each) => each !== number);
+    }
+    if (!closed.ok) {
+      cleanUpFailed(`close pull request #${String(number)}`, refusalText(closed.refusal));
     }
   }
   if (left.branch !== null) {
@@ -842,7 +1013,7 @@ async function readGitVersion(): Promise<string> {
 
 async function printResult(): Promise<number> {
   for (const [step] of STEPS) {
-    if (!stepVerdicts.has(step)) stepVerdicts.set(step, { verdict: 'NOT ATTEMPTED', answer: '' });
+    if (!stepVerdicts.has(step)) stepVerdicts.set(step, { verdict: 'NOT ATTEMPTED', failures: [] });
   }
   say();
   say('===== Result: paste this block back =====');
@@ -850,7 +1021,9 @@ async function printResult(): Promise<number> {
   say(`Git: ${gitVersion}`);
   say(`Step 0 (the token check): ${tokenLines.join('; ') || 'not reached'}`);
   for (const [step, title] of STEPS) {
-    say(`Step ${String(step)}: ${stepVerdicts.get(step)?.verdict ?? 'NOT ATTEMPTED'} (${title})`);
+    const kept = stepVerdicts.get(step);
+    say(`Step ${String(step)}: ${kept?.verdict ?? 'NOT ATTEMPTED'} (${title})`);
+    for (const failure of kept?.failures ?? []) say(quoted(failure, 8));
   }
   for (const assumption of ASSUMPTIONS) {
     const kept = assumptionVerdicts.get(assumption);
@@ -858,8 +1031,13 @@ async function printResult(): Promise<number> {
     say(`${assumption}: ${verdict}`);
     if (verdict === 'FAIL') for (const answer of kept?.answers ?? []) say(quoted(answer, 6));
   }
+  if (cleanUpFailures.length > 0) {
+    say('Clean-up: FAIL');
+    for (const failure of cleanUpFailures) say(quoted(failure, 8));
+  }
   say('===== End of the result =====');
   const failed =
+    cleanUpFailures.length > 0 ||
     [...stepVerdicts.values()].some((kept) => kept.verdict === 'FAIL') ||
     [...assumptionVerdicts.values()].some((kept) => kept.verdict === 'FAIL');
   return failed ? 1 : 0;
@@ -945,7 +1123,7 @@ async function main(): Promise<number> {
   await cleanUp(context);
   const code = await printResult();
   sayLeft();
-  if (left.branch === null && left.pullRequest === null) {
+  if (nothingLeft()) {
     say(
       `Also on GitHub: the closed pull request and its workflow runs, in the Actions tab (${repoWeb}/actions), where each run can be deleted.`,
     );

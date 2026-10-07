@@ -49,16 +49,28 @@ function readMergeable(state: RepositoryState, pull: FakePullRequest): boolean |
   return null;
 }
 
-function pullJson(ctx: FakeContext, state: RepositoryState, pull: FakePullRequest): Json {
+/**
+ * "pull-request-simple", as lists give it: no `merged` or `mergeable`. The fields the fake does
+ * not model are added by `shaped` (fake-github/documented.ts); `merge_commit_sha` is gone since
+ * version 2026-03-10 ("Breaking changes",
+ * https://docs.github.com/en/rest/about-the-rest-api/breaking-changes).
+ */
+function pullSimpleJson(ctx: FakeContext, state: RepositoryState, pull: FakePullRequest): Json {
   const repoPath = `${state.owner}/${state.repo.name}`;
-  const mergeable = readMergeable(state, pull);
   const baseSha = state.store.branch(pull.base) ?? '';
+  const user = { login: pull.user };
   const branchJson = (ref: string, sha: string) => ({
     label: `${state.owner}:${ref}`,
     ref,
     sha,
     user: { login: state.owner },
-    repo: { name: state.repo.name, full_name: repoPath },
+    repo: {
+      name: state.repo.name,
+      full_name: repoPath,
+      owner: { login: state.owner },
+      private: state.repo.private,
+      default_branch: state.repo.defaultBranch ?? 'main',
+    },
   });
   return {
     id: pull.number,
@@ -69,17 +81,24 @@ function pullJson(ctx: FakeContext, state: RepositoryState, pull: FakePullReques
     title: pull.title,
     body: pull.body,
     draft: pull.draft,
-    user: { login: pull.user },
+    user,
     head: branchJson(pull.head, pull.headSha),
     base: branchJson(pull.base, baseSha),
-    merged: pull.merged,
-    mergeable,
-    mergeable_state: mergeable === null ? 'unknown' : mergeable ? 'clean' : 'dirty',
     merged_at: pull.mergedAt,
-    merge_commit_sha: pull.mergeCommitSha,
     closed_at: pull.closedAt,
     created_at: pull.createdAt,
     updated_at: pull.updatedAt,
+  };
+}
+
+/** "pull-request", as get, create and update give it. */
+function pullJson(ctx: FakeContext, state: RepositoryState, pull: FakePullRequest): Json {
+  const mergeable = readMergeable(state, pull);
+  return {
+    ...pullSimpleJson(ctx, state, pull),
+    merged: pull.merged,
+    mergeable,
+    mergeable_state: mergeable === null ? 'unknown' : mergeable ? 'clean' : 'dirty',
   };
 }
 
@@ -171,7 +190,6 @@ function createPull(
     headSha,
     merged: false,
     mergedAt: null,
-    mergeCommitSha: null,
     closedAt: null,
     createdAt: created,
     updatedAt: created,
@@ -312,7 +330,10 @@ export function pullsApi(
             (base === null || pull.base === base),
         )
         .reverse();
-      return { status: 200, body: paged(pulls, url).map((pull) => pullJson(ctx, state, pull)) };
+      return {
+        status: 200,
+        body: paged(pulls, url).map((pull) => pullSimpleJson(ctx, state, pull)),
+      };
     }
     return undefined;
   }
@@ -390,7 +411,6 @@ export function mergePull(
     mergedAt: time,
     closedAt: time,
     updatedAt: time,
-    mergeCommitSha: sha,
   });
   syncBranches(ctx, state);
   return sha;

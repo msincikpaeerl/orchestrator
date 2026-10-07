@@ -49,7 +49,18 @@ export interface FakeWorkflow {
     /** Runs on a push to one of these branches. */
     pushBranches?: string[];
   };
-  jobs: { name: string; steps: string[] }[];
+  /**
+   * Each job's steps by name, as GitHub lists them: `Set up job` first, `Complete job` last, a
+   * `Post <step>` after the steps for each action with a post step. `commands` gives the command
+   * a named `run:` step shows in the log; `postIfSuccess` lists the post steps whose action runs
+   * them only after success (`post-if: success()`).
+   */
+  jobs: {
+    name: string;
+    steps: string[];
+    commands?: Record<string, string>;
+    postIfSuccess?: string[];
+  }[];
 }
 
 /** A failed step: its job, its name and the lines it printed. */
@@ -105,7 +116,6 @@ export interface FakePullRequest {
   headSha: string;
   merged: boolean;
   mergedAt: string | null;
-  mergeCommitSha: string | null;
   closedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -122,7 +132,15 @@ export interface FakeJob {
   conclusion: string | null;
   startedAt: string | null;
   completedAt: string | null;
-  steps: { name: string; number: number; status: string; conclusion: string | null }[];
+  steps: {
+    name: string;
+    number: number;
+    status: string;
+    conclusion: string | null;
+    /** Whole seconds, as GitHub gives them. */
+    startedAt: string | null;
+    completedAt: string | null;
+  }[];
   /** The job's log once completed. */
   log: string | null;
 }
@@ -210,11 +228,18 @@ export const notFound: FakeReply = { status: 404, body: { message: 'Not Found' }
 
 export const badCredentials: FakeReply = { status: 401, body: { message: 'Bad credentials' } };
 
-/** 422 with GitHub's error list (`errors`), for a request GitHub cannot carry out. */
+/**
+ * 422 with GitHub's error list (`errors`), for a request GitHub cannot carry out. GitHub's
+ * "validation-error" body also requires `documentation_url`, a link the Orchestrator never reads.
+ */
 export function unprocessable(message: string, errors?: unknown[]): FakeReply {
   return {
     status: 422,
-    body: { message, ...(errors ? { errors } : {}) },
+    body: {
+      message,
+      documentation_url: 'https://docs.github.com/rest',
+      ...(errors ? { errors } : {}),
+    },
   };
 }
 
