@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1 and E2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1 and E2 done, E3 written and waiting for the owner's run; step D split into D1, D2 and D3, step E into E1, E2 and E3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -366,7 +366,7 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 | A25 | A push to a branch whose head on GitHub has commits the pushed one lacks is rejected with the porcelain summary `fetch first` when the local side does not have GitHub's head, and `non-fast-forward` when it has it (the daemon's usual case, since it fetches before every run); the daemon reads both as `diverged` | D2 (`pushResult`), D3, F | 4 |
 | A26 | Deleting a branch that does not exist (already deleted on GitHub, or by "Automatically delete head branches"): `DELETE .../git/refs/heads/<branch>` answers 422 "Reference does not exist", read as already gone (found in step E1) | E (clean-up), J | clean-up (the script deletes its first branch twice) |
 
-**The owner's run** (after E3): a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 10 to 15 minutes, mostly waiting for CI: 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs (about 1 to 2 minutes): 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name>` (add `--restricted-token` for step 10).
+**The owner's run** (after E3): a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 15 to 20 minutes: CI (about 1 to 2 minutes per run) and the owner's three actions on GitHub (merge, close, the token's Contents). 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs: 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts, and none from step 10's workflow file, which runs only when started by hand. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name> --restricted-token` (without `--restricted-token`, step 10 reads `NOT ATTEMPTED`).
 
 ### [x] E1. GitHub layer and token check
 
@@ -425,6 +425,15 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - **The result block** lists what was left on GitHub, then what stays by design: the merge on the default branch (with `docs/orchestrator-smoke.md`), the closed pull requests (the first with its comment review, which GitHub does not let anyone delete), the workflow runs.
 
 **Done when** the dry run passes every step, with and without the second token (the leak proof covering it too), and **the owner has run the script once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
+
+*Code done 2026-10-07 on `lot3/e3-smoke-steps-6-10`; the owner's run is pending, so the step stays unchecked until its result is recorded here.* Choices made in the step (details in `docs/dev/testing.md`, "Owner's GitHub smoke test"):
+
+- **The fake**: `PUT .../update-branch` served through the API (202, or 422 when not behind, in conflict or with another `expected_head_sha`); the extract gains the documented refusals the steps read (`POST .../pulls` 403 "basic-error" and 422, `PATCH .../pulls/{n}` 422, a review's 422 "validation-error-simple" with plain-string `errors`, **Update branch** 202 and 422; same pinned commit). A 403 for a missing permission carries `documentation_url` and `status` as GitHub's "basic-error"; GitHub documents no 403 for the runs and the commit status, where the fake answers the same. The review 422s for a missing body or an unknown event became plain strings (the fake's texts).
+- **The script's own reads** (a branch's head, a commit, **Update branch**) are in `apps/server/scripts/github-smoke-reads.ts`, checked against GitHub's documented bodies; no product code uses them (rule 5).
+- **The merge method** is told from the default branch's new head: two parents a merge commit, one parent that is the old head a squash, else a rebase (the script's pull request has three commits). A21 checks that method's message; a rebase: A21 `NOT ATTEMPTED`.
+- **No CI run for the conflicting pull request** is checked 30 seconds after it is opened; any run started on its branch (for example after conflicts resolved on GitHub) is listed in the result.
+- **A16** lists the merge's push runs as soon as one appears, at most 3 minutes, never waiting for them to finish.
+- **The second token's pull request** is opened from the first branch, which GitHub would refuse anyway (merged, or already open): the second token never creates one unless the first pull request was closed unmerged; then it is listed and closed.
 
 ### [ ] F. Full submission and the pull request
 
