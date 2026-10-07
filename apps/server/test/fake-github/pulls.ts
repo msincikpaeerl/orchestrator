@@ -29,8 +29,9 @@ import { has, notFound, paged, refuse, unprocessable } from './common.js';
 //   https://docs.github.com/en/rest/pulls/reviews). "Pull request authors cannot approve their
 //   own pull requests" ("Approving a pull request with required reviews",
 //   https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/approving-a-pull-request-with-required-reviews).
-//   The 422 texts for your own pull request and for create are the fake's, from GitHub's known
-//   answers: lot 3 step E confirms them.
+//   A review's 422 is GitHub's "validation-error-simple", whose `errors` are plain strings
+//   (OpenAPI description, ADR 0035). The 422 texts for your own pull request, a missing body and
+//   for create are the fake's, from GitHub's known answers: lot 3 step E confirms them.
 // - Permissions: Pull requests write to create, update and review; Pull requests read to list,
 //   check merged and list reviews; Pull requests read or Contents read to get one. Merging needs
 //   Contents write: the owner merges on GitHub's site, so the fake offers it as a test control.
@@ -265,14 +266,12 @@ function createReview(
     body.event !== undefined &&
     (event === undefined || !['APPROVE', 'REQUEST_CHANGES', 'COMMENT'].includes(event))
   ) {
-    return unprocessable('Validation Failed', [
-      { resource: 'PullRequestReview', field: 'event', code: 'invalid' },
-    ]);
+    return unprocessable('Unprocessable Entity', [`Event ${event ?? ''} is not valid`]);
   }
   const text = typeof body.body === 'string' ? body.body : '';
   if ((event === 'REQUEST_CHANGES' || event === 'COMMENT') && text === '') {
-    return unprocessable('Validation Failed', [
-      { resource: 'PullRequestReview', field: 'body', code: 'missing_field' },
+    return unprocessable('Unprocessable Entity', [
+      'Body is required when using REQUEST_CHANGES or COMMENT',
     ]);
   }
   if (pull.user === account.login && event === 'APPROVE') {
@@ -337,7 +336,7 @@ export function pullsApi(
     }
     return undefined;
   }
-  const match = /^\/pulls\/(\d+)(\/merge|\/reviews)?$/.exec(rest);
+  const match = /^\/pulls\/(\d+)(\/merge|\/reviews|\/update-branch)?$/.exec(rest);
   if (!match) return undefined;
   const pull = state.pulls.find((candidate) => String(candidate.number) === match[1]);
   const part = match[2];
@@ -355,6 +354,10 @@ export function pullsApi(
     if (!has(account, 'pull_requests', 'read')) return refuse(account, ['pull_requests=read']);
     return pull?.merged ? { status: 204 } : notFound;
   }
+  if (method === 'PUT' && part === '/update-branch') {
+    if (!has(account, 'pull_requests', 'write')) return refuse(account, ['pull_requests=write']);
+    return pull ? updateBranchApi(ctx, state, pull, body) : notFound;
+  }
   if (part === '/reviews') {
     if (method === 'POST') {
       if (!has(account, 'pull_requests', 'write')) return refuse(account, ['pull_requests=write']);
@@ -370,6 +373,45 @@ export function pullsApi(
     }
   }
   return undefined;
+}
+
+/**
+ * "Update a pull request branch" (`PUT .../update-branch`, 202 `{ message, url }`): merges the
+ * base branch into the head branch, as the **Update branch** button does. GitHub offers it only
+ * "when there are no merge conflicts and the branch is behind the base branch" (see the top of
+ * this file); a different `expected_head_sha` is a 422 ("REST API endpoints for pull requests").
+ * The 422 texts are the fake's: the owner's smoke script prints GitHub's (A18).
+ */
+function updateBranchApi(
+  ctx: FakeContext,
+  state: RepositoryState,
+  pull: FakePullRequest,
+  body: Json,
+): FakeReply {
+  const base = state.store.branch(pull.base);
+  const head = state.store.branch(pull.head);
+  if (pull.state !== 'open' || base === undefined || head === undefined) {
+    return unprocessable('Validation Failed', [
+      { resource: 'PullRequest', field: 'state', code: 'invalid' },
+    ]);
+  }
+  if (typeof body.expected_head_sha === 'string' && body.expected_head_sha !== head) {
+    return unprocessable("expected head sha didn't match current head ref.");
+  }
+  if (state.store.isAncestor(base, head)) {
+    return unprocessable('There are no new commits on the base branch.');
+  }
+  if (state.store.mergeTree(head, base) === null) {
+    return unprocessable('merge conflict between base and head');
+  }
+  updatePullBranch(ctx, state, pull.number);
+  return {
+    status: 202,
+    body: {
+      message: 'Updating pull request branch.',
+      url: `${ctx.url}/repos/${state.owner}/${state.repo.name}/pulls/${String(pull.number)}`,
+    },
+  };
 }
 
 // The owner's actions on GitHub's site, as test controls. Each throws when GitHub would not
