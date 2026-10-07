@@ -21,6 +21,12 @@ import {
   listOwnerRepositories,
 } from '../src/github/repositories.js';
 import { inspectToken } from '../src/github/token-check.js';
+import {
+  branchHead,
+  mergeMethod,
+  readCommit,
+  updatePullRequestBranch,
+} from '../scripts/github-smoke-reads.js';
 import { documentedOperation, plainestBody } from './fake-github/documented.js';
 
 // Every reading of the GitHub layer against GitHub's documented answers (lot 3, after the owner's
@@ -60,7 +66,7 @@ function documentedClient(
   return {
     request(request) {
       const path = new URL(request.path, 'http://github.test').pathname;
-      for (const status of [200, 201]) {
+      for (const status of [200, 201, 202]) {
         const operation = documentedOperation(request.method, path, status);
         if (operation === undefined) continue;
         const body = plainestBody(operation, status, filling);
@@ -119,6 +125,14 @@ describe.each<Filling>(['nulls', 'inner'])(
       ]);
     });
 
+    it("the smoke script's own reads: a branch's head, a commit, Update branch", async () => {
+      const client = documentedClient(filling);
+      expect(read(await branchHead(client, REPO, 'main'))).toBe('documented');
+      const commit = read(await readCommit(client, REPO, 'abc'));
+      expect(commit.parents).toHaveLength(1);
+      read(await updatePullRequestBranch(client, REPO, 1, 'abc'));
+    });
+
     it('the token, repositories, branches, commits, trees and rulesets', async () => {
       const client = documentedClient(filling);
       expect(await inspectToken(client)).toMatchObject({ valid: true, account: 'documented' });
@@ -134,3 +148,12 @@ describe.each<Filling>(['nulls', 'inner'])(
     });
   },
 );
+
+describe('the merge method the smoke script prints (step 8, A21)', () => {
+  it('reads two parents as a merge commit, one new commit on the old head as a squash, else a rebase', () => {
+    const message = 'Orchestrator smoke test';
+    expect(mergeMethod({ message, parents: ['base', 'head'] }, 'base')).toBe('merge');
+    expect(mergeMethod({ message, parents: ['base'] }, 'base')).toBe('squash');
+    expect(mergeMethod({ message, parents: ['replayed'] }, 'base')).toBe('rebase');
+  });
+});
