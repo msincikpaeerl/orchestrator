@@ -596,10 +596,8 @@ describe('the owner on GitHub', () => {
     await openPull('t/1-cart');
     const notBehind = await api('PUT', `${REPO}/pulls/1/update-branch`, {});
     expect(notBehind.status).toBe(422);
-    expect(json(notBehind)).toMatchObject({
-      message: 'There are no new commits on the base branch.',
-      documentation_url: expect.any(String),
-    });
+    expect(json(notBehind).message).toBe('There are no new commits on the base branch.');
+    expect(typeof json(notBehind).documentation_url).toBe('string');
 
     github.commit(repo, 'main', { 'other.md': 'Other\n' }, 'Other change');
     const stale = await api('PUT', `${REPO}/pulls/1/update-branch`, {
