@@ -44,7 +44,7 @@ describe('pushResult', () => {
 
   it("keeps GitHub's own message for a refusal, masked", () => {
     const stdout = porcelain(
-      `!\t${HEAD}:${REF}\t[remote rejected] (refusing to allow a Personal Access Token to create or update workflow \`.github/workflows/ci.yml\` without \`workflows\` permission)`,
+      `!\t${HEAD}:${REF}\t[remote rejected] (refusing to allow a Personal Access Token to create or update workflow \`.github/workflows/ci.yml\` without \`workflow\` scope)`,
     );
     const stderr = `remote: error: GH006: Protected branch update failed for ${TOKEN}.        \nerror: failed to push some refs\n`;
     const result = pushResult(
@@ -55,8 +55,30 @@ describe('pushResult', () => {
     expect(result).toMatchObject({ status: 'failed', reason: 'refused' });
     expect(JSON.stringify(result)).not.toContain(TOKEN);
     expect(result.status === 'failed' && result.message).toBe(
-      '[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)\nerror: GH006: Protected branch update failed for [hidden].',
+      '[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\nerror: GH006: Protected branch update failed for [hidden].',
     );
+  });
+
+  it("reads GitHub's refusal of a token without Contents write as refused", () => {
+    // The owner's run (lot 3 step E3), a fine-grained token with Contents read-only.
+    const access =
+      "fatal: unable to access 'https://github.com/owner/notes.git/': The requested URL returned error: 403";
+    expect(
+      pushResult(
+        {
+          code: 128,
+          stdout: '',
+          stderr: `remote: Write access to repository not granted.\n${access}\n`,
+          timedOut: false,
+        },
+        none,
+        expected,
+      ),
+    ).toEqual({
+      status: 'failed',
+      reason: 'refused',
+      message: `Write access to repository not granted.\n${access}`,
+    });
   });
 
   it('reads a failed authentication as refused, and no answer as unreachable', () => {

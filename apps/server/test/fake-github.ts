@@ -536,9 +536,10 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
    * Git over HTTP needs the Contents permission, and editing `.github/workflows` the Workflows
    * permission ("Choosing permissions for a GitHub App",
    * https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app),
-   * checked by the repository's pre-receive hook (fake-github/git-store.ts). A public repository
-   * is fetched without a credential; everything else asks for one with 401. The 403 and 404 texts
-   * are the fake's (lot 3 plan, step E).
+   * checked by the repository's proc-receive hook (fake-github/git-store.ts). A public repository
+   * is fetched without a credential; everything else asks for one with 401. The 403 and the
+   * workflow refusal are GitHub's texts from the owner's run (lot 3 plan, step E3); the 404 is
+   * the fake's.
    */
   function authorizeGit(request: GitHttpRequest) {
     const record = (outcome: RecordedGitRequest['outcome']) => {
@@ -582,10 +583,8 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     const needed = request.access === 'push' ? 'write' : 'read';
     if (!has(account, 'contents', needed) && (needed === 'write' || found.private)) {
       record(403);
-      return {
-        status: 403,
-        message: `Permission to ${request.owner}/${request.name}.git denied to ${account.login}.`,
-      };
+      // GitHub's words for a fine-grained token (the owner's run, lot 3 step E3).
+      return { status: 403, message: 'Write access to repository not granted.' };
     }
     record('served');
     return {

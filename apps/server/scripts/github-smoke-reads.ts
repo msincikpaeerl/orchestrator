@@ -1,0 +1,108 @@
+import { z } from 'zod';
+import { ask, type GitHubResult } from '../src/github/answers.js';
+import type { GitHubClient } from '../src/github/client.js';
+import { branchPath, repoPath, type RepositoryRef } from '../src/github/repositories.js';
+
+// GitHub reads only the owner's smoke script makes (tools/smoke/github-smoke.sh, lot 3 step E3),
+// kept out of the GitHub layer because no product code uses them (working rule 5). Each is read
+// as GitHub documents it and checked against the documented bodies in
+// test/github-documented.test.ts (ADR 0035), like the layer's.
+
+/** "git-ref": the branch's head. */
+const Reference = z.object({ object: z.object({ sha: z.string() }) });
+
+/**
+ * The branch's head on GitHub ("Get a reference", "REST API endpoints for Git references",
+ * https://docs.github.com/en/rest/git/refs); null when the branch does not exist (404).
+ */
+export async function branchHead(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  branch: string,
+): Promise<GitHubResult<string | null>> {
+  const read = await ask(
+    client,
+    { method: 'GET', path: `${repoPath(repo)}/git/ref/heads/${branchPath(branch)}` },
+    200,
+    Reference,
+  );
+  if (read.ok) return { ok: true, value: read.value.object.sha };
+  if (read.refusal.kind === 'not_found') return { ok: true, value: null };
+  return read;
+}
+
+/** "git-commit": its message and its parents. */
+const Commit = z.object({
+  message: z.string(),
+  parents: z.array(z.object({ sha: z.string() })),
+});
+
+export interface CommitShape {
+  message: string;
+  parents: string[];
+}
+
+/** A commit's message and parents ("Get a commit object", https://docs.github.com/en/rest/git/commits). */
+export async function readCommit(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  sha: string,
+): Promise<GitHubResult<CommitShape>> {
+  const read = await ask(
+    client,
+    { method: 'GET', path: `${repoPath(repo)}/git/commits/${sha}` },
+    200,
+    Commit,
+  );
+  return read.ok
+    ? {
+        ok: true,
+        value: {
+          message: read.value.message,
+          parents: read.value.parents.map((parent) => parent.sha),
+        },
+      }
+    : read;
+}
+
+/**
+ * The merge method the default branch's new head shows: two parents is a merge commit; one parent
+ * that is the default branch's head before the merge is a squash (one new commit); anything else
+ * a rebase (the pull request's commits replayed, the script's being several). Printed only: no
+ * product code reads it (the owner's decision, step E3; step J detects a merge by `merged`,
+ * whatever the method).
+ */
+export function mergeMethod(
+  commit: CommitShape,
+  baseBefore: string,
+): 'merge' | 'squash' | 'rebase' {
+  if (commit.parents.length >= 2) return 'merge';
+  return commit.parents[0] === baseBefore ? 'squash' : 'rebase';
+}
+
+/** "Update a pull request branch": 202 with a message (all its fields optional). */
+const UpdateAccepted = z.object({ message: z.string().optional() });
+
+/**
+ * **Update branch** through the API ("Update a pull request branch", `PUT .../update-branch`,
+ * https://docs.github.com/en/rest/pulls/pulls): 202 when GitHub accepts it, else its refusal
+ * (A18: a pull request with a conflict).
+ */
+export async function updatePullRequestBranch(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  number: number,
+  expectedHead: string,
+): Promise<GitHubResult<string>> {
+  const updated = await ask(
+    client,
+    {
+      method: 'PUT',
+      path: `${repoPath(repo)}/pulls/${String(number)}/update-branch`,
+      body: { expected_head_sha: expectedHead },
+    },
+    202,
+    UpdateAccepted,
+  );
+  return updated.ok ? { ok: true, value: updated.value.message ?? '' } : updated;
+}

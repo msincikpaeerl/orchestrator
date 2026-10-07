@@ -216,7 +216,12 @@ export function has(
 export function refuse(account: FakeAccount, ...needed: string[][]): FakeReply {
   return {
     status: 403,
-    body: { message: 'Resource not accessible by personal access token' },
+    // GitHub's "basic-error", as its answers carry it.
+    body: {
+      message: 'Resource not accessible by personal access token',
+      documentation_url: 'https://docs.github.com/rest',
+      status: '403',
+    },
     headers:
       account.acceptedPermissionsHeader === false
         ? {}

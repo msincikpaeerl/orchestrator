@@ -35,8 +35,19 @@ const TIMEOUT = 120_000;
 const TOKEN = `github_pat_${randomBytes(53_000).toString('base64url')}`;
 /** What the leak checks look for: a part of the token no other text holds. */
 const PROBE = TOKEN.slice(20, 84);
+/** The second, restricted token of step 10, as long, with its own probe. */
+const RESTRICTED_TOKEN = `github_pat_${randomBytes(53_000).toString('base64url')}`;
+const RESTRICTED_PROBE = RESTRICTED_TOKEN.slice(20, 84);
 
 /** The dedicated token's permissions, as the script's first screen asks for them. */
+/** The second token's permissions at first: Metadata and Contents read only. */
+const restrictedAccount = (): FakeAccount => ({
+  login: 'octo-owner',
+  id: 5_550_123,
+  permissions: { metadata: 'read', contents: 'read' },
+  repositories: [repo],
+});
+
 const dedicated: FakeAccount['permissions'] = {
   metadata: 'read',
   contents: 'write',
@@ -126,6 +137,62 @@ const dryRun = (repository = 'octo-owner/smoke-test') => [
   '--repository',
   repository,
 ];
+
+/** The owner's three actions on GitHub's site, as the script asks for them. */
+interface OwnerPlay {
+  /** Step 8, "merge pull request #1": the default merges with a merge commit. */
+  merge?: 'merge' | 'squash' | 'close' | 'nothing';
+  /** Step 9, "close pull request #2": `delete-branch` also deletes its branch. */
+  close?: 'close' | 'delete-branch' | 'nothing';
+  /** Step 10, "give the second token Contents write". */
+  token?: 'contents' | 'workflows' | 'regenerate' | 'nothing';
+}
+
+/** Plays the owner on GitHub's site when the script asks (its "Your turn on GitHub" lines). */
+function playOwner(child: ChildProcessWithoutNullStreams, play: OwnerPlay = {}): void {
+  let output = '';
+  const done = new Set<string>();
+  const once = (marker: string, action: () => void) => {
+    if (done.has(marker) || !output.includes(marker)) return;
+    done.add(marker);
+    // As a person would: a moment after the script has asked.
+    setTimeout(action, 100);
+  };
+  child.stdout.on('data', (chunk: string) => {
+    output += chunk;
+    once('Your turn on GitHub: merge pull request #1.', () => {
+      const merge = play.merge ?? 'merge';
+      if (merge === 'merge' || merge === 'squash') github.mergePullRequest(repo, 1, merge);
+      if (merge === 'close') github.closePullRequest(repo, 1);
+    });
+    once('Your turn on GitHub: close pull request #2 without merging it.', () => {
+      const close = play.close ?? 'close';
+      if (close === 'nothing') return;
+      github.closePullRequest(repo, 2);
+      if (close === 'delete-branch') void deleteOnGitHub(github.pullRequest(repo, 2).head);
+    });
+    once('Your turn on GitHub: give the second token Contents write', () => {
+      const token = play.token ?? 'contents';
+      const account = github.accounts.get(RESTRICTED_TOKEN);
+      if (!account || token === 'nothing') return;
+      if (token === 'regenerate') {
+        github.accounts.delete(RESTRICTED_TOKEN);
+        return;
+      }
+      account.permissions.contents = 'write';
+      if (token === 'workflows') account.permissions.workflows = 'write';
+    });
+  });
+}
+
+/** "Delete branch" on GitHub's site, with the owner's token. */
+async function deleteOnGitHub(branch: string): Promise<void> {
+  const response = await fetch(
+    `${github.url}/repos/octo-owner/smoke-test/git/refs/heads/${branch}`,
+    { method: 'DELETE', headers: { authorization: `Bearer ${TOKEN}` } },
+  );
+  expect(response.status).toBe(204);
+}
 
 /** Resolves when the script has printed `text`. */
 function waitForOutput(child: ChildProcessWithoutNullStreams, text: string): Promise<void> {
@@ -229,7 +296,9 @@ describe('the guard of the GitHub smoke script', () => {
   it('asks for yes before anything, and refuses any other answer', async () => {
     for (const answer of ['no\n', '', 'YES\n']) {
       const { code, output } = await run(dryRun(), answer);
-      expect(output).toMatch(/This acts on your real GitHub: in octo-owner\/smoke-test, a branch/);
+      expect(output).toMatch(
+        /This acts on your real GitHub: in octo-owner\/smoke-test, branches orchestrator-smoke-<time>, two pull requests/,
+      );
       expect(output).toMatch(/REFUSED: not confirmed\./);
       expect(code).toBe(3);
     }
@@ -307,12 +376,15 @@ async function guardCall(folder: string, origin: string | null, given: string): 
  * Watches every process while the script runs: those showing the token in their arguments or
  * environment, and whether the script's own shell (`shell`) ever holds it in its memory.
  */
-function watchProcesses(shell: number): {
+function watchProcesses(
+  shell: number,
+  probes: string[] = [PROBE],
+): {
   stop: () => Promise<{ leaks: string[]; memoryRead: boolean }>;
 } {
   const leaks = new Set<string>();
   let memoryRead = false;
-  const probe = Buffer.from(PROBE);
+  const buffers = probes.map((probe) => Buffer.from(probe));
   const sampling = { running: true };
   const loop = (async () => {
     while (sampling.running) {
@@ -322,14 +394,18 @@ function watchProcesses(shell: number): {
           readFile(`/proc/${pid}/cmdline`).catch(() => null),
           readFile(`/proc/${pid}/environ`).catch(() => null),
         ]);
-        if (command?.includes(probe)) {
-          leaks.add(`arguments of ${command.toString().slice(0, 80).replace(/\0/g, ' ')}`);
+        for (const probe of buffers) {
+          if (command?.includes(probe)) {
+            leaks.add(`arguments of ${command.toString().slice(0, 80).replace(/\0/g, ' ')}`);
+          }
+          if (environ?.includes(probe)) leaks.add(`environment of process ${pid}`);
         }
-        if (environ?.includes(probe)) leaks.add(`environment of process ${pid}`);
       }
-      const memory = await memoryHolds(shell, probe);
-      if (memory !== null) memoryRead = true;
-      if (memory === true) leaks.add("memory of the script's own shell");
+      for (const probe of buffers) {
+        const memory = await memoryHolds(shell, probe);
+        if (memory !== null) memoryRead = true;
+        if (memory === true) leaks.add("memory of the script's own shell");
+      }
       await new Promise((done) => setTimeout(done, 10));
     }
   })();
@@ -385,12 +461,12 @@ function watchHereDocuments(): { watcher: FSWatcher; seen: string[] } {
   return { watcher, seen };
 }
 
-async function filesHolding(folder: string): Promise<string[]> {
+async function filesHolding(folder: string, probe = PROBE): Promise<string[]> {
   const found: string[] = [];
   const visit = async (path: string): Promise<void> => {
     const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
     if (entries === null) {
-      if ((await readFile(path).catch(() => null))?.includes(PROBE)) found.push(path);
+      if ((await readFile(path).catch(() => null))?.includes(probe)) found.push(path);
       return;
     }
     for (const entry of entries) await visit(join(path, entry.name));
@@ -453,44 +529,51 @@ function unreadableFirstPullRequest(): (request: RecordedRequest, reply: FakeRep
 
 describe('the dry run of the GitHub smoke script', () => {
   it(
-    'passes steps 1 to 5 with the daemon push, the token staying in memory only',
+    'passes every step with both tokens, the owner acting on GitHub, the tokens staying in memory only',
     async () => {
+      github.accounts.set(RESTRICTED_TOKEN, restrictedAccount());
       const hereDocuments = watchHereDocuments();
       const stopActions = playActions();
-      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
-      const watcher = watchProcesses(child.pid ?? 0);
+      const { child, finished } = start(
+        [...dryRun(), '--restricted-token'],
+        `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
+      );
+      playOwner(child);
+      const watcher = watchProcesses(child.pid ?? 0, [PROBE, RESTRICTED_PROBE]);
       const { code, output } = await finished;
       const { leaks, memoryRead } = await watcher.stop();
       stopActions();
       hereDocuments.watcher.close();
 
-      // The leak proof.
+      // The leak proof, for both tokens, the pause of step 10 included.
       expect(leaks).toEqual([]);
       expect(memoryRead, "the script's shell memory was read at least once").toBe(true);
       expect(hereDocuments.seen).toEqual([]);
-      expect(output).not.toContain(PROBE);
+      for (const probe of [PROBE, RESTRICTED_PROBE]) {
+        expect(output).not.toContain(probe);
+        expect(await filesHolding(home.root, probe)).toEqual([]);
+        expect(await filesHolding(github.root, probe)).toEqual([]);
+      }
       expect(output).not.toContain(TOKEN.slice(0, 24));
-      expect(await filesHolding(home.root)).toEqual([]);
-      expect(await filesHolding(github.root)).toEqual([]);
+      expect(output).not.toContain(RESTRICTED_TOKEN.slice(0, 24));
       // The scratch folder is gone.
       expect(await leftInTemporaryFolder()).toEqual([]);
 
-      // Every step and assumption of steps 1 to 5.
+      // Every step and assumption.
       expect(output, output).toMatch(
         /Step 0 \(the token check\): Administration: Missing.*Contents: OK/,
       );
-      for (const step of [1, 2, 3, 4, 5]) {
+      expect(output).toContain(
+        'Second token: of octo-owner too, and it sees octo-owner/smoke-test.',
+      );
+      for (let step = 1; step <= 10; step++) {
         expect(output).toContain(`Step ${String(step)}: PASS`);
       }
-      for (const step of [6, 7, 8, 9, 10]) {
-        expect(output).toContain(`Step ${String(step)}: NOT ATTEMPTED`);
-      }
-      const passed = ['A1', 'A4', 'A5', 'A6', 'A12', 'A13', 'A14', 'A15', 'A17', 'A22'];
-      for (const assumption of [...passed, 'A24', 'A25', 'A26']) {
-        expect(output).toMatch(new RegExp(`^${assumption}: PASS$`, 'm'));
-      }
-      for (const assumption of ['A2', 'A3', 'A7', 'A8', 'A9', 'A10', 'A11', 'A16', 'A18']) {
-        expect(output).toMatch(new RegExp(`^${assumption}: NOT ATTEMPTED$`, 'm'));
+      for (let number = 1; number <= 26; number++) {
+        const assumption = `A${String(number)}`;
+        // A7 is not checked: nothing relies on it.
+        const verdict = assumption === 'A7' ? 'NOT ATTEMPTED' : 'PASS';
+        expect(output).toMatch(new RegExp(`^${assumption}: ${verdict}$`, 'm'));
       }
       // A13: the counts on the log, and the failed step's own part with the broken link.
       expect(output).toMatch(/with a timestamp: (\d+), ##\[group\]: \d+, ##\[error\]: 1/);
@@ -507,18 +590,51 @@ describe('the dry run of the GitHub smoke script', () => {
       // The daemon's reading of each diverged push, with Git's words.
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*fetch first/);
       expect(output).toMatch(/the daemon's reading: diverged[\s\S]*non-fast-forward/);
+      // Each wait says what to click, with the link.
+      expect(output).toContain(`1. Open ${github.url}/octo-owner/smoke-test/pull/1`);
+      expect(output).toContain('choose "Create a merge commit"');
+      expect(output).toContain(`1. Open ${github.url}/octo-owner/smoke-test/pull/2`);
+      expect(output).toContain('click "Close pull request"');
+      expect(output).toContain(
+        'set "Contents" to "Read and write". Change nothing else: not "Workflows".',
+      );
+      expect(output).toContain('Do not click "Regenerate token"');
+      expect(output).toMatch(/at most 30 minutes \(--owner-wait-minutes\)/);
+      // The second token's pushes, read by the daemon.
+      expect(output).toMatch(/PASS {2}A3: a push without Contents write: refused/);
+      expect(output).toMatch(
+        /PASS {2}A2: a push adding \.github\/workflows\/orchestrator-smoke\.yml/,
+      );
+      // The result block: notes, what is left, what stays by design, the version.
+      expect(output).toMatch(
+        /^Step 8: merged by a merge commit; the default branch's new head [0-9a-f]{40} has 2 parent\(s\)/m,
+      );
+      expect(output).toContain('Step 9: CI runs started on the second pull request: none.');
+      expect(output).toMatch(/Nothing of this run is left on GitHub\.\nStays on GitHub by design:/);
+      expect(output).toMatch(/- pull request #1, merged, with the comment review of step 6: /);
+      expect(output).toMatch(/- pull request #2, closed: /);
+      expect(output).toMatch(
+        /- the merge of pull request #1 into main \(a merge commit\), with docs\/orchestrator-smoke\.md: /,
+      );
       expect(output).toMatch(/^Script: [0-9a-f]{40}( with local changes)?$/m);
       expect(output).toMatch(/^Git: \d+\.\d+/m);
-      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(output).toMatch(
+        /===== End of the result =====\nDelete the tokens you made for this check now/,
+      );
       expect(code).toBe(0);
 
-      // What GitHub holds afterwards: the pull request closed, the branch gone.
-      expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: false });
+      // What GitHub holds afterwards.
+      expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: true });
+      expect(github.pullRequest(repo, 1).reviews.map((review) => review.state)).toEqual([
+        'COMMENTED',
+      ]);
+      expect(github.pullRequest(repo, 2)).toMatchObject({ state: 'closed', merged: false });
       expect([...github.branches(repo).keys()]).toEqual(['main']);
       expect(github.runs(repo).map((each) => each.event)).toEqual([
         'pull_request',
         'pull_request',
         'pull_request',
+        'push',
       ]);
       // The log was downloaded without the API's Authorization (A13).
       expect(github.logRequests.length).toBeGreaterThan(0);
@@ -526,6 +642,223 @@ describe('the dry run of the GitHub smoke script', () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'without the second token, step 10 and its assumptions are not attempted',
+    async () => {
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child);
+      const { code, output } = await finished;
+      stopActions();
+      for (let step = 1; step <= 9; step++) {
+        expect(output, output).toContain(`Step ${String(step)}: PASS`);
+      }
+      expect(output).toContain('Step 10: NOT ATTEMPTED (no second token: add --restricted-token');
+      for (const assumption of ['A2', 'A3', 'A7', 'A23']) {
+        expect(output).toMatch(new RegExp(`^${assumption}: NOT ATTEMPTED$`, 'm'));
+      }
+      expect(output).toMatch(/Delete the token you made for this check now/);
+      expect(code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'detects a squash merge as a merge and says so',
+    async () => {
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child, { merge: 'squash' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toContain('Step 8: PASS');
+      expect(output).toMatch(
+        /^Step 8: merged by a squash commit; .* has 1 parent\(s\) and the message "Orchestrator smoke test \S+ \(#1\)"/m,
+      );
+      expect(output).toMatch(/PASS {2}A21: the squash commit's message/);
+      expect(output).toContain('Step 9: PASS');
+      expect(code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'goes on to step 10 when the owner closes the first pull request instead of merging it',
+    async () => {
+      github.accounts.set(RESTRICTED_TOKEN, restrictedAccount());
+      const stopActions = playActions();
+      const { child, finished } = start(
+        [...dryRun(), '--restricted-token'],
+        `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
+      );
+      // Closed on GitHub without merging, as the owner could.
+      playOwner(child, { merge: 'close' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(/FAIL {2}pull request #1 was closed without merging/);
+      expect(output).toMatch(/PASS {2}A20: a pull request closed without merging reads/);
+      expect(output).toMatch(/^Step 8: FAIL/m);
+      expect(output).toMatch(/^Step 9: NOT ATTEMPTED/m);
+      expect(output).toMatch(/^Step 10: PASS/m);
+      expect(output).toContain('Step 8: you closed pull request #1 without merging it.');
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(1);
+      expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: false });
+      expect(() => github.pullRequest(repo, 2)).toThrow();
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'goes on when the owner does nothing: the waits run out, the script closes what it opened',
+    async () => {
+      github.accounts.set(RESTRICTED_TOKEN, restrictedAccount());
+      const stopActions = playActions();
+      const { child, finished } = start(
+        [...dryRun(), '--restricted-token', '--owner-wait-minutes', '1'],
+        `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
+      );
+      playOwner(child, { merge: 'nothing', token: 'nothing' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(/FAIL {2}pull request #1 was not merged within 1 minutes/);
+      expect(output).toContain('The script closed pull request #1.');
+      expect(output).toMatch(/^Step 9: NOT ATTEMPTED/m);
+      expect(output).toMatch(/NOT ATTEMPTED {2}A2: Contents write was not given within 1 minutes/);
+      expect(output).toMatch(/^A2: NOT ATTEMPTED$/m);
+      expect(output).toMatch(/^A3: PASS$/m);
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(output).not.toContain(RESTRICTED_PROBE);
+      expect(code).toBe(1);
+      expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: false });
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'says when the second pull request is not closed in time, or its branch is deleted',
+    async () => {
+      const stopActions = playActions();
+      const late = start([...dryRun(), '--owner-wait-minutes', '1'], `yes\n${TOKEN}\n`);
+      playOwner(late.child, { close: 'nothing' });
+      const first = await late.finished;
+      expect(first.output, first.output).toMatch(
+        /FAIL {2}pull request #2 was not closed within 1 minutes/,
+      );
+      expect(first.output).toContain('The script closed pull request #2.');
+      // The rest of the step still ran.
+      expect(first.output).toMatch(/PASS {2}A8: a closed pull request is found with state=all/);
+      expect(first.output).toMatch(/PASS {2}A9: a pull request closed without merging is reopened/);
+      expect(first.output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(first.code).toBe(1);
+      stopActions();
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "skips the reopen when the owner deletes the second pull request's branch",
+    async () => {
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child, { close: 'delete-branch' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(
+        /NOT ATTEMPTED {2}A9: branch orchestrator-smoke-\S+-conflict was deleted, so a reopen cannot be checked/,
+      );
+      // A9 still passed at step 8 (a merged pull request is not reopened).
+      expect(output).toMatch(/^A9: PASS$/m);
+      expect(output).toContain('Step 9: PASS');
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'says when the second token is given Workflows too: the harmless file is pushed, no CI run, branch deleted',
+    async () => {
+      github.accounts.set(RESTRICTED_TOKEN, restrictedAccount());
+      const stopActions = playActions();
+      const { child, finished } = start(
+        [...dryRun(), '--restricted-token'],
+        `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
+      );
+      playOwner(child, { token: 'workflows' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(
+        /FAIL {2}A2: a push adding a workflow file without Workflows write is refused\n.*GitHub accepted it: the second token has Workflows write/,
+      );
+      expect(output).toMatch(
+        /^Step 10: the workflow file was pushed by mistake \(branch orchestrator-smoke-\S+-workflow, deleted at the clean-up\); CI runs started by it within 30 seconds: none\.$/m,
+      );
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(1);
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+      // The file pushed runs only when started by hand.
+      expect(output).not.toContain(RESTRICTED_PROBE);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'reads a regenerated second token as A2 not attempted',
+    async () => {
+      github.accounts.set(RESTRICTED_TOKEN, restrictedAccount());
+      const stopActions = playActions();
+      const { child, finished } = start(
+        [...dryRun(), '--restricted-token'],
+        `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
+      );
+      playOwner(child, { token: 'regenerate' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(
+        /NOT ATTEMPTED {2}A2: GitHub no longer accepts the second token \(regenerated or deleted\?\)/,
+      );
+      expect(output).toMatch(/^Step 10: PASS/m);
+      expect(code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it('checks the second token before doing anything', async () => {
+    const cases: [string, FakeAccount | null, RegExp][] = [
+      ['', null, /the second token \(--restricted-token\) was not given/],
+      [TOKEN, null, /is the same as the first/],
+      [RESTRICTED_TOKEN, null, /was refused by GitHub/],
+      [
+        RESTRICTED_TOKEN,
+        { ...restrictedAccount(), login: 'someone-else', repositories: [] },
+        /is of someone-else, not of octo-owner/,
+      ],
+      [
+        RESTRICTED_TOKEN,
+        { ...restrictedAccount(), repositories: [] },
+        /cannot see octo-owner\/smoke-test/,
+      ],
+    ];
+    for (const [second, account, message] of cases) {
+      github.accounts.delete(RESTRICTED_TOKEN);
+      if (account) github.accounts.set(RESTRICTED_TOKEN, account);
+      const { code, output } = await run(
+        [...dryRun(), '--restricted-token'],
+        `yes\n${TOKEN}\n${second}\n`,
+      );
+      expect(output).toMatch(message);
+      expect(output).toMatch(/Nothing was done on GitHub\./);
+      expect(output).not.toContain(PROBE);
+      expect(output).not.toContain(RESTRICTED_PROBE);
+      expect(code).toBe(3);
+    }
+    expect(github.requests.every((request) => request.method === 'GET')).toBe(true);
+    expect(github.gitRequests).toEqual([]);
+  });
 
   it(
     'stops when CI does not finish in time, saying what it left on GitHub',
@@ -584,7 +917,9 @@ describe('the dry run of the GitHub smoke script', () => {
       // field, and runs every later step.
       github.alter = unreadableFirstPullRequest();
       const stopActions = playActions();
-      const { code, output } = await run(dryRun(), `yes\n${TOKEN}\n`);
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child);
+      const { code, output } = await finished;
       stopActions();
       expect(output, output).toMatch(
         /FAIL {2}open the pull request: GitHub answered HTTP 201, but the answer cannot be read/,
@@ -596,13 +931,62 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(
         /^Step 2: FAIL .*\n {6}\| open the pull request: .*\n.*head: expected object, received nothing/m,
       );
-      for (const step of [1, 3, 4, 5]) expect(output).toContain(`Step ${String(step)}: PASS`);
+      for (const step of [1, 3, 4, 5, 6, 7, 8, 9]) {
+        expect(output).toContain(`Step ${String(step)}: PASS`);
+      }
       expect(output).toMatch(/^A6: PASS$/m);
-      expect(output).toMatch(/Pull request #1 closed/);
       expect(output).toMatch(/Nothing of this run is left on GitHub\./);
       expect(output).not.toContain(PROBE);
       expect(code).toBe(1);
-      expect(github.pullRequest(repo, 1).state).toBe('closed');
+      expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: true });
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'goes on after unreadable answers in steps 6 to 9, naming the fields',
+    async () => {
+      // A comment review posted, and the pull request read while waiting for the merge, each
+      // answered with a body the layer cannot read: the steps fail naming the fields, the merge
+      // is still detected ("Check if merged"), and every later step runs.
+      github.alter = (request, reply) => {
+        const body = reply.body as Record<string, unknown> | undefined;
+        if (
+          request.method === 'POST' &&
+          request.path.endsWith('/reviews') &&
+          reply.status === 200
+        ) {
+          return { ...reply, body: { ...body, state: null } };
+        }
+        if (
+          request.method === 'GET' &&
+          request.path.endsWith('/pulls/1') &&
+          body?.state === 'closed'
+        ) {
+          return { ...reply, body: { ...body, merged: 'yes' } };
+        }
+        return reply;
+      };
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child);
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(
+        /FAIL {2}post a comment review: GitHub answered HTTP 200, but the answer cannot be read/,
+      );
+      expect(output).toContain('state: expected string, received null');
+      expect(output).toMatch(
+        /FAIL {2}read pull request #1: GitHub answered HTTP 200, but the answer cannot be read/,
+      );
+      expect(output).toContain('merged: expected boolean, received a string');
+      expect(output).toMatch(/^Step 6: FAIL/m);
+      expect(output).toMatch(/^Step 8: FAIL/m);
+      expect(output).toMatch(/^Step 8: merged by a merge commit/m);
+      expect(output).toContain('Step 9: PASS');
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(1);
       expect([...github.branches(repo).keys()]).toEqual(['main']);
     },
     TIMEOUT,
@@ -666,14 +1050,17 @@ describe('the dry run of the GitHub smoke script', () => {
     expect(code).toBe(3);
   });
 
-  it(
-    "gives the terminal's echo back when Ctrl+C comes while the token is typed",
-    async () => {
+  it.each([
+    ['the token', 'Paste the token', []],
+    ['the second token', 'Paste the second, restricted token', ['--restricted-token']],
+  ])(
+    "gives the terminal's echo back when Ctrl+C comes while %s is typed",
+    async (_which, prompt, extra) => {
       // `script` gives the command a terminal; `stty -a` then reads that terminal's settings.
       const command = [
         'bash',
         `'${script}'`,
-        ...dryRun().map((arg) => `'${arg}'`),
+        ...[...dryRun(), ...extra].map((arg) => `'${arg}'`),
         '; echo "EXIT=$?"; stty -a',
       ].join(' ');
       // `script` runs the command with $SHELL: bash, which goes on after a child that ends itself
@@ -694,6 +1081,12 @@ describe('the dry run of the GitHub smoke script', () => {
         if (step === 1 && output.includes('Paste the token')) {
           step = 2;
           child.stdin.write(PROBE.slice(0, 10));
+          if (prompt === 'Paste the token') setTimeout(() => child.stdin.write('\x03'), 300);
+          else child.stdin.write('\r');
+        }
+        if (step === 2 && output.includes(prompt) && prompt !== 'Paste the token') {
+          step = 3;
+          child.stdin.write(RESTRICTED_PROBE.slice(0, 10));
           setTimeout(() => child.stdin.write('\x03'), 300);
         }
       });
@@ -703,6 +1096,7 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/[ \n]echo[ \r\n]/);
       expect(output).not.toMatch(/-echo[ \r\n]/);
       expect(output).not.toContain(PROBE.slice(0, 10));
+      expect(output).not.toContain(RESTRICTED_PROBE.slice(0, 10));
       await nothingDone();
     },
     TIMEOUT,

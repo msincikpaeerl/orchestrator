@@ -69,7 +69,11 @@ async function gitFails(cwd: string, ...args: string[]): Promise<string> {
     () => {
       throw new Error(`git ${args.join(' ')} succeeded`);
     },
-    (error: unknown) => (error as { stderr: string }).stderr,
+    // Standard output too: `push --porcelain` writes its lines there.
+    (error: unknown) => {
+      const failed = error as { stdout: string; stderr: string };
+      return failed.stdout + failed.stderr;
+    },
   );
 }
 
@@ -188,7 +192,10 @@ describe('Git over HTTP', () => {
       permissions: { ...account.permissions, contents: 'read' },
     });
     await git(work, 'remote', 'set-url', 'origin', cloneUrl(OTHER));
-    expect(await gitFails(work, ...push)).toMatch(/403/);
+    // GitHub's words for a fine-grained token without Contents write (the owner's run, step E3).
+    const denied = await gitFails(work, ...push);
+    expect(denied).toContain('Write access to repository not granted.');
+    expect(denied).toContain('The requested URL returned error: 403');
     expect(github.gitRequests.at(-1)).toMatchObject({ access: 'push', outcome: 403 });
     // The token can still fetch.
     await git(work, 'fetch', '--quiet', 'origin');
@@ -215,9 +222,11 @@ describe('Git over HTTP', () => {
     await writeFile(join(work, '.github', 'workflows', 'ci.yml'), 'name: CI\n');
     await git(work, 'add', '-A');
     await git(work, 'commit', '--quiet', '-m', 'CI');
-    const refused = await gitFails(work, 'push', 'origin', 'HEAD:refs/heads/t/3-ci');
+    const refused = await gitFails(work, 'push', '--porcelain', 'origin', 'HEAD:refs/heads/t/3-ci');
+    // GitHub's words, "`workflow` scope" even for a fine-grained token, as the reason of the line
+    // the daemon reads (the owner's run, step E3).
     expect(refused).toContain(
-      'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflows` permission',
+      '!\tHEAD:refs/heads/t/3-ci\t[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)',
     );
     expect(github.branches(repo).has('t/3-ci')).toBe(false);
 
@@ -388,8 +397,13 @@ describe('reviews', () => {
     expect(json(changes).errors).toEqual([
       'Review Can not request changes on your own pull request',
     ]);
-    // A comment needs a body.
-    expect((await api('POST', `${REPO}/pulls/1/reviews`, { event: 'COMMENT' })).status).toBe(422);
+    // A comment needs a body. A review's 422 is "validation-error-simple": plain strings.
+    const empty = await api('POST', `${REPO}/pulls/1/reviews`, { event: 'COMMENT' });
+    expect(empty.status).toBe(422);
+    expect(json(empty).errors).toEqual(['Body is required when using REQUEST_CHANGES or COMMENT']);
+    const unknown = await api('POST', `${REPO}/pulls/1/reviews`, { event: 'LIKE', body: 'x' });
+    expect(unknown.status).toBe(422);
+    expect(json(unknown).errors).toEqual(['Event LIKE is not valid']);
 
     const comment = await api('POST', `${REPO}/pulls/1/reviews`, {
       event: 'COMMENT',
@@ -584,6 +598,38 @@ describe('the owner on GitHub', () => {
     expect(() => github.updatePullRequestBranch(repo, 1)).toThrow('conflicts');
     expect(() => github.mergePullRequest(repo, 1)).toThrow('conflicts');
   });
+
+  it('Update branch through the API: 202 when behind, 422 when not behind or in conflict', async () => {
+    await cloneWithToken();
+    const head = await pushCommit('t/1-cart', { 'cart.md': 'Cart\n' });
+    await openPull('t/1-cart');
+    const notBehind = await api('PUT', `${REPO}/pulls/1/update-branch`, {});
+    expect(notBehind.status).toBe(422);
+    expect(json(notBehind).message).toBe('There are no new commits on the base branch.');
+    expect(typeof json(notBehind).documentation_url).toBe('string');
+
+    github.commit(repo, 'main', { 'other.md': 'Other\n' }, 'Other change');
+    const stale = await api('PUT', `${REPO}/pulls/1/update-branch`, {
+      expected_head_sha: '0'.repeat(40),
+    });
+    expect(stale.status).toBe(422);
+    const updated = await api('PUT', `${REPO}/pulls/1/update-branch`, { expected_head_sha: head });
+    expect(updated.status).toBe(202);
+    expect(json(updated)).toEqual({
+      message: 'Updating pull request branch.',
+      url: `${github.url}${REPO}/pulls/1`,
+    });
+    const pull = json(await api('GET', `${REPO}/pulls/1`));
+    expect((pull.head as JsonObject).sha).not.toBe(head);
+
+    github.commit(repo, 'main', { 'cart.md': 'Another cart\n' }, 'Conflicting change');
+    expect(await mergeable(1)).toBe(false);
+    const runsBefore = github.runs(repo).length;
+    const conflict = await api('PUT', `${REPO}/pulls/1/update-branch`, {});
+    expect(conflict.status).toBe(422);
+    expect(json(conflict).message).toBe('merge conflict between base and head');
+    expect(github.runs(repo).length).toBe(runsBefore);
+  });
 });
 
 describe('refusals', () => {
@@ -618,6 +664,15 @@ describe('refusals', () => {
       OTHER,
     );
     expect(reviews.headers.get('x-accepted-github-permissions')).toBe('pull_requests=write');
+    const update = await api('PUT', `${REPO}/pulls/1/update-branch`, {}, OTHER);
+    expect(update.status).toBe(403);
+    expect(update.headers.get('x-accepted-github-permissions')).toBe('pull_requests=write');
+    // GitHub's "basic-error", as documented for a 403.
+    expect(json(update)).toEqual({
+      message: 'Resource not accessible by personal access token',
+      documentation_url: 'https://docs.github.com/rest',
+      status: '403',
+    });
     // Reading one pull request takes Pull requests or Contents: here Contents is enough.
     expect((await api('GET', `${REPO}/pulls/1`, undefined, OTHER)).status).toBe(404);
     github.accounts.set(OTHER, { ...account, permissions: { metadata: 'read' } });

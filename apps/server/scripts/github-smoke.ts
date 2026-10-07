@@ -34,23 +34,33 @@ import {
   closePullRequest,
   deleteBranch,
   findPullRequests,
+  isPullRequestMerged,
   openPullRequest,
+  postReview,
   readPullRequest,
+  reopenPullRequest,
   type PullRequest,
 } from '../src/github/pull-requests.js';
-import { branchPath, findRepository, repoPath } from '../src/github/repositories.js';
+import { findRepository } from '../src/github/repositories.js';
 import { excerptHeading } from '../src/github/job-log.js';
 import { checkToken, inspectToken } from '../src/github/token-check.js';
+import {
+  branchHead,
+  mergeMethod,
+  readCommit,
+  updatePullRequestBranch,
+} from './github-smoke-reads.js';
 
 // The Node.js helper of tools/smoke/github-smoke.sh (lot 3 plan, step E): the owner's check of
 // the real GitHub, with no Claude quota. The script reads the token from the terminal and gives
-// it here as the first line of standard input; it lives only in this process's memory. Every
+// it here as the first line of standard input (the second, restricted token of step 10 as the
+// second line); they live only in this process's memory. Every
 // GitHub request uses the server's GitHub layer, and every fetch and push the daemon's own
 // workspace code (`Workspaces`, ADR 0034), fed the token through a credential source: the
 // daemon's one-shot credential socket hands it to the daemon's `git-credential` command, which
 // Git runs, exactly as in a run, with this process in the server's place.
 //
-// Everything printed goes through `say`, which masks the token. Steps 6 to 10 come in step E3.
+// Everything printed goes through `say`, which masks the tokens.
 
 const options = parseArgs({
   options: {
@@ -59,6 +69,8 @@ const options = parseArgs({
     'git-url': { type: 'string' },
     scratch: { type: 'string' },
     'ci-wait-minutes': { type: 'string', default: '15' },
+    'owner-wait-minutes': { type: 'string', default: '30' },
+    'restricted-token': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
   },
 }).values;
@@ -70,8 +82,13 @@ const API_URL = options['api-url'] ?? '';
 const GIT_URL = (options['git-url'] ?? '').replace(/\/$/, '');
 const SCRATCH = options.scratch ?? '';
 const CI_WAIT_MINUTES = Number(options['ci-wait-minutes']);
+const OWNER_WAIT_MINUTES = Number(options['owner-wait-minutes']);
+/** Whether the owner gives the second, restricted token (step 10). */
+const RESTRICTED = options['restricted-token'];
 /** How often GitHub is read while waiting; the dry run's fake answers at once. */
 const POLL_MS = DRY_RUN ? 50 : 5_000;
+/** How often GitHub is read while the owner acts on GitHub's site (15 seconds). */
+const OWNER_POLL_MS = DRY_RUN ? 50 : 15_000;
 /** A minute of waiting; a second in the dry run, so its test of a wait that gives up is short. */
 const MINUTE_MS = DRY_RUN ? 1_000 : 60_000;
 const CHECKOUT = resolve(import.meta.dirname, '..', '..', '..');
@@ -115,11 +132,11 @@ const STEPS: [number, string][] = [
   [3, 'wait for CI; runs by head commit; logs of a job not finished; combined status'],
   [4, 'a broken link; two diverged pushes refused; the failure, its jobs and its log'],
   [5, 'repair the link; CI passes'],
-  [6, 'reviews on your own pull request (step E3)'],
-  [7, 'mergeable state (step E3)'],
-  [8, 'merge by the owner and its detection (step E3)'],
-  [9, 'a conflicting pull request, closed and reopened (step E3)'],
-  [10, 'the second, restricted token (step E3)'],
+  [6, 'reviews on your own pull request'],
+  [7, 'mergeable state'],
+  [8, 'merge by you on GitHub, and its detection'],
+  [9, 'a conflicting pull request, closed by you, found and reopened'],
+  [10, 'the second, restricted token'],
 ];
 const ASSUMPTIONS = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13',
@@ -215,14 +232,15 @@ function readable<T>(result: GitHubResult<T>, what: string): T | null {
 // What is left on GitHub, said when the script stops early
 
 const left = {
-  branch: null as string | null,
+  /** The run's branches on GitHub, the first one first. */
+  branches: [] as string[],
   pullRequests: [] as number[],
   /** A pull request GitHub created whose number the script could not read nor find. */
   unknownPullRequest: false,
 };
 
 function nothingLeft(): boolean {
-  return left.branch === null && left.pullRequests.length === 0 && !left.unknownPullRequest;
+  return left.branches.length === 0 && left.pullRequests.length === 0 && !left.unknownPullRequest;
 }
 const WEB_URL = DRY_RUN ? GIT_URL : 'https://github.com';
 const repoWeb = `${WEB_URL}/${OWNER}/${NAME}`;
@@ -243,24 +261,38 @@ function sayLeft(): void {
       `- a pull request from branch ${BRANCH}, whose number could not be read: ${repoWeb}/pulls?q=${encodeURIComponent(`is:pr is:open head:${BRANCH}`)} (open it, then "Close pull request")`,
     );
   }
-  if (left.branch !== null) {
+  for (const branch of left.branches) {
     say(
-      `- branch ${left.branch}: ${repoWeb}/branches (the bin icon on its line), or "Delete branch" on the pull request's page once closed`,
+      `- branch ${branch}: ${repoWeb}/branches (the bin icon on its line), or "Delete branch" on the pull request's page once closed`,
     );
   }
+}
+
+/** What stays on GitHub by design (the plan's step E3), and what the run saw happen. */
+const stays: string[] = [];
+const notes: string[] = [];
+
+function sayStays(): void {
+  say('Stays on GitHub by design:');
+  for (const line of stays) say(`- ${line}`);
+  say(
+    `- the workflow runs of this run, in the Actions tab: ${repoWeb}/actions (each can be deleted)`,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
 // The token, read once from standard input
 
-async function readToken(): Promise<string> {
+/** The first `count` lines of standard input: the token, then the second token when given. */
+async function readTokens(count: number): Promise<string[]> {
   let text = '';
   for await (const chunk of process.stdin) {
     text += String(chunk);
-    if (text.includes('\n')) break;
+    if (text.split('\n').length > count) break;
   }
   process.stdin.destroy();
-  return text.split('\n')[0]?.trim() ?? '';
+  const lines = text.split('\n');
+  return Array.from({ length: count }, (_, index) => lines[index]?.trim() ?? '');
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -273,6 +305,26 @@ const stamp = new Date()
   .replace(/\.\d+Z$/, 'Z')
   .replace('T', '-');
 const BRANCH = `orchestrator-smoke-${stamp}`;
+/** Step 9's branch, made from the default branch as it was before the merge of step 8. */
+const CONFLICT_BRANCH = `${BRANCH}-conflict`;
+/** Step 10's branch, pushed with the second token: it adds a workflow file. */
+const WORKFLOW_BRANCH = `${BRANCH}-workflow`;
+const WORKFLOW_FILE = '.github/workflows/orchestrator-smoke.yml';
+/**
+ * Harmless if GitHub accepts it by mistake (the owner's addition, step E3): it runs only when
+ * started by hand, and its one job only prints.
+ */
+const WORKFLOW = `# Pushed by the Orchestrator's smoke script (tools/smoke/github-smoke.sh) with a token that
+# must be refused. It runs only when started by hand, and does nothing.
+name: Orchestrator smoke test
+on: workflow_dispatch
+permissions: {}
+jobs:
+  nothing:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Nothing to do."
+`;
 const cloneUrl = (name: string) => `${GIT_URL}/${OWNER}/${name}.git`;
 
 /** The daemon's warnings, readable and masked (a refused credential says why). */
@@ -306,7 +358,12 @@ function gitExecutable(): string {
  * A `run.start` as the server sends it, for what the workspace reads (repository, branches,
  * commit author, Longest push); the session fields are never used here.
  */
-function runStart(account: { login: string; id: number }, baseBranch: string, name = NAME) {
+function runStart(
+  account: { login: string; id: number },
+  baseBranch: string,
+  name = NAME,
+  ticketBranch = BRANCH,
+) {
   const start: RunStart['payload'] = {
     runId: randomUUID(),
     purpose: 'implement',
@@ -316,7 +373,7 @@ function runStart(account: { login: string; id: number }, baseBranch: string, na
       name,
       cloneUrl: cloneUrl(name),
       baseBranch,
-      ticketBranch: BRANCH,
+      ticketBranch,
     },
     commitAuthor: {
       name: 'Orchestrator smoke test',
@@ -410,16 +467,12 @@ function pushText(result: PushResult): string {
 // ---------------------------------------------------------------------------------------------
 // GitHub reads
 
-const Reference = z.object({ object: z.object({ sha: z.string() }) });
-
-/** The branch's head on GitHub ("Get a reference"); null when it does not exist. */
+/**
+ * The branch's head on GitHub; null when it does not exist, or when the answer cannot be read
+ * (the step then fails, naming the fields).
+ */
 async function githubHead(client: GitHubClient, branch: string): Promise<string | null> {
-  const response = await client.request({
-    method: 'GET',
-    path: `${repoPath(REPO)}/git/ref/heads/${branchPath(branch)}`,
-  });
-  const parsed = Reference.safeParse(response.body);
-  return response.status === 200 && parsed.success ? parsed.data.object.sha : null;
+  return readable(await branchHead(client, REPO, branch), `read the head of ${branch}`);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -490,7 +543,19 @@ interface Context {
   second?: Machine;
   stepOneHead?: string;
   pull?: number;
+  /** The first pull request's title, for the squash commit's message (A21). */
+  pullTitle?: string;
   brokenHead?: string;
+  /** Whether the repository is private (A23's reads need a permission only there). */
+  privateRepository: boolean;
+  /** A comment review was posted on the first pull request (step 6). */
+  reviewed?: boolean;
+  /** The owner merged the first pull request (step 8). */
+  merged?: boolean;
+  /** The default branch's head right after the merge: for this script only (step E3). */
+  mergedHead?: string;
+  /** The second, restricted token and its client (step 10). */
+  restricted?: { token: string; client: GitHubClient };
 }
 
 async function stepZero(context: Context): Promise<void> {
@@ -523,7 +588,7 @@ async function stepOne(context: Context): Promise<void> {
     'Orchestrator smoke test: step 1',
   );
   const pushed = await first.spaces.push(first.start, first.bare, first.folder, head);
-  if (pushed.status === 'pushed') left.branch = BRANCH;
+  if (pushed.status === 'pushed') left.branches.push(BRANCH);
   check(
     'A1',
     pushed.status === 'pushed' && (await githubHead(context.client, BRANCH)) === head,
@@ -625,11 +690,12 @@ async function pullOfBranch(context: Context, known: number[]): Promise<number |
 
 async function stepTwo(context: Context): Promise<void> {
   startStep(2);
+  context.pullTitle = `Orchestrator smoke test ${stamp}`;
   const opening = await openPullRequest(context.client, REPO, {
     head: BRANCH,
     base: context.baseBranch,
-    title: `Orchestrator smoke test ${stamp}`,
-    body: "Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh). The script closes it and deletes its branch when it finishes; if it stopped early, close this pull request and delete the branch.",
+    title: context.pullTitle,
+    body: "Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh). Merge it only when the script asks you to; if the script stopped early, close this pull request and delete its branch.",
   });
   let opened: PullRequest | null = null;
   if (opening.ok) {
@@ -929,6 +995,735 @@ async function stepFive(context: Context): Promise<void> {
   endStep();
 }
 
+// ---------------------------------------------------------------------------------------------
+// Waiting for the owner
+
+/**
+ * Says what the owner must do on GitHub, then calls `poll` every 15 seconds until it gives a
+ * value, at most **--owner-wait-minutes**. Null when the wait runs out. GitHub out of reach for a
+ * moment does not end the wait.
+ */
+async function waitForOwner<T>(lines: string[], poll: () => Promise<T | null>): Promise<T | null> {
+  say();
+  for (const line of lines) say(`  ${line}`);
+  say(
+    `  The script checks every 15 seconds, for at most ${String(OWNER_WAIT_MINUTES)} minutes (--owner-wait-minutes).`,
+  );
+  const until = Date.now() + OWNER_WAIT_MINUTES * MINUTE_MS;
+  let unreachableSaid = false;
+  for (;;) {
+    try {
+      const found = await poll();
+      if (found !== null) return found;
+    } catch (error) {
+      if (error instanceof Stop) throw error;
+      if (!unreachableSaid) {
+        say(
+          `  (GitHub could not be reached: ${error instanceof Error ? error.message : String(error)}; trying again)`,
+        );
+        unreachableSaid = true;
+      }
+    }
+    if (Date.now() > until) {
+      say(`  The wait ran out after ${String(OWNER_WAIT_MINUTES)} minutes.`);
+      return null;
+    }
+    await sleep(OWNER_POLL_MS);
+  }
+}
+
+/** Removes `number` from what is left on GitHub (it is closed). */
+function closedNow(number: number): void {
+  left.pullRequests = left.pullRequests.filter((each) => each !== number);
+}
+
+/**
+ * Reads the pull request until `done` says so: null while waiting. When its answer cannot be
+ * read, the step fails once, naming the fields, and "Check if merged" and the list of the
+ * branch's open pull requests answer instead (`pull` is then null).
+ */
+function pullWatcher(
+  context: Context,
+  number: number,
+  branch: string,
+): () => Promise<{ merged: boolean; pull: PullRequest | null } | null> {
+  let unreadableSeen = false;
+  return async () => {
+    if (!unreadableSeen) {
+      const read = await readPullRequest(context.client, REPO, number);
+      if (read.ok) {
+        return read.value.state === 'closed'
+          ? { merged: read.value.merged, pull: read.value }
+          : null;
+      }
+      if (!unreadable(read.refusal)) return null;
+      unreadableSeen = true;
+      readable(read, `read pull request #${String(number)}`);
+    }
+    const merged = await isPullRequestMerged(context.client, REPO, number);
+    if (merged.ok && merged.value) return { merged: true, pull: null };
+    const open = await findPullRequests(context.client, REPO, branch, 'open');
+    if (open.ok && !open.value.some((pull) => pull.number === number)) {
+      return { merged: false, pull: null };
+    }
+    return null;
+  };
+}
+
+/** A20: what a closed pull request reads: `state`, `merged` and "Check if merged". */
+async function checkClosed(
+  context: Context,
+  number: number,
+  pull: PullRequest | null,
+  merged: boolean,
+): Promise<void> {
+  const answer = await isPullRequestMerged(context.client, REPO, number);
+  const read = pull
+    ? `state ${pull.state}, merged ${String(pull.merged)}, merged_at ${pull.mergedAt ?? 'null'}`
+    : 'the pull request could not be read';
+  const mergeAnswer = answer.ok
+    ? `GET .../merge ${answer.value ? '204' : '404'}`
+    : refusalText(answer.refusal);
+  check(
+    'A20',
+    (pull === null ||
+      (pull.state === 'closed' && pull.merged === merged && (pull.mergedAt !== null) === merged)) &&
+      answer.ok &&
+      answer.value === merged,
+    merged
+      ? 'a merged pull request reads state closed, merged true, and GET .../merge answers 204'
+      : 'a pull request closed without merging reads state closed, merged false, and GET .../merge answers 404',
+    `${read}; ${mergeAnswer}`,
+  );
+}
+
+/** Reads the pull request until `mergeable` is known (at most 20 reads), each read printed. */
+async function readUntilMergeable(
+  context: Context,
+  number: number,
+  reads: string[],
+): Promise<PullRequest | null> {
+  let last: PullRequest | null = null;
+  for (let read = 0; read < 20; read++) {
+    await sleep(DRY_RUN ? POLL_MS : 2_000);
+    const again = readable(
+      await readPullRequest(context.client, REPO, number),
+      `read pull request #${String(number)}`,
+    );
+    if (again === null) break;
+    last = again;
+    reads.push(
+      `read ${String(read + 1)}: mergeable ${String(again.mergeable)} (${again.mergeableState})`,
+    );
+    if (again.mergeable !== null) break;
+  }
+  return last;
+}
+
+/** A commit on `parent` that writes `content` to `path`, leaving every branch where it is. */
+async function commitFile(
+  machine: Machine,
+  parent: string,
+  path: string,
+  content: string,
+  message: string,
+): Promise<string> {
+  const env = { GIT_INDEX_FILE: join(machine.folder, 'smoke-index') };
+  const at = ['-C', machine.worktree];
+  await machine.git.run([...at, 'read-tree', parent], env);
+  const blob = (
+    await machine.git.run([...at, 'hash-object', '-w', '--stdin'], env, content)
+  ).trim();
+  await machine.git.run(
+    [...at, 'update-index', '--add', '--cacheinfo', `100644,${blob},${path}`],
+    env,
+  );
+  const tree = (await machine.git.run([...at, 'write-tree'], env)).trim();
+  return (await machine.git.run([...at, 'commit-tree', tree, '-p', parent, '-m', message])).trim();
+}
+
+/** The default branch as the first machine fetched it at step 1, before the merge of step 8. */
+async function baseAtStepOne(context: Context, machine: Machine): Promise<string> {
+  const ref = `refs/remotes/origin/${context.baseBranch}`;
+  return (await machine.git.run(['-C', machine.bare, 'rev-parse', ref])).trim();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Steps 6 to 10
+
+async function stepSix(context: Context): Promise<void> {
+  startStep(6);
+  const number = context.pull;
+  if (number === undefined) return stop('step 2 did not finish');
+  const comment = await postReview(context.client, REPO, number, {
+    event: 'COMMENT',
+    body: "A comment review by the Orchestrator's smoke script: the Orchestrator posts its reviews as comments (A11).",
+  });
+  if (comment.ok || unreadable(comment.refusal)) context.reviewed = true;
+  if (comment.ok) {
+    check(
+      'A11',
+      comment.value.state === 'COMMENTED',
+      'a comment review on your own pull request is accepted, with state COMMENTED',
+      `state ${comment.value.state}`,
+    );
+  } else if (unreadable(comment.refusal)) {
+    readable(comment, 'post a comment review');
+  } else {
+    check(
+      'A11',
+      false,
+      'a comment review on your own pull request is accepted',
+      refusalText(comment.refusal),
+    );
+  }
+  const refusals: ['APPROVE' | 'REQUEST_CHANGES', string][] = [
+    ['APPROVE', 'Review Can not approve your own pull request'],
+    ['REQUEST_CHANGES', 'Review Can not request changes on your own pull request'],
+  ];
+  for (const [event, text] of refusals) {
+    const posted = await postReview(context.client, REPO, number, {
+      event,
+      body: `An ${event} review by the Orchestrator's smoke script: GitHub must refuse it.`,
+    });
+    check(
+      'A11',
+      !posted.ok && posted.refusal.kind === 'invalid' && posted.refusal.details.includes(text),
+      `${event} on your own pull request: 422 "${text}"`,
+      posted.ok ? `accepted, state ${posted.value.state}` : refusalText(posted.refusal),
+    );
+  }
+  endStep();
+}
+
+async function stepSeven(context: Context): Promise<void> {
+  startStep(7);
+  const number = context.pull;
+  if (number === undefined) return stop('step 2 did not finish');
+  const reads: string[] = [];
+  const pull = await readUntilMergeable(context, number, reads);
+  for (const line of reads) say(`  ${line}`);
+  if (pull === null) {
+    notAttempted('A10', 'the pull request could not be read');
+  } else {
+    check(
+      'A10',
+      pull.mergeable === true && pull.mergeableState === 'clean',
+      'CI passed and no conflict: mergeable true, mergeable_state clean',
+      reads.join('\n'),
+    );
+  }
+  endStep();
+}
+
+async function stepEight(context: Context): Promise<void> {
+  startStep(8);
+  const number = context.pull;
+  if (number === undefined) return stop('step 2 did not finish');
+  const before = await githubHead(context.client, context.baseBranch);
+  const link = `${repoWeb}/pull/${String(number)}`;
+  const seen = await waitForOwner(
+    [
+      `>>> Your turn on GitHub: merge pull request #${String(number)}.`,
+      `  1. Open ${link}`,
+      '  2. At the bottom of the page, click the arrow beside the green merge button and choose "Create a merge commit".',
+      '  3. Click "Merge pull request", then "Confirm merge". Leave the branch: do not click "Delete branch" (the script deletes it).',
+      'If you choose "Squash and merge" or "Rebase and merge" instead, the merge is detected the same way and the result says which method it found.',
+      'If you close it without merging, or the wait runs out (the script then closes it): step 8 fails, step 9 is not attempted (it needs the merge), and the script goes on with step 10 and the clean-up.',
+    ],
+    pullWatcher(context, number, BRANCH),
+  );
+  if (seen === null) {
+    check(
+      null,
+      false,
+      `pull request #${String(number)} was not merged within ${String(OWNER_WAIT_MINUTES)} minutes`,
+    );
+    const closed = await closePullRequest(context.client, REPO, number);
+    if (closed.ok || unreadable(closed.refusal)) {
+      closedNow(number);
+      say(`  The script closed pull request #${String(number)}.`);
+    } else {
+      say(`  The script could not close it: ${refusalText(closed.refusal)}`);
+    }
+    notes.push(
+      `Step 8: pull request #${String(number)} was not merged within the wait; the script closed it.`,
+    );
+    endStep();
+    return;
+  }
+  closedNow(number);
+  stays.push(
+    `pull request #${String(number)}, ${seen.merged ? 'merged' : 'closed'}${context.reviewed ? ', with the comment review of step 6' : ''}: ${link}`,
+  );
+  await checkClosed(context, number, seen.pull, seen.merged);
+  if (!seen.merged) {
+    check(
+      null,
+      false,
+      `pull request #${String(number)} was closed without merging: step 9 needs a merge`,
+    );
+    notes.push(`Step 8: you closed pull request #${String(number)} without merging it.`);
+    endStep();
+    return;
+  }
+  context.merged = true;
+
+  // The merge commit: the default branch's head right after the merge. For this script only,
+  // where it is printed (the owner's decision, step E3): no product code reads it.
+  const head = await githubHead(context.client, context.baseBranch);
+  const commit =
+    head === null
+      ? null
+      : readable(
+          await readCommit(context.client, REPO, head),
+          'read the new head of the default branch',
+        );
+  if (head === null || commit === null || before === null) {
+    notAttempted('A21', "the default branch's new head could not be read");
+  } else {
+    const method = mergeMethod(commit, before);
+    const firstLine = commit.message.split('\n')[0] ?? '';
+    const words = { merge: 'a merge commit', squash: 'a squash commit', rebase: 'a rebase' };
+    say(
+      `  ${context.baseBranch} is now at ${head.slice(0, 7)}: ${words[method]} (${String(commit.parents.length)} parent${commit.parents.length === 1 ? '' : 's'}), message "${firstLine}"`,
+    );
+    notes.push(
+      `Step 8: merged by ${words[method]}; the default branch's new head ${head} has ${String(commit.parents.length)} parent(s) and the message "${firstLine}".`,
+    );
+    stays.push(
+      `the merge of pull request #${String(number)} into ${context.baseBranch} (${words[method]}), with ${PAGE}: ${repoWeb}/commit/${head}`,
+    );
+    if (method === 'rebase') {
+      notAttempted('A21', "a rebase keeps each commit's own message");
+    } else {
+      const expected =
+        method === 'merge'
+          ? `Merge pull request #${String(number)} from ${OWNER}/${BRANCH}`
+          : `${context.pullTitle ?? ''} (#${String(number)})`;
+      check(
+        'A21',
+        firstLine === expected,
+        `the ${method === 'merge' ? 'merge' : 'squash'} commit's message: "${expected}"`,
+        firstLine,
+      );
+    }
+    context.mergedHead = head;
+  }
+
+  // A merged pull request cannot be reopened (A9).
+  const reopened = await reopenPullRequest(context.client, REPO, number);
+  check(
+    'A9',
+    !reopened.ok && reopened.refusal.kind === 'invalid',
+    'reopening a merged pull request: 422',
+    reopened.ok ? `reopened, state ${reopened.value.state}` : refusalText(reopened.refusal),
+  );
+  if (!reopened.ok) say(`  GitHub's answer: ${refusalText(reopened.refusal)}`);
+
+  // The push runs of the merge, listed as soon as they start, never waited for (A16).
+  if (context.mergedHead === undefined) {
+    notAttempted('A16', "the default branch's new head could not be read");
+  } else {
+    const mergedHead = context.mergedHead;
+    const until = Date.now() + 3 * MINUTE_MS;
+    let runs: WorkflowRun[] | null = [];
+    while (runs !== null && runs.length === 0 && Date.now() < until) {
+      await sleep(POLL_MS);
+      runs = readable(
+        await listCommitRuns(context.client, REPO, mergedHead),
+        'read the runs of the merge',
+      );
+    }
+    if (runs === null) {
+      notAttempted('A16', 'the runs could not be read');
+    } else {
+      say(`  Runs of ${mergedHead.slice(0, 7)}: ${conclusions(runs) || 'none within 3 minutes'}`);
+      check(
+        'A16',
+        runs.length > 0 && runs.every((run) => run.event === 'push' && run.headSha === mergedHead),
+        "the merge starts the default branch's push runs on its new head (not waited for)",
+        conclusions(runs) || 'no run within 3 minutes',
+      );
+    }
+  }
+  endStep();
+}
+
+/** The open pull request GitHub created for `branch` with an answer the layer cannot read. */
+async function pullOfConflictBranch(context: Context): Promise<number | null> {
+  const found = readable(
+    await findPullRequests(context.client, REPO, CONFLICT_BRANCH, 'open'),
+    `find the pull request of branch ${CONFLICT_BRANCH}`,
+  );
+  return found?.[0]?.number ?? null;
+}
+
+async function stepNine(context: Context): Promise<void> {
+  const first = context.first;
+  if (!context.merged || !first) {
+    say();
+    say(
+      'Step 9: NOT ATTEMPTED (it needs the merge of step 8: without it the second pull request would not conflict, and would start a CI run)',
+    );
+    return;
+  }
+  startStep(9);
+  const base = await baseAtStepOne(context, first);
+  const head = await commitFile(
+    first,
+    base,
+    PAGE,
+    `# Orchestrator smoke test\n\nWritten by the second pull request of the smoke test on ${stamp}: it conflicts with the first.\n`,
+    'Orchestrator smoke test: a conflicting change',
+  );
+  const start = runStart(context.account, context.baseBranch, NAME, CONFLICT_BRANCH);
+  const pushed = await first.spaces.push(start, first.bare, first.folder, head);
+  if (pushed.status !== 'pushed') {
+    check(
+      null,
+      false,
+      `the push of ${CONFLICT_BRANCH}, made from ${context.baseBranch} before the merge`,
+      pushText(pushed),
+    );
+    endStep();
+    return;
+  }
+  left.branches.push(CONFLICT_BRANCH);
+  say(
+    `  Branch ${CONFLICT_BRANCH} at ${head.slice(0, 7)}, made from ${context.baseBranch} as it was before the merge, changes the same line.`,
+  );
+
+  const opening = await openPullRequest(context.client, REPO, {
+    head: CONFLICT_BRANCH,
+    base: context.baseBranch,
+    title: `Orchestrator smoke test ${stamp}: a conflict`,
+    body: "Opened by the Orchestrator's smoke script: it conflicts on purpose. The script closes it (with your help) and deletes its branch.",
+  });
+  let opened: PullRequest | null = null;
+  if (opening.ok) {
+    opened = opening.value;
+  } else if (unreadable(opening.refusal)) {
+    left.unknownPullRequest = true;
+    readable(opening, 'open the second pull request');
+  } else {
+    check(null, false, 'open the second pull request', refusalText(opening.refusal));
+    endStep();
+    return;
+  }
+  const number = opened?.number ?? (await pullOfConflictBranch(context));
+  if (number === null) return stop(`find the pull request GitHub created for ${CONFLICT_BRANCH}`);
+  left.unknownPullRequest = false;
+  left.pullRequests.push(number);
+  const link = `${repoWeb}/pull/${String(number)}`;
+  say(`  Pull request #${String(number)}: ${link}`);
+  const reads = opened
+    ? [`at creation: mergeable ${String(opened.mergeable)} (${opened.mergeableState})`]
+    : [];
+  const read = await readUntilMergeable(context, number, reads);
+  for (const line of reads) say(`  ${line}`);
+  if (read === null) {
+    notAttempted('A19', 'the pull request could not be read');
+    notAttempted('A10', 'the pull request could not be read');
+  } else {
+    check(
+      'A19',
+      (opened === null || opened.mergeable === null) && read.mergeable === false,
+      'a pull request conflicting with the base branch: mergeable null at creation, then false',
+      reads.join('\n'),
+    );
+    check(
+      'A10',
+      read.mergeableState === 'dirty',
+      'with a conflict, mergeable_state is dirty',
+      reads.join('\n'),
+    );
+  }
+
+  // Update branch through the API: refused while the pull request has a conflict (A18).
+  const update = await updatePullRequestBranch(context.client, REPO, number, head);
+  check(
+    'A18',
+    !update.ok && update.refusal.kind === 'invalid',
+    'Update branch through the API, with a conflict: 422',
+    update.ok ? `accepted: ${update.value}` : refusalText(update.refusal),
+  );
+  if (!update.ok) say(`  GitHub's answer: ${refusalText(update.refusal)}`);
+
+  // No pull_request run for a pull request with a conflict (GitHub's documentation).
+  await sleep(DRY_RUN ? 500 : 30_000);
+  const runs = readable(
+    await listCommitRuns(context.client, REPO, head),
+    'read the runs of the second pull request',
+  );
+  if (runs !== null) {
+    check(
+      null,
+      runs.length === 0,
+      'no CI run starts for a pull request with a conflict (30 seconds after it was opened)',
+      conclusions(runs),
+    );
+  }
+
+  const seen = await waitForOwner(
+    [
+      `>>> Your turn on GitHub: close pull request #${String(number)} without merging it.`,
+      `  1. Open ${link}`,
+      '  2. At the bottom of the page, click "Close pull request" (it cannot be merged: it conflicts with the first one).',
+      '  Do not click "Resolve conflicts", and do not click "Delete branch" afterwards: the script reopens it, closes it again and deletes the branch.',
+      'If the wait runs out: step 9 fails, and the script closes it itself and checks the rest.',
+      'If you delete the branch: the reopen cannot be checked (NOT ATTEMPTED). If you resolve the conflicts on GitHub: any CI run that starts is listed in the result.',
+    ],
+    pullWatcher(context, number, CONFLICT_BRANCH),
+  );
+  if (seen === null) {
+    check(
+      null,
+      false,
+      `pull request #${String(number)} was not closed within ${String(OWNER_WAIT_MINUTES)} minutes`,
+    );
+    const closed = await closePullRequest(context.client, REPO, number);
+    if (closed.ok || unreadable(closed.refusal)) {
+      closedNow(number);
+      say(`  The script closed pull request #${String(number)}.`);
+    } else {
+      say(`  The script could not close it: ${refusalText(closed.refusal)}`);
+    }
+  } else {
+    closedNow(number);
+    await checkClosed(context, number, seen.pull, seen.merged);
+    if (seen.merged) {
+      check(null, false, `pull request #${String(number)} was merged, not closed`);
+      notes.push(`Step 9: pull request #${String(number)} was merged instead of closed.`);
+    }
+  }
+  stays.push(`pull request #${String(number)}, closed: ${link}`);
+
+  // Found with state=all (A8).
+  const all = readable(
+    await findPullRequests(context.client, REPO, CONFLICT_BRANCH, 'all'),
+    `list the pull requests of ${CONFLICT_BRANCH} with state=all`,
+  );
+  if (all === null) {
+    notAttempted('A8', 'the list could not be read');
+  } else {
+    const found = all.find((pull) => pull.number === number);
+    check(
+      'A8',
+      found?.state === 'closed',
+      'a closed pull request is found with state=all',
+      found ? `found, state ${found.state}` : `not found among ${String(all.length)}`,
+    );
+  }
+
+  // Reopened through the API while its branch exists, then closed again (A9).
+  const branchNow = await githubHead(context.client, CONFLICT_BRANCH);
+  if (branchNow === null) {
+    notAttempted('A9', `branch ${CONFLICT_BRANCH} was deleted, so a reopen cannot be checked`);
+    left.branches = left.branches.filter((branch) => branch !== CONFLICT_BRANCH);
+    notes.push(`Step 9: branch ${CONFLICT_BRANCH} was deleted on GitHub before the reopen.`);
+  } else if (!seen?.merged) {
+    const reopened = await reopenPullRequest(context.client, REPO, number);
+    if (reopened.ok || unreadable(reopened.refusal)) left.pullRequests.push(number);
+    check(
+      'A9',
+      reopened.ok && reopened.value.state === 'open',
+      'a pull request closed without merging is reopened through the API while its branch exists',
+      reopened.ok ? `state ${reopened.value.state}` : refusalText(reopened.refusal),
+    );
+    if (reopened.ok || unreadable(reopened.refusal)) {
+      const closed = await closePullRequest(context.client, REPO, number);
+      if (closed.ok || unreadable(closed.refusal)) closedNow(number);
+      check(
+        null,
+        closed.ok,
+        `pull request #${String(number)} closed again`,
+        closed.ok ? '' : refusalText(closed.refusal),
+      );
+    }
+  }
+
+  // CI runs started on the second pull request (for example after conflicts resolved on GitHub).
+  const heads = [...new Set([head, ...(branchNow === null ? [] : [branchNow])])];
+  const started: WorkflowRun[] = [];
+  for (const each of heads) {
+    const found = await listCommitRuns(context.client, REPO, each);
+    if (found.ok) started.push(...found.value);
+  }
+  notes.push(
+    `Step 9: CI runs started on the second pull request: ${started.length === 0 ? 'none' : conclusions(started)}.`,
+  );
+  endStep();
+}
+
+/** How a push with the second token went: the class of GitHub's answer. */
+function restrictedPushKind(
+  result: PushResult,
+): 'pushed' | 'denied' | 'workflow' | 'rejected' | 'other' {
+  if (result.status === 'pushed') return 'pushed';
+  if (/refusing to allow .* workflow/.test(result.message)) return 'workflow';
+  if (/Authentication failed|Invalid username or token/.test(result.message)) return 'rejected';
+  if (/Write access to repository not granted|error: 403/.test(result.message)) return 'denied';
+  return 'other';
+}
+
+async function stepTen(context: Context): Promise<void> {
+  const restricted = context.restricted;
+  const first = context.first;
+  if (!restricted || !first) {
+    say();
+    say(
+      `Step 10: NOT ATTEMPTED (${restricted ? 'step 1 did not finish' : 'no second token: add --restricted-token, see --help'})`,
+    );
+    return;
+  }
+  startStep(10);
+  const denials = (result: GitHubResult<unknown>): string =>
+    result.ok
+      ? 'accepted'
+      : `${refusalText(result.refusal)}; X-Accepted-GitHub-Permissions: ${result.refusal.kind === 'permission_missing' ? result.refusal.permissions.join(', ') || 'none' : 'none'}`;
+  const names = (result: GitHubResult<unknown>, permission: string): boolean =>
+    !result.ok &&
+    result.refusal.kind === 'permission_missing' &&
+    result.refusal.status === 403 &&
+    result.refusal.permissions.includes(permission);
+
+  // Opening a pull request: from the first branch, which GitHub would refuse anyway (merged, or
+  // already open), so the second token never creates one unless step 8 was closed unmerged.
+  const opening = await openPullRequest(restricted.client, REPO, {
+    head: BRANCH,
+    base: context.baseBranch,
+    title: 'Orchestrator smoke test: opened with the second token (must be refused)',
+    body: 'The second token must not be able to open this.',
+  });
+  if (opening.ok) left.pullRequests.push(opening.value.number);
+  else if (unreadable(opening.refusal)) left.unknownPullRequest = true;
+  check(
+    'A23',
+    names(opening, 'pull_requests=write'),
+    'opening a pull request with the second token: 403 naming pull_requests=write',
+    denials(opening),
+  );
+  say(`  Opening a pull request: ${denials(opening)}`);
+  const head = context.mergedHead ?? context.stepOneHead ?? '';
+  if (!context.privateRepository) {
+    notAttempted(
+      'A23',
+      'the repository is public: reading its runs and statuses needs no permission',
+    );
+  } else {
+    const runs = await listCommitRuns(restricted.client, REPO, head);
+    say(`  Reading Actions runs: ${denials(runs)}`);
+    check(
+      'A23',
+      names(runs, 'actions=read'),
+      'reading Actions runs with the second token: 403 naming actions=read',
+      denials(runs),
+    );
+    const status = await readCommitStatus(restricted.client, REPO, head);
+    say(`  Reading the commit status: ${denials(status)}`);
+    check(
+      'A23',
+      names(status, 'statuses=read'),
+      'reading the combined commit status with the second token: 403 naming statuses=read',
+      denials(status),
+    );
+  }
+
+  // A push adding a workflow file: refused without Contents write (A3), then, once the owner has
+  // given Contents write, refused without Workflows (A2).
+  const commit = await commitFile(
+    first,
+    await baseAtStepOne(context, first),
+    WORKFLOW_FILE,
+    WORKFLOW,
+    'Orchestrator smoke test: a workflow file, pushed with a token that must be refused',
+  );
+  const start = runStart(context.account, context.baseBranch, NAME, WORKFLOW_BRANCH);
+  const push = async (): Promise<PushResult> => {
+    credential = { ok: true, username: 'x-access-token', password: restricted.token };
+    try {
+      return await first.spaces.push(start, first.bare, first.folder, commit);
+    } finally {
+      credential = { ok: true, username: 'x-access-token', password: context.token };
+    }
+  };
+  const sayPush = (result: PushResult) => {
+    say(
+      `  The daemon reads the push with the second token as: ${result.status === 'pushed' ? 'pushed' : result.reason}`,
+    );
+    if (result.status === 'failed') say(`    Git and GitHub said:\n${quoted(result.message)}`);
+  };
+  // GitHub's words for a fine-grained token (the owner's run, step E3).
+  const denied = 'Write access to repository not granted.';
+  let result: PushResult | null = await push();
+  sayPush(result);
+  const kind = restrictedPushKind(result);
+  if (kind === 'denied') {
+    check(
+      'A3',
+      result.status === 'failed' && result.reason === 'refused' && result.message.includes(denied),
+      `a push without Contents write: refused, "${denied}"`,
+      pushText(result),
+    );
+    result = await waitForOwner(
+      [
+        '>>> Your turn on GitHub: give the second token Contents write (only you can change a token).',
+        "  1. Open https://github.com/settings/personal-access-tokens and click the second token's name (orchestrator-smoke-restricted, if you named it as --help says).",
+        '  2. Click "Edit". Under "Repository permissions", set "Contents" to "Read and write". Change nothing else: not "Workflows".',
+        '  3. Click "Update" at the bottom. Do not click "Regenerate token": the script keeps the value you pasted and does not ask for it again.',
+        'The script tries its refused push again until GitHub answers differently; you need not come back to this terminal.',
+        'If you also give Workflows: GitHub accepts the push (A2 FAIL); its workflow runs only when started by hand and does nothing, and the script deletes its branch with your first token.',
+        'If you regenerate or delete the token, or the wait runs out: A2 is NOT ATTEMPTED.',
+      ],
+      async () => {
+        const again = await push();
+        return restrictedPushKind(again) === 'denied' ? null : again;
+      },
+    );
+    if (result !== null) sayPush(result);
+  } else {
+    notAttempted(
+      'A3',
+      'the second token already had Contents write when given (or GitHub refused it otherwise): no pause',
+    );
+    if (kind === 'other' || kind === 'rejected')
+      check('A3', false, `a push without Contents write: refused, "${denied}"`, pushText(result));
+  }
+  const workflowText = `refusing to allow a Personal Access Token to create or update workflow \`${WORKFLOW_FILE}\` without \`workflow\` scope`;
+  const after = result === null ? null : restrictedPushKind(result);
+  if (result === null) {
+    notAttempted('A2', `Contents write was not given within ${String(OWNER_WAIT_MINUTES)} minutes`);
+    notes.push('Step 10: the second token was not given Contents write within the wait.');
+  } else if (after === 'rejected') {
+    notAttempted('A2', 'GitHub no longer accepts the second token (regenerated or deleted?)');
+    notes.push('Step 10: GitHub stopped accepting the second token during the wait.');
+  } else if (after === 'pushed') {
+    left.branches.push(WORKFLOW_BRANCH);
+    check(
+      'A2',
+      false,
+      'a push adding a workflow file without Workflows write is refused',
+      'GitHub accepted it: the second token has Workflows write',
+    );
+    await sleep(DRY_RUN ? 500 : 30_000);
+    const runs = await listCommitRuns(context.client, REPO, commit);
+    notes.push(
+      `Step 10: the workflow file was pushed by mistake (branch ${WORKFLOW_BRANCH}, deleted at the clean-up); CI runs started by it within 30 seconds: ${runs.ok ? (runs.value.length === 0 ? 'none' : conclusions(runs.value)) : refusalText(runs.refusal)}.`,
+    );
+  } else {
+    check(
+      'A2',
+      result.status === 'failed' &&
+        result.reason === 'refused' &&
+        result.message.includes(workflowText),
+      `a push adding ${WORKFLOW_FILE} without Workflows: refused, "${workflowText}"`,
+      pushText(result),
+    );
+  }
+  endStep();
+}
+
 function cleanUpFailed(what: string, answer: string): void {
   say(`  FAIL  ${what}`);
   say(quoted(answer));
@@ -936,21 +1731,24 @@ function cleanUpFailed(what: string, answer: string): void {
 }
 
 /**
- * Closes the pull requests (also one GitHub created with an answer the script could not read,
- * found by its branch) and deletes the branch, the second time already gone (A26).
+ * Closes the pull requests still open (also one GitHub created with an answer the script could
+ * not read, found by its branch), then deletes the branches, the first one twice (A26).
  */
 async function cleanUp(context: Context): Promise<void> {
   say();
   say('Clean-up');
   if (left.unknownPullRequest) {
-    const found = await findPullRequests(context.client, REPO, BRANCH, 'open');
-    if (found.ok) {
-      for (const pull of found.value) {
-        if (!left.pullRequests.includes(pull.number)) left.pullRequests.push(pull.number);
+    left.unknownPullRequest = false;
+    for (const branch of [BRANCH, CONFLICT_BRANCH]) {
+      const found = await findPullRequests(context.client, REPO, branch, 'open');
+      if (found.ok) {
+        for (const pull of found.value) {
+          if (!left.pullRequests.includes(pull.number)) left.pullRequests.push(pull.number);
+        }
+      } else {
+        left.unknownPullRequest = true;
+        cleanUpFailed(`find the pull requests of ${branch}`, refusalText(found.refusal));
       }
-      left.unknownPullRequest = false;
-    } else {
-      cleanUpFailed(`find the pull requests of ${BRANCH}`, refusalText(found.refusal));
     }
   }
   for (const number of [...left.pullRequests]) {
@@ -958,25 +1756,34 @@ async function cleanUp(context: Context): Promise<void> {
     // An answer that cannot be read still means GitHub closed it.
     if (closed.ok || unreadable(closed.refusal)) {
       say(`  Pull request #${String(number)} closed (GitHub keeps closed pull requests).`);
-      left.pullRequests = left.pullRequests.filter((each) => each !== number);
+      closedNow(number);
+      if (!stays.some((line) => line.startsWith(`pull request #${String(number)},`))) {
+        stays.push(`pull request #${String(number)}, closed: ${repoWeb}/pull/${String(number)}`);
+      }
     }
     if (!closed.ok) {
       cleanUpFailed(`close pull request #${String(number)}`, refusalText(closed.refusal));
     }
   }
-  if (left.branch !== null) {
-    const deleted = await deleteBranch(context.client, REPO, left.branch);
-    const again = await deleteBranch(context.client, REPO, left.branch);
-    if (deleted.ok && deleted.value === 'deleted') left.branch = null;
-    say(
-      `  Branch deleted: ${deleted.ok ? deleted.value : refusalText(deleted.refusal)}; deleted again: ${again.ok ? again.value : refusalText(again.refusal)}`,
-    );
+  for (const branch of [...left.branches]) {
+    const deleted = await deleteBranch(context.client, REPO, branch);
+    const answer = (result: typeof deleted) =>
+      result.ok ? result.value : refusalText(result.refusal);
+    if (deleted.ok) left.branches = left.branches.filter((each) => each !== branch);
+    else cleanUpFailed(`delete branch ${branch}`, answer(deleted));
+    if (branch !== BRANCH) {
+      say(`  Branch ${branch}: ${answer(deleted)}`);
+      continue;
+    }
+    // GitHub may have deleted it already after the merge ("Automatically delete head branches").
+    const again = await deleteBranch(context.client, REPO, branch);
+    say(`  Branch ${branch}: ${answer(deleted)}; deleted again: ${answer(again)}`);
     currentStep = 0;
     check(
       'A26',
-      deleted.ok && deleted.value === 'deleted' && again.ok && again.value === 'already_gone',
+      deleted.ok && again.ok && again.value === 'already_gone',
       'deleting a branch already deleted answers 422 "Reference does not exist", read as already gone',
-      `${deleted.ok ? deleted.value : refusalText(deleted.refusal)}; ${again.ok ? again.value : refusalText(again.refusal)}`,
+      `${answer(deleted)}; ${answer(again)}`,
     );
   }
   for (const machine of [context.first, context.second]) {
@@ -1035,7 +1842,13 @@ async function printResult(): Promise<number> {
     say('Clean-up: FAIL');
     for (const failure of cleanUpFailures) say(quoted(failure, 8));
   }
+  for (const note of notes) say(note);
+  sayLeft();
+  sayStays();
   say('===== End of the result =====');
+  say(
+    `Delete the token${RESTRICTED ? 's' : ''} you made for this check now: https://github.com/settings/personal-access-tokens (each token's name, then "Delete").`,
+  );
   const failed =
     cleanUpFailures.length > 0 ||
     [...stepVerdicts.values()].some((kept) => kept.verdict === 'FAIL') ||
@@ -1046,13 +1859,42 @@ async function printResult(): Promise<number> {
 // ---------------------------------------------------------------------------------------------
 // Main
 
+/**
+ * The second token of step 10, checked before anything is created: GitHub accepts it, it is of
+ * the same account, and it sees the repository. Null, with what is wrong said, when it is not.
+ */
+async function restrictedToken(
+  restricted: string,
+  token: string,
+  account: string,
+): Promise<{ token: string; client: GitHubClient } | null> {
+  const refuse = (why: string) => {
+    say(`STOPPED: the second token (--restricted-token) ${why}. Nothing was done on GitHub.`);
+    return null;
+  };
+  if (restricted === '') return refuse('was not given');
+  if (restricted === token)
+    return refuse('is the same as the first: make a second one (see --help)');
+  const client = createGitHubClient({ apiUrl: API_URL, token: restricted, timeoutSeconds: 30 });
+  const identity = await inspectToken(client);
+  if (!identity.valid) return refuse('was refused by GitHub (401 Bad credentials)');
+  if (identity.account !== account) {
+    return refuse(`is of ${identity.account}, not of ${account}: make it on the same account`);
+  }
+  if ((await findRepository(client, REPO)) === null) {
+    return refuse(`cannot see ${OWNER}/${NAME}: give it access to that repository only`);
+  }
+  return { token: restricted, client };
+}
+
 async function main(): Promise<number> {
-  const token = await readToken();
+  const [token = '', restricted = ''] = await readTokens(RESTRICTED ? 2 : 1);
   if (token === '') {
     say('STOPPED: no token was given. Nothing was done on GitHub.');
     return 3;
   }
   secrets.push(token);
+  if (restricted !== '') secrets.push(restricted);
   const client = createGitHubClient({ apiUrl: API_URL, token, timeoutSeconds: 30 });
 
   const identity = await inspectToken(client);
@@ -1068,10 +1910,13 @@ async function main(): Promise<number> {
     say('Nothing was done on GitHub.');
     return 3;
   }
+  const second = RESTRICTED ? await restrictedToken(restricted, token, identity.account) : null;
+  if (RESTRICTED && second === null) return 3;
   gitVersion = await readGitVersion();
   say(
-    `Token of ${identity.account}; repository ${OWNER}/${NAME} (default branch ${repository.defaultBranch}).`,
+    `Token of ${identity.account}; repository ${OWNER}/${NAME} (default branch ${repository.defaultBranch}, ${repository.private ? 'private' : 'public'}).`,
   );
+  if (second) say(`Second token: of ${identity.account} too, and it sees ${OWNER}/${NAME}.`);
   say(`Git: ${gitVersion}`);
 
   const context: Context = {
@@ -1079,14 +1924,13 @@ async function main(): Promise<number> {
     account: { login: identity.account, id: identity.accountId },
     baseBranch: repository.defaultBranch,
     token,
+    privateRepository: repository.private,
+    ...(second ? { restricted: second } : {}),
   };
   const interrupted = () => {
     say();
     say('Stopped (Ctrl+C).');
-    void printResult().then(() => {
-      sayLeft();
-      process.exit(3);
-    });
+    void printResult().then(() => process.exit(3));
   };
   process.on('SIGINT', interrupted);
   process.on('SIGTERM', interrupted);
@@ -1099,6 +1943,11 @@ async function main(): Promise<number> {
     await stepThree(context);
     await stepFour(context);
     await stepFive(context);
+    await stepSix(context);
+    await stepSeven(context);
+    await stepEight(context);
+    await stepNine(context);
+    await stepTen(context);
   } catch (error) {
     if (!(error instanceof Stop)) {
       check(
@@ -1111,24 +1960,14 @@ async function main(): Promise<number> {
     }
     stopped = true;
   }
-  say();
-  say('Steps 6 to 10 come with step E3 of the lot 3 plan: NOT ATTEMPTED.');
   if (stopped) {
     say();
     say(`STOPPED at step ${String(currentStep)}.`);
     const code = await printResult();
-    sayLeft();
     return Math.max(code, 1);
   }
   await cleanUp(context);
-  const code = await printResult();
-  sayLeft();
-  if (nothingLeft()) {
-    say(
-      `Also on GitHub: the closed pull request and its workflow runs, in the Actions tab (${repoWeb}/actions), where each run can be deleted.`,
-    );
-  }
-  return code;
+  return printResult();
 }
 
 if (!OWNER || !NAME || !API_URL || !GIT_URL || !SCRATCH) {
