@@ -69,7 +69,11 @@ async function gitFails(cwd: string, ...args: string[]): Promise<string> {
     () => {
       throw new Error(`git ${args.join(' ')} succeeded`);
     },
-    (error: unknown) => (error as { stderr: string }).stderr,
+    // Standard output too: `push --porcelain` writes its lines there.
+    (error: unknown) => {
+      const failed = error as { stdout: string; stderr: string };
+      return failed.stdout + failed.stderr;
+    },
   );
 }
 
@@ -188,7 +192,10 @@ describe('Git over HTTP', () => {
       permissions: { ...account.permissions, contents: 'read' },
     });
     await git(work, 'remote', 'set-url', 'origin', cloneUrl(OTHER));
-    expect(await gitFails(work, ...push)).toMatch(/403/);
+    // GitHub's words for a fine-grained token without Contents write (the owner's run, step E3).
+    const denied = await gitFails(work, ...push);
+    expect(denied).toContain('Write access to repository not granted.');
+    expect(denied).toContain('The requested URL returned error: 403');
     expect(github.gitRequests.at(-1)).toMatchObject({ access: 'push', outcome: 403 });
     // The token can still fetch.
     await git(work, 'fetch', '--quiet', 'origin');
@@ -215,9 +222,11 @@ describe('Git over HTTP', () => {
     await writeFile(join(work, '.github', 'workflows', 'ci.yml'), 'name: CI\n');
     await git(work, 'add', '-A');
     await git(work, 'commit', '--quiet', '-m', 'CI');
-    const refused = await gitFails(work, 'push', 'origin', 'HEAD:refs/heads/t/3-ci');
+    const refused = await gitFails(work, 'push', '--porcelain', 'origin', 'HEAD:refs/heads/t/3-ci');
+    // GitHub's words, "`workflow` scope" even for a fine-grained token, as the reason of the line
+    // the daemon reads (the owner's run, step E3).
     expect(refused).toContain(
-      'refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflows` permission',
+      '!\tHEAD:refs/heads/t/3-ci\t[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)',
     );
     expect(github.branches(repo).has('t/3-ci')).toBe(false);
 

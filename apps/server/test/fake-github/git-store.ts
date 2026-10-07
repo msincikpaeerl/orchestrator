@@ -18,28 +18,75 @@ export interface FakeCommit {
 const ZERO = '0000000000000000000000000000000000000000';
 
 /**
- * Refuses a push that adds, changes or deletes a file under `.github/workflows/` unless
- * `FAKE_GITHUB_WORKFLOWS` is `write`: GitHub needs the Workflows permission "to access or edit
- * Actions files in the `.github/workflows` directory" ("Choosing permissions for a GitHub App",
- * https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
- * The refusal text is the fake's: confirmed or corrected in lot 3 step E.
+ * Refuses the update of a branch that adds, changes or deletes a file under `.github/workflows/`
+ * unless `FAKE_GITHUB_WORKFLOWS` is `write`: GitHub needs the Workflows permission "to access or
+ * edit Actions files in the `.github/workflows` directory" ("Choosing permissions for a GitHub
+ * App", https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app).
+ * The text is GitHub's, from the owner's run (lot 3 step E3): "`workflow` scope" even for a
+ * fine-grained token, given as the reason of `[remote rejected] (…)`. Git's proc-receive hook
+ * (githooks(5)) is the one that can give that reason (a pre-receive hook's is always "pre-receive
+ * hook declined"); every other branch falls through to Git's own update.
  */
-const PRE_RECEIVE = `#!/bin/sh
-[ "$FAKE_GITHUB_WORKFLOWS" = write ] && exit 0
-while read -r old new ref; do
-  [ "$new" = ${ZERO} ] && continue
-  if [ "$old" = ${ZERO} ]; then
-    changed=$(git rev-list "$new" --not --all | while read -r commit; do git diff-tree --root --no-commit-id --name-only -r "$commit"; done)
+const PROC_RECEIVE = `#!/usr/bin/env node
+const { readSync, writeSync } = require('node:fs');
+const { execFileSync } = require('node:child_process');
+const ZERO = '${ZERO}';
+const read = (count) => {
+  const buffer = Buffer.alloc(count);
+  let done = 0;
+  while (done < count) {
+    const got = readSync(0, buffer, done, count - done, null);
+    if (got === 0) throw new Error('proc-receive: input ended');
+    done += got;
+  }
+  return buffer.toString('utf8');
+};
+// Packets up to the next flush packet, each without its trailing newline.
+const packets = () => {
+  const lines = [];
+  for (;;) {
+    const length = Number.parseInt(read(4), 16);
+    if (length === 0) return lines;
+    lines.push(read(length - 4).replace(/\\n$/, ''));
+  }
+};
+const send = (lines) => {
+  for (const line of lines) {
+    const data = Buffer.from(line + '\\n');
+    writeSync(1, (data.length + 4).toString(16).padStart(4, '0'));
+    writeSync(1, data);
+  }
+  writeSync(1, '0000');
+};
+const git = (...args) => execFileSync('git', args, { encoding: 'utf8' });
+const workflowChanged = (oldId, newId) => {
+  const changed =
+    oldId === ZERO
+      ? git('rev-list', newId, '--not', '--all')
+          .split('\\n')
+          .filter(Boolean)
+          .flatMap((commit) =>
+            git('diff-tree', '--root', '--no-commit-id', '--name-only', '-r', commit).split('\\n'),
+          )
+      : git('diff', '--name-only', oldId, newId).split('\\n');
+  return changed.find((file) => file.startsWith('.github/workflows/'));
+};
+packets();
+send(['version=1']);
+const commands = packets().map((line) => line.split(' '));
+const report = [];
+for (const [oldId, newId, ref] of commands) {
+  const file =
+    process.env.FAKE_GITHUB_WORKFLOWS === 'write' || newId === ZERO
+      ? undefined
+      : workflowChanged(oldId, newId);
+  if (file === undefined) report.push('ok ' + ref, 'option fall-through');
   else
-    changed=$(git diff --name-only "$old" "$new")
-  fi
-  file=$(printf '%s\\n' "$changed" | grep '^\\.github/workflows/' | head -n 1)
-  if [ -n "$file" ]; then
-    echo "refusing to allow a Personal Access Token to create or update workflow \\\`$file\\\` without \\\`workflows\\\` permission" >&2
-    exit 1
-  fi
-done
-exit 0
+    report.push(
+      'ng ' + ref + ' refusing to allow a Personal Access Token to create or update workflow \`' + file + '\` without \`workflow\` scope',
+    );
+}
+send(report);
 `;
 
 export class GitStore {
@@ -69,8 +116,9 @@ export class GitStore {
     // GitHub accepts pushes from the token's account; `git http-backend` needs this for a user
     // it did not authenticate itself.
     this.git(['config', 'http.receivepack', 'true']);
-    const hook = join(this.path, 'hooks', 'pre-receive');
-    writeFileSync(hook, PRE_RECEIVE);
+    this.git(['config', 'receive.procReceiveRefs', 'refs/heads']);
+    const hook = join(this.path, 'hooks', 'proc-receive');
+    writeFileSync(hook, PROC_RECEIVE);
     chmodSync(hook, 0o755);
   }
 
