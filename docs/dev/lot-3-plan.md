@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2 and E3 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3 and F0 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -369,6 +369,8 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 | A24 | A push to a repository that no longer exists, or that the token cannot see: GitHub answers "remote: Repository not found." and Git says "fatal: repository '<url>' not found" (HTTP 404); the push reads `refused`, since GitHub answered | D2 (`pushResult`), F | 1 (a repository name that does not exist, checked at no cost) |
 | A25 | A push to a branch whose head on GitHub has commits the pushed one lacks is rejected with the porcelain summary `fetch first` when the local side does not have GitHub's head, and `non-fast-forward` when it has it (the daemon's usual case, since it fetches before every run); the daemon reads both as `diverged` | D2 (`pushResult`), D3, F | 4 |
 | A26 | Deleting a branch that does not exist (already deleted on GitHub, or by "Automatically delete head branches"): `DELETE .../git/refs/heads/<branch>` answers 422 "Reference does not exist", read as already gone (found in step E1) | E (clean-up), J | clean-up (the script deletes its first branch twice) |
+| A27 | GitHub accepts a pull request description of 65,536 characters and a title of 256 (the Orchestrator's ceilings; GitHub documents neither) | F3 | step N, by eye (added in step F) |
+| A28 | A zero-width space after `@` and after `#` or `GH-` stops a mention, an issue reference and a closing keyword in a pull request's title and description (GitHub documents no parser) | F3 | step N, by eye (added in step F) |
 
 **The owner's run** (after E3): a WSL terminal in the repository. A test repository of their own account with the skeleton (for example the `test0.3.0` project's), its default branch protected or not. The token in hand. Optionally, for step 10, a second fine-grained token on the test repository with Metadata read and Contents read only, to which the owner adds Contents write when the script asks. About 15 to 20 minutes: CI (about 1 to 2 minutes per run) and the owner's three actions on GitHub (merge, close, the token's Contents). 4 workflow runs, each with the skeleton's `docs-links` and `ci` jobs: 3 on the first pull request (opened, broken link, repair) and 1 on the default branch after the merge (the skeleton's CI also runs on pushes to it; the script does not wait for it); none on the second pull request, which conflicts, and none from step 10's workflow file, which runs only when started by hand. Actions minutes of a private repository: about 8. Command: `tools/smoke/github-smoke.sh --repository <owner>/<name> --restricted-token` (without `--restricted-token`, step 10 reads `NOT ATTEMPTED`).
 
@@ -450,13 +452,11 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
   - A3: "Write access to repository not granted." then "fatal: unable to access '<url>': The requested URL returned error: 403". The fake said "Permission to <owner>/<name>.git denied to <login>."
 - **What was done** (same branch, no new run, owner's decision): the fake gives both texts, each with a test that failed before the change (`fake-github.test.ts`). The workflow refusal comes from a proc-receive hook, the hook Git lets give the rejected reason (Git 2.29 or later; ADR 0033 updated). The script's A2 and A3 expect GitHub's texts; its dry run failed on both before the change, as the owner's run did. The daemon's push tests use the real texts, with the owner's 403 output as a new case (it already read `refused`). The table above is reworded. Nothing else relied on the old wordings: the daemon's `Permission to … denied` pattern stays as one of several refusal texts, and the 403 is read from "The requested URL returned error: 403".
 
-### [ ] F. Full submission and the pull request
+### Step F: Full submission and the pull request, split in five (rule 15)
 
-- `ticket_submit` (04 section 3.1, without CI yet):
-  - the push result;
-  - the criteria;
-  - the per-type form checks;
-  - listed paths changed on the branch.
+Split approved by the owner on 2026-10-08, with the answers below. Scope of the whole step:
+
+- `ticket_submit` (04 section 3.1, without CI yet): the push result, the criteria, the per-type form checks, listed paths changed on the branch.
 - The pull request opened or updated by the server on an accepted submission, its description from the template `agents/templates/pull-request.md`; workflow changes flagged in it and on the ticket.
 - Until step G1, an accepted submission ends the run and the ticket goes to `in_review` with the pull request link (lot 2's meaning plus the pull request: the owner checks it).
 - Ticket page: pull request link, DoD report with each check's result. `push_failed` with its "Needs you" item. The template `implement.md` and the common rules updated for the full submission.
@@ -464,7 +464,58 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - **The permission to give, in the token page's words** (owner's note after the E3 run): when a push is refused for one of these two reasons, the `push_failed` "Needs you" item names the permission as GitHub's token page shows it: "Contents (Read and write)" for "Write access to repository not granted", and "Workflows (Read and write)" for the workflow refusal. GitHub's own text says "`workflow` scope" even for a fine-grained token, so the Orchestrator translates it. Tested on the two real texts (A2, A3).
 - `docs/user/`: Tickets ("Submission and the pull request"), Needs you, `github-token.md` rewritten for 0.4.0; CHANGELOG.
 
-**Done when** integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed` (naming Contents or Workflows from GitHub's two real texts); Playwright on both viewports shows a submitted ticket with its pull request link and checks.
+**Done when** (the whole step) integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed` (naming Contents or Workflows from GitHub's two real texts); Playwright on both viewports shows a submitted ticket with its pull request link and checks.
+
+**The owner's answers (2026-10-08)**, written into specs 04, 05 and 06:
+
+1. **Changed files** (05 section 4.9): `git merge-base refs/remotes/origin/<base> <head>`, then `git diff-tree -r -z --name-only --no-renames --no-commit-id <merge base> <head>`, `<head>` being the hash read once with the facts (the one pushed): the files the branch changed, as GitHub's "Files changed" tab compares, also after `git merge origin/<base>` (the merge base moves to the merged base commit). A rename gives two paths (old and new), a deletion its path. `diff-tree` is plumbing (no `diff.external`, no text conversion, no pager), `--name-only` reads no file content (no attribute driver), and two commits are compared without the worktree (no filter); the daemon's local options apply too. The facts send `changedFiles` as `{ listed, count }`, like `notOnGitHub`: listed while they fit their budget (answer 2), all counted. A cut list never fails a listed path: the check reads "could not be fully done". No separate workflow flag (answer A).
+2. **Budgets of the facts** (04 section 8, code constants): each part measured on its JSON encoding: the DoD report 256 KiB (the daemon refuses a larger one before pushing, with `VALIDATION_FAILED` giving both sizes); the commits at most 500 and 256 KiB, subjects cut at 1,000 characters with a marker; the changed files 256 KiB; a push message 4,000 characters, keeping its end; the rest under 4 KiB. At most about 780 KiB, under the 1 MiB `DAEMON_MESSAGE_MAX_BYTES`. The end report uses the same commit and push budgets, and `gitConfigRestored` gets one. Tests at each budget and one above, and the largest message of each kind against `DAEMON_MESSAGE_MAX_BYTES`.
+3. **Opening the pull request after the answer** (04 section 3.1): one transaction stores the report and check results, records the run's decision, marks the ticket "pull request wanted" and writes the event; the agent is answered `accepted` at once (`pending_ci` from G1); a background task, one per ticket at a time, opens or updates the pull request and records it. Failure (GitHub unreachable, a permission missing, an unreadable answer naming its fields): the ticket stays `in_review`, its page says "Pull request not opened: <reason>" with **Try again**, "Needs you" lists "Pull request not opened for <ticket>" (a permission in the token page's words, "Pull requests (Read and write)"); tried again by **Try again** and once at each server start. Every attempt first finds the pull request by branch (`head=<owner>:<branch>&state=all`): an open one is updated, a closed unmerged one reopened then updated, none created; 422 "already exists" means find again. So a stop between GitHub's answer and the server's record never opens a second one.
+4. **Harmless text on GitHub** (04 section 3.1): the title and every text of the description (the ticket's and the agent's) are masked (`maskSecrets`), `<`, `>` and `&` escaped, and a zero-width space put after `@` before a name and after `#` or `GH-` before digits (also in `owner/repo#12` and `/issues/12` links), so no mention, issue reference or closing keyword works. Description at most 65,536 characters, sections cut the longest first with a marker, the ticket link always kept; title at most 256 characters. A closing keyword in a commit message still closes an issue at the merge: a known limit, said in Help. The ticket link is `PUBLIC_URL` + `/projects/<key>/tickets/<number>`, read at each opening or update; on a loopback address it is followed by "(opens only on the computer running the Orchestrator)". A27 and A28 below, for the owner's check by eye in step N.
+5. **A refused push** (04 sections 3.1 and 5): no same-run fix in any case, not even `non-fast-forward`. The server answers `DOD_FAILED` with one `push` check saying it is not the agent's to fix and to end its turn; the daemon ends the run at the turn's end with the end reason `push_failed` (a fact it saw); the failure reason `push_failed` is not counted, the ticket returns to `todo` with a `system` comment; the end push is still tried. "Needs you": the permission in the token page's words (Contents or Workflows, with the token list link), any other refusal with GitHub's masked words; diverged ("the next run brings them in with a merge"); unreachable. **Run now** starts an `implement` run on the machine holding the commits, whose first message says the work is committed but was not pushed and, for diverged, to run `git merge origin/<ticket branch>` first. An item goes at the next push done (an end push included).
+6. **Workflow flag**: a changed path starting with `.github/workflows/` (case-sensitive), or a cut list; stored with the accepted submission, shown in the description and on the ticket page; "Needs you" shows it from steps H and J.
+7. **Listed paths** (tests, documentation, ADRs): a leading `./` removed, repeated `/` collapsed, a trailing `/` removed, `.` resolved (POSIX); a path still starting with `/` or `..`, or holding a NUL or a backslash, fails as outside the repository; then an exact match with `listed` (case and bytes). A folder is not a file: the message asks for file paths and says a folder is not accepted.
+8. **Lesson of step E**: every GitHub read and write of this step goes through E1's layer and ADR 0035's shapes; an unreadable answer names its fields (F3 tests it with `github.alter`).
+9. **Type rules** (04 section 3.3, owner's condition: no rule says where documentation lives): `docs` needs at least one documentation path (listed in the report's documentation field and changed on the branch, wherever it is); `spike` at least one ADR path or one documentation path; neither can be waived by a justification. Step N's two tickets (Documentation, README.md only) pass.
+10. **Agent-facing texts**: the refused-check messages of lot 2 (`backend.ts`) move into a template with the new ones, in F2, the profile versions going up.
+
+**Assumptions for step N** (owner's check by eye, added to step E's table): A27 GitHub accepts a description of 65,536 characters and a title of 256; A28 a zero-width space after `@` and `#` stops a mention, an issue reference and a closing keyword.
+
+### [x] F0. D3's missing commits and two working rules
+
+- Pull request #41 was merged without the last five commits of `lot3/d3-branch-location` (they never left the owner's machine). Every local branch of lots 0 to 3 checked for commits not on `main`: only those five, and `lot2/l1-live-screens` (a516e51), whose text is already on `main`. The five merged; conflicts only in `CHANGELOG.md` and this plan.
+- Working rules 17 (head commit hash and commit count in every summary) and 18 (the previous step's branch checked fully in `main` at each session's start).
+- This plan's split and the owner's answers, written into the specs.
+
+**Done when** `git log main..lot3/d3-branch-location` is empty after the merge of this branch, and `pnpm verify` and `pnpm test:e2e` pass.
+
+*Done 2026-10-08.* Later steps that touched the same files as D3's five commits: only documents (`CHANGELOG.md` in E1; this plan in E1, E2, E2's fixes and E3; `docs/dev/testing.md` in E1, E2's fixes and E3); no code file. With the five commits in, `pnpm typecheck`, `pnpm verify` (1,454 tests) and `pnpm test:e2e` (96, desktop and phone) pass, including E2 and E3's smoke script tests, which use the daemon's branch code.
+
+### [ ] F1. Daemon facts
+
+- The changed files (answer 1) and the budgets (answer 2), with the protocol shapes (protocol 2 is not released: no version change).
+- A failed push at submission ends the run at the turn's end with the end reason `push_failed` (answer 5).
+
+**Done when** daemon tests with real Git show: renames, deletions and the base brought in with `git merge origin/<base>` (twice) giving exactly the branch's own files; no program planted (`diff.external`, a text conversion driver in the configuration and in `.gitattributes`, `core.pager`, hooks, a file system monitor, `config.worktree`) running; the ceiling at its budget and one above; the largest `ticket_submit` and the largest end report within `DAEMON_MESSAGE_MAX_BYTES`; a push failure ending the run at the turn's end.
+
+### [ ] F2. Server checks and `push_failed`
+
+- Checks: criteria, type rules (answer 9), listed paths (answer 7), the push; the workflow flag (answer 6); the check results stored with the report.
+- The failure reason `push_failed` (not counted), its three "Needs you" items and Run now's next first message (answer 5); the agent-facing texts in `agents/templates/` (answer 10), profile versions up; Help for `push_failed`.
+
+**Done when** integration tests with a scripted daemon cover each failed check (a path leaving the repository and a cut list included), the workflow flag (a cut list included), `push_failed` from GitHub's two real texts naming Contents or Workflows, and the whole diverged round: refused, next run, merge, push accepted.
+
+### [ ] F3. The pull request
+
+- Opened after the answer to the agent (answer 3), the template `agents/templates/pull-request.md`, the harmless text (answer 4), found again after a restart, **Try again**, the ticket's pull request fields (migration).
+
+**Done when** tests with the fake GitHub show: opened, then updated at the next submission; GitHub unreachable, a permission missing and an unreadable answer (fields named), each then **Try again**; a stop between GitHub's answer and the record opening no second pull request; a closed one reopened; secrets masked, size within the limit, no mention, closing keyword or HTML, in the title and the description.
+
+### [ ] F4. Screens and docs
+
+- Ticket page: pull request link and state, each check's result, the workflow flag; the "Needs you" rows; Help (Tickets "Submission and the pull request", Needs you, `github-token.md` rewritten for 0.4.0); CHANGELOG.
+
+**Done when** Playwright on desktop and phone shows a submitted ticket with its pull request link and checks, and "Pull request not opened" with **Try again**.
 
 ### [ ] G1. CI: waiting and success
 
@@ -474,6 +525,8 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - CI passed: `run.stop` `completed`, the run `succeeded`, the ticket `in_review` (replacing step F's end at submission).
 - `ci_status` for all roles, cut to **Longest CI log excerpt**, read with **Longest CI log read** (`readFailedStepLogs`).
 - The new settings of this step, with **Longest CI log excerpt** and **Longest CI log read**; the run page shows "waiting for CI".
+
+- **From step F3** (owner's answer 3): the pull request is opened after the answer to the agent, by a background task that can fail and be tried again. The wait for CI (**Wait for CI to start**, **CI wait at submission**) starts when the pull request is open; a pull request still not opened when **CI wait at submission** is reached ends the run with `ci_timeout`. The polling loop also tries again the pull requests not opened.
 
 **Done when** daemon and server tests with the fake GitHub show CI passing, no CI found, the idle timeout and working time not counting while waiting, the polling restored after a server restart, and `ci_status` cut to the setting.
 
@@ -577,7 +630,8 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - The owner:
   1. updates the daemon with Help > Machines > "Update the daemon" from the server of this branch, and checks the machine page (online, usable, same build);
   2. runs `claude-code-probe.sh` again if Claude Code changed since 2.1.287 (check 6 included), and `allowlist-smoke.sh` (`architect`, then `quality`, whose rules differ);
-  3. follows `docs/user/` alone with the two tickets below, in a ready project with the skeleton's CI (the `test0.3.0` project or a new one).
+  3. follows `docs/user/` alone with the two tickets below, in a ready project with the skeleton's CI (the `test0.3.0` project or a new one);
+  4. checks A27 and A28 by eye on the pull requests opened (added in step F): no mention, issue reference or closing keyword works in their titles and descriptions.
 - **Ticket 1, CI failing once** (type **Documentation**, assignee **Web Developer**):
   - title `Add a FAQ link to README.md`;
   - description: `This ticket checks the Orchestrator's CI feedback. Add the line "See the [FAQ](docs/user/faq.md)." at the end of README.md and commit it. Do not create docs/user/faq.md and do not run the documentation link check yourself: CI must fail once, on purpose. When the CI result reports the broken link, create docs/user/faq.md containing the line "No questions yet.", commit it and submit again. Do nothing else.`;
