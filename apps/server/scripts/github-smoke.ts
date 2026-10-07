@@ -1563,7 +1563,7 @@ function restrictedPushKind(
   if (result.status === 'pushed') return 'pushed';
   if (/refusing to allow .* workflow/.test(result.message)) return 'workflow';
   if (/Authentication failed|Invalid username or token/.test(result.message)) return 'rejected';
-  if (/denied to|error: 403/.test(result.message)) return 'denied';
+  if (/Write access to repository not granted|error: 403/.test(result.message)) return 'denied';
   return 'other';
 }
 
@@ -1654,7 +1654,8 @@ async function stepTen(context: Context): Promise<void> {
     );
     if (result.status === 'failed') say(`    Git and GitHub said:\n${quoted(result.message)}`);
   };
-  const denied = `Permission to ${OWNER}/${NAME}.git denied to ${context.account.login}.`;
+  // GitHub's words for a fine-grained token (the owner's run, step E3).
+  const denied = 'Write access to repository not granted.';
   let result: PushResult | null = await push();
   sayPush(result);
   const kind = restrictedPushKind(result);
@@ -1687,14 +1688,9 @@ async function stepTen(context: Context): Promise<void> {
       'the second token already had Contents write when given (or GitHub refused it otherwise): no pause',
     );
     if (kind === 'other' || kind === 'rejected')
-      check(
-        'A3',
-        false,
-        'a push without Contents write: refused with "Permission … denied"',
-        pushText(result),
-      );
+      check('A3', false, `a push without Contents write: refused, "${denied}"`, pushText(result));
   }
-  const workflowText = `refusing to allow a Personal Access Token to create or update workflow \`${WORKFLOW_FILE}\` without \`workflows\` permission`;
+  const workflowText = `refusing to allow a Personal Access Token to create or update workflow \`${WORKFLOW_FILE}\` without \`workflow\` scope`;
   const after = result === null ? null : restrictedPushKind(result);
   if (result === null) {
     notAttempted('A2', `Contents write was not given within ${String(OWNER_WAIT_MINUTES)} minutes`);
