@@ -186,6 +186,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         name: 't/2-work',
         head: 'a'.repeat(40),
         commitsAhead: [{ hash: 'a'.repeat(40), subject: 'Do the work' }],
+        notOnGitHub: { listed: ['a'.repeat(40)], count: 1 },
       },
       push: { status: 'pushed', head: 'a'.repeat(40) },
       changedFiles: null,

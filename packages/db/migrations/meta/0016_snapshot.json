@@ -1,5 +1,5 @@
 {
-  "id": "355cd268-a7c1-49dd-920a-e1482d7630bc",
+  "id": "cb4015a4-897a-4dc2-9a25-1c25b8a21088",
   "prevId": "c6817b98-7b49-4e06-9748-0a17a14715e2",
   "version": "7",
   "dialect": "postgresql",
@@ -1447,6 +1447,12 @@
         },
         "commits": {
           "name": "commits",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "not_on_github": {
+          "name": "not_on_github",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

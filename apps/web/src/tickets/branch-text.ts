@@ -14,10 +14,12 @@ export function branchStateText(branch: TicketBranch): string {
       return ': no commits reported yet';
     case 'machine':
       return ` on machine ${machine}, not on GitHub yet`;
-    case 'github':
-      return ': every commit reported was pushed to GitHub';
+    case 'github': {
+      const holder = branch.machine?.name ?? branch.pushed?.machine?.name;
+      return `: every commit reported was on GitHub when ${holder ? `machine ${holder}` : 'its machine'} last pushed or downloaded the branch`;
+    }
     case 'machine_ahead': {
-      const count = branch.notOnGitHub.length;
+      const count = branch.notOnGitHubCount;
       return `: ${String(count)} newer commit${count === 1 ? '' : 's'} on machine ${machine}, not on GitHub yet`;
     }
     case 'diverged':

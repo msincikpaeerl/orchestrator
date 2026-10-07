@@ -1,3 +1,4 @@
+ALTER TABLE "runs" ADD COLUMN "not_on_github" jsonb;--> statement-breakpoint
 ALTER TABLE "runs" ADD COLUMN "push" jsonb;--> statement-breakpoint
 ALTER TABLE "runs" ADD COLUMN "push_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "tickets" ADD COLUMN "github_branch_head" text;--> statement-breakpoint

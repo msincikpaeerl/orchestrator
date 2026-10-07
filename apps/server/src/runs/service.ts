@@ -73,7 +73,7 @@ import {
   type CommentRow,
   type TicketRow,
 } from '../tickets/model.js';
-import { commitsNotOnGitHub, pushedCommits, recordPush } from '../tickets/branch.js';
+import { commitsNotOnGitHub, pushedCommits, recordPush, runReport } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
 import {
@@ -335,8 +335,8 @@ export class RunService {
       endReason?: RunEndReason;
       detail?: string;
       comment?: string;
-      /** Every commit the run reported was pushed: the comment says so (lot 3 step D3). */
-      pushed?: boolean;
+      /** Every commit the run reported was on GitHub: the comment says so (lot 3 step D3). */
+      onGitHub?: boolean;
     } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
@@ -352,7 +352,7 @@ export class RunService {
     const comment =
       facts.comment ??
       (counted
-        ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.pushed ? `The branch ${locked.run.branchName} was pushed to GitHub.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
+        ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
         : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
     await applyRunAction(tx, {
       projectKey: locked.project.key,
@@ -367,11 +367,18 @@ export class RunService {
     });
   }
 
-  /** Whether every commit of a branch report is in the ticket's last push done. */
-  private async allPushed(tx: Executor, ticketId: string, branch: BranchReport): Promise<boolean> {
+  /** Whether every commit of a branch report is on GitHub (07, section 3; lot 3 step D3). */
+  private async allOnGitHub(
+    tx: Executor,
+    ticketId: string,
+    branch: BranchReport,
+  ): Promise<boolean> {
     const [ticket] = await tx.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId));
     if (!ticket) throw new Error(`ticket ${ticketId} not found`);
-    return commitsNotOnGitHub(ticket, branch.commitsAhead).length === 0;
+    return (
+      commitsNotOnGitHub(ticket, { commits: branch.commitsAhead, notOnGitHub: branch.notOnGitHub })
+        .count === 0
+    );
   }
 
   private clearTimer(runId: string): void {
@@ -677,14 +684,14 @@ export class RunService {
         .from(schema.runs)
         .where(eq(schema.runs.ticketId, ticket.id))
         .orderBy(desc(schema.runs.createdAt));
-      const withCommits = earlier.find((run) => (reportedCommits(run)?.length ?? 0) > 0);
-      const held = withCommits
-        ? commitsNotOnGitHub(ticket, reportedCommits(withCommits) ?? []).length
-        : 0;
+      // A review run reports GitHub's head: it never holds work, nor moves it (lot 3 step D3).
+      const worked = earlier.filter((run) => run.purpose !== 'review');
+      const withCommits = worked.find((run) => (reportedCommits(run)?.length ?? 0) > 0);
+      const held = withCommits ? commitsNotOnGitHub(ticket, runReport(withCommits)).count : 0;
       const holding =
         withCommits &&
         held > 0 &&
-        !earlier.some(
+        !worked.some(
           (run) => run.createdAt > withCommits.createdAt && run.machineId !== withCommits.machineId,
         )
           ? withCommits
@@ -766,10 +773,12 @@ export class RunService {
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
       const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
       // Earlier commits: on this machine, or pushed to GitHub, where the daemon takes them from.
-      const lastHere = earlier.find((run) => run.machineId === machine.id && run.commits !== null);
+      const lastHere = worked.find((run) => run.machineId === machine.id && run.commits !== null);
       const baseBranch = project.defaultBranch;
       const earlierWorkBase =
-        (lastHere && (reportedCommits(lastHere)?.length ?? 0) > 0) || pushedCommits(ticket).size > 0
+        (lastHere && (reportedCommits(lastHere)?.length ?? 0) > 0) ||
+        (withCommits !== undefined && held === 0) ||
+        pushedCommits(ticket).size > 0
           ? `origin/${baseBranch}`
           : null;
       let initialPrompt: string;
@@ -1600,7 +1609,11 @@ export class RunService {
           });
         }
         const branch = payload.branch
-          ? { branchHead: payload.branch.head, commits: payload.branch.commitsAhead }
+          ? {
+              branchHead: payload.branch.head,
+              commits: payload.branch.commitsAhead,
+              notOnGitHub: payload.branch.notOnGitHub,
+            }
           : {};
         if (!ACTIVE.has(run.status)) {
           // Already ended on the server (Stop run, revocation): the report adds the branch only.
@@ -1648,10 +1661,10 @@ export class RunService {
           await this.fail(tx, locked, end.failureReason, 'daemon', {
             endReason: payload.reason,
             detail,
-            pushed:
+            onGitHub:
               payload.branch !== null &&
               locked.ticket !== null &&
-              (await this.allPushed(tx, locked.ticket.id, payload.branch)),
+              (await this.allOnGitHub(tx, locked.ticket.id, payload.branch)),
           });
         }
         return true;

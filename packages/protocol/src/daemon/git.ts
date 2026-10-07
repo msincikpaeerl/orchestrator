@@ -25,12 +25,37 @@ export type GitBranchName = z.infer<typeof GitBranchName>;
 export const CommitSummary = z.object({ hash: GitHash, subject: boundedText() });
 export type CommitSummary = z.infer<typeof CommitSummary>;
 
+/**
+ * Most commits a branch report lists (05, section 4.9; lot 3 step D3): the newest ones. Commits
+ * beyond it are only counted, and a commit the server is not told about counts as not on GitHub.
+ */
+export const BRANCH_REPORT_MAX_COMMITS = 500;
+
+/**
+ * The commits of the branch that are on no branch the machine fetched from GitHub (as fetched at
+ * the run's preparation, or moved by a push it made): the rule of the end push, computed by the
+ * same code (05, section 4.9; lot 3 step D3). `listed`: those among `commitsAhead`, newest first;
+ * `count`: all of them, listed or not.
+ */
+export const NotOnGitHub = z
+  .object({
+    listed: z.array(GitHash).max(BRANCH_REPORT_MAX_COMMITS),
+    count: z.int().min(0),
+  })
+  .refine((value) => value.listed.length <= value.count, 'count is below the listed commits');
+export type NotOnGitHub = z.infer<typeof NotOnGitHub>;
+
 /** The ticket branch in the machine's bare clone: its head and the commits ahead of the base. */
 export const BranchReport = z.object({
   name: GitBranchName,
   head: GitHash,
-  /** Newest first. */
-  commitsAhead: z.array(CommitSummary),
+  /** Newest first, at most `BRANCH_REPORT_MAX_COMMITS`. */
+  commitsAhead: z.array(CommitSummary).max(BRANCH_REPORT_MAX_COMMITS),
+  /**
+   * What of it is not on GitHub, as the machine knows (protocol 2); null when not read, and
+   * absent from protocol 1: the server then counts every commit no push held.
+   */
+  notOnGitHub: NotOnGitHub.nullable().default(null),
 });
 export type BranchReport = z.infer<typeof BranchReport>;
 

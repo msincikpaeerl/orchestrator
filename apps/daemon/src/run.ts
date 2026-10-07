@@ -997,6 +997,10 @@ export class Run {
             .endPush(start, bare, runFolder(this.context.paths, this.runId))
             .catch(logged('end push not attempted', null));
           if (push) this.log.info({ push }, 'ticket branch pushed at the end of the run');
+          // Read again: what the push sent is on GitHub now (lot 3 step D3).
+          if (push?.status === 'pushed' && branch) {
+            branch = { ...branch, notOnGitHub: await workspaces.notOnGitHub(bare, branch) };
+          }
         }
       }
       if (headMoved) {

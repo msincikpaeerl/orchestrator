@@ -2,6 +2,7 @@ import { schema } from '@orchestrator/db';
 import {
   GitHash,
   maskSecrets,
+  NotOnGitHub,
   PushFailureReason,
   type BranchReport,
   type BranchWhere,
@@ -9,12 +10,12 @@ import {
   type PushResult,
   type TicketBranch,
 } from '@orchestrator/protocol';
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import type { ProjectRow } from '../projects/model.js';
-import { reportedCommits } from '../runs/model.js';
+import { reportedCommits, type RunRow } from '../runs/model.js';
 import { ticketReference, type TicketRow } from './model.js';
 
 /**
@@ -49,23 +50,55 @@ export function pushFailure(
     : BranchPushFailure.parse(ticket.branchPushFailure);
 }
 
-/** The reported commits no push held, newest first: they exist only on the reporting machine. */
-export function commitsNotOnGitHub(
-  ticket: Pick<TicketRow, 'githubBranchCommits'>,
-  commits: readonly CommitSummary[],
-): CommitSummary[] {
-  const pushed = pushedCommits(ticket);
-  return commits.filter((commit) => !pushed.has(commit.hash));
+/** A branch report: the commits listed, and what the machine said was not on GitHub. */
+export interface ReportedBranch {
+  commits: readonly CommitSummary[];
+  notOnGitHub: NotOnGitHub | null;
 }
 
-/** The branch's state on the ticket page (02, section 6.4), from the reported commits not pushed. */
+/** A run's stored report. */
+export function runReport(run: Pick<RunRow, 'commits' | 'notOnGitHub'>): ReportedBranch {
+  return {
+    commits: reportedCommits(run) ?? [],
+    notOnGitHub: run.notOnGitHub === null ? null : NotOnGitHub.parse(run.notOnGitHub),
+  };
+}
+
+/**
+ * The commits of a report that are only on its machine (07, section 3; lot 3 step D3): those the
+ * machine said were on no branch fetched from GitHub, and no push held, newest first. A machine
+ * that said nothing (protocol 1, runs of 0.3.0): every commit no push held. `count` adds the
+ * commits beyond the report's ceiling the machine counted: the server knows nothing about them,
+ * so they are not on GitHub.
+ */
+export function commitsNotOnGitHub(
+  ticket: Pick<TicketRow, 'githubBranchCommits'>,
+  report: ReportedBranch,
+): { commits: CommitSummary[]; count: number } {
+  const pushed = pushedCommits(ticket);
+  if (report.notOnGitHub === null) {
+    const commits = report.commits.filter((commit) => !pushed.has(commit.hash));
+    return { commits, count: commits.length };
+  }
+  const listed = report.notOnGitHub.listed.filter((hash) => !pushed.has(hash));
+  const held = new Set(listed);
+  const beyond = report.notOnGitHub.count - report.notOnGitHub.listed.length;
+  return {
+    commits: report.commits.filter((commit) => held.has(commit.hash)),
+    count: listed.length + beyond,
+  };
+}
+
+/** The branch's state on the ticket page (02, section 6.4). */
 export function branchWhere(
   ticket: Pick<TicketRow, 'githubBranchHead' | 'branchPushFailure'>,
+  report: ReportedBranch,
   notOnGitHub: number,
 ): BranchWhere {
-  if (notOnGitHub === 0) return ticket.githubBranchHead === null ? 'no_commits' : 'github';
+  const onGitHub = report.commits.length > notOnGitHub || ticket.githubBranchHead !== null;
+  if (notOnGitHub === 0) return onGitHub ? 'github' : 'no_commits';
   if (pushFailure(ticket)?.reason === 'diverged') return 'diverged';
-  return ticket.githubBranchHead === null ? 'machine' : 'machine_ahead';
+  return onGitHub ? 'machine_ahead' : 'machine';
 }
 
 /** The ticket branch's page on GitHub. */
@@ -164,17 +197,26 @@ export async function ticketBranch(
   ticket: TicketRow,
 ): Promise<TicketBranch | null> {
   if (ticket.branchName === null) return null;
-  // The branch as the last run that reported it saw it, on that run's machine.
+  // The branch as the last run that reported it saw it, on that run's machine. A review run
+  // reports GitHub's head, never work of its machine: it never changes where the work is.
   const [reported] = await executor
     .select({ run: schema.runs, machineName: schema.machines.name })
     .from(schema.runs)
     .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
-    .where(and(eq(schema.runs.ticketId, ticket.id), isNotNull(schema.runs.commits)))
+    .where(
+      and(
+        eq(schema.runs.ticketId, ticket.id),
+        isNotNull(schema.runs.commits),
+        ne(schema.runs.purpose, 'review'),
+      ),
+    )
     .orderBy(desc(schema.runs.createdAt))
     .limit(1);
-  const commits = reported ? (reportedCommits(reported.run) ?? []) : [];
-  const notOnGitHub = commitsNotOnGitHub(ticket, commits);
-  const failure = notOnGitHub.length > 0 ? pushFailure(ticket) : null;
+  const report: ReportedBranch = reported
+    ? runReport(reported.run)
+    : { commits: [], notOnGitHub: null };
+  const notOnGitHub = commitsNotOnGitHub(ticket, report);
+  const failure = notOnGitHub.count > 0 ? pushFailure(ticket) : null;
 
   const ids = [ticket.githubBranchPushedBy, failure?.machineId].filter(
     (id): id is string => typeof id === 'string',
@@ -194,11 +236,12 @@ export async function ticketBranch(
 
   return {
     name: ticket.branchName,
-    where: branchWhere(ticket, notOnGitHub.length),
+    where: branchWhere(ticket, report, notOnGitHub.count),
     machine: reported ? { id: reported.run.machineId, name: reported.machineName } : null,
     head: reported?.run.branchHead ?? null,
-    commits,
-    notOnGitHub: notOnGitHub.map((commit) => commit.hash),
+    commits: [...report.commits],
+    notOnGitHub: notOnGitHub.commits.map((commit) => commit.hash),
+    notOnGitHubCount: notOnGitHub.count,
     pushed:
       ticket.githubBranchHead === null || ticket.githubBranchPushedAt === null
         ? null
