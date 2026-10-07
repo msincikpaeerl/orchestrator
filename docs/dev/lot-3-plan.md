@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1 and E2 done, E3 written and waiting for the owner's run; step D split into D1, D2 and D3, step E into E1, E2 and E3)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2 and E3 done; step D split into D1, D2 and D3, step E into E1, E2 and E3)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -302,6 +302,8 @@ Added by the owner at the start of the step (2026-10-06): one server test per st
 
 Split approved by the owner on 2026-10-06, with the additions below. The owner runs the script on the real GitHub once, after E3 (a run after E2 would spend Actions minutes twice); after E2 the script is runnable, steps 6 to 10 printing `NOT ATTEMPTED`, for an early look if the owner wants one. A difference the owner's run finds is fixed in the fake, with its test, by a later session before step F.
 
+*Step E done 2026-10-07*: the owner's run and the fixes it led to are recorded at the end of E3.
+
 **What the script does** (E2 and E3; the owner's additions of 2026-10-06 follow the list):
 
 - `tools/smoke/github-smoke.sh`, for the owner only (rule 9), with no Claude quota. It uses this layer and the daemon's push code on a repository the owner names, after a typed `yes`. It refuses:
@@ -340,8 +342,8 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 | # | The fake does | Relied on by | Step |
 |---|---|---|---|
 | A1 | A push over HTTPS with the token as password and `x-access-token` as user name is accepted | D | 1 |
-| A2 | A push touching `.github/workflows/` without Workflows write: the ref is rejected with "refusing to allow a Personal Access Token to create or update workflow `<file>` without `workflows` permission" | D, F (`push_failed` reason) | 10 |
-| A3 | A push without Contents write: HTTP 403, "Permission to <owner>/<name>.git denied to <login>." | D, F | 10 |
+| A2 | A push touching `.github/workflows/` without Workflows write: the ref is rejected with ``[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `<file>` without `workflow` scope)``, "`workflow` scope" even for a fine-grained token (reworded after the owner's E3 run) | D, F (`push_failed` reason) | 10 |
+| A3 | A push without Contents write: HTTP 403, "remote: Write access to repository not granted.", and Git says "fatal: unable to access '<url>': The requested URL returned error: 403" (reworded after the owner's E3 run) | D, F | 10 |
 | A4 | A wrong token on Git: 401, and Git says "Authentication failed" | D | 1 |
 | A5 | A new pull request's `mergeable` is `null` in the creation answer, then `true` or `false` at a later read | F, J | 2 |
 | A6 | A second open pull request for the same head and base: 422, `errors[].message` "A pull request already exists for <owner>:<branch>." | F | 2 |
@@ -410,7 +412,7 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - **The owner's third run** (script 25e2303): steps 1, 2, 3 and 5 PASS, step 4 FAIL on A13 only. The real finding: the end of a failed job's log is the clean-up of its post steps (GitHub still runs them after a failure, then `Complete job`), not the failure, so an agent given "the end of the log" could fix nothing. Measured on the real log (191 lines, kept as `apps/server/test/fixtures/github-job-log/docs-links.txt`, rebuilt from a paste: see its README): the checks read false because the script looked only at the log's last 4,000 characters, whose first line was cut mid-line; every line has a timestamp; the step's section is not named after the workflow's step; the post steps run in the same second as the failure, so neither the step's times nor the `##[error]` line alone find the step. Owner's answers: the cut of 04 section 3.1 (the step's times to its last `##[error]` line; the end of the job, said as such, when impossible), the fixture made anonymous, masking in the layer. Done: `apps/server/src/github/job-log.ts` and `readFailedStepLogs` (one excerpt per failed step, streamed, secrets masked); the setting **Longest CI log read** (04 section 8: a setting, since it changes what the agent gets; wired in G1 with **Longest CI log excerpt**, the layer taking both as parameters); the fake's jobs with post steps, whole-second step times and the real log format; A13 reworded with counts.
 - **For E3**: step 8 cannot read the merge commit from the pull request any more (`merge_commit_sha` is gone). The merge commit is the default branch's head right after the owner's merge (the script reads it with `git/ref`), which E3 uses for A16 and A21; step J reads neither (it uses `merged`).
 
-### [ ] E3. Steps 6 to 10 and the second token
+### [x] E3. Steps 6 to 10 and the second token
 
 - Steps 6 to 10 (reviews, merge detection, the second, conflicting pull request, closing and reopening it) and `--restricted-token` with its pause while the owner adds Contents write.
 
@@ -426,7 +428,7 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 
 **Done when** the dry run passes every step, with and without the second token (the leak proof covering it too), and **the owner has run the script once on their test repository with every step `PASS`**. The results are recorded here. A step that fails is settled with the owner before step F.
 
-*Code done 2026-10-07 on `lot3/e3-smoke-steps-6-10`; the owner's run is pending, so the step stays unchecked until its result is recorded here.* Choices made in the step (details in `docs/dev/testing.md`, "Owner's GitHub smoke test"):
+*Done 2026-10-07 on `lot3/e3-smoke-steps-6-10`* (the owner's run and its two fixes below). Choices made in the step (details in `docs/dev/testing.md`, "Owner's GitHub smoke test"):
 
 - **The fake**: `PUT .../update-branch` served through the API (202, or 422 when not behind, in conflict or with another `expected_head_sha`); the extract gains the documented refusals the steps read (`POST .../pulls` 403 "basic-error" and 422, `PATCH .../pulls/{n}` 422, a review's 422 "validation-error-simple" with plain-string `errors`, **Update branch** 202 and 422; same pinned commit). A 403 for a missing permission carries `documentation_url` and `status` as GitHub's "basic-error"; GitHub documents no 403 for the runs and the commit status, where the fake answers the same. The review 422s for a missing body or an unknown event became plain strings (the fake's texts).
 - **The script's own reads** (a branch's head, a commit, **Update branch**) are in `apps/server/scripts/github-smoke-reads.ts`, checked against GitHub's documented bodies; no product code uses them (rule 5).
@@ -434,6 +436,17 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - **No CI run for the conflicting pull request** is checked 30 seconds after it is opened; any run started on its branch (for example after conflicts resolved on GitHub) is listed in the result.
 - **A16** lists the merge's push runs as soon as one appears, at most 3 minutes, never waiting for them to finish.
 - **The second token's pull request** is opened from the first branch, which GitHub would refuse anyway (merged, or already open): the second token never creates one unless the first pull request was closed unmerged; then it is listed and closed.
+
+*The owner's run (2026-10-07)*, on the `test0.3.0` repository, script 319318a, Git 2.53.0, with `--restricted-token`:
+
+- **Steps**: 0 to 9 `PASS`; step 10 `FAIL`, on A2 and A3 only.
+- **Assumptions**: A1, A4, A5, A6, A8, A9, A10, A11, A12, A13 (its E2 fix confirmed), A14 to A26 `PASS`; A23 for all three refusals (pull request, runs, status); A7 `NOT ATTEMPTED` by design; A2 and A3 `FAIL`, wording only.
+- **Merge method**: a merge commit, two parents, message "Merge pull request #4 from <owner>/orchestrator-smoke-20261007-211108Z" (A21). Squash and rebase were not run; step J covers them with the fake (its note above).
+- **No CI run** on the second pull request. Nothing was left on GitHub beyond what stays by design.
+- **The two differences**: the daemon read both pushes as `refused`, which is right; only the fake's texts differed. GitHub's words:
+  - A2: ``[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/orchestrator-smoke.yml` without `workflow` scope)``. The fake said "without `workflows` permission", and only in a `remote:` line, its reason being "pre-receive hook declined".
+  - A3: "Write access to repository not granted." then "fatal: unable to access '<url>': The requested URL returned error: 403". The fake said "Permission to <owner>/<name>.git denied to <login>."
+- **What was done** (same branch, no new run, owner's decision): the fake gives both texts, each with a test that failed before the change (`fake-github.test.ts`). The workflow refusal comes from a proc-receive hook, the hook Git lets give the rejected reason (Git 2.29 or later; ADR 0033 updated). The script's A2 and A3 expect GitHub's texts; its dry run failed on both before the change, as the owner's run did. The daemon's push tests use the real texts, with the owner's 403 output as a new case (it already read `refused`). The table above is reworded. Nothing else relied on the old wordings: the daemon's `Permission to … denied` pattern stays as one of several refusal texts, and the 403 is read from "The requested URL returned error: 403".
 
 ### [ ] F. Full submission and the pull request
 
@@ -446,9 +459,10 @@ Split approved by the owner on 2026-10-06, with the additions below. The owner r
 - Until step G1, an accepted submission ends the run and the ticket goes to `in_review` with the pull request link (lot 2's meaning plus the pull request: the owner checks it).
 - Ticket page: pull request link, DoD report with each check's result. `push_failed` with its "Needs you" item. The template `implement.md` and the common rules updated for the full submission.
 - **A diverged branch** (from step D3): a ticket whose last push was refused as `diverged` runs only on the machine holding its commits, and every push is refused again until the branches are joined. Decide here how the run gets out of it: its first message telling the agent to `git merge origin/<ticket branch>` (allowed since D2), and the `push_failed` "Needs you" item saying what happened.
+- **The permission to give, in the token page's words** (owner's note after the E3 run): when a push is refused for one of these two reasons, the `push_failed` "Needs you" item names the permission as GitHub's token page shows it: "Contents (Read and write)" for "Write access to repository not granted", and "Workflows (Read and write)" for the workflow refusal. GitHub's own text says "`workflow` scope" even for a fine-grained token, so the Orchestrator translates it. Tested on the two real texts (A2, A3).
 - `docs/user/`: Tickets ("Submission and the pull request"), Needs you, `github-token.md` rewritten for 0.4.0; CHANGELOG.
 
-**Done when** integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed`; Playwright on both viewports shows a submitted ticket with its pull request link and checks.
+**Done when** integration tests with a scripted daemon and the fake GitHub cover each failed check (criteria, type rules, a listed path not changed, the push refused), the pull request opened then updated, the workflow flag, and `push_failed` (naming Contents or Workflows from GitHub's two real texts); Playwright on both viewports shows a submitted ticket with its pull request link and checks.
 
 ### [ ] G1. CI: waiting and success
 
