@@ -126,8 +126,10 @@ describe('events of every type', () => {
       'ticket.updated',
       'ticket.dependency_added',
       'ticket.dependency_removed',
-      // Run now, the agent's submission, then the run's end (a Claude Code too old at its start).
+      // Run now, the agent's refused then accepted submission, then the run's end (a Claude Code
+      // too old at its start).
       'ticket.status_changed',
+      'ticket.submission_refused',
       'ticket.submitted',
       'ticket.status_changed',
     ]);

@@ -26,6 +26,7 @@ import {
   type McpToolOutput,
   type McpToolName,
   type SettingName,
+  type SubmissionRecord,
   type WorkspaceFacts,
 } from '@orchestrator/protocol';
 import { and, asc, count, eq, gt, ilike, inArray, or, sql } from 'drizzle-orm';
@@ -47,7 +48,9 @@ import {
 } from '../tickets/model.js';
 import { recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
+import type { Templates } from '../agents/files.js';
 import { cutToFit, fitPage, jsonLength } from './output.js';
+import { checkSubmission, criteriaOutOfRange, refusal } from './submission-checks.js';
 
 /** Characters of a page's output besides its items: the field names and the cursor. */
 const OUTPUT_OVERHEAD = 100;
@@ -98,6 +101,17 @@ class Refusal extends Error {
 const refuse = (code: McpError['code'], message: string, details?: McpErrorDetail[]) =>
   new Refusal({ code, message, ...(details ? { details } : {}) });
 
+/** A submission refused by its checks: the run keeps it, outside the refused call's transaction. */
+class SubmissionRefused extends Refusal {
+  constructor(
+    error: McpError,
+    readonly call: Call,
+    readonly record: SubmissionRecord,
+  ) {
+    super(error);
+  }
+}
+
 const ENDED_MESSAGE =
   'This run has ended (it was stopped, or its time is over): its token is no longer valid. Stop working: nothing you do now will be recorded.';
 
@@ -124,6 +138,8 @@ export interface McpBackendOptions {
   now: () => Date;
   /** Milliseconds in one second of "Progress update interval"; tests shorten it. */
   secondMs: number;
+  /** The run message templates (03, section 3.2): `ticket_submit`'s texts among them. */
+  templates: () => Promise<Templates>;
 }
 
 export class McpBackend {
@@ -548,54 +564,59 @@ export class McpBackend {
       ['maxAgentTicketsPerRun'],
       projectRow.projectId,
     );
-    const result = await this.db.transaction(async (tx): Promise<Handled> => {
-      // The project's row lock first, then the run's: the order of every ticket change.
-      await tx
-        .select({ id: schema.projects.id })
-        .from(schema.projects)
-        .where(eq(schema.projects.id, projectRow.projectId))
-        .for('no key update');
-      const call = await this.load(tx, runId, machineId, true);
-      known(call);
-      this.permit(call, tool);
-      if (!ACTIVE.has(call.run.status)) throw refuse('FORBIDDEN', ENDED_MESSAGE);
-      switch (tool) {
-        case 'ticket_progress':
-          return this.progress(tx, call, input as McpToolInput<'ticket_progress'>, settings);
-        case 'ticket_comment':
-          return this.comment(tx, call, input as McpToolInput<'ticket_comment'>, settings);
-        case 'ticket_ask':
-          return this.ask(tx, call, input as McpToolInput<'ticket_ask'>, settings);
-        case 'ticket_give_up':
-          return this.giveUp(tx, call, input as McpToolInput<'ticket_give_up'>, settings);
-        case 'ticket_create':
-          return this.create(tx, call, input as McpToolInput<'ticket_create'>, {
-            ...settings,
-            maxAgentTicketsPerRun:
-              call.run.maxAgentTickets ?? agentTicketsSetting.maxAgentTicketsPerRun,
-          });
-        case 'review_approve':
-        case 'review_request_changes':
-          // Only a review run of a ticket in review (06, section 4.5); the server starts none yet.
-          if (call.run.purpose !== 'review') {
-            throw refuse(
-              'INVALID_TRANSITION',
-              `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
+    const result = await this.db
+      .transaction(async (tx): Promise<Handled> => {
+        // The project's row lock first, then the run's: the order of every ticket change.
+        await tx
+          .select({ id: schema.projects.id })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, projectRow.projectId))
+          .for('no key update');
+        const call = await this.load(tx, runId, machineId, true);
+        known(call);
+        this.permit(call, tool);
+        if (!ACTIVE.has(call.run.status)) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+        switch (tool) {
+          case 'ticket_progress':
+            return this.progress(tx, call, input as McpToolInput<'ticket_progress'>, settings);
+          case 'ticket_comment':
+            return this.comment(tx, call, input as McpToolInput<'ticket_comment'>, settings);
+          case 'ticket_ask':
+            return this.ask(tx, call, input as McpToolInput<'ticket_ask'>, settings);
+          case 'ticket_give_up':
+            return this.giveUp(tx, call, input as McpToolInput<'ticket_give_up'>, settings);
+          case 'ticket_create':
+            return this.create(tx, call, input as McpToolInput<'ticket_create'>, {
+              ...settings,
+              maxAgentTicketsPerRun:
+                call.run.maxAgentTickets ?? agentTicketsSetting.maxAgentTicketsPerRun,
+            });
+          case 'review_approve':
+          case 'review_request_changes':
+            // Only a review run of a ticket in review (06, section 4.5); the server starts none yet.
+            if (call.run.purpose !== 'review') {
+              throw refuse(
+                'INVALID_TRANSITION',
+                `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
+              );
+            }
+            throw new Error(`${tool} in a review run is not implemented yet`);
+          case 'ticket_submit':
+            if (message.payload.tool !== 'ticket_submit') throw new Error('no worktree facts');
+            return this.submit(
+              tx,
+              call,
+              input as McpToolInput<'ticket_submit'>,
+              message.payload.workspace,
             );
-          }
-          throw new Error(`${tool} in a review run is not implemented yet`);
-        case 'ticket_submit':
-          if (message.payload.tool !== 'ticket_submit') throw new Error('no worktree facts');
-          return this.submit(
-            tx,
-            call,
-            input as McpToolInput<'ticket_submit'>,
-            message.payload.workspace,
-          );
-        default:
-          throw new Error(`${tool} is not a writing tool`);
-      }
-    });
+          default:
+            throw new Error(`${tool} is not a writing tool`);
+        }
+      })
+      .catch(async (error: unknown) => {
+        if (error instanceof SubmissionRefused) await this.recordRefusedSubmission(error);
+        throw error;
+      });
     if (result.after) result.after();
     return result.output;
   }
@@ -1037,80 +1058,63 @@ export class McpBackend {
   }
 
   /**
-   * The reduced `ticket_submit` of lot 2 (04, section 3.1): every criterion `met`, the worktree
-   * clean and commits ahead of the base branch, from the daemon's facts (05, section 4.9). When
-   * they pass, the report is stored; the run ends `succeeded` and the ticket moves to `in_review`
-   * when the turn ends.
+   * `ticket_submit` (04, sections 3.1 and 3.3; lot 3 step F): every check on the daemon's facts
+   * (05, section 4.9), with the texts of `agents/templates/submit-checks.md`. A refused submission
+   * is kept on the run (`SubmissionRefused`); an accepted one on the run and the ticket, with each
+   * check's result and the workflow flag. The run ends `succeeded` and the ticket moves to
+   * `in_review` when the turn ends.
    */
   private async submit(
     tx: Transaction,
     call: Call,
     report: McpToolInput<'ticket_submit'>,
-    workspace: Extract<McpCall['payload'], { tool: 'ticket_submit' }>['workspace'],
+    workspace: WorkspaceFacts,
   ) {
     this.requireWorking(call, 'ticket_submit');
+    const texts = (await this.options.templates())['submit-checks'];
     const criteria = acceptanceCriteria(call.ticket);
-    const outOfRange = report.criteria.filter((entry) => entry.index >= criteria.length);
-    if (outOfRange.length > 0) {
-      throw refuse(
-        'VALIDATION_FAILED',
-        `The ticket has ${String(criteria.length)} acceptance criteria (indexes 0 to ${String(criteria.length - 1)}): ${outOfRange.map((entry) => entry.index).join(', ')} do not exist.`,
-        outOfRange.map((entry) => ({
-          field: `criteria.${String(report.criteria.indexOf(entry))}.index`,
-          message: `no criterion ${String(entry.index)}`,
-        })),
-      );
-    }
-    const failed: McpErrorDetail[] = [];
-    criteria.forEach((text, index) => {
-      const entry = report.criteria.find((each) => each.index === index);
-      if (!entry) {
-        failed.push({
-          check: 'criteria_met',
-          message: `Criterion ${String(index)} is not reported: "${shorten(text, 120)}".`,
-        });
-      } else if (entry.status !== 'met') {
-        failed.push({
-          check: 'criteria_met',
-          message: `Criterion ${String(index)} is reported not_met: "${shorten(text, 120)}". Meet it, or use ticket_ask to get a decision.`,
-        });
-      }
+    const outOfRange = criteriaOutOfRange(texts, criteria, report);
+    if (outOfRange) throw new Refusal(outOfRange);
+    const checked = checkSubmission(texts, {
+      ticketType: TicketType.parse(call.ticket.type),
+      criteria,
+      report,
+      workspace,
+      baseBranch: call.run.baseBranch,
     });
-    if (!workspace.clean) {
-      failed.push({
-        check: 'worktree_clean',
-        message: 'The worktree has uncommitted changes or untracked files: commit your work first.',
-      });
-    }
-    if (workspace.branch.commitsAhead.length === 0) {
-      failed.push({
-        check: 'commits_ahead',
-        message: `The branch ${workspace.branch.name} has no commits ahead of the base branch ${call.run.baseBranch}: commit your work on it.`,
-      });
-    }
-    if (failed.length > 0) {
-      throw refuse(
-        'DOD_FAILED',
-        `The submission is refused: ${String(failed.length)} check${failed.length === 1 ? '' : 's'} failed. Fix them and submit again.`,
-        failed,
-      );
-    }
     const at = this.now();
+    const record: SubmissionRecord = {
+      at: at.toISOString(),
+      report,
+      checks: checked.checks,
+      workflowChanges: checked.workflowChanges,
+    };
+    const refused = refusal(texts, checked);
+    if (refused) throw new SubmissionRefused(refused, call, record);
     const [updated] = await tx
       .update(schema.tickets)
-      .set({ dodReport: report, updatedAt: at })
+      .set({
+        dodReport: report,
+        dodChecks: checked.checks,
+        workflowChanges: checked.workflowChanges,
+        updatedAt: at,
+      })
       .where(eq(schema.tickets.id, call.ticket.id))
       .returning();
     if (!updated) throw new Error('ticket disappeared');
     await tx
       .update(schema.runs)
-      .set({ decision: 'submitted', outcome: report.summary, updatedAt: at })
+      .set({ decision: 'submitted', outcome: report.summary, submission: record, updatedAt: at })
       .where(eq(schema.runs.id, call.run.id));
     await recordEvent(tx, {
       actor: 'agent',
       ...ticketEntity(call.ticket),
       type: 'ticket.submitted',
-      payload: { ...this.agentFacts(call), criteria: criteria.length },
+      payload: {
+        ...this.agentFacts(call),
+        criteria: criteria.length,
+        workflowChanges: checked.workflowChanges,
+      },
       at,
     });
     return {
@@ -1119,6 +1123,38 @@ export class McpBackend {
         ticket: await this.mcpTicket(tx, call.project.key, updated),
       },
     };
+  }
+
+  /** A refused submission, kept as the run's latest with its event, in a transaction of its own. */
+  private async recordRefusedSubmission({ call, record }: SubmissionRefused) {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, call.project.id))
+        .for('no key update');
+      const [run] = await tx
+        .select({ id: schema.runs.id })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, call.run.id))
+        .for('update');
+      if (!run) return;
+      await tx
+        .update(schema.runs)
+        .set({ refusedSubmission: record, updatedAt: this.now() })
+        .where(eq(schema.runs.id, call.run.id));
+      // Every failed check, also those the agent was not told about after a failed push.
+      const failed = record.checks.flatMap((each) =>
+        each.result === 'failed' ? [each.check] : [],
+      );
+      await recordEvent(tx, {
+        actor: 'agent',
+        ...ticketEntity(call.ticket),
+        type: 'ticket.submission_refused',
+        payload: { ...this.agentFacts(call), failed },
+        at: this.now(),
+      });
+    });
   }
 }
 

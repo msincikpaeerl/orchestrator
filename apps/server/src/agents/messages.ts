@@ -25,7 +25,11 @@ export function fill(template: Template, text: string, values: Record<string, st
   });
 }
 
-function part(template: Template, name: string, values: Record<string, string> = {}): string {
+export function part(
+  template: Template,
+  name: string,
+  values: Record<string, string> = {},
+): string {
   const text = template.parts.get(name);
   if (text === undefined) throw new Error(`template ${template.name}: part ${name} is missing`);
   return fill(template, text, values);

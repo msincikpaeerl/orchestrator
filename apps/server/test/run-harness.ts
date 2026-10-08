@@ -12,6 +12,7 @@ import {
   type RunStart,
   type RunState,
   type SettingValues,
+  type WorkspaceFacts,
 } from '@orchestrator/protocol';
 import { asc, like } from 'drizzle-orm';
 import { expect } from 'vitest';
@@ -179,7 +180,7 @@ export class RunHarness {
     runToken: string,
     tool: McpToolName,
     input: object = {},
-    workspace?: Extract<McpCall['payload'], { tool: 'ticket_submit' }>['workspace'],
+    workspace?: WorkspaceFacts,
   ): Promise<McpResult['payload']> {
     const payload = (
       tool === 'ticket_submit'
@@ -212,19 +213,28 @@ export class RunHarness {
   }
 }
 
+/** The files the tests' reports list, as changed on the branch. */
+export const CHANGED_FILES = ['docs/user/contact.md', 'src/contact.test.ts', 'src/contact.ts'];
+
+/**
+ * The facts of a protocol 2 daemon at a submission that passes: a clean worktree, commits ahead,
+ * the push done and the files the reports list changed (05, section 4.9).
+ */
 export function cleanWorkspace(
-  overrides: { clean?: boolean; commitsAhead?: typeof COMMITS } = {},
-): Extract<McpCall['payload'], { tool: 'ticket_submit' }>['workspace'] {
+  overrides: Partial<Omit<WorkspaceFacts, 'branch'>> & { commitsAhead?: typeof COMMITS } = {},
+): WorkspaceFacts {
+  const { commitsAhead, ...facts } = overrides;
   return {
-    clean: overrides.clean ?? true,
+    clean: true,
     branch: {
       name: 't/1-contact-form',
       head: HEAD,
-      commitsAhead: overrides.commitsAhead ?? COMMITS,
+      commitsAhead: commitsAhead ?? COMMITS,
       notOnGitHub: null,
     },
-    push: null,
-    changedFiles: null,
+    push: { status: 'pushed', head: HEAD },
+    changedFiles: { listed: CHANGED_FILES, count: CHANGED_FILES.length },
+    ...facts,
   };
 }
 

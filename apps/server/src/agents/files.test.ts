@@ -72,8 +72,14 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(commonRules).toMatch(/Ask the owner only for what the owner can decide/);
   });
 
-  it('ship the four run message templates of 03, section 3.2', async () => {
+  it('ship the run message templates of 03, section 3.2, with the texts of ticket_submit', async () => {
     const templates = await loadTemplates();
-    expect(Object.keys(templates)).toEqual(['implement', 'continue', 'answer', 'nudge']);
+    expect(Object.keys(templates)).toEqual([
+      'implement',
+      'continue',
+      'answer',
+      'nudge',
+      'submit-checks',
+    ]);
   });
 });

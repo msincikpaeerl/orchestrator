@@ -15,7 +15,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
-import { RunHarness, cleanWorkspace, eventually, state } from './run-harness.js';
+import { RunHarness, eventually, state } from './run-harness.js';
 
 // The MCP backend and questions (lot 2 step K; 06; 04, sections 2, 3.1 and 6).
 
@@ -527,54 +527,7 @@ describe('ticket_create (06, section 4.3), then Accept and Reject (04, section 2
   });
 });
 
-describe('the reduced ticket_submit (04, section 3.1)', () => {
-  it('lists each failed check, then stores the report; the end moves the ticket to in_review', async () => {
-    const { daemon, runId, runToken } = await working();
-    const failed = refusal(
-      await h.tool(
-        daemon,
-        runToken,
-        'ticket_submit',
-        {
-          ...REPORT,
-          criteria: [{ index: 0, status: 'not_met', justification: 'Not yet' }],
-        },
-        cleanWorkspace({ clean: false, commitsAhead: [] }),
-      ),
-    );
-    expect(failed.code).toBe('DOD_FAILED');
-    expect(failed.details?.map((detail) => detail.check)).toEqual([
-      'criteria_met',
-      'criteria_met',
-      'worktree_clean',
-      'commits_ahead',
-    ]);
-    expect(
-      refusal(
-        await h.tool(daemon, runToken, 'ticket_submit', {
-          ...REPORT,
-          criteria: [{ index: 5, status: 'met', justification: 'Done' }],
-        }),
-      ).code,
-    ).toBe('VALIDATION_FAILED');
-
-    const accepted = await h.ok(daemon, runToken, 'ticket_submit', REPORT);
-    expect(accepted).toMatchObject({
-      result: 'accepted',
-      ticket: { status: 'in_progress', dod_report: { summary: 'Adds the contact form.' } },
-    });
-    expect(
-      refusal(await h.tool(daemon, runToken, 'ticket_ask', { question: 'Ok?' })).message,
-    ).toMatch(/already submitted/);
-    expect((await h.ticket()).dodReport?.summary).toBe('Adds the contact form.');
-    const [event] = await h.events('ticket.submitted');
-    expect(event).toMatchObject({ actor: 'agent', payload: { criteria: 2 } });
-
-    await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
-    expect((await h.run(runId)).status).toBe('succeeded');
-    expect((await h.ticket()).status).toBe('in_review');
-  });
-});
+// ticket_submit's checks: submission.test.ts (lot 3 step F2).
 
 describe('questions and answers (04, section 6)', () => {
   const answerInput = (daemon: ScriptedDaemon) =>

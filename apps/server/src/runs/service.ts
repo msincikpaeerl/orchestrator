@@ -165,6 +165,7 @@ export class RunService {
       log: options.log,
       now: () => this.now(),
       secondMs: this.secondMs,
+      templates: async () => (await this.files()).templates,
     });
   }
 
