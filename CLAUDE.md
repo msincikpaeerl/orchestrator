@@ -33,7 +33,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Run server and UI in dev (UI on port 5173) | `pnpm dev` |
 | Run daemon in dev (a command: `start`, `doctor`, ...) | `pnpm --filter @orchestrator/daemon dev <command>` |
 | Unit and integration tests | `pnpm test` |
-| End-to-end tests (Playwright Docker image, desktop and phone) | `pnpm test:e2e` |
+| End-to-end tests (Playwright Docker image, desktop and phone; screenshots for the owner in `apps/web/e2e-screenshots/`) | `pnpm test:e2e` |
 | systemd tests (host with a systemd user session; `docs/dev/testing.md`) | `ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts` |
 | Lint and format check | `pnpm lint` (fix formatting: `pnpm format`) |
 | Type check | `pnpm typecheck` |
