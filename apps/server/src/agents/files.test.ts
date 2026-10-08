@@ -84,6 +84,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'answer',
       'nudge',
       'submit-checks',
+      'pull-request',
     ]);
   });
 });
