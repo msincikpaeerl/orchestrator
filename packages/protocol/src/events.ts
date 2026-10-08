@@ -15,6 +15,7 @@ import {
   RunTicketAction,
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
+import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
 import {
@@ -74,6 +75,7 @@ export const EventType = z.enum([
   'ticket.dependency_removed',
   'ticket.commented',
   'ticket.submitted',
+  'ticket.submission_refused',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -221,7 +223,23 @@ export const EventPayloads = {
     ...AgentFacts,
   }),
   /** An agent's submission was accepted and its report stored (04, section 3.1). */
-  'ticket.submitted': z.object({ ...TicketFacts, ...AgentFacts, criteria: z.int() }),
+  'ticket.submitted': z.object({
+    ...TicketFacts,
+    ...AgentFacts,
+    criteria: z.int(),
+    /** The branch changes `.github/workflows/` (lot 3 step F); absent before 0.4.0. */
+    workflowChanges: z.boolean().optional(),
+  }),
+  /**
+   * An agent's submission was refused by the checks, which the run keeps with the report (04,
+   * section 3.1; lot 3 step F).
+   */
+  'ticket.submission_refused': z.object({
+    ...TicketFacts,
+    ...AgentFacts,
+    /** The failed checks, each once, in the order of 04 section 3.1. */
+    failed: z.array(DodCheck),
+  }),
   'setting.changed': z.object({
     ...SettingFacts,
     previous: z.int().nullable(),

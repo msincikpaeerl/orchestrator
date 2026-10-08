@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requiredText, settingCeiling } from '../text-limits.js';
+import { DodCheck } from './errors.js';
 
 const CRITERIA_CEILING = settingCeiling('ticketMaxAcceptanceCriteria');
 
@@ -40,3 +41,30 @@ export const DodReport = z.strictObject({
   summary: requiredText(),
 });
 export type DodReport = z.infer<typeof DodReport>;
+
+/**
+ * One submission check's result (04, section 3.1; lot 3 step F): `incomplete` when the server
+ * could not fully do it (the machine's list of changed files was cut, or not sent), which never
+ * refuses a submission; `skipped` when an earlier check made it pointless (no push is tried on a
+ * worktree with uncommitted changes). `messages` are the texts the agent received, or for an
+ * incomplete check what could not be done.
+ */
+export const DodCheckResult = z.object({
+  check: DodCheck,
+  result: z.enum(['passed', 'failed', 'incomplete', 'skipped']),
+  messages: z.array(z.string()),
+});
+export type DodCheckResult = z.infer<typeof DodCheckResult>;
+
+/**
+ * A submission as the server checked it: kept for the accepted one (on the run and the ticket)
+ * and for each run's latest refused one (lot 3 step F, owner's addition).
+ */
+export const SubmissionRecord = z.object({
+  at: z.iso.datetime(),
+  report: DodReport,
+  checks: z.array(DodCheckResult),
+  /** The branch changes `.github/workflows/`, or its changed files were cut or not sent. */
+  workflowChanges: z.boolean(),
+});
+export type SubmissionRecord = z.infer<typeof SubmissionRecord>;

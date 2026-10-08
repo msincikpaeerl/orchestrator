@@ -292,6 +292,7 @@ export {
   isCompatibleProtocol,
 } from './daemon/enrollment.js';
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
+export { DodCheckResult, SubmissionRecord } from './mcp/dod-report.js';
 export { CiCheck, CiFailedJob, CiResult, CiState } from './mcp/ci.js';
 export {
   DodReport,

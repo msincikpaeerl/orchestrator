@@ -1,6 +1,7 @@
 import {
   BLOCKABLE_STATUSES,
   type AgentLink,
+  type DodCheck,
   type TicketLink,
   type TicketPriority,
   type TicketStatus,
@@ -17,6 +18,16 @@ export const statusLabel: Record<TicketStatus, string> = {
   awaiting_merge: 'Awaiting merge',
   done: 'Done',
   cancelled: 'Cancelled',
+};
+
+/** A submission check in words (04, section 3.1). */
+export const checkLabel: Record<DodCheck, string> = {
+  criteria_met: 'acceptance criteria met',
+  worktree_clean: 'all work committed',
+  commits_ahead: 'commits on the branch',
+  pushed: 'branch pushed to GitHub',
+  type_rules: 'rules of the ticket type',
+  paths_changed: 'listed files changed on the branch',
 };
 
 export const typeLabel: Record<TicketType, string> = {
