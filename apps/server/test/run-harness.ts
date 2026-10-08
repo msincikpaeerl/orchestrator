@@ -14,7 +14,7 @@ import {
   type SettingValues,
   type WorkspaceFacts,
 } from '@orchestrator/protocol';
-import { asc, like } from 'drizzle-orm';
+import { asc, eq, like } from 'drizzle-orm';
 import { expect } from 'vitest';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, startFakeGitHub, type FakeGitHub } from './fake-github.js';
@@ -32,12 +32,15 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export class RunHarness {
   t!: TestApp;
-  private github!: FakeGitHub;
+  github!: FakeGitHub;
   /** The owner's session cookie, `name=value`. */
   cookie = '';
   private readonly daemons: ScriptedDaemon[] = [];
   private readonly heartbeats: NodeJS.Timeout[] = [];
   private started = false;
+  private pushes = 0;
+  /** The ticket number of each run token `running` gave. */
+  private readonly runTickets = new Map<string, number>();
 
   /** `daemonSecondMs` shortens the dispatch timeout and the progress interval; daemons beat. */
   async start(
@@ -50,7 +53,16 @@ export class RunHarness {
   ) {
     this.started = true;
     this.github = await startFakeGitHub();
-    this.github.accounts.set(TOKEN, fullAccount());
+    // The project's repository, where a push the scripted daemon reports lands (`tool`).
+    this.github.accounts.set(
+      TOKEN,
+      fullAccount({
+        repositories: [
+          { name: 'notes', private: true },
+          { name: 'bakery', private: true },
+        ],
+      }),
+    );
     this.t = await startTestApp({
       githubApiUrl: this.github.url,
       listen: true,
@@ -166,6 +178,7 @@ export class RunHarness {
       state(created.id, { state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION }),
     );
     await this.report(daemon, state(created.id, { state: 'working' }));
+    this.runTickets.set(start.payload.runToken, number);
     return { runId: created.id, runToken: start.payload.runToken };
   }
 
@@ -182,11 +195,31 @@ export class RunHarness {
     input: object = {},
     workspace?: WorkspaceFacts,
   ): Promise<McpResult['payload']> {
+    const facts = workspace ?? cleanWorkspace();
     const payload = (
       tool === 'ticket_submit'
-        ? { tool, runToken, input, workspace: workspace ?? cleanWorkspace() }
+        ? { tool, runToken, input, workspace: facts }
         : { tool, runToken, input }
     ) as McpCall['payload'];
+    // The push the facts report, done on the fake GitHub as the daemon's push would.
+    const number = this.runTickets.get(runToken);
+    if (tool === 'ticket_submit' && facts.push?.status === 'pushed' && number !== undefined) {
+      this.pushes += 1;
+      const [ticket] = await this.t.db
+        .select({ branch: schema.tickets.branchName })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.number, number));
+      const branch = ticket?.branch ?? facts.branch.name;
+      const repo = this.github.repository('octo-owner', 'bakery');
+      const exists = this.github.branches(repo).has(branch);
+      this.github.commit(
+        repo,
+        branch,
+        { [`src/work-${String(this.pushes)}.ts`]: 'export {};\n' },
+        'Work of the agent',
+        exists ? undefined : 'main',
+      );
+    }
     const answer = await daemon.request({ type: 'mcp.call', id: randomUUID(), payload });
     if (answer.type !== 'mcp.result') throw new Error(`unexpected ${answer.type}`);
     return answer.payload;
@@ -267,7 +300,11 @@ export function state(
 }
 
 /** Waits until `check` passes, for what the server does on its own (a timer). */
-export async function eventually(what: string, check: () => Promise<void>, timeoutMs = 5000) {
+export async function eventually(
+  what: string,
+  check: () => Promise<void> | void,
+  timeoutMs = 5000,
+) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {

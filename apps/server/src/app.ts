@@ -24,6 +24,8 @@ import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
 import { RunService } from './runs/service.js';
+import { PullRequestOpener } from './tickets/pull-request.js';
+import { loadTemplates } from './agents/files.js';
 import { deriveSecretKey } from './secrets.js';
 import { registerSettingRoutes } from './settings/routes.js';
 import { registerTicketRoutes } from './tickets/routes.js';
@@ -69,6 +71,16 @@ export function buildApp(dependencies: AppDependencies) {
     secondMs: dependencies.daemonSecondMs,
   });
   const key = deriveSecretKey(dependencies.secretKey);
+  let templates: ReturnType<typeof loadTemplates> | undefined;
+  const pullRequests = new PullRequestOpener({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    publicUrl: dependencies.publicUrl,
+    templates: () => (templates ??= loadTemplates()),
+    now: dependencies.now,
+  });
   const runs = new RunService({
     db,
     log: logger,
@@ -77,6 +89,7 @@ export function buildApp(dependencies: AppDependencies) {
     gitBaseUrl: dependencies.gitBaseUrl ?? GITHUB_WEB_URL,
     now: dependencies.now,
     secondMs: dependencies.daemonSecondMs,
+    pullRequestWanted: (ticketId) => void pullRequests.request(ticketId),
   });
   runs.attach(gateway);
   gateway.attachRuns(runs);
@@ -93,9 +106,17 @@ export function buildApp(dependencies: AppDependencies) {
   app.addHook('onReady', async () => {
     await feed.start();
   });
-  app.addHook('onClose', () => {
+  // Pull requests still wanted when the server stopped: tried once (04, section 3.1). Not awaited,
+  // so GitHub's answers never delay the start.
+  app.addHook('onReady', () => {
+    void pullRequests.retryWanted().catch((error: unknown) => {
+      logger.error({ err: error }, 'pull requests still wanted not tried again');
+    });
+  });
+  app.addHook('onClose', async () => {
     runs.close();
     feed.close();
+    await pullRequests.idle();
   });
 
   // Polled by Docker every few seconds: only failures are logged.
@@ -133,7 +154,7 @@ export function buildApp(dependencies: AppDependencies) {
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
-    registerTicketRoutes(scope, { db, runs, now: dependencies.now });
+    registerTicketRoutes(scope, { db, runs, pullRequests, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

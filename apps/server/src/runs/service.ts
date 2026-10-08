@@ -120,6 +120,8 @@ export interface RunServiceOptions {
   now?: () => Date;
   /** Milliseconds in one second of the dispatch acknowledgement timeout; tests shorten it. */
   secondMs?: number;
+  /** After an accepted submission: open or update its pull request (lot 3 step F3). */
+  pullRequestWanted?: (ticketId: string) => void;
 }
 
 /** Everything about one run, locked for the rest of the transaction. */
@@ -176,6 +178,7 @@ export class RunService {
       now: () => this.now(),
       secondMs: this.secondMs,
       templates: async () => (await this.files()).templates,
+      pullRequestWanted: (ticketId) => options.pullRequestWanted?.(ticketId),
     });
   }
 
