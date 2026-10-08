@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1 and F2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2 and F3 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -538,7 +538,7 @@ Confirmed by the owner at the start of step F2 (2026-10-08): `push_failed`'s fai
 
 Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine removes its `push_failed` item; the `system` comments stay in the server's code, as in lot 2; the MCP tools' descriptions stay in `packages/protocol`; the end-to-end expectation changed because a submission now carries its push.
 
-### [ ] F3. The pull request
+### [x] F3. The pull request
 
 - Opened after the answer to the agent (answer 3), the template `agents/templates/pull-request.md`, the harmless text (answer 4), found again after a restart, **Try again**, the ticket's pull request fields (migration).
 
@@ -552,6 +552,15 @@ Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine r
 4. **`<`, `>` and `&`** are escaped everywhere, inside code spans and blocks too (GitHub then shows `&lt;` there): kept simple and safe.
 5. **Issue links**: the zero-width space goes into `/issues/<digits>` links only, not `/pull/`; `GH-` is matched in any case.
 6. **Choices accepted**: the ticket keeps the pull request's number, link, state and head as last read, "pull request wanted since" and the last failure (reason, permission, unreadable fields, when); conflicts and the refreshed head stay in step J. Events `ticket.pull_request_opened`, `ticket.pull_request_updated`, `ticket.pull_request_reopened`, `ticket.pull_request_not_opened`. One background task per ticket, run once more when a submission comes while it runs. "Needs you" shows "Pull request not opened" with **Try again** from this step (Playwright, desktop and phone); the ticket page's line comes in F4. The description holds what 04 section 3.1 lists, not the ticket's description. The limits are counted after masking, escaping and zero-width spaces, in JavaScript string length. A project key such as `GH` gets its zero-width space in the title too (`GH-12` would be an issue reference). Unreadable answers tested with `github.alter` on the find, create, update and reopen; the stop between GitHub's answer and the record tested with a created pull request answered 502, then **Try again** and a restart.
+
+*Done 2026-10-09.* Choices made in the step (specs 01, 02 and 04 updated):
+
+- **Where it lives**: `apps/server/src/github/pull-request-text.ts` (the harmless text, title, description and ticket link, from `agents/templates/pull-request.md`) and `apps/server/src/tickets/pull-request.ts` (the background task, `PullRequestOpener`); migration 0019 adds the ticket's pull request fields. **Try again** is `POST /api/projects/<key>/tickets/<number>/pull-request/try-again`, answered once its attempt is made; the start's retry is not awaited, so GitHub never delays the server's start.
+- **Failure reasons**: unreachable, no token, token unreadable, token refused, permission missing (named "Pull requests (Read and write)" when GitHub names that permission or none), rate limited, unreadable (fields named), and refused (GitHub's masked words). Two found while testing, each with a test that failed first: a 404 now names the repository ("deleted or renamed, or the saved token cannot see it") instead of GitHub's bare "Not Found"; and a 422 error without a message (GitHub gives one only for the code `custom`) reads as its field and code, "Validation Failed: head invalid", instead of "Validation Failed" alone (E1's `answers.ts`).
+- **Done or cancelled** clears "wanted" and the failure in the transition itself, so a ticket reopened after a cancellation waits for its next submission (04 section 2). A success clears "wanted" only when no later submission set it again meanwhile; that submission's own attempt follows.
+- **Tests**: `pull-request.test.ts` (15 tests). The run harness now has the project's repository on the fake GitHub and puts each push its scripted daemon reports on the run's ticket branch, so every harness submission opens a real pull request on the fake; before, the tests' accepted submissions would each have left a "Pull request not opened" item. The every-event scenario writes the four new events: two through the submission and **Try again**, two by setting "wanted" again as a later submission would (the scenario's server functions), sparing two more runs.
+- **The limits** (65,536 and 256) are code constants in 04 section 8, like `MCP_OUTPUT_MAX_CHARACTERS`: they follow GitHub's limits (A27), not a choice of the owner.
+- **The ticket page** shows nothing of the pull request yet (F4); "Needs you" shows "Pull request not opened" with **Try again** (Playwright, desktop and phone).
 
 ### [ ] F4. Screens and docs
 
