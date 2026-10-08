@@ -166,6 +166,12 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     type: z.literal('pull_request_not_opened'),
     ticket: TicketRef,
     failure: PullRequestFailure,
+    /**
+     * The ticket's pull request when it is open, as last seen: the attempt failed to update it
+     * ("Pull request not updated"; lot 3 step F4); null when there is none, or it is closed or
+     * merged ("not opened").
+     */
+    openPullRequest: z.int().positive().nullable(),
     /** When the latest attempt failed. */
     since: z.iso.datetime(),
   }),

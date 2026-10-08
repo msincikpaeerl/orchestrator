@@ -379,7 +379,12 @@ export class PullRequestOpener {
         actor: 'system',
         ...ticketEntity(ticket),
         type: 'ticket.pull_request_not_opened',
-        payload: { ...facts, reason: failure.reason, message: failure.message },
+        payload: {
+          ...facts,
+          reason: failure.reason,
+          message: failure.message,
+          openPullRequest: ticket.pullRequestState === 'open' ? ticket.pullRequestNumber : null,
+        },
         at,
       });
     });

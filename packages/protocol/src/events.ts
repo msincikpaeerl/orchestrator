@@ -264,6 +264,11 @@ export const EventPayloads = {
     ...TicketFacts,
     reason: PullRequestFailureReason,
     message: z.string(),
+    /**
+     * The ticket's pull request when it was open: the attempt failed to update it, not to open
+     * one (lot 3 step F4); null otherwise, missing in events written before.
+     */
+    openPullRequest: z.int().positive().nullable().optional(),
   }),
   'setting.changed': z.object({
     ...SettingFacts,

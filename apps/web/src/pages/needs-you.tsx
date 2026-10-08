@@ -214,7 +214,11 @@ function PullRequestNotOpenedCard({
       <h2 className="font-semibold break-words text-slate-900">{title}</h2>
       <TicketTitle ticket={item.ticket} />
       <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
-      <PullRequestFailureDetails ticket={item.ticket} failure={item.failure} />
+      <PullRequestFailureDetails
+        ticket={item.ticket}
+        failure={item.failure}
+        openPullRequest={item.openPullRequest}
+      />
     </Card>
   );
 }

@@ -164,22 +164,26 @@ export function ReportFiles({ report }: { report: DodReport }) {
 }
 
 /**
- * "Pull request not opened" (04, section 3.1): what happened, GitHub's words or the fields that
- * differed, where to fix it, and **Try again** (one attempt, answered once made). `inTicket`
- * leaves out the link to the ticket, on the ticket's own page.
+ * "Pull request not opened" or "not updated" (04, section 3.1): what happened, GitHub's words or
+ * the fields that differed, where to fix it, and **Try again** (one attempt, answered once made).
+ * `openPullRequest` is the ticket's pull request when it is open; `inTicket` leaves out the link
+ * to the ticket, on the ticket's own page.
  */
 export function PullRequestFailureDetails({
   ticket,
   failure,
+  openPullRequest,
   inTicket = false,
 }: {
   ticket: { projectKey: string; number: number };
   failure: PullRequestFailure;
+  openPullRequest: number | null;
   inTicket?: boolean;
 }) {
   const { detail, where, showMessage } = pullRequestFailureText(
     ticketRef(ticket.projectKey, ticket.number),
     failure,
+    openPullRequest,
   );
   const tryAgain = useMutation({
     mutationFn: () =>
@@ -247,7 +251,7 @@ export function PullRequestFailureDetails({
       {tryAgain.error && <ErrorMessage>{refusalText(tryAgain.error)}</ErrorMessage>}
       {tryAgain.data?.failure && (
         <p role="status" className="text-sm text-slate-700">
-          Tried again: still not opened.
+          Tried again: still not {openPullRequest === null ? 'opened' : 'updated'}.
         </p>
       )}
     </>

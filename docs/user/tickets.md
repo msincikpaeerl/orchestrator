@@ -175,7 +175,8 @@ The ticket page shows it under **Pull request**:
 
 - **Pull request #12 · Open**: the link opens it on GitHub. The state is **Open**, **Closed without merging** or **Merged**. It is the state the Orchestrator saw when it last opened or updated the pull request; the link always shows its current state on GitHub.
 - **Opening the pull request on GitHub…**: the work was just accepted, and the pull request is being opened or updated.
-- **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open or update it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
+- **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
+- **Pull request not updated**, under an open pull request: a later accepted submission could not update it. The pull request is there, but its description still shows the report of the earlier submission; the new commits are on GitHub, in the pull request. Click **Try again** as above. A pull request closed without merging, or merged, says **Pull request not opened**, since the next try reopens it or opens a new one.
 
 ### Workflow files
 

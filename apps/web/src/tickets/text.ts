@@ -168,21 +168,42 @@ export function pushFailedText(item: Extract<NeedsYouItem, { type: 'push_failed'
 
 /**
  * Why a ticket's pull request was not opened or updated (04, section 3.1; lot 3 step F3), for
- * "Needs you" and the ticket page (step F4): the reason in a few words ("Pull request not opened:
- * <reason>"), what to do before **Try again**, and where the owner fixes it: GitHub's token list,
- * Settings > GitHub, or nowhere (wait, or read GitHub's words).
+ * "Needs you" and the ticket page (step F4): the heading, "Pull request not updated" when the
+ * ticket's pull request is open (`openPullRequest`, its number) and "not opened" otherwise (none,
+ * or closed or merged; owner's correction, step F4); the reason in a few words; what to do before
+ * **Try again**; and where the owner fixes it: GitHub's token list, Settings > GitHub, or nowhere
+ * (wait, or read GitHub's words).
  */
 export function pullRequestFailureText(
   ref: string,
   failure: PullRequestFailure,
+  openPullRequest: number | null,
+): {
+  heading: 'Pull request not opened' | 'Pull request not updated';
+  reason: string;
+  detail: string;
+  where: 'tokens' | 'settings' | null;
+  showMessage: boolean;
+} {
+  const heading = openPullRequest === null ? 'Pull request not opened' : 'Pull request not updated';
+  const onGitHub =
+    openPullRequest === null
+      ? `The work of ${ref} is on GitHub, but the Orchestrator could not open its pull request.`
+      : `The work of ${ref} is on GitHub, but the Orchestrator could not update its pull request #${String(openPullRequest)}: its description still shows the report of the earlier submission. The new commits are on GitHub, in the pull request.`;
+  const tryAgain = 'Then press Try again.';
+  return { heading, ...failureDetail(failure, onGitHub, tryAgain) };
+}
+
+function failureDetail(
+  failure: PullRequestFailure,
+  onGitHub: string,
+  tryAgain: string,
 ): {
   reason: string;
   detail: string;
   where: 'tokens' | 'settings' | null;
   showMessage: boolean;
 } {
-  const onGitHub = `The work of ${ref} is on GitHub, but the Orchestrator could not open or update its pull request.`;
-  const tryAgain = 'Then press Try again.';
   switch (failure.reason) {
     case 'permission_missing':
       if (failure.permission !== null) {
@@ -240,14 +261,19 @@ export function pullRequestNotOpenedText(
   item: Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>,
 ): { title: string; detail: string; where: 'tokens' | 'settings' | null; showMessage: boolean } {
   const ref = ticketRef(item.ticket.projectKey, item.ticket.number);
-  const { reason, ...rest } = pullRequestFailureText(ref, item.failure);
+  const { heading, reason, ...rest } = pullRequestFailureText(
+    ref,
+    item.failure,
+    item.openPullRequest,
+  );
+  const verb = item.openPullRequest === null ? 'open' : 'update';
   return {
     ...rest,
     title:
       item.failure.reason === 'refused' ||
       (item.failure.reason === 'permission_missing' && item.failure.permission === null)
-        ? `GitHub refused to open the pull request of ${ref}`
-        : `Pull request not opened for ${ref}: ${reason}`,
+        ? `GitHub refused to ${verb} the pull request of ${ref}`
+        : `${heading} for ${ref}: ${reason}`,
   };
 }
 

@@ -229,6 +229,25 @@ describe('the pull request (04, section 3.1)', () => {
 });
 
 describe('a pull request not opened (04, section 3.1)', () => {
+  it('an update that failed names the open pull request it could not update (step F4)', async () => {
+    const { daemon, runId, runToken } = await working();
+    await h.ok(daemon, runToken, 'ticket_submit', REPORT);
+    await settled();
+    const next = await nextRun(daemon, runId);
+    h.github.override = (request) => (isList(request) ? { status: 502 } : undefined);
+    await h.ok(daemon, next.runToken, 'ticket_submit', { ...REPORT, summary: 'Second round.' });
+    await settled();
+    expect(await needsYou()).toMatchObject([
+      { failure: { reason: 'unreachable' }, openPullRequest: 1 },
+    ]);
+    expect((await h.events('ticket.pull_request_not_opened'))[0]).toMatchObject({
+      payload: { reason: 'unreachable', openPullRequest: 1 },
+    });
+    // Closed on GitHub meanwhile: nothing open to update, so the pull request is "not opened".
+    await h.t.db.update(schema.tickets).set({ pullRequestState: 'closed' });
+    expect(await needsYou()).toMatchObject([{ openPullRequest: null }]);
+  });
+
   it('GitHub unreachable: kept with "Needs you", then Try again opens it', async () => {
     const { daemon, runToken, repo } = await working();
     h.github.override = (request) => (isList(request) ? { status: 502 } : undefined);
@@ -242,9 +261,10 @@ describe('a pull request not opened (04, section 3.1)', () => {
     expect(item).toMatchObject({
       ticket: { projectKey: 'WEB', number: 1 },
       failure: { reason: 'unreachable', permission: null },
+      openPullRequest: null,
     });
     expect((await h.events('ticket.pull_request_not_opened'))[0]).toMatchObject({
-      payload: { reason: 'unreachable' },
+      payload: { reason: 'unreachable', openPullRequest: null },
     });
     // Still failing: Try again says so.
     expect((await tryAgain()).failure).toMatchObject({ reason: 'unreachable' });

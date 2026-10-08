@@ -257,6 +257,22 @@ describe('eventText', () => {
     expect(text).toMatch(/^[A-Z“]/);
   });
 
+  it('says whether a pull request was not opened or not updated (step F4)', () => {
+    const failed = { project: 'WEB', ticket: 'WEB-12', reason: 'unreachable', message: 'Gone' };
+    const text = (payload: Record<string, unknown>) =>
+      plainText(eventText(entry('ticket.pull_request_not_opened', { payload })));
+    expect(text({ ...failed, openPullRequest: 4 })).toBe(
+      'WEB-12: pull request #4 could not be updated on GitHub — Gone',
+    );
+    expect(text({ ...failed, openPullRequest: null })).toBe(
+      'WEB-12: the pull request could not be opened on GitHub — Gone',
+    );
+    // Written before step F4: either.
+    expect(text(failed)).toBe(
+      'WEB-12: the pull request could not be opened or updated on GitHub — Gone',
+    );
+  });
+
   it('names the assignee of a ticket in words', () => {
     expect(plainText(eventText(entry('ticket.created')))).toBe(
       'WEB-12 created: “Checkout fails”, bug, high priority, to do, waits for WEB-3, assigned to “Web Developer”',

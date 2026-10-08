@@ -222,6 +222,40 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
 }
 
 /**
+ * "Pull request not opened: <reason>", or "not updated" when the pull request shown is open
+ * (owner's correction, step F4), with what to do and **Try again**.
+ */
+function PullRequestFailureLine({
+  ticket,
+  failure,
+}: {
+  ticket: TicketDetail;
+  failure: NonNullable<TicketDetail['pullRequest']['failure']>;
+}) {
+  const { opened } = ticket.pullRequest;
+  const openPullRequest = opened?.state === 'open' ? opened.number : null;
+  const { heading, reason } = pullRequestFailureText(
+    ticketRef(ticket.projectKey, ticket.number),
+    failure,
+    openPullRequest,
+  );
+  return (
+    <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3" aria-label={heading}>
+      <p className="font-medium break-words text-slate-900">
+        {heading}: {reason}
+      </p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(failure.at)}</p>
+      <PullRequestFailureDetails
+        ticket={ticket}
+        failure={failure}
+        openPullRequest={openPullRequest}
+        inTicket
+      />
+    </div>
+  );
+}
+
+/**
  * The ticket's pull request (02, section 6.4; lot 3 step F4): its link and state as last seen,
  * "Opening the pull request on GitHub…" while an accepted submission waits for it, "Pull request
  * not opened: <reason>" with **Try again**, and the workflow flag.
@@ -247,19 +281,7 @@ function PullRequest({ ticket }: { ticket: TicketDetail }) {
         </p>
       )}
       {!opened && !wanted && !failure && <p className="text-slate-700">No pull request yet.</p>}
-      {failure && (
-        <div
-          className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3"
-          aria-label="Pull request not opened"
-        >
-          <p className="font-medium break-words text-slate-900">
-            Pull request not opened:{' '}
-            {pullRequestFailureText(ticketRef(ticket.projectKey, ticket.number), failure).reason}
-          </p>
-          <p className="text-sm text-slate-600">Since {formatDateTime(failure.at)}</p>
-          <PullRequestFailureDetails ticket={ticket} failure={failure} inTicket />
-        </div>
-      )}
+      {failure && <PullRequestFailureLine ticket={ticket} failure={failure} />}
       {flag && (
         <div
           className="space-y-1 rounded border border-amber-300 bg-amber-50 p-3"

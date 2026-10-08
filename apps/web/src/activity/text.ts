@@ -54,7 +54,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_opened': 'Pull request opened',
   'ticket.pull_request_reopened': 'Pull request reopened',
   'ticket.pull_request_updated': 'Pull request updated',
-  'ticket.pull_request_not_opened': 'Pull request not opened',
+  'ticket.pull_request_not_opened': 'Pull request not opened or updated',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -345,7 +345,11 @@ const describe: { [T in EventType]: Describe<T> } = {
   ],
   'ticket.pull_request_not_opened': (p, c) => [
     c.ticket,
-    `: the pull request could not be opened or updated on GitHub — ${shorten(p.message)}`,
+    p.openPullRequest === undefined
+      ? `: the pull request could not be opened or updated on GitHub — ${shorten(p.message)}`
+      : p.openPullRequest === null
+        ? `: the pull request could not be opened on GitHub — ${shorten(p.message)}`
+        : `: pull request #${String(p.openPullRequest)} could not be updated on GitHub — ${shorten(p.message)}`,
   ],
   'setting.changed': (p, c) => {
     const { label } = SETTINGS[p.name];

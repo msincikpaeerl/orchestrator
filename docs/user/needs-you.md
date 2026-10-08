@@ -30,15 +30,18 @@ Each item links to its ticket; its buttons are the same as on the ticket page.
 | Ticket proposed by agent … | While working, an agent found more work and proposed a ticket. | **Accept** it (it moves to **To do**) or **Reject** it (see [Tickets proposed by agents](tickets.md#tickets-proposed-by-agents)). |
 | Work finished: check it | An agent finished a ticket: it is **In review**. The item shows the agent's summary; **Open the run** shows its log. | If the work is right, **Mark as done manually**. If not, **Request changes** (see [Check finished work](runs.md#check-finished-work)). |
 | GitHub refused the push of … / The branch of … changed on GitHub / GitHub could not be reached to push … | From version 0.4.0: the agent's work is committed on its machine, but could not be pushed to GitHub. The item names the token permission to give when GitHub said which, in the words of GitHub's token page, with **Open your tokens on GitHub**. | Fix what the item says, then open the ticket and click **Run now**. See [When the work cannot be pushed to GitHub](tickets.md#when-the-work-cannot-be-pushed-to-github). |
-| Pull request not opened for … | From version 0.4.0: the agent's work was accepted and is on GitHub, but the Orchestrator could not open or update its pull request. See [Pull request not opened](#pull-request-not-opened). | Fix what the item says, then click **Try again**. |
+| Pull request not opened for … / Pull request not updated for … | From version 0.4.0: the agent's work was accepted and is on GitHub, but the Orchestrator could not open its pull request, or update the one that is open. See [Pull request not opened](#pull-request-not-opened). | Fix what the item says, then click **Try again**. |
 | Run paused: Claude usage limit reached | The run stopped at the usage limit of its Claude account. The item says when you can resume it, "(estimated)" when Claude gave no reset time. | Wait for that time, then click **Resume**: the button becomes available by itself. Or **Stop run**. |
 | Run paused: possible Claude usage limit | The run stopped on an error that may be the usage limit, or Claude being overloaded, or a network problem. | Click **Resume** at once: the run may pause again if it was the limit. Or **Stop run**. |
 
-In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, resumed or stopped, the branch pushed to GitHub, or the pull request opened.
+In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, resumed or stopped, the branch pushed to GitHub, or the pull request opened or updated.
 
 ## Pull request not opened
 
-From version 0.4.0, when the Orchestrator accepts an agent's work, it opens the ticket's pull request on GitHub, or updates it when the ticket already has one. The agent does not wait for GitHub: the pull request is opened just after. When GitHub cannot do it, the work itself is safe on GitHub and the ticket goes on as usual; only the pull request is missing, and this item says why:
+From version 0.4.0, when the Orchestrator accepts an agent's work, it opens the ticket's pull request on GitHub, or updates it when the ticket already has one. The agent does not wait for GitHub: the pull request is opened just after. When GitHub cannot do it, the work itself is safe on GitHub and the ticket goes on as usual; only the pull request is missing, and this item says why.
+
+When the ticket's pull request is already open, the item says **Pull request not updated** instead: the pull request is there, but its description still shows the report of the earlier submission. The new commits are on GitHub, in the pull request. A pull request closed without merging, or merged, is reopened or replaced by a new one, so the item says **Pull request not opened**.
+
 
 | The item says | Why | What to do |
 |---|---|---|
@@ -47,7 +50,7 @@ From version 0.4.0, when the Orchestrator accepts an agent's work, it opens the 
 | … the GitHub token cannot be used | No token is saved, GitHub refused it, or it cannot be read since the secret key changed. | Click **Open GitHub connection** and enter a working token (see [Connect GitHub](github-token.md)), then **Try again**. |
 | … GitHub's request limit was reached | GitHub limits how many requests a token makes per hour. | Wait a few minutes, then **Try again**. |
 | … GitHub's answer could not be read | GitHub answered in a form this version of the Orchestrator does not read. The item lists what differed (field names and kinds of value, never their content). | **Try again**. If it keeps failing, report the listed fields. |
-| GitHub refused to open the pull request of … | Any other refusal, for example a repository that was deleted or renamed. The item shows GitHub's own words, with any secret hidden. | Fix the cause on GitHub, then **Try again**. |
+| GitHub refused to open (or update) the pull request of … | Any other refusal, for example a repository that was deleted or renamed. The item shows GitHub's own words, with any secret hidden. | Fix the cause on GitHub, then **Try again**. |
 
 **Try again** makes one new attempt and the item disappears when it succeeds. The Orchestrator also tries again by itself each time it starts. A try never opens a second pull request: it first looks for the ticket's pull request on GitHub by its branch, even when GitHub did the work but its answer was lost. The item also disappears when the ticket is cancelled or marked as done.
 

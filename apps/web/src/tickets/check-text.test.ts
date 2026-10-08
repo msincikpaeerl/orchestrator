@@ -105,9 +105,12 @@ describe("the owner's sentence for each reason", () => {
         fields: [],
         at: '2026-10-09T10:00:00.000Z',
       };
-      const text = pullRequestFailureText('WEB-1', failure);
-      expectOwnerWords(text.reason);
-      expectOwnerWords(text.detail);
+      for (const open of [null, 12]) {
+        const text = pullRequestFailureText('WEB-1', failure, open);
+        expectOwnerWords(text.heading);
+        expectOwnerWords(text.reason);
+        expectOwnerWords(text.detail);
+      }
     }
   });
 });
@@ -134,6 +137,7 @@ describe('Help > Tickets uses the words of the screens', () => {
   it('names the lines about the pull request and the refused work', () => {
     for (const words of [
       'Pull request not opened',
+      'Pull request not updated',
       'Opening the pull request on GitHub…',
       'What the agent was told',
       'Latest refused submission',
