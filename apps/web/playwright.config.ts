@@ -8,6 +8,8 @@ const baseURL = `http://127.0.0.1:${String(port)}`;
 export default defineConfig({
   testDir: 'e2e',
   testMatch: '*.e2e.ts',
+  // Empties apps/web/e2e-screenshots/, the owner's pictures of the screens (lot 3 step F4).
+  globalSetup: './e2e/screenshots-setup.ts',
   // One server and one database for all tests: each test resets it (e2e/fixtures.ts).
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
