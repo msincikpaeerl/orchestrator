@@ -51,6 +51,10 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.commented': 'Comment added',
   'ticket.submitted': 'Work submitted by an agent',
   'ticket.submission_refused': 'Submission refused by the checks',
+  'ticket.pull_request_opened': 'Pull request opened',
+  'ticket.pull_request_reopened': 'Pull request reopened',
+  'ticket.pull_request_updated': 'Pull request updated',
+  'ticket.pull_request_not_opened': 'Pull request not opened',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -323,6 +327,25 @@ const describe: { [T in EventType]: Describe<T> } = {
     ': the submission of ',
     ...(p.agentName === undefined ? ['the agent'] : ['agent ', quote(p.agentName, null)]),
     ` was refused by the checks (${p.failed.map((check) => checkLabel[check]).join(', ')})`,
+  ],
+  'ticket.pull_request_opened': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} opened on GitHub`,
+    ...(p.notReopened === undefined
+      ? []
+      : [`, since GitHub refused to reopen the closed #${String(p.notReopened)}`]),
+  ],
+  'ticket.pull_request_reopened': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)}, closed without merging, reopened on GitHub with the latest submission`,
+  ],
+  'ticket.pull_request_updated': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} updated on GitHub with the latest submission`,
+  ],
+  'ticket.pull_request_not_opened': (p, c) => [
+    c.ticket,
+    `: the pull request could not be opened or updated on GitHub — ${shorten(p.message)}`,
   ],
   'setting.changed': (p, c) => {
     const { label } = SETTINGS[p.name];

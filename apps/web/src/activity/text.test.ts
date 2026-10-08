@@ -195,6 +195,21 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     runId: '00000000-0000-4000-8000-000000000001',
     failed: ['criteria_met', 'paths_changed'],
   },
+  'ticket.pull_request_opened': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    url: 'u',
+    notReopened: 3,
+  },
+  'ticket.pull_request_reopened': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
+  'ticket.pull_request_updated': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
+  'ticket.pull_request_not_opened': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    reason: 'unreachable',
+    message: 'GitHub could not be reached',
+  },
   'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
   'agent_profile.updated': {
     key: 'web_dev',

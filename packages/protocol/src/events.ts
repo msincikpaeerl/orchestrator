@@ -15,6 +15,7 @@ import {
   RunTicketAction,
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
+import { PullRequestFailureReason } from './api/pull-requests.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
@@ -76,6 +77,10 @@ export const EventType = z.enum([
   'ticket.commented',
   'ticket.submitted',
   'ticket.submission_refused',
+  'ticket.pull_request_opened',
+  'ticket.pull_request_reopened',
+  'ticket.pull_request_updated',
+  'ticket.pull_request_not_opened',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -239,6 +244,26 @@ export const EventPayloads = {
     ...AgentFacts,
     /** The failed checks, each once, in the order of 04 section 3.1. */
     failed: z.array(DodCheck),
+  }),
+  /**
+   * The server opened the ticket's pull request after an accepted submission (04, section 3.1;
+   * lot 3 step F3). `notReopened`: the number of a closed one GitHub refused to reopen.
+   */
+  'ticket.pull_request_opened': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
+    notReopened: z.int().optional(),
+  }),
+  /** A pull request closed without merging, found by the ticket's branch, reopened and updated. */
+  'ticket.pull_request_reopened': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),
+  /** The open pull request's title and description updated with the latest accepted report. */
+  'ticket.pull_request_updated': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),
+  /** An attempt to open or update the pull request failed: "Needs you" offers **Try again**. */
+  'ticket.pull_request_not_opened': z.object({
+    ...TicketFacts,
+    reason: PullRequestFailureReason,
+    message: z.string(),
   }),
   'setting.changed': z.object({
     ...SettingFacts,

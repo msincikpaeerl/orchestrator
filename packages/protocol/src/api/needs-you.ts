@@ -4,6 +4,7 @@ import { PushFailureReason } from '../daemon/git.js';
 import { AgentLink } from './agents.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
+import { PullRequestFailure } from './pull-requests.js';
 import { Run } from './runs.js';
 import { Comment } from './tickets.js';
 
@@ -154,6 +155,18 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** GitHub's or Git's words, masked. */
     message: z.string(),
     /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * An accepted submission whose pull request the server could not open or update (04, section
+   * 3.1; lot 3 step F3): **Try again**. Shown until an attempt succeeds, or the ticket is done or
+   * cancelled.
+   */
+  z.object({
+    type: z.literal('pull_request_not_opened'),
+    ticket: TicketRef,
+    failure: PullRequestFailure,
+    /** When the latest attempt failed. */
     since: z.iso.datetime(),
   }),
   /** A run paused on a usage limit, detected or suspected: **Resume** or **Stop run**. */
