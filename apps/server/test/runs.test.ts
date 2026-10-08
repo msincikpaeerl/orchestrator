@@ -3,6 +3,7 @@ import { schema } from '@orchestrator/db';
 import {
   AccountListResponse,
   ApiError,
+  BRANCH_REPORT_MAX_COMMITS,
   CLAUDE_CODE_VALIDATED_VERSION,
   ClaudeAccount,
   EnrollmentResponse,
@@ -12,6 +13,7 @@ import {
   RunLogResponse,
   TicketDetail,
   type McpResult,
+  type NotOnGitHub,
   type PushResult,
   type RunRefusal,
   type RunStart,
@@ -19,7 +21,7 @@ import {
   type ServerMessage,
   type SettingValues,
 } from '@orchestrator/protocol';
-import { and, asc, eq, like } from 'drizzle-orm';
+import { and, asc, desc, eq, like } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, startFakeGitHub, type FakeGitHub } from './fake-github.js';
@@ -191,7 +193,7 @@ function state(
         state: 'ended';
         reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
         detail?: string | null;
-        branch?: { name: string; head: string; commitsAhead: typeof COMMITS } | null;
+        branch?: Reported | null;
         push?: PushResult | null;
         gitConfigRestored?: string | null;
       },
@@ -211,7 +213,7 @@ function state(
         state: 'ended',
         reason: payload.reason,
         detail: payload.detail ?? null,
-        branch: payload.branch ?? null,
+        branch: payload.branch ? { notOnGitHub: null, ...payload.branch } : null,
         push: payload.push ?? null,
         headMoved: null,
         gitConfigRestored: payload.gitConfigRestored ?? null,
@@ -222,6 +224,14 @@ function state(
 }
 
 const SESSION = '0f7a3c52-9d7e-4e8f-a4b1-111111111111';
+
+/** A branch report; without `notOnGitHub`, as a protocol 1 daemon sends it. */
+interface Reported {
+  name: string;
+  head: string;
+  commitsAhead: typeof COMMITS;
+  notOnGitHub?: NotOnGitHub | null;
+}
 
 async function report(daemon: ScriptedDaemon, message: Parameters<ScriptedDaemon['request']>[0]) {
   const answer = await daemon.request(message);
@@ -318,6 +328,7 @@ describe('Run now', () => {
       head: null,
       commits: [],
       notOnGitHub: [],
+      notOnGitHubCount: 0,
       pushed: null,
       pushFailure: null,
     });
@@ -944,11 +955,16 @@ const first = { name: 't/1-contact-form', head: C1, commitsAhead: [ONE] };
 const second = { name: 't/1-contact-form', head: C2, commitsAhead: [TWO, ONE] };
 const BRANCH_URL = 'https://github.com/octo-owner/bakery/tree/t/1-contact-form';
 
+/** The report as a protocol 2 daemon sends it: `listed` are its commits not on GitHub. */
+function told(branch: Reported, ...listed: string[]): Reported {
+  return { ...branch, notOnGitHub: { listed, count: listed.length } };
+}
+
 /** A `ticket_submit` with the daemon's facts: its push made before the call (05, section 4.9). */
 async function submit(
   daemon: ScriptedDaemon,
   runToken: string,
-  workspace: { branch: typeof first; push: PushResult | null },
+  workspace: { branch: Reported; push: PushResult | null },
   status: 'met' | 'not_met' = 'met',
 ): Promise<McpResult['payload']> {
   const answer: ServerMessage = await daemon.request({
@@ -964,7 +980,12 @@ async function submit(
         adrs: [],
         summary: 'The contact form is done',
       },
-      workspace: { clean: true, changedFiles: null, ...workspace },
+      workspace: {
+        clean: true,
+        changedFiles: null,
+        push: workspace.push,
+        branch: { notOnGitHub: null, ...workspace.branch },
+      },
     },
   });
   if (answer.type !== 'mcp.result') throw new Error(`unexpected ${answer.type}`);
@@ -974,7 +995,7 @@ async function submit(
 /** A run of the ticket on `daemon` that ends `crashed` with this branch and end push. */
 async function crashed(
   daemon: ScriptedDaemon,
-  reported: typeof first,
+  reported: Reported,
   push: PushResult | null,
 ): Promise<Run> {
   const { run: created } = await started(daemon);
@@ -999,6 +1020,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
       head: null,
       commits: [],
       notOnGitHub: [],
+      notOnGitHubCount: 0,
       pushed: null,
       pushFailure: null,
     });
@@ -1044,7 +1066,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   it('only on a machine after a failed push, with the failure shown', async () => {
     await start();
     const { id, daemon } = await laptop();
-    const ended = await crashed(daemon, second, {
+    const ended = await crashed(daemon, told(second, C2, C1), {
       status: 'failed',
       reason: 'unreachable',
       message: 'Could not resolve host: github.com',
@@ -1080,7 +1102,8 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   it('pushed: shown with its date, and Run now takes the branch from GitHub on another machine', async () => {
     await start();
     const { id, account, daemon } = await laptop();
-    const ended = await crashed(daemon, second, { status: 'pushed', head: C2 });
+    // Read again after the push: nothing is left only on Laptop.
+    const ended = await crashed(daemon, told(second), { status: 'pushed', head: C2 });
     const desk = await connectedMachine('Desk', account.id);
     const detail = await ticket();
     expect(detail.branch).toMatchObject({
@@ -1093,7 +1116,9 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
     });
     expect(Date.parse(detail.branch?.pushed?.at ?? '')).toBeLessThanOrEqual(Date.now());
     expect(ended.push).toMatchObject({ result: { status: 'pushed', head: C2 } });
-    expect(comments(detail).at(-1)).toContain('The branch t/1-contact-form was pushed to GitHub.');
+    expect(comments(detail).at(-1)).toContain(
+      'Every commit of the branch t/1-contact-form was on GitHub when the run ended.',
+    );
     expect((await eventTypes('run.branch_pushed')).map(({ payload }) => payload)).toEqual([
       {
         project: 'WEB',
@@ -1123,7 +1148,10 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
     await working(daemon, created.id);
     const { runToken } = message.payload;
     expect(
-      await submit(daemon, runToken, { branch: first, push: { status: 'pushed', head: C1 } }),
+      await submit(daemon, runToken, {
+        branch: told(first, C1),
+        push: { status: 'pushed', head: C1 },
+      }),
     ).toMatchObject({ ok: true });
     // Known before the run's end.
     expect((await ticket()).branch).toMatchObject({
@@ -1136,7 +1164,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
     // The agent committed again in the same turn; an accepted submission has no end push.
     await report(
       daemon,
-      state(created.id, { state: 'ended', reason: 'submitted', branch: second }),
+      state(created.id, { state: 'ended', reason: 'submitted', branch: told(second, C2) }),
     );
     const detail = await ticket();
     expect(detail).toMatchObject({ status: 'in_review' });
@@ -1165,9 +1193,9 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   it("diverged: the push refused because GitHub's branch has other commits; Run now needs the machine", async () => {
     await start();
     const { id, account, daemon } = await laptop();
-    await crashed(daemon, first, { status: 'pushed', head: C1 });
+    await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     await connectedMachine('Desk', account.id);
-    await crashed(daemon, second, {
+    await crashed(daemon, told(second, C2), {
       status: 'failed',
       reason: 'diverged',
       message: 'GitHub has commits this branch does not have',
@@ -1188,7 +1216,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
 
     // A later push done clears the failure.
     expect((await call('POST', `/api/machines/${id}/enable`)).statusCode).toBe(200);
-    await crashed(daemon, second, { status: 'pushed', head: C2 });
+    await crashed(daemon, told(second), { status: 'pushed', head: C2 });
     expect((await ticket()).branch).toMatchObject({
       where: 'github',
       notOnGitHub: [],
@@ -1205,7 +1233,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
     const answer = await submit(
       daemon,
       message.payload.runToken,
-      { branch: first, push: { status: 'pushed', head: C1 } },
+      { branch: told(first, C1), push: { status: 'pushed', head: C1 } },
       'not_met',
     );
     expect(answer).toMatchObject({ ok: false, error: { code: 'DOD_FAILED' } });
@@ -1218,9 +1246,9 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   it('a revoked machine loses only its commits not on GitHub; the run starts from GitHub', async () => {
     await start();
     const { id, account, daemon } = await laptop();
-    await crashed(daemon, first, { status: 'pushed', head: C1 });
+    await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     const desk = await connectedMachine('Desk', account.id);
-    await crashed(daemon, second, {
+    await crashed(daemon, told(second, C2), {
       status: 'failed',
       reason: 'unreachable',
       message: 'Timed out',
@@ -1233,7 +1261,146 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
       'The earlier work on machine Laptop is no longer available: that machine was revoked, and the 1 commit of the branch t/1-contact-form on it not on GitHub is lost. This run starts from the branch as last pushed to GitHub, on machine Desk.',
     );
   });
+
+  // Commits that came from GitHub itself (owner's cases, review of lot 3 step D3).
+  const M = { hash: 'd'.repeat(40), subject: 'Merge branch main into t/1-contact-form' };
+  /** The branch after GitHub's Update branch: a merge commit on top of the pushed one. */
+  const updated = { name: 't/1-contact-form', head: M.hash, commitsAhead: [M, ONE] };
+
+  it("a. a run that only took GitHub's Update branch leaves nothing on its machine", async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    await crashed(daemon, told(first), { status: 'pushed', head: C1 });
+    await connectedMachine('Desk', account.id);
+    // Preparation fast-forwarded to GitHub's branch; no new commit, so nothing to push. The
+    // merge commit M came from GitHub, and the machine says so.
+    await crashed(daemon, told(updated), null);
+    expect((await ticket()).branch).toMatchObject({
+      where: 'github',
+      machine: { id, name: 'Laptop' },
+      commits: [M, ONE],
+      notOnGitHub: [],
+      notOnGitHubCount: 0,
+      pushed: { head: C1 },
+    });
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect((await runNow()).statusCode).toBe(201);
+  });
+
+  it("b. a review run reporting GitHub's head after Update branch makes its machine hold nothing", async () => {
+    await start();
+    const { account, daemon } = await laptop();
+    await crashed(daemon, told(first), { status: 'pushed', head: C1 });
+    const desk = await connectedMachine('Desk', account.id);
+    // Even a review report without the list (or with a wrong one) changes nothing.
+    await reviewed(desk.id, desk.daemon, updated);
+    expect((await ticket()).branch).toMatchObject({
+      where: 'github',
+      machine: { name: 'Laptop' },
+      commits: [ONE],
+      notOnGitHub: [],
+    });
+    expect((await call('POST', `/api/machines/${desk.id}/disable`)).statusCode).toBe(200);
+    expect((await runNow()).statusCode).toBe(201);
+  });
+
+  it('b. a review run on another machine leaves the commits the first one holds where they are', async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    // C1 pushed at the submission, then C2 committed in the same turn: Laptop holds C2.
+    const { run: created, start: message } = await started(daemon);
+    await working(daemon, created.id);
+    await submit(daemon, message.payload.runToken, {
+      branch: told(first, C1),
+      push: { status: 'pushed', head: C1 },
+    });
+    await report(
+      daemon,
+      state(created.id, { state: 'ended', reason: 'submitted', branch: told(second, C2) }),
+    );
+    const desk = await connectedMachine('Desk', account.id);
+    // The review on Desk reports GitHub's head, C1, all on GitHub.
+    await reviewed(desk.id, desk.daemon, told(first));
+    expect((await ticket()).branch).toMatchObject({
+      where: 'machine_ahead',
+      machine: { id, name: 'Laptop' },
+      notOnGitHub: [C2],
+    });
+    const changes = await call('POST', '/api/projects/WEB/tickets/1/request-changes', {
+      comment: 'Keep the newer commit',
+    });
+    expect(changes.statusCode, changes.body).toBe(200);
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect(await refusal()).toMatchObject({ reason: 'machine_unavailable', commits: 1 });
+  });
+
+  it(`counts the commits beyond the report's ceiling (${String(BRANCH_REPORT_MAX_COMMITS)}) as not on GitHub`, async () => {
+    await start();
+    const { id, account, daemon } = await laptop();
+    const many = Array.from({ length: BRANCH_REPORT_MAX_COMMITS }, (_, index) => ({
+      hash: index.toString(16).padStart(40, 'e'),
+      subject: `Commit ${String(index)}`,
+    }));
+    const full = { name: 't/1-contact-form', head: many[0]?.hash ?? '', commitsAhead: many };
+    // At the ceiling, every commit listed and on GitHub: nothing held.
+    await crashed(daemon, told(full), null);
+    await connectedMachine('Desk', account.id);
+    expect((await ticket()).branch).toMatchObject({ where: 'github', notOnGitHubCount: 0 });
+    // One more, older, beyond the ceiling and not on GitHub: the server is not told which, so
+    // it counts as not on GitHub, on Laptop.
+    await crashed(daemon, { ...full, notOnGitHub: { listed: [], count: 1 } }, null);
+    expect((await ticket()).branch).toMatchObject({
+      where: 'machine_ahead',
+      machine: { id, name: 'Laptop' },
+      notOnGitHub: [],
+      notOnGitHubCount: 1,
+    });
+    expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
+    expect(await refusal()).toMatchObject({ reason: 'machine_unavailable', commits: 1 });
+  });
 });
+
+/**
+ * A review run of ticket 1 on the machine, stopped by the owner, whose end report then gives the
+ * branch it reviewed: GitHub's head as fetched (05, section 4.2). The server starts no review
+ * before step H, so the run is written here.
+ */
+async function reviewed(machineId: string, daemon: ScriptedDaemon, reviewedBranch: Reported) {
+  const [model] = await t.db
+    .select()
+    .from(schema.runs)
+    .orderBy(desc(schema.runs.createdAt))
+    .limit(1);
+  if (!model) throw new Error('no run to copy');
+  const now = new Date();
+  const [review] = await t.db
+    .insert(schema.runs)
+    .values({
+      ...model,
+      id: randomUUID(),
+      purpose: 'review',
+      machineId,
+      status: 'cancelled',
+      failureReason: 'cancelled',
+      runTokenHash: randomUUID(),
+      dispatchMessageId: null,
+      branchHead: null,
+      commits: null,
+      push: null,
+      pushAt: null,
+      stopSentAt: now,
+      endReportedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      statusSince: now,
+    })
+    .returning();
+  if (!review) throw new Error('review run not written');
+  await report(
+    daemon,
+    state(review.id, { state: 'ended', reason: 'stopped', branch: reviewedBranch }),
+  );
+}
 
 async function mcp(daemon: ScriptedDaemon, runToken: string): Promise<McpResult['payload']> {
   const answer: ServerMessage = await daemon.request({

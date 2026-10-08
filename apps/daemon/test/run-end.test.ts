@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GitCredentialRequest, RunStart } from '@orchestrator/protocol';
 import { afterEach, describe, expect, it, onTestFinished } from 'vitest';
@@ -326,6 +326,8 @@ describe('another machine', () => {
       const first = await start(laptop, { repository: { cloneUrl } });
       const pushed = await ended(first.runId);
       expect(pushed).toMatchObject({ reason: 'crashed', push: { status: 'pushed' } });
+      // Read again after the push: nothing is left only on Laptop (lot 3 step D3).
+      expect(pushed.branch?.notOnGitHub).toEqual({ listed: [], count: 0 });
       const head = remoteHead(`refs/heads/${BRANCH}`);
       expect(head).not.toBeNull();
 
@@ -343,6 +345,54 @@ describe('another machine', () => {
       expect(end.branch?.commitsAhead.map((commit) => commit.hash)).toEqual([next, head]);
       expect(existsSync(bareClonePath(machine.paths, second.repository))).toBe(true);
       expect(existsSync(bareClonePath(home.paths, second.repository))).toBe(true);
+    },
+    TIMEOUT,
+  );
+});
+
+// Lot 3 step D3: commits that came from GitHub are never reported as not on GitHub.
+describe('a branch updated on GitHub', () => {
+  it(
+    'reports the merge commit of Update branch as on GitHub when the run adds nothing',
+    async () => {
+      const cloneUrl = await serve();
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'bash', command: COMMIT },
+              { do: 'exit', code: 1 },
+            ],
+          },
+        ],
+      });
+      const manager = credentialedDaemon();
+      const first = await start(manager, { repository: { cloneUrl } });
+      expect(await ended(first.runId)).toMatchObject({ push: { status: 'pushed' } });
+
+      // GitHub's Update branch: the base branch merged into the ticket branch, on GitHub.
+      const clone = await mkdtemp(join(home.root, 'github-'));
+      gitIn(clone, ['clone', '--quiet', remote(), '.'], home.env);
+      gitIn(
+        clone,
+        ['commit', '--quiet', '--allow-empty', '-m', 'Merged on main meanwhile'],
+        home.env,
+      );
+      gitIn(clone, ['push', '--quiet', 'origin', 'main'], home.env);
+      gitIn(clone, ['checkout', '--quiet', BRANCH], home.env);
+      gitIn(clone, ['merge', '--quiet', '--no-edit', 'main'], home.env);
+      gitIn(clone, ['push', '--quiet', 'origin', BRANCH], home.env);
+      const merged = gitIn(clone, ['rev-parse', 'HEAD'], home.env).trim();
+      await rm(clone, { recursive: true, force: true });
+
+      // The next run is fast-forwarded to it at preparation, and commits nothing.
+      await fake.play({ turns: [{ steps: [{ do: 'exit', code: 1 }] }] });
+      const second = await start(manager, { repository: { cloneUrl } });
+      const end = await ended(second.runId);
+      expect(end).toMatchObject({ reason: 'crashed', push: null });
+      expect(end.branch?.head).toBe(merged);
+      expect(end.branch?.commitsAhead.map((each) => each.hash)).toContain(merged);
+      expect(end.branch?.notOnGitHub).toEqual({ listed: [], count: 0 });
     },
     TIMEOUT,
   );

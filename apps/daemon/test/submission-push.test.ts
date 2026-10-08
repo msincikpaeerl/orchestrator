@@ -117,6 +117,8 @@ describe('the push at ticket_submit', () => {
       if (call?.tool !== 'ticket_submit') throw new Error('no ticket_submit');
       const head = call.workspace.branch.head;
       expect(call.workspace.branch.commitsAhead.map((commit) => commit.hash)).toEqual([head]);
+      // Read with the facts, before the push: the commit about to be pushed (lot 3 step D3).
+      expect(call.workspace.branch.notOnGitHub).toEqual({ listed: [head], count: 1 });
       expect(call.workspace.push).toEqual({ status: 'pushed', head });
       expect(remoteHead('refs/heads/t/1-add-notes')).toBe(head);
       // The branch did move meanwhile.

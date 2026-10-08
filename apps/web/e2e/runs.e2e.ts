@@ -229,6 +229,8 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
   const D = commit('d', 'Show a thank-you message');
   const E = commit('e', 'Fix the button colour');
   const F = commit('f', 'Translate the form');
+  // As a protocol 2 machine reports it: its commits on no branch fetched from GitHub.
+  const told = (hashes: string[]) => ({ listed: hashes, count: hashes.length });
   const ended = (runId: string, extra: Record<string, unknown>) =>
     reportState(page, runId, 'ended', { reason: 'crashed', detail: null, ...extra });
   async function nextRun(): Promise<{ runId: string; runToken: string }> {
@@ -245,7 +247,12 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
 
   // On the machine only, its push failed.
   await ended(first.runId, {
-    branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+    branch: {
+      name: 't/1-contact-form',
+      head: BRANCH_HEAD,
+      commitsAhead: COMMITS,
+      notOnGitHub: told(COMMITS.map((each) => each.hash)),
+    },
     push: {
       status: 'failed',
       reason: 'unreachable',
@@ -263,12 +270,19 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
   // Pushed: every commit, with the date of the push and the branch's page on GitHub.
   const second = await nextRun();
   await ended(second.runId, {
-    branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+    branch: {
+      name: 't/1-contact-form',
+      head: BRANCH_HEAD,
+      commitsAhead: COMMITS,
+      notOnGitHub: told([]),
+    },
     push: { status: 'pushed', head: BRANCH_HEAD },
   });
   await expect(page.getByLabel('Push')).toContainText('This run pushed it to GitHub on');
   await page.goto(ticketPage);
-  await expect(branch).toHaveText('t/1-contact-form: every commit reported was pushed to GitHub');
+  await expect(branch).toHaveText(
+    't/1-contact-form: every commit reported was on GitHub when machine Laptop last pushed or downloaded the branch',
+  );
   const lastPush = page.getByLabel('Last push');
   await expect(lastPush).toContainText(
     /^Last pushed to GitHub on .+ from machine Laptop \(latest commit aaaaaaa\)\./,
@@ -298,12 +312,22 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
     },
     {
       clean: true,
-      branch: { name: 't/1-contact-form', head: D.hash, commitsAhead: [D, ...COMMITS] },
+      branch: {
+        name: 't/1-contact-form',
+        head: D.hash,
+        commitsAhead: [D, ...COMMITS],
+        notOnGitHub: told([D.hash]),
+      },
       push: { status: 'pushed', head: D.hash },
     },
   );
   await reportState(page, third.runId, 'ended', {
-    branch: { name: 't/1-contact-form', head: E.hash, commitsAhead: [E, D, ...COMMITS] },
+    branch: {
+      name: 't/1-contact-form',
+      head: E.hash,
+      commitsAhead: [E, D, ...COMMITS],
+      notOnGitHub: told([E.hash]),
+    },
   });
   await page.goto(ticketPage);
   await expect(branch).toHaveText(
@@ -312,13 +336,13 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
   await expect(
     page.getByRole('list', { name: 'Commits not on GitHub' }).getByRole('listitem'),
   ).toHaveText(['eeeeeee Fix the button colour']);
-  await expect(page.getByRole('list', { name: 'Commits pushed' }).getByRole('listitem')).toHaveText(
-    [
-      'ddddddd Show a thank-you message',
-      'ccccccc Add the contact form',
-      'bbbbbbb Check the e-mail address',
-    ],
-  );
+  await expect(
+    page.getByRole('list', { name: 'Commits on GitHub' }).getByRole('listitem'),
+  ).toHaveText([
+    'ddddddd Show a thank-you message',
+    'ccccccc Add the contact form',
+    'bbbbbbb Check the e-mail address',
+  ]);
   await expect(page.getByLabel('Last push')).toContainText('(latest commit ddddddd)');
   await expectFitsScreen(page);
 
@@ -329,7 +353,12 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
   expect(changes.status()).toBe(200);
   const fourth = await nextRun();
   await ended(fourth.runId, {
-    branch: { name: 't/1-contact-form', head: F.hash, commitsAhead: [F, E, D, ...COMMITS] },
+    branch: {
+      name: 't/1-contact-form',
+      head: F.hash,
+      commitsAhead: [F, E, D, ...COMMITS],
+      notOnGitHub: told([F.hash, E.hash]),
+    },
     push: { status: 'failed', reason: 'diverged', message: 'Updates were rejected (fetch first)' },
   });
   await page.goto(ticketPage);
