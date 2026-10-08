@@ -1,5 +1,6 @@
 import {
   BLOCKABLE_STATUSES,
+  PULL_REQUEST_PERMISSION_WORDS,
   PUSH_PERMISSION_WORDS,
   type AgentLink,
   type NeedsYouItem,
@@ -162,4 +163,72 @@ export function pushFailedText(item: Extract<NeedsYouItem, { type: 'push_failed'
       };
     }
   }
+}
+
+/**
+ * "Pull request not opened" in "Needs you" (04, section 3.1; lot 3 step F3): what happened and
+ * what to do before **Try again**. `where` says where the owner fixes it: GitHub's token list,
+ * Settings > GitHub, or nowhere (wait, or read GitHub's words).
+ */
+export function pullRequestNotOpenedText(
+  item: Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>,
+): { title: string; detail: string; where: 'tokens' | 'settings' | null; showMessage: boolean } {
+  const ref = ticketRef(item.ticket.projectKey, item.ticket.number);
+  const { failure } = item;
+  const onGitHub = `The work of ${ref} is on GitHub, but the Orchestrator could not open or update its pull request.`;
+  const tryAgain = 'Then press Try again.';
+  switch (failure.reason) {
+    case 'permission_missing':
+      if (failure.permission !== null) {
+        return {
+          title: `Pull request not opened for ${ref}: the token needs ${PULL_REQUEST_PERMISSION_WORDS}`,
+          detail: `${onGitHub} On GitHub's list of your tokens, open the Orchestrator's token, set ${PULL_REQUEST_PERMISSION_WORDS}, and save it; do not regenerate it. ${tryAgain}`,
+          where: 'tokens',
+          showMessage: false,
+        };
+      }
+      break;
+    case 'unreachable':
+      return {
+        title: `Pull request not opened for ${ref}: GitHub could not be reached`,
+        detail: `${onGitHub} Check that the computer running the Orchestrator is connected to the internet and that GitHub works. ${tryAgain} The Orchestrator also tries again by itself each time it starts.`,
+        where: null,
+        showMessage: false,
+      };
+    case 'no_token':
+    case 'token_unreadable':
+    case 'token_invalid':
+      return {
+        title: `Pull request not opened for ${ref}: the GitHub token cannot be used`,
+        detail: `${onGitHub} ${sentenceOf(failure.message)} Save a working token in Settings > GitHub. ${tryAgain}`,
+        where: 'settings',
+        showMessage: false,
+      };
+    case 'rate_limited':
+      return {
+        title: `Pull request not opened for ${ref}: GitHub's request limit was reached`,
+        detail: `${onGitHub} GitHub limits how many requests a token makes per hour. Wait a few minutes. ${tryAgain}`,
+        where: null,
+        showMessage: false,
+      };
+    case 'unreadable':
+      return {
+        title: `Pull request not opened for ${ref}: GitHub's answer could not be read`,
+        detail: `${onGitHub} GitHub answered in a form this version of the Orchestrator does not read; the fields below say what differed. GitHub may have done it anyway: Try again finds the pull request by its branch, so it never opens a second one. If it keeps failing, report these fields.`,
+        where: null,
+        showMessage: false,
+      };
+    case 'refused':
+      break;
+  }
+  return {
+    title: `GitHub refused to open the pull request of ${ref}`,
+    detail: `${onGitHub} GitHub's words are below. When their cause is fixed, press Try again.`,
+    where: null,
+    showMessage: true,
+  };
+}
+
+function sentenceOf(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
 }

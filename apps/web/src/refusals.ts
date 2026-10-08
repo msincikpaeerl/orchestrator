@@ -158,6 +158,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   run_not_active: () => 'This run already ended. Reload the page.',
   no_open_question: () =>
     'This ticket has no question waiting for an answer: it may have been answered already. Reload the page.',
+  no_pull_request_wanted: () =>
+    'This ticket no longer waits for its pull request: it was opened already, or the ticket is done or cancelled. Reload the page.',
 };
 
 /** A refusal of the API in plain words. Never shows the code. */
