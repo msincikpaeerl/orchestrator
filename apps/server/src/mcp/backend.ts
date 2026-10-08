@@ -140,6 +140,8 @@ export interface McpBackendOptions {
   secondMs: number;
   /** The run message templates (03, section 3.2): `ticket_submit`'s texts among them. */
   templates: () => Promise<Templates>;
+  /** After an accepted submission is committed: open or update its pull request (lot 3 step F3). */
+  pullRequestWanted: (ticketId: string) => void;
 }
 
 export class McpBackend {
@@ -1097,6 +1099,8 @@ export class McpBackend {
         dodReport: report,
         dodChecks: checked.checks,
         workflowChanges: checked.workflowChanges,
+        // Opened or updated after the answer, never inside the call (04, section 3.1).
+        pullRequestWantedSince: at,
         updatedAt: at,
       })
       .where(eq(schema.tickets.id, call.ticket.id))
@@ -1117,10 +1121,14 @@ export class McpBackend {
       },
       at,
     });
+    const ticketId = call.ticket.id;
     return {
       output: {
         result: 'accepted' as const,
         ticket: await this.mcpTicket(tx, call.project.key, updated),
+      },
+      after: () => {
+        this.options.pullRequestWanted(ticketId);
       },
     };
   }

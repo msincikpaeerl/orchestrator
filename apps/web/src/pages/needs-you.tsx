@@ -1,17 +1,21 @@
 import {
   GITHUB_TOKEN_LIST_URL,
+  PullRequestTryAgainResponse,
   type AccountStatus,
   type NeedsYouItem,
 } from '@orchestrator/protocol';
+import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
+import { api } from '../api';
+import { refusalText } from '../refusals';
 import { Link } from 'react-router';
 import { UntrustedMarkdown } from '../components/markdown';
-import { Card, HelpLink, Loading, PageHeader } from '../components/ui';
+import { Button, Card, ErrorMessage, HelpLink, Loading, PageHeader } from '../components/ui';
 import { formatDateTime, problemText } from '../github/text';
 import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
 import { sentence, stepLabel } from '../projects/text';
-import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
+import { ticketsChanged, useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { AccountStatusText, QuestionAnswer, RunActions } from '../runs/components';
 import { runPath } from '../runs/text';
 import {
@@ -22,7 +26,7 @@ import {
   RunNowOffer,
   type TicketAddress,
 } from '../tickets/actions';
-import { pushFailedText, ticketPath, ticketRef } from '../tickets/text';
+import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
 
 function itemKey(item: NeedsYouItem): string {
   switch (item.type) {
@@ -32,6 +36,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'ticket_proposed':
     case 'work_to_check':
     case 'push_failed':
+    case 'pull_request_not_opened':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -197,6 +202,90 @@ function PushFailedCard({ item }: { item: Extract<NeedsYouItem, { type: 'push_fa
   );
 }
 
+/**
+ * An accepted submission whose pull request was not opened (04, section 3.1; lot 3 step F3): what
+ * happened, where to fix it, and **Try again** (one attempt; the row goes when it succeeds).
+ */
+function PullRequestNotOpenedCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>;
+}) {
+  const { title, detail, where, showMessage } = pullRequestNotOpenedText(item);
+  const tryAgain = useMutation({
+    mutationFn: () =>
+      api(
+        'POST',
+        `/api/projects/${item.ticket.projectKey}/tickets/${String(item.ticket.number)}/pull-request/try-again`,
+        PullRequestTryAgainResponse,
+      ),
+    onSettled: () => ticketsChanged(),
+  });
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      {showMessage && (
+        <pre
+          aria-label="GitHub's words"
+          className="overflow-x-auto rounded bg-slate-100 p-2 text-sm whitespace-pre-wrap break-words text-slate-800"
+        >
+          {item.failure.message}
+        </pre>
+      )}
+      {item.failure.fields.length > 0 && (
+        <ul aria-label="Fields that differed" className="list-disc pl-5 text-sm text-slate-700">
+          {item.failure.fields.map((field) => (
+            <li key={field} className="break-words">
+              {field}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-center gap-4">
+        <Button
+          onClick={() => {
+            tryAgain.mutate();
+          }}
+          disabled={tryAgain.isPending}
+        >
+          {tryAgain.isPending ? 'Trying again…' : 'Try again'}
+        </Button>
+        {where === 'tokens' && (
+          <a
+            href={GITHUB_TOKEN_LIST_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-700 underline"
+          >
+            Open your tokens on GitHub
+          </a>
+        )}
+        {where === 'settings' && (
+          <Link to="/settings/github" className="text-blue-700 underline">
+            Open GitHub connection
+          </Link>
+        )}
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="needs-you#pull-request-not-opened">What to do</HelpLink>
+      </div>
+      {tryAgain.error && <ErrorMessage>{refusalText(tryAgain.error)}</ErrorMessage>}
+      {tryAgain.data?.failure && (
+        <p role="status" className="text-sm text-slate-700">
+          Tried again: still not opened.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 /** Setup still to do and machine problems (02, section 4), with where to fix them. */
 function MachineItemCard({ item }: { item: MachineNeedsYouItem }) {
   const { title, detail } = needsYouText(item);
@@ -333,6 +422,8 @@ export function NeedsYouPage() {
                 <WorkItemCard item={item} onChangesRequested={setOffer} />
               ) : item.type === 'push_failed' ? (
                 <PushFailedCard item={item} />
+              ) : item.type === 'pull_request_not_opened' ? (
+                <PullRequestNotOpenedCard item={item} />
               ) : (
                 <MachineItemCard item={item} />
               )}

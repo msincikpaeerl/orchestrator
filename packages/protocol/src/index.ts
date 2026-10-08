@@ -109,6 +109,13 @@ export {
   PUSH_PERMISSION_WORDS,
   PushPermission,
 } from './api/needs-you.js';
+export {
+  PULL_REQUEST_PERMISSION_WORDS,
+  PullRequestFailure,
+  PullRequestFailureReason,
+  PullRequestState,
+  PullRequestTryAgainResponse,
+} from './api/pull-requests.js';
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
 export {
   LiveRun,

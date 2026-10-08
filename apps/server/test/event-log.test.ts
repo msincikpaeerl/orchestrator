@@ -126,11 +126,16 @@ describe('events of every type', () => {
       'ticket.updated',
       'ticket.dependency_added',
       'ticket.dependency_removed',
-      // Run now, the agent's refused then accepted submission, then the run's end (a Claude Code
-      // too old at its start).
+      // Run now, the agent's refused then accepted submission, its pull request, then the run's
+      // end (a Claude Code too old at its start).
       'ticket.status_changed',
       'ticket.submission_refused',
       'ticket.submitted',
+      // Its pull request: not opened, reopened by Try again, updated, then opened after a merge.
+      'ticket.pull_request_not_opened',
+      'ticket.pull_request_reopened',
+      'ticket.pull_request_updated',
+      'ticket.pull_request_opened',
       'ticket.status_changed',
     ]);
 

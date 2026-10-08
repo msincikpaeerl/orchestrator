@@ -19,6 +19,8 @@ import {
   type TicketDetail,
   type TicketListResponse,
   type TimelineEntry,
+  PullRequestFailure,
+  type PullRequestTryAgainResponse,
 } from '@orchestrator/protocol';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -29,6 +31,7 @@ import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
 import type { RunService } from '../runs/service.js';
+import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
 import {
   StatusChangedPayload,
@@ -50,6 +53,8 @@ export interface TicketRoutesOptions {
   db: Database;
   /** Cancel and Mark as done manually stop the ticket's active run (04, section 2). */
   runs: RunService;
+  /** **Try again** of a pull request not opened (lot 3 step F3). */
+  pullRequests: PullRequestOpener;
   now?: () => Date;
 }
 
@@ -724,6 +729,44 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     'request-changes',
     'request_changes',
     (body) => parseInput(RequestChangesRequest, body).comment,
+  );
+
+  // **Try again** of "Pull request not opened" (04, section 3.1; lot 3 step F3): one attempt,
+  // answered once made; the ticket must still want its pull request.
+  app.post<TicketParams>(
+    '/api/projects/:key/tickets/:number/pull-request/try-again',
+    async (request) => {
+      await requireSession(db, request);
+      const project = await findProject(request.params.key);
+      const ticket = await findTicket(db, project.id, request.params.number);
+      if (ticket.pullRequestWantedSince === null || ['done', 'cancelled'].includes(ticket.status)) {
+        throw new HttpError(
+          409,
+          'no_pull_request_wanted',
+          'This ticket does not wait for its pull request: it was opened or updated already, or the ticket is done or cancelled',
+        );
+      }
+      request.log.info(
+        { project: project.key, ticket: ticket.number },
+        'pull request tried again by the owner',
+      );
+      await options.pullRequests.request(ticket.id);
+      const [after] = await db
+        .select({
+          failure: schema.tickets.pullRequestFailure,
+          wanted: schema.tickets.pullRequestWantedSince,
+          url: schema.tickets.pullRequestUrl,
+        })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, ticket.id));
+      return {
+        failure:
+          after?.wanted === null || after?.failure == null
+            ? null
+            : PullRequestFailure.parse(after.failure),
+        url: after?.url ?? null,
+      } satisfies PullRequestTryAgainResponse;
+    },
   );
 
   // The owner's answer to the open question (04, section 6): the waiting run receives it live, or

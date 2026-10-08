@@ -12,6 +12,7 @@ import {
   type RunStart,
   type RunState,
 } from '@orchestrator/protocol';
+import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
 import { loadShippedAgents } from '../src/agents/files.js';
@@ -198,6 +199,17 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     } as McpCall['payload'],
   });
   expect(refused).toMatchObject({ type: 'mcp.result', payload: { ok: false } });
+  // The push the facts report, on the fake GitHub; GitHub creates the pull request but its
+  // answer never arrives (`ticket.pull_request_not_opened`).
+  const shop = github.repository('octo-owner', 'online-shop');
+  const [shopTicket] = await t.db
+    .select()
+    .from(schema.tickets)
+    .where(eq(schema.tickets.id, shop2.id));
+  const shopBranch = shopTicket?.branchName ?? '';
+  github.commit(shop, shopBranch, { 'src/app.test.ts': 'test\n' }, 'Do the work', 'main');
+  github.alter = (request, reply) =>
+    request.method === 'POST' && request.path.endsWith('/pulls') ? { status: 502 } : reply;
   await tool({
     tool: 'ticket_submit',
     runToken,
@@ -224,6 +236,32 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       changedFiles: { listed: ['src/app.test.ts'], count: 1 },
     },
   });
+  const pullRequest = async () => {
+    for (let i = 0; i < 250; i++) {
+      const [row] = await t.db.select().from(schema.tickets).where(eq(schema.tickets.id, shop2.id));
+      if (row && (row.pullRequestWantedSince === null || row.pullRequestFailure !== null)) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the pull request attempt did not finish');
+  };
+  await pullRequest();
+  github.alter = undefined;
+  // Closed by the owner on GitHub, then **Try again**: reopened (`ticket.pull_request_reopened`).
+  github.closePullRequest(shop, 1);
+  await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
+  // As a later accepted submission would: wanted again, then updated, then (after a merge) a new
+  // one opened. Server functions, as the header says, without two more runs.
+  const wantAgain = () =>
+    t.db
+      .update(schema.tickets)
+      .set({ pullRequestWantedSince: new Date() })
+      .where(eq(schema.tickets.id, shop2.id));
+  await wantAgain();
+  await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
+  github.mergePullRequest(shop, 1);
+  github.commit(shop, shopBranch, { 'src/more.ts': 'more\n' }, 'More work');
+  await wantAgain();
+  await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
   await daemon.request({
     type: 'run.quota_limited',
     id: randomUUID(),

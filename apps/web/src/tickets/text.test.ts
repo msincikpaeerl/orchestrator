@@ -1,6 +1,6 @@
 import type { NeedsYouItem } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { pushFailedText } from './text';
+import { pullRequestNotOpenedText, pushFailedText } from './text';
 
 type PushFailed = Extract<NeedsYouItem, { type: 'push_failed' }>;
 
@@ -43,6 +43,69 @@ describe('pushFailedText (04, section 5)', () => {
     });
     expect(pushFailedText(item({ reason: 'unreachable' })).title).toBe(
       'GitHub could not be reached to push WEB-4',
+    );
+  });
+});
+
+type NotOpened = Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>;
+
+const notOpened = (failure: Partial<NotOpened['failure']>): NotOpened => ({
+  type: 'pull_request_not_opened',
+  ticket: { projectKey: 'WEB', number: 4, title: 'Contact form' },
+  failure: {
+    reason: 'refused',
+    message: 'Validation Failed: base: invalid',
+    permission: null,
+    fields: [],
+    at: '2026-10-08T10:00:00.000Z',
+    ...failure,
+  },
+  since: '2026-10-08T10:00:00.000Z',
+});
+
+describe('pullRequestNotOpenedText (04, section 3.1)', () => {
+  it("names the permission as GitHub's token page does", () => {
+    expect(
+      pullRequestNotOpenedText(
+        notOpened({ reason: 'permission_missing', permission: 'pull_requests' }),
+      ),
+    ).toEqual({
+      title: 'Pull request not opened for WEB-4: the token needs Pull requests (Read and write)',
+      detail:
+        "The work of WEB-4 is on GitHub, but the Orchestrator could not open or update its pull request. On GitHub's list of your tokens, open the Orchestrator's token, set Pull requests (Read and write), and save it; do not regenerate it. Then press Try again.",
+      where: 'tokens',
+      showMessage: false,
+    });
+  });
+
+  it("shows GitHub's words for a refusal, and a permission it did not name", () => {
+    expect(pullRequestNotOpenedText(notOpened({}))).toMatchObject({
+      title: 'GitHub refused to open the pull request of WEB-4',
+      showMessage: true,
+    });
+    expect(
+      pullRequestNotOpenedText(notOpened({ reason: 'permission_missing', permission: null }))
+        .showMessage,
+    ).toBe(true);
+  });
+
+  it('says what to do for each other reason', () => {
+    expect(pullRequestNotOpenedText(notOpened({ reason: 'unreachable' })).title).toBe(
+      'Pull request not opened for WEB-4: GitHub could not be reached',
+    );
+    expect(
+      pullRequestNotOpenedText(
+        notOpened({ reason: 'no_token', message: 'No GitHub token is saved' }),
+      ),
+    ).toMatchObject({
+      where: 'settings',
+      detail: expect.stringContaining('No GitHub token is saved. Save') as string,
+    });
+    expect(pullRequestNotOpenedText(notOpened({ reason: 'rate_limited' })).detail).toContain(
+      'Wait a few minutes',
+    );
+    expect(pullRequestNotOpenedText(notOpened({ reason: 'unreadable' })).detail).toContain(
+      'never opens a second one',
     );
   });
 });

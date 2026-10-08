@@ -4,6 +4,7 @@ import {
   CLAUDE_CODE_MIN_VERSION,
   DoctorCheck,
   DodReport,
+  PullRequestFailure,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
 import {
@@ -98,6 +99,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
   }
 
   items.push(...(await pushFailedItems(db)));
+  items.push(...(await pullRequestItems(db)));
 
   const paused = await runs.list(
     and(
@@ -187,6 +189,34 @@ async function pushFailedItems(db: Database): Promise<Items> {
     });
   }
   return items;
+}
+
+/**
+ * Accepted submissions whose pull request could not be opened or updated (04, section 3.1; lot 3
+ * step F3): until an attempt succeeds, or the ticket is done or cancelled.
+ */
+async function pullRequestItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ ticket: schema.tickets, projectKey: schema.projects.key })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        isNotNull(schema.tickets.pullRequestWantedSince),
+        isNotNull(schema.tickets.pullRequestFailure),
+      ),
+    );
+  return rows.map(({ ticket, projectKey }) => {
+    const failure = PullRequestFailure.parse(ticket.pullRequestFailure);
+    return {
+      type: 'pull_request_not_opened' as const,
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      failure,
+      since: failure.at,
+    };
+  });
 }
 
 /**

@@ -27,6 +27,17 @@ import {
  */
 
 /** A ticket created by the owner starts in `todo` (04, section 2). */
+
+/**
+ * A ticket done or cancelled no longer wants its pull request (04, section 3.1; lot 3 step F3):
+ * no attempt, no "Needs you" item; a ticket reopened after it waits for its next submission.
+ */
+function endsPullRequestWish(to: string) {
+  return to === 'done' || to === 'cancelled'
+    ? { pullRequestWantedSince: null, pullRequestFailure: null }
+    : {};
+}
+
 export const OWNER_CREATION_STATUS = 'todo' satisfies TicketStatus;
 
 export interface NewOwnerTicket {
@@ -116,7 +127,7 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
   // The status is checked again in the update: the caller's lock makes a mismatch a bug.
   const [updated] = await tx
     .update(schema.tickets)
-    .set({ status: to, updatedAt: now })
+    .set({ status: to, updatedAt: now, ...endsPullRequestWish(to) })
     .where(and(eq(schema.tickets.id, ticket.id), eq(schema.tickets.status, from)))
     .returning();
   if (!updated) throw new Error(`ticket ${ticket.id} changed during a transition`);
@@ -203,6 +214,7 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
     .set({
       status: transition.to,
       updatedAt: now,
+      ...endsPullRequestWish(transition.to),
       ...(counted ? { attemptCount: ticket.attemptCount + 1 } : {}),
     })
     .where(and(eq(schema.tickets.id, ticket.id), eq(schema.tickets.status, from)))

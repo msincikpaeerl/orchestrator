@@ -16,6 +16,14 @@ const controlUrl = `http://127.0.0.1:${String(Number(process.env.E2E_PORT ?? 809
 export const test = base.extend<{
   fresh: undefined;
   failNextGitHubRequest: (method: string, path: string, status: number) => Promise<void>;
+  /** A commit on GitHub without the Orchestrator, in a repository of `octo-owner`. */
+  gitHubCommit: (commit: {
+    repository: string;
+    branch: string;
+    files: Record<string, string | null>;
+    message: string;
+    from?: string;
+  }) => Promise<void>;
 }>({
   fresh: [
     async ({ playwright }, use) => {
@@ -34,6 +42,14 @@ export const test = base.extend<{
         data: { method, path, status },
       });
       expect(response.status()).toBe(204);
+    });
+    await control.dispose();
+  },
+  gitHubCommit: async ({ playwright }, use) => {
+    const control = await playwright.request.newContext();
+    await use(async (commit) => {
+      const response = await control.post(`${controlUrl}/github/commit`, { data: commit });
+      expect(response.status()).toBe(200);
     });
     await control.dispose();
   },

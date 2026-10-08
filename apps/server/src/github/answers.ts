@@ -42,9 +42,18 @@ export const ErrorBody = z.object({
   errors: z.array(z.unknown()).optional(),
 });
 
-const ErrorDetail = z.string().or(z.object({ message: z.string() }).transform((e) => e.message));
+// A 422's error object carries `resource`, `field` and `code`, and a `message` only for the code
+// `custom` ("Client errors", https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api).
+const ErrorDetail = z
+  .string()
+  .or(z.object({ message: z.string() }).transform((e) => e.message))
+  .or(
+    z
+      .object({ field: z.string(), code: z.string() })
+      .transform((e) => `${e.field} ${e.code.replace(/_/g, ' ')}`),
+  );
 
-/** The texts of a 422's `errors` list: strings, or objects with a `message`. */
+/** The texts of a 422's `errors` list: strings, objects with a `message`, else field and code. */
 export function errorDetails(body: z.infer<typeof ErrorBody>): string[] {
   return (body.errors ?? []).flatMap((error) => {
     const detail = ErrorDetail.safeParse(error);

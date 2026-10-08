@@ -82,6 +82,8 @@ export const ApiErrorCode = z.enum([
   'run_not_active',
   /** An answer to a ticket with no question waiting for one (04, section 6). */
   'no_open_question',
+  /** **Try again** on a ticket that no longer waits for its pull request (lot 3 step F3). */
+  'no_pull_request_wanted',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

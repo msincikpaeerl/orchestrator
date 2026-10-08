@@ -284,6 +284,21 @@ export const tickets = pgTable(
      * the reason and the message; null after a push is done.
      */
     branchPushFailure: jsonb('branch_push_failure'),
+    /**
+     * The ticket's pull request as last read (04, section 3.1; lot 3 step F3): number, page, state
+     * (`open`, `closed`, `merged`) and head; null until the server opened or found one.
+     */
+    pullRequestNumber: integer('pull_request_number'),
+    pullRequestUrl: text('pull_request_url'),
+    pullRequestState: text('pull_request_state'),
+    pullRequestHead: text('pull_request_head'),
+    /**
+     * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
+     * opened or updated with it, or when the ticket is done or cancelled.
+     */
+    pullRequestWantedSince: timestamp('pull_request_wanted_since', { withTimezone: true }),
+    /** The latest failed attempt (`PullRequestFailure`); null after one succeeds. */
+    pullRequestFailure: jsonb('pull_request_failure'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -296,6 +311,10 @@ export const tickets = pgTable(
     check('tickets_created_by', sql`${table.createdBy} IN ('owner', 'agent')`),
     index('tickets_created_by_run_id').on(table.createdByRunId),
     check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
+    check(
+      'tickets_pull_request_state',
+      sql`${table.pullRequestState} IN ('open', 'closed', 'merged')`,
+    ),
     check('tickets_type', sql`${table.type} IN ('feature', 'bug', 'chore', 'docs', 'spike')`),
     check('tickets_priority', sql`${table.priority} IN ('low', 'normal', 'high')`),
     check(
