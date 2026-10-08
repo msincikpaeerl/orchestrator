@@ -531,10 +531,12 @@ Confirmed by the owner at the start of step F2 (2026-10-08): `push_failed`'s fai
 - **Check results**: `passed`, `failed`, `incomplete` (could not be fully done) or `skipped` (no push is tried on a worktree with uncommitted changes or no commits). A type rule met only by a path a cut list leaves out is `incomplete` too. A list not sent (protocol 1) also raises the workflow flag, the safe side.
 - **Listed paths**: `..` is not resolved inside a path (`docs/../README.md` matches no changed file, so it is refused as not changed); `.` alone is the root, a folder. A path that is the start of a changed file's path is refused as a folder; any other path not changed is refused with a message that also says folders are not accepted.
 - **Refused submissions** are kept in their own transaction, after the refused call's own is rolled back; `ticket.submission_refused` lists every failed check, also those the agent was not told after a failed push. Migration 0018 says the cost: at most about 520 KiB per run, usually a few KiB.
-- **"Needs you"**: one item type, `push_failed`, with the reason; the permission is read only from GitHub's two real texts. An item also goes when its machine is revoked, since the commits not on GitHub there are lost (D3): found while testing, owner to confirm.
+- **"Needs you"**: one item type, `push_failed`, with the reason; the permission is read only from GitHub's two real texts. An item also goes when its machine is revoked, since the commits not on GitHub there are lost (D3): found while testing, confirmed by the owner at the start of step F3.
 - **Found by the full test run and fixed** (the earlier tests, unchanged, caught both): the comment said the end push succeeded when no push was recorded at all; the next run's first message said the work was committed on its machine when, after a revocation, it started on another machine from GitHub. Both now say only what is true.
 - **What stays in code**: the `system` comments are written for the owner, in the server as in lot 2, although the next agent reads them among the ticket's comments; the MCP tools' descriptions stay in `packages/protocol` with the tools' definitions (06, section 3).
 - **An e2e expectation changed**: a submission is now accepted only with its push, so the branch card after an accepted submission reads "on GitHub" instead of lot 2's "not on GitHub yet" (`runs.e2e.ts`).
+
+Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine removes its `push_failed` item; the `system` comments stay in the server's code, as in lot 2; the MCP tools' descriptions stay in `packages/protocol`; the end-to-end expectation changed because a submission now carries its push.
 
 ### [ ] F3. The pull request
 
