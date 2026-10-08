@@ -213,6 +213,8 @@ describe('no program named in an agent-changed configuration starts', () => {
       'spy-gpg',
       [
         `case " $* " in *" --verify "*) echo "gpg $*" >> '${marker}' ;; esac`,
+        // Reads what Git writes first: exiting before would fail Git's write under load.
+        'while read -r line; do :; done',
         "echo '[GNUPG:] SIG_CREATED D 1 8 00 1700000000 0000' >&2",
         "printf -- '-----BEGIN PGP SIGNATURE-----\\n\\nZmFrZQ==\\n-----END PGP SIGNATURE-----\\n'",
       ].join('\n'),
@@ -272,6 +274,8 @@ describe('no program named in an agent-changed configuration starts', () => {
       'spy-gpg',
       [
         `case " $* " in *" --verify "*) echo "gpg $*" >> '${marker}' ;; esac`,
+        // Reads what Git writes first: exiting before would fail Git's write under load.
+        'while read -r line; do :; done',
         "echo '[GNUPG:] SIG_CREATED D 1 8 00 1700000000 0000' >&2",
         "printf -- '-----BEGIN PGP SIGNATURE-----\\n\\nZmFrZQ==\\n-----END PGP SIGNATURE-----\\n'",
       ].join('\n'),
