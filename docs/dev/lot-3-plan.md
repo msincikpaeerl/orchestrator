@@ -507,12 +507,24 @@ Split approved by the owner on 2026-10-08, with the answers below. Scope of the 
 - **The decision `push_failed`** is kept over any later decision of the same turn, whatever the server answered; the end push is still tried.
 - **An agent-facing text in the daemon**: the refusal of a DoD report above its budget, since such a call cannot reach the server; recorded in 03 section 3.2 as a second exception beside the hook's reasons.
 
+Confirmed by the owner at the start of step F2 (2026-10-08): `push_failed`'s failure reason came with F1; the fields a 0.3.0 daemon also sends are cut when read, and the protocol 2 fields are refused above their budget; the daemon's own refusal of an oversized report stays as the second agent-facing exception of 03 section 3.2.
+
 ### [ ] F2. Server checks and `push_failed`
 
 - Checks: criteria, type rules (answer 9), listed paths (answer 7), the push; the workflow flag (answer 6); the check results stored with the report.
 - The failure reason `push_failed` (not counted), its three "Needs you" items and Run now's next first message (answer 5); the agent-facing texts in `agents/templates/` (answer 10), profile versions up; Help for `push_failed`.
 
 **Done when** integration tests with a scripted daemon cover each failed check (a path leaving the repository and a cut list included), the workflow flag (a cut list included), `push_failed` from GitHub's two real texts naming Contents or Workflows, and the whole diverged round: refused, next run, merge, push accepted.
+
+**The owner's answers (2026-10-08, start of the step)**:
+
+1. **Agent-facing texts**: everything `ticket_submit` answers (each check, the `DOD_FAILED` summary, its own input refusals) moves into `agents/templates/submit-checks.md`. The other tools' refusals stay in `backend.ts` for now: a known gap, written in 03 section 3.2 and carried to step L.
+2. **Profile versions**: the common rules are updated for the full submission (a refused push means ending the turn; listed paths are files, not folders; a diverged branch is brought in with `git merge origin/<ticket branch>`), so every default profile's version goes up by itself.
+3. **"Needs you" rows**: F2 adds a plain row for each `push_failed` item (what happened, the permission to give with the token list link, the ticket), with Playwright on desktop and phone; F4 adds the ticket page and the rest.
+4. **When an item shows**: from the end of the run that failed with `push_failed` until the next push done (an end push included), or until the ticket is cancelled or done; it stays visible while the next run works.
+5. **The next run's first message** relies on the ticket's latest push failure still standing, whatever ended the run (a timed-out run whose end push failed too).
+6. **Refused submissions kept** (owner's addition): each run keeps its latest refused submission with each check's result, as the ticket keeps the accepted one, so a run page can show an agent looping on refused submissions (shown in F4). The cost is said in the migration.
+7. Choices accepted: a failed push answers only the push check (the agent can fix nothing in that run); the check keeps the protocol's name `pushed`; a daemon sending no changed files (protocol 1) gets "could not be done" for the path check, as a cut list; the check results and the workflow flag are stored with the submission.
 
 ### [ ] F3. The pull request
 
@@ -612,6 +624,8 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 
 - **A project download at a run's start that fails or is stopped** (GitHub unreachable, the credential refused, **Longest push** reached) is not the agent's failure (owner's decision, lot 3 step D2). It gets a failure reason of its own, is not counted as a failed attempt, and leaves a blocking "Needs you" item, as `push_failed` does. The run page and the ticket's comment say what happened in true words, instead of today's "its Claude Code session stopped unexpectedly or never started". The Help line "Such a run counts as a failed attempt in this version" (Machines > Troubleshooting) is corrected in this step. Until then such a run ends `crashed`, counted, as step D1 left it.
 
+- **Question for this step: "Push again"** (owner's note, step F2). A push refused for a permission, or because GitHub could not be reached, leaves the work committed on the machine, yet the only way out is a new run: a whole Claude Code session just to push again. This step considers a **Push again** action that starts no session: the holding machine pushes the ticket branch as an end push does, and when the push succeeds, the stored submission is checked again and accepted, like **Check CI again** in step G2. It would need a new daemon command (a protocol change), the holding machine online (else the action says so), and the stored submission's facts re-read by the daemon at the push. A diverged branch still needs a run, since the agent must merge. To be asked to the owner at the start of the step.
+
 **Done when** tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not as decided, and Run now's refusal naming the setting and its value. Playwright: **Try again** from "Needs you".
 
 ### [ ] L. Carried from lot 2
@@ -620,6 +634,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - The common rules' line on Claude Code's tips; profile versions go up.
 - The probe's check 6 (permission mode `dontAsk` in the transcript), with its dry run, and the fixtures of 2.1.287 read for it.
 - Logging of a session kill and of the hook connections open at that moment, with the run id (05 section 4.11).
+- **From step F2**: the refusal texts of the MCP tools other than `ticket_submit` (wrong ticket state, role, input too long, run ended) move from `apps/server/src/mcp/backend.ts` into a template, closing the gap 03 section 3.2 records.
 
 **Done when** the refusal tests read the new suffix, the probe's dry run prints check 6 `PASS` with the fake `claude` writing `dontAsk` and `FAIL` with another mode, and a daemon test finds both log lines when a hook is still running at a run's end.
 
