@@ -242,3 +242,59 @@ test("a push GitHub refused names the token's permission, then Run now goes on",
   expect(next).not.toBe(runId);
   expect((await runSent(page, next)).type).toBe('run.start');
 });
+
+test('a pull request GitHub could not open is opened with Try again', async ({
+  page,
+  failNextGitHubRequest,
+  gitHubCommit,
+}) => {
+  const { runId, runToken } = await working(page);
+  // The push the scripted daemon reports, on the fake GitHub; then GitHub fails the first search
+  // for the ticket's pull request.
+  await gitHubCommit({
+    repository: 'bakery',
+    branch: 't/1-contact-form',
+    files: { 'src/contact.ts': 'export {};\n' },
+    message: 'Add the contact form',
+    from: 'main',
+  });
+  await failNextGitHubRequest('GET', '/pulls', 502);
+  const answer = await callTool(
+    page,
+    runToken,
+    'ticket_submit',
+    {
+      criteria: [
+        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
+        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+      ],
+      tests: { paths: ['src/contact.test.ts'], justification: null },
+      docs: { paths: [], justification: 'No user documentation in this project yet.' },
+      adrs: [],
+      summary: 'Adds the contact form with its checks.',
+    },
+    {
+      clean: true,
+      branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+      push: { status: 'pushed', head: BRANCH_HEAD },
+    },
+  );
+  expect(answer).toMatchObject({ result: 'accepted' });
+  await reportState(page, runId, 'ended');
+
+  await page.goto('/');
+  const notOpened = item(page, 'Pull request not opened for WEB-1');
+  await expect(notOpened.getByRole('heading')).toHaveText(
+    'Pull request not opened for WEB-1: GitHub could not be reached',
+  );
+  await expect(notOpened).toContainText('The work of WEB-1 is on GitHub');
+  await expect(notOpened.getByRole('link', { name: 'What to do' })).toHaveAttribute(
+    'href',
+    '/help/needs-you#pull-request-not-opened',
+  );
+  await expectFitsScreen(page);
+
+  await notOpened.getByRole('button', { name: 'Try again' }).click();
+  await expect(notOpened).toBeHidden();
+  await expect(item(page, 'Work finished: check it')).toBeVisible();
+});

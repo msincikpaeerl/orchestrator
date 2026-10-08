@@ -12,6 +12,8 @@ const GitHubCommit = z.object({
   branch: z.string(),
   files: z.record(z.string(), z.string().nullable()),
   message: z.string(),
+  /** A missing branch starts from this one; with no parent when not given. */
+  from: z.string().optional(),
 });
 const GitHubCi = z.object({
   repository: z.string(),
@@ -51,6 +53,7 @@ export function githubControl(
               commit.branch,
               commit.files,
               commit.message,
+              commit.from,
             ),
           },
         };

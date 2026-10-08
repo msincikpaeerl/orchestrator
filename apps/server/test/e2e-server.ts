@@ -102,7 +102,7 @@ const server = await startServer(
 // What happens on GitHub without the Orchestrator, in a repository of the full account
 // (`octo-owner`), each answering `{"sha":"…"}` when it makes a commit: POST /github/commit
 // `{"repository":"notes","branch":"main","files":{"a.md":"A"},"message":"…"}` (a file set to null
-// is removed); POST /github/ci `{"repository":"notes","ref":"<branch or SHA>","action":"start"}`
+// is removed; `"from":"main"` starts a missing branch there); POST /github/ci `{"repository":"notes","ref":"<branch or SHA>","action":"start"}`
 // starts the commit's workflow runs, `"action":"complete"` completes them, successful or with
 // `"failures":[{"job":"docs-links","step":"Check documentation links","log":"…"}]`; POST
 // /github/status `{"repository":"notes","ref":"…","context":"deploy","state":"success"}`; POST
