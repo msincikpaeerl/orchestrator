@@ -81,6 +81,12 @@ export interface ImplementTicket {
    * commits from an earlier attempt: the agent reads them and continues. Null otherwise.
    */
   earlierWorkBase: string | null;
+  /**
+   * The ticket branch's latest push failed and no push was done since (04, section 5; lot 3 step
+   * F): the work is committed but not on GitHub. `diverged`: GitHub's branch has commits this
+   * machine lacks, which the agent merges first. Null otherwise.
+   */
+  notPushed: { branch: string; diverged: boolean } | null;
 }
 
 /** The ticket alone does not fit, even with its description cut to nothing (03, section 3.2). */
@@ -129,10 +135,16 @@ export function implementFirstMessage(
             }),
           )
           .join('\n');
+  const base = ticket.earlierWorkBase;
   const start =
-    ticket.earlierWorkBase === null
+    base === null
       ? part(template, 'start')
-      : part(template, 'start-earlier-work', { base: ticket.earlierWorkBase });
+      : ticket.notPushed === null
+        ? part(template, 'start-earlier-work', { base })
+        : part(template, ticket.notPushed.diverged ? 'start-diverged' : 'start-not-pushed', {
+            base,
+            branch: ticket.notPushed.branch,
+          });
   const renderedComments = ticket.comments.map((comment) =>
     part(template, 'comment', {
       author:

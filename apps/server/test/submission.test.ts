@@ -1,15 +1,19 @@
 import { schema } from '@orchestrator/db';
 import {
   DodCheckResult,
+  NeedsYouResponse,
   SubmissionRecord,
   type DodReport,
   type McpError,
   type McpResult,
+  type PushResult,
+  type RunStart,
+  type RunState,
 } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { RunHarness, cleanWorkspace, state } from './run-harness.js';
+import { HEAD, RunHarness, TOKEN, cleanWorkspace, state } from './run-harness.js';
 
 /** A string matching `pattern`, inside an expected value (`stringMatching` is untyped). */
 const matching = (pattern: RegExp) => expect.stringMatching(pattern) as string;
@@ -261,5 +265,192 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       cleanWorkspace({ changedFiles: { listed: ['docs/adr/0002-mail-service.md'], count: 1 } }),
     );
     expect(accepted.ok).toBe(true);
+  });
+});
+
+// GitHub's own words for the two refusals the owner's smoke run met (lot 3 step E3, A3 and A2).
+const NO_CONTENTS_WRITE =
+  "Write access to repository not granted.\nfatal: unable to access 'https://github.com/octo-owner/bakery.git/': The requested URL returned error: 403";
+const NO_WORKFLOWS_WRITE =
+  'To https://github.com/octo-owner/bakery.git\n!\trefs/heads/t/1-contact-form:refs/heads/t/1-contact-form\t[remote rejected] (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\nDone';
+
+async function needsYou() {
+  const response = await h.call('GET', '/api/needs-you');
+  expect(response.statusCode, response.body).toBe(200);
+  return NeedsYouResponse.parse(response.json()).items.filter(
+    (item) => item.type === 'push_failed',
+  );
+}
+
+/** The run's end as the daemon reports it, with its end push. */
+function ended(
+  runId: string,
+  reason: 'push_failed' | 'crashed',
+  push: PushResult | null,
+): RunState {
+  const message = state(runId, { state: 'ended', reason });
+  if (message.payload.state !== 'ended') throw new Error('not an end');
+  return { ...message, payload: { ...message.payload, push } };
+}
+
+/** A submission whose push failed, answered, then the run's end at the turn's end. */
+async function pushFailed(
+  push: Extract<PushResult, { status: 'failed' }>,
+  endPush: PushResult | null = null,
+) {
+  const run = await working();
+  const answer = refusal(
+    await h.tool(run.daemon, run.runToken, 'ticket_submit', REPORT, cleanWorkspace({ push })),
+  );
+  await h.report(run.daemon, ended(run.runId, 'push_failed', endPush));
+  return { ...run, answer };
+}
+
+describe('push_failed (04, sections 3.1 and 5)', () => {
+  it('tells the agent to end its turn; the run is not counted and Needs you names Contents', async () => {
+    const {
+      answer,
+      runId,
+      id: machineId,
+    } = await pushFailed({
+      status: 'failed',
+      reason: 'refused',
+      message: NO_CONTENTS_WRITE,
+    });
+    expect(answer).toEqual({
+      code: 'DOD_FAILED',
+      message: matching(
+        /could not be pushed to GitHub\. This is not yours to fix.*end your turn now/,
+      ),
+      details: [
+        { check: 'pushed', message: 'GitHub refused the push of the branch t/1-contact-form.' },
+      ],
+    });
+
+    const run = await h.run(runId);
+    expect(run).toMatchObject({ status: 'failed', failureReason: 'push_failed' });
+    const ticket = await h.ticket();
+    expect(ticket).toMatchObject({ status: 'todo', attemptCount: 0 });
+    const comment = ticket.timeline.findLast((entry) => entry.type === 'comment');
+    expect(comment).toMatchObject({
+      comment: {
+        author: 'system',
+        body: matching(
+          /^The run on machine Laptop ended: its branch could not be pushed to GitHub, because GitHub refused it\. The token needs the permission Contents \(Read and write\)\. It does not count as a failed attempt\./,
+        ),
+      },
+    });
+
+    expect(await needsYou()).toEqual([
+      {
+        type: 'push_failed',
+        ticket: { projectKey: 'WEB', number: 1, title: 'Contact form' },
+        machine: { id: machineId, name: 'Laptop' },
+        reason: 'refused',
+        permission: 'contents',
+        message: NO_CONTENTS_WRITE,
+        since: run.endedAt,
+      },
+    ]);
+  });
+
+  it("names Workflows for GitHub's workflow refusal", async () => {
+    await pushFailed({ status: 'failed', reason: 'refused', message: NO_WORKFLOWS_WRITE });
+    expect(await needsYou()).toMatchObject([{ reason: 'refused', permission: 'workflows' }]);
+    const comment = (await h.ticket()).timeline.findLast((entry) => entry.type === 'comment');
+    expect(comment).toMatchObject({
+      comment: { body: matching(/permission Workflows \(Read and write\)/) },
+    });
+  });
+
+  it("gives any other refusal in GitHub's words, masked", async () => {
+    await pushFailed({
+      status: 'failed',
+      reason: 'refused',
+      message: `remote: Repository rule violations found\nhttps://x-access-token:${TOKEN}@github.com`,
+    });
+    const [item] = await needsYou();
+    expect(item).toMatchObject({ reason: 'refused', permission: null });
+    expect(item?.message).toContain('Repository rule violations found');
+    expect(item?.message).not.toContain(TOKEN);
+  });
+
+  it('says when GitHub could not be reached', async () => {
+    await pushFailed({
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'fatal: unable to access: Could not resolve host: github.com',
+    });
+    expect(await needsYou()).toMatchObject([{ reason: 'unreachable', permission: null }]);
+  });
+
+  it('the next run says the work was not pushed; the item stays while it works and goes at its push', async () => {
+    const { daemon } = await pushFailed({
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    });
+    const next = await h.running(daemon);
+    const start = await daemon.find<RunStart>(
+      (message) => message.type === 'run.start' && message.payload.runId === next.runId,
+      'run.start',
+    );
+    expect(start.payload.initialPrompt).toMatch(
+      /committed on this machine but not pushed to GitHub/,
+    );
+    expect(start.payload.initialPrompt).not.toMatch(/git merge origin\/t\/1-contact-form/);
+    expect(await needsYou()).toHaveLength(1);
+    expect((await h.tool(daemon, next.runToken, 'ticket_submit', REPORT)).ok).toBe(true);
+    expect(await needsYou()).toEqual([]);
+  });
+
+  it('an end push done removes the item', async () => {
+    await pushFailed(
+      { status: 'failed', reason: 'unreachable', message: 'Could not resolve host: github.com' },
+      { status: 'pushed', head: HEAD },
+    );
+    expect(await needsYou()).toEqual([]);
+    const comment = (await h.ticket()).timeline.findLast((entry) => entry.type === 'comment');
+    expect(comment).toMatchObject({
+      comment: { body: matching(/the push at the run's end succeeded/) },
+    });
+  });
+
+  it('a later end push that fails keeps the item; cancelling the ticket removes it', async () => {
+    const { daemon } = await pushFailed({
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    });
+    const next = await h.running(daemon);
+    await h.report(
+      daemon,
+      ended(next.runId, 'crashed', {
+        status: 'failed',
+        reason: 'unreachable',
+        message: 'Could not resolve host: github.com',
+      }),
+    );
+    expect(await needsYou()).toHaveLength(1);
+    const cancelled = await h.call('POST', '/api/projects/WEB/tickets/1/cancel');
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(await needsYou()).toEqual([]);
+  });
+
+  it("a diverged branch: the next run merges GitHub's branch first", async () => {
+    const { daemon } = await pushFailed({
+      status: 'failed',
+      reason: 'diverged',
+      message: '! [rejected] t/1-contact-form -> t/1-contact-form (fetch first)',
+    });
+    expect(await needsYou()).toMatchObject([{ reason: 'diverged', permission: null }]);
+    const next = await h.running(daemon);
+    const start = await daemon.find<RunStart>(
+      (message) => message.type === 'run.start' && message.payload.runId === next.runId,
+      'run.start',
+    );
+    expect(start.payload.initialPrompt).toMatch(
+      /GitHub's copy of the branch has commits this machine does not have.*run `git merge origin\/t\/1-contact-form`/s,
+    );
   });
 });

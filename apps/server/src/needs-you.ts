@@ -6,7 +6,19 @@ import {
   DodReport,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
@@ -15,6 +27,7 @@ import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import type { RunService } from './runs/service.js';
+import { pushFailure, pushPermission } from './tickets/branch.js';
 import { profileLinks, toComment } from './tickets/model.js';
 
 type Items = NeedsYouResponse['items'];
@@ -84,6 +97,8 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
     }
   }
 
+  items.push(...(await pushFailedItems(db)));
+
   const paused = await runs.list(
     and(
       eq(schema.runs.status, 'paused_quota'),
@@ -116,6 +131,57 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
       run,
       ticket: { projectKey: run.projectKey, number: ticket.number, title: ticket.title },
       since: run.statusSince,
+    });
+  }
+  return items;
+}
+
+/**
+ * Tickets whose run ended with `push_failed` and whose branch has not been pushed since (04,
+ * section 5; lot 3 step F): from that run's end until the next push done (an end push included),
+ * or until the ticket is cancelled or done; still shown while a next run works.
+ */
+async function pushFailedItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({
+      ticket: schema.tickets,
+      projectKey: schema.projects.key,
+      endedAt: sql<Date>`max(${schema.runs.endedAt})`.mapWith(schema.runs.endedAt),
+    })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .innerJoin(schema.runs, eq(schema.runs.ticketId, schema.tickets.id))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        isNotNull(schema.tickets.branchPushFailure),
+        eq(schema.runs.failureReason, 'push_failed'),
+        isNotNull(schema.runs.endedAt),
+        or(
+          isNull(schema.tickets.githubBranchPushedAt),
+          gt(schema.runs.endedAt, schema.tickets.githubBranchPushedAt),
+        ),
+      ),
+    )
+    .groupBy(schema.tickets.id, schema.projects.key);
+  const items: Items = [];
+  for (const { ticket, projectKey, endedAt } of rows) {
+    const failure = pushFailure(ticket);
+    if (!failure) continue;
+    const [machine] = await db
+      .select({ id: schema.machines.id, name: schema.machines.name })
+      .from(schema.machines)
+      .where(eq(schema.machines.id, failure.machineId));
+    if (!machine) continue;
+    items.push({
+      type: 'push_failed',
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      machine,
+      reason: failure.reason,
+      permission: failure.reason === 'refused' ? pushPermission(failure.message) : null,
+      message: failure.message,
+      since: endedAt.toISOString(),
     });
   }
   return items;

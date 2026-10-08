@@ -101,7 +101,14 @@ export {
   TimelineEntry,
   UpdateTicketRequest,
 } from './api/tickets.js';
-export { AccountStatus, NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export {
+  AccountStatus,
+  GITHUB_TOKEN_LIST_URL,
+  NeedsYouItem,
+  NeedsYouResponse,
+  PUSH_PERMISSION_WORDS,
+  PushPermission,
+} from './api/needs-you.js';
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
 export {
   LiveRun,

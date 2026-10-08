@@ -4,6 +4,7 @@ import {
   maskSecrets,
   NotOnGitHub,
   PushFailureReason,
+  type PushPermission,
   type BranchReport,
   type BranchWhere,
   type CommitSummary,
@@ -48,6 +49,18 @@ export function pushFailure(
   return ticket.branchPushFailure === null
     ? null
     : BranchPushFailure.parse(ticket.branchPushFailure);
+}
+
+/**
+ * The permission a refused push lacked, from GitHub's own words (lot 3 step E3, the owner's run):
+ * "Write access to repository not granted." without Contents write, and "... without `workflow`
+ * scope" for a change under `.github/workflows/` without Workflows write, which GitHub words that
+ * way even for a fine-grained token. Null for any other refusal.
+ */
+export function pushPermission(message: string): PushPermission | null {
+  if (/without `workflow` scope/.test(message)) return 'workflows';
+  if (/Write access to repository not granted/.test(message)) return 'contents';
+  return null;
 }
 
 /** A branch report: the commits listed, and what the machine said was not on GitHub. */

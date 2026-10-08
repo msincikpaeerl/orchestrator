@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DoctorCheck } from '../daemon/connection.js';
+import { PushFailureReason } from '../daemon/git.js';
 import { AgentLink } from './agents.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
@@ -7,6 +8,22 @@ import { Run } from './runs.js';
 import { Comment } from './tickets.js';
 
 const MachineRef = z.object({ id: z.uuid(), name: z.string() });
+
+/**
+ * A permission of the GitHub token a refused push lacked (lot 3 step F), shown as the token page
+ * names it: "Contents (Read and write)", "Workflows (Read and write)".
+ */
+export const PushPermission = z.enum(['contents', 'workflows']);
+export type PushPermission = z.infer<typeof PushPermission>;
+
+/** A push permission in the words of GitHub's token page (owner's note, lot 3 step E3). */
+export const PUSH_PERMISSION_WORDS: Readonly<Record<PushPermission, string>> = {
+  contents: 'Contents (Read and write)',
+  workflows: 'Workflows (Read and write)',
+};
+
+/** GitHub's list of the account's fine-grained tokens, where a token's permissions change. */
+export const GITHUB_TOKEN_LIST_URL = 'https://github.com/settings/personal-access-tokens';
 const TicketRef = z.object({ projectKey: ProjectKey, number: z.int(), title: z.string() });
 
 /**
@@ -118,6 +135,25 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** The run that submitted it. */
     runId: z.uuid().nullable(),
     /** When it was submitted. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * A run ended with `push_failed` (04, section 5; lot 3 step F): its work is committed on the
+   * machine but GitHub refused the push or could not be reached. Shown until the next push done
+   * (an end push included), or until the ticket is cancelled or done; **Run now** continues it on
+   * that machine.
+   */
+  z.object({
+    type: z.literal('push_failed'),
+    ticket: TicketRef,
+    /** The machine holding the commits. */
+    machine: MachineRef,
+    reason: PushFailureReason,
+    /** The permission the token needs, when GitHub's words say which; else null. */
+    permission: PushPermission.nullable(),
+    /** GitHub's or Git's words, masked. */
+    message: z.string(),
+    /** When the run ended. */
     since: z.iso.datetime(),
   }),
   /** A run paused on a usage limit, detected or suspected: **Resume** or **Stop run**. */

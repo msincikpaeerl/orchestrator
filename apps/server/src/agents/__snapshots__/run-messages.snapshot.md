@@ -171,6 +171,18 @@ Implement ticket WEB-12 of the project Bakery website, then submit it with `tick
 
 The ticket's branch already has commits from an earlier attempt. Start by reading `CLAUDE.md`, then see what was done: `git log origin/main..HEAD` lists those commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 
+# First message (implement), the earlier commits not pushed (GitHub refused or unreachable)
+
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
+
+The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub refused the push or could not be reached, and the owner has been told. Start by reading `CLAUDE.md`, then see what was done: `git log origin/main..HEAD` lists those commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
+# First message (implement), the earlier commits not pushed, the branch diverged on GitHub
+
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
+
+The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub's copy of the branch has commits this machine does not have, so the push was refused. Start by reading `CLAUDE.md`, then bring GitHub's commits in before anything else: run `git merge origin/t/12-contact-form` (the Orchestrator downloaded it before your run started), resolve any conflict with your file tools, then `git add` and `git commit`. Never rebase. Then see what was done: `git log origin/main..HEAD` lists the branch's commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
 # Owner answer
 
 The owner answered your question.

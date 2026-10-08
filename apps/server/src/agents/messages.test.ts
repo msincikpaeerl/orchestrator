@@ -60,6 +60,7 @@ const sample: ImplementTicket = {
   ],
   attempt: 1,
   earlierWorkBase: null,
+  notPushed: null,
 };
 
 /** The sample's question and its answer, as the answer message quotes them. */
@@ -110,6 +111,24 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
       })
         .split('\n# WEB-12')[0]
         ?.trimEnd() ?? '',
+      '# First message (implement), the earlier commits not pushed (GitHub refused or unreachable)',
+      implementFirstMessage(templates.implement, {
+        ...sample,
+        attempt: 2,
+        earlierWorkBase: 'origin/main',
+        notPushed: { branch: 't/12-contact-form', diverged: false },
+      })
+        .split('\n# WEB-12')[0]
+        ?.trimEnd() ?? '',
+      '# First message (implement), the earlier commits not pushed, the branch diverged on GitHub',
+      implementFirstMessage(templates.implement, {
+        ...sample,
+        attempt: 2,
+        earlierWorkBase: 'origin/main',
+        notPushed: { branch: 't/12-contact-form', diverged: true },
+      })
+        .split('\n# WEB-12')[0]
+        ?.trimEnd() ?? '',
       '# Owner answer',
       answerMessage(templates, question, answer),
       '# Continue after a usage-limit pause',
@@ -150,6 +169,25 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
     expect(again).toContain('`git log origin/trunk..HEAD`');
     expect(again).toContain('`git diff origin/trunk...HEAD`');
     expect(again).not.toContain(templates.implement.parts.get('start'));
+  });
+
+  it('says when the earlier commits were not pushed, and to merge a diverged branch first', () => {
+    const notPushed = implementFirstMessage(templates.implement, {
+      ...sample,
+      attempt: 2,
+      earlierWorkBase: 'origin/main',
+      notPushed: { branch: 't/12-contact-form', diverged: false },
+    });
+    expect(notPushed).toContain('committed on this machine but not pushed to GitHub');
+    expect(notPushed).not.toContain('git merge');
+    const diverged = implementFirstMessage(templates.implement, {
+      ...sample,
+      attempt: 2,
+      earlierWorkBase: 'origin/main',
+      notPushed: { branch: 't/12-contact-form', diverged: true },
+    });
+    expect(diverged).toContain('run `git merge origin/t/12-contact-form`');
+    expect(diverged).toContain('`git log origin/main..HEAD`');
   });
 
   it('quotes the question of the sample ticket in full in the answer', () => {
