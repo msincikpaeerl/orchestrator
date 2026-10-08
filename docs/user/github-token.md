@@ -35,22 +35,28 @@ GitHub cannot tell the Orchestrator which permissions a token has, so the Orches
 
 ## Required permissions
 
-The button fills these in. They are listed here if you create the token by hand.
+The button fills these in. They are listed here if you create the token by hand, with what the Orchestrator does with each from version 0.4.0. "Needs you" names a missing permission the way GitHub's token page shows it, as in the last column.
 
-| Setting on GitHub | Value | What the Orchestrator does with it |
-|---|---|---|
-| Repository access | All repositories | Covers the repositories it creates later. |
-| Administration | Read and write | Creates repositories and protects their main branch. |
-| Contents | Read and write | Commits the first files, creates branches. |
-| Pull requests | Read and write | Opens pull requests and posts review comments, sees when you merge. |
-| Workflows | Read and write | Adds the automatic checks (GitHub Actions) to projects. |
-| Commit statuses | Read-only | Reads the result of automatic checks. |
-| Actions | Read-only | Reads the automatic checks' runs and their logs. |
-| Metadata | Read-only | Required by GitHub for any repository access; added automatically. |
+| Setting on GitHub | Value | What the Orchestrator does with it | Named in "Needs you" |
+|---|---|---|---|
+| Repository access | All repositories | Covers the repositories it creates later. | — |
+| Administration | Read and write | Creates repositories and protects their main branch. | — |
+| Contents | Read and write | Commits the first files of a new project. A machine pushes each ticket's branch with it, and downloads the project when a run starts. | Contents (Read and write) |
+| Pull requests | Read and write | Opens, updates and reopens each ticket's pull request, posts the Quality agent's reviews as comments, and sees when you merge. | Pull requests (Read and write) |
+| Workflows | Read and write | Adds the automatic checks (GitHub Actions) to new projects. A machine needs it to push a ticket's branch that changes a file in `.github/workflows/`: GitHub refuses that push without it, and its message speaks of a "`workflow` scope". | Workflows (Read and write) |
+| Commit statuses | Read-only | Reads the result of automatic checks reported as commit statuses. | — |
+| Actions | Read-only | Reads the automatic checks' runs on each pull request, and the log of a failed one, which the agent gets to fix its work. | — |
+| Metadata | Read-only | Required by GitHub for any repository access; added automatically. Lists your repositories that can be linked to a project. | — |
 
 Organizations are not supported: the token must belong to your personal account.
 
+**A permission missing.** When GitHub refuses something because the token lacks a permission, "Needs you" says which, in the words of the last column, with **Open your tokens on GitHub**. Open the Orchestrator's token in that list, set the permission, and save it. Do not regenerate the token: a new token would have to be entered again in the Orchestrator. Then follow the item: **Run now** for a push (see [When the work cannot be pushed to GitHub](tickets.md#when-the-work-cannot-be-pushed-to-github)), **Try again** for a pull request (see [Pull request not opened](needs-you.md#pull-request-not-opened)).
+
 **What the token gives.** With these permissions on all your repositories, anyone holding the token can change and administer every repository of your account. The Orchestrator keeps it encrypted on the server and gives it to a machine only for one fetch or push at a time; in this version an agent running on that machine could still find a way to take it while its run is active ([Agents on your own user](machines.md#agents-on-your-own-user)). Keep the expiry date, and delete the token on GitHub at once if you suspect it was taken.
+
+## GitHub Actions minutes
+
+From version 0.4.0, each pull request the Orchestrator opens or updates starts your project's automatic checks on GitHub (its GitHub Actions workflows), and an agent whose checks fail tries again, which starts them once more. On a public repository they are free. On a private repository they use the GitHub Actions minutes of your account: GitHub gives a free quota each month, depending on your plan, and bills what goes beyond it if you allowed it. The quota changes over time, so the Orchestrator does not give a number: see GitHub's page [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions), and your usage in your GitHub settings, under Billing.
 
 ## Check or replace the token
 
