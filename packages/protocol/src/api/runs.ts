@@ -139,7 +139,14 @@ export type Run = z.infer<typeof Run>;
  * each check's result, credentials masked; null when none was refused (lot 3 step F4). Only the
  * run page reads it: a refused submission can weigh hundreds of KiB, too much for the lists.
  */
-export const RunDetail = Run.extend({ refusedSubmission: SubmissionRecord.nullable() });
+export const RunDetail = Run.extend({
+  refusedSubmission: SubmissionRecord.nullable(),
+  /**
+   * When the run's accepted submission was handed in; null when none was. Later than the refused
+   * one, the run page says the work was accepted after it (owner's correction, step F4).
+   */
+  acceptedSubmissionAt: z.iso.datetime().nullable(),
+});
 export type RunDetail = z.infer<typeof RunDetail>;
 
 /** Statuses whose time counts as working, and as waiting (01, section 3.7). */

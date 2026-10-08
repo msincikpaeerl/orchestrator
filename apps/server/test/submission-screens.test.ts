@@ -129,6 +129,22 @@ describe('the ticket page (02, section 6.4)', () => {
 });
 
 describe('the run page (02, section 7)', () => {
+  it('says when a refused submission was followed by an accepted one', async () => {
+    const { daemon, runId, runToken } = await working();
+    await h.tool(daemon, runToken, 'ticket_submit', {
+      ...REPORT,
+      criteria: [{ index: 0, status: 'not_met', justification: 'Not yet' }],
+    });
+    const refused = await h.run(runId);
+    expect(refused.acceptedSubmissionAt).toBeNull();
+    await h.ok(daemon, runToken, 'ticket_submit', REPORT);
+    const run = await h.run(runId);
+    expect(run.refusedSubmission).not.toBeNull();
+    expect(Date.parse(run.acceptedSubmissionAt ?? '')).toBeGreaterThan(
+      Date.parse(run.refusedSubmission?.at ?? ''),
+    );
+  });
+
   it("shows the latest refused submission with each check's reasons, credentials masked", async () => {
     const { daemon, runId, runToken } = await working();
     expect((await h.run(runId)).refusedSubmission).toBeNull();

@@ -295,3 +295,17 @@ export function logTime(at: string): string {
 export function runPath(id: string): string {
   return `/activity/runs/${encodeURIComponent(id)}`;
 }
+
+/**
+ * The run page's refused submission followed by the accepted one (owner's correction, step F4):
+ * one sentence with its date, so the refusal is not read as the run's outcome; null otherwise.
+ */
+export function acceptedAfterText(run: {
+  refusedSubmission: { at: string } | null;
+  acceptedSubmissionAt: string | null;
+}): string | null {
+  const refused = run.refusedSubmission;
+  if (!refused || run.acceptedSubmissionAt === null) return null;
+  if (Date.parse(run.acceptedSubmissionAt) <= Date.parse(refused.at)) return null;
+  return `The agent then handed its work in again, and it was accepted on ${formatDateTime(run.acceptedSubmissionAt)}.`;
+}

@@ -6,7 +6,7 @@ import { formatDateTime } from '../github/text';
 import { useRun, useTicket } from '../queries';
 import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/components';
 import { useRunLog } from '../runs/log';
-import { isActive, purposeLabel, runStateText, usageText } from '../runs/text';
+import { acceptedAfterText, isActive, purposeLabel, runStateText, usageText } from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
 import { CheckList, ReportFiles } from '../tickets/submission';
 import { ticketPath } from '../tickets/text';
@@ -53,6 +53,7 @@ function RunLog({ run }: { run: RunDetail }) {
 function RefusedSubmission({ run }: { run: RunDetail }) {
   const refused = run.refusedSubmission;
   if (!refused) return null;
+  const accepted = acceptedAfterText(run);
   return (
     <Card className="space-y-3">
       <h2 className="text-lg font-semibold text-slate-900">Latest refused submission</h2>
@@ -61,6 +62,14 @@ function RefusedSubmission({ run }: { run: RunDetail }) {
         refused agent fixes its work and hands it in again in the same run, except when the branch
         could not be pushed to GitHub.
       </p>
+      {accepted && (
+        <p
+          className="rounded border border-green-300 bg-green-50 px-3 py-2 text-slate-900"
+          aria-label="Accepted afterwards"
+        >
+          {accepted} The results below are those of the earlier, refused submission.
+        </p>
+      )}
       <CheckList checks={refused.checks} />
       <details>
         <summary className="cursor-pointer text-blue-700 underline">Files the agent listed</summary>
