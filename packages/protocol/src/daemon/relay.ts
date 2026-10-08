@@ -4,7 +4,8 @@ import { McpError } from '../mcp/errors.js';
 import { McpToolName } from '../mcp/tools.js';
 import { requiredText } from '../text-limits.js';
 import { message } from './envelope.js';
-import { BranchReport, PushResult, RepositoryOwner } from './git.js';
+import { RUN_TOKEN_MAX_CHARACTERS, SUBMISSION_REPORT_MAX_BYTES, encodedBytes } from './budgets.js';
+import { BranchReport, ChangedFiles, PushResult, RepositoryOwner } from './git.js';
 import { RunId } from './runs.js';
 
 /** A JSON object: a tool's input or output, checked against the tool's own schema by the server. */
@@ -26,13 +27,13 @@ export const WorkspaceFacts = z.object({
   /**
    * Paths changed on the branch against the base branch, relative to the worktree root, for the
    * check that every path the report lists is changed (04, section 3.1; protocol 2). Null when not
-   * collected: absent from a protocol 1 daemon.
+   * read: absent from a protocol 1 daemon.
    */
-  changedFiles: z.array(requiredText()).nullable().default(null),
+  changedFiles: ChangedFiles.nullable().default(null),
 });
 export type WorkspaceFacts = z.infer<typeof WorkspaceFacts>;
 
-const RunToken = requiredText();
+const RunToken = requiredText(RUN_TOKEN_MAX_CHARACTERS);
 
 /** `mcp.call`: a tool call from an agent, answered by `mcp.result` with the same id (06, section 1). */
 export const McpCall = message(
@@ -41,7 +42,11 @@ export const McpCall = message(
     z.object({
       tool: z.literal('ticket_submit'),
       runToken: RunToken,
-      input: JsonObject,
+      /** The DoD report, refused by the daemon above its budget (04, section 8; lot 3 step F). */
+      input: JsonObject.refine(
+        (input) => encodedBytes(input) <= SUBMISSION_REPORT_MAX_BYTES,
+        `at most ${String(SUBMISSION_REPORT_MAX_BYTES)} bytes`,
+      ),
       workspace: WorkspaceFacts,
     }),
     z.object({

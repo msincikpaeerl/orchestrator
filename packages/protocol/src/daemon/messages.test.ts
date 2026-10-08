@@ -110,7 +110,10 @@ const daemonExamples = {
         clean: true,
         branch,
         push: { status: 'pushed', head: hash },
-        changedFiles: ['src/contact/ContactForm.tsx', 'docs/user/contact-form.md'],
+        changedFiles: {
+          listed: ['docs/user/contact-form.md', 'src/contact/ContactForm.tsx'],
+          count: 2,
+        },
       },
     },
   },
@@ -323,7 +326,7 @@ describe('payload checks', () => {
     [
       'mcp.call of ticket_submit with an empty changed path',
       daemonExamples['mcp.call'],
-      (p) => ((p.workspace as Json).changedFiles = ['']),
+      (p) => ((p.workspace as Json).changedFiles = { listed: [''], count: 1 }),
     ],
     [
       'git.credential_request for a ../ repository',
