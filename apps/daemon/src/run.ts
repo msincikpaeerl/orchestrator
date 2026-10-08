@@ -5,6 +5,10 @@ import type { Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import {
   DAEMON_MESSAGE_MAX_BYTES,
+  END_REPORT_TEXT_MAX_CHARACTERS,
+  SUBMISSION_REPORT_MAX_BYTES,
+  cutText,
+  encodedBytes,
   HookInputs,
   McpToolName,
   StatusLineInput,
@@ -627,6 +631,18 @@ export class Run {
     const timeout = start.limits.mcpCallTimeoutSeconds;
     let call: McpCall['payload'];
     if (tool.data === 'ticket_submit') {
+      // Refused before anything is read or pushed: the call must fit in one message with the
+      // facts (04, section 8; lot 3 step F).
+      const size = encodedBytes(args);
+      if (size > SUBMISSION_REPORT_MAX_BYTES) {
+        return {
+          ok: false,
+          error: {
+            code: 'VALIDATION_FAILED',
+            message: `Your DoD report is ${String(size)} bytes, above the ${String(SUBMISSION_REPORT_MAX_BYTES)} bytes the Orchestrator accepts. Shorten its texts (the summary and the justifications) and submit again.`,
+          },
+        };
+      }
       const { bare, worktree } = this.data;
       const facts =
         bare && worktree
@@ -657,6 +673,11 @@ export class Run {
           facts.branch.head,
         );
         this.log.info({ push: facts.push }, 'ticket branch pushed at submission');
+        // The agent cannot fix a failed push: the run ends at the turn's end (lot 3 step F).
+        if (facts.push.status === 'failed') {
+          this.data.decision = 'push_failed';
+          this.save();
+        }
       }
       call = { tool: 'ticket_submit', runToken: start.runToken, input: args, workspace: facts };
     } else {
@@ -665,7 +686,7 @@ export class Run {
     const answer = await this.context.callServer(call, timeout);
     if (answer.ok) {
       const decision = DECISIONS[tool.data];
-      if (decision) {
+      if (decision && this.data.decision !== 'push_failed') {
         this.data.decision = decision;
         this.save();
       }
@@ -702,7 +723,7 @@ export class Run {
       return;
     }
     const { decision } = this.data;
-    if (decision === 'submitted' || decision === 'gave_up') {
+    if (decision === 'submitted' || decision === 'gave_up' || decision === 'push_failed') {
       await this.end(decision, null);
       return;
     }
@@ -1022,11 +1043,15 @@ export class Run {
           sessionAlive: false,
           state: 'ended',
           reason,
-          detail: detail === null ? null : maskSecrets(detail).slice(0, TEXT_CEILING),
+          detail:
+            detail === null ? null : cutText(maskSecrets(detail), END_REPORT_TEXT_MAX_CHARACTERS),
           branch,
           push,
           headMoved,
-          gitConfigRestored,
+          gitConfigRestored:
+            gitConfigRestored === null
+              ? null
+              : cutText(gitConfigRestored, END_REPORT_TEXT_MAX_CHARACTERS),
         },
       });
       await this.closeSocket();

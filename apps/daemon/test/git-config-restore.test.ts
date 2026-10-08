@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CUT_MARKER, END_REPORT_TEXT_MAX_CHARACTERS } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { bareClonePath, worktreePath } from '../src/workspace.js';
 import { gitIn } from './remote.js';
@@ -127,6 +128,24 @@ describe('the Git configuration at a run end', () => {
           home.env,
         ).trim(),
       ).toBe('Web Developer (Orchestrator) <1+owner@users.noreply.github.com>|After the answer');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'cuts what it names at the end report text budget, with the marker (lot 3 step F)',
+    async () => {
+      const manager = daemon();
+      // 200 settings with long names: far more words than the budget.
+      const settings = Array.from(
+        { length: 200 },
+        (_, n) => `git config agent${String(n)}.${'s'.repeat(40)} on`,
+      ).join(' && ');
+      await fake.play({ turns: [{ steps: [{ do: 'bash', command: settings }, GIVE_UP] }] });
+      const run = await start(manager);
+      const end = await ended(run.runId);
+      expect(end.gitConfigRestored).toHaveLength(END_REPORT_TEXT_MAX_CHARACTERS);
+      expect(end.gitConfigRestored?.endsWith(CUT_MARKER)).toBe(true);
     },
     TIMEOUT,
   );
