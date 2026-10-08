@@ -195,7 +195,7 @@ test('a finished run shows the branch and its commits on the ticket page', async
   await reportState(page, runId, 'ended');
 
   await expect(page.getByText('In review').first()).toBeVisible();
-  await expect(page.getByLabel('Branch')).toHaveText(
+  await expect(page.getByLabel('Branch', { exact: true })).toHaveText(
     't/1-contact-form: every commit reported was on GitHub when machine Laptop last pushed or downloaded the branch',
   );
   const commits = page.getByRole('list', { name: 'Commits' });
