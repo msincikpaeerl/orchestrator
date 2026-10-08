@@ -544,6 +544,15 @@ Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine r
 
 **Done when** tests with the fake GitHub show: opened, then updated at the next submission; GitHub unreachable, a permission missing and an unreadable answer (fields named), each then **Try again**; a stop between GitHub's answer and the record opening no second pull request; a closed one reopened; secrets masked, size within the limit, no mention, closing keyword or HTML, in the title and the description.
 
+**The owner's answers (2026-10-08, start of the step)**:
+
+1. **Several pull requests for the branch**: an open one is updated; otherwise only the newest counts: closed without merging, it is reopened then updated; merged (for example a ticket reopened after its merge; GitHub refuses to reopen a merged one, A9), a new one is opened. A test for each of the three.
+2. **GitHub refuses the reopen** (422): a new pull request is opened instead, and the event says the old one could not be reopened.
+3. **"Pull request wanted"** lasts until the pull request is opened or updated, or the ticket is done or cancelled; **Request changes** and **Stop run** keep it.
+4. **`<`, `>` and `&`** are escaped everywhere, inside code spans and blocks too (GitHub then shows `&lt;` there): kept simple and safe.
+5. **Issue links**: the zero-width space goes into `/issues/<digits>` links only, not `/pull/`; `GH-` is matched in any case.
+6. **Choices accepted**: the ticket keeps the pull request's number, link, state and head as last read, "pull request wanted since" and the last failure (reason, permission, unreadable fields, when); conflicts and the refreshed head stay in step J. Events `ticket.pull_request_opened`, `ticket.pull_request_updated`, `ticket.pull_request_reopened`, `ticket.pull_request_not_opened`. One background task per ticket, run once more when a submission comes while it runs. "Needs you" shows "Pull request not opened" with **Try again** from this step (Playwright, desktop and phone); the ticket page's line comes in F4. The description holds what 04 section 3.1 lists, not the ticket's description. The limits are counted after masking, escaping and zero-width spaces, in JavaScript string length. A project key such as `GH` gets its zero-width space in the title too (`GH-12` would be an issue reference). Unreadable answers tested with `github.alter` on the find, create, update and reopen; the stop between GitHub's answer and the record tested with a created pull request answered 502, then **Try again** and a restart.
+
 ### [ ] F4. Screens and docs
 
 - Ticket page: pull request link and state, each check's result, the workflow flag; the "Needs you" rows; Help (Tickets "Submission and the pull request", Needs you, `github-token.md` rewritten for 0.4.0); CHANGELOG.
