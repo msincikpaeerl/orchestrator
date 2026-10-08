@@ -5,6 +5,7 @@ import {
   type AgentLink,
   type NeedsYouItem,
   type DodCheck,
+  type PullRequestFailure,
   type TicketLink,
   type TicketPriority,
   type TicketStatus,
@@ -166,22 +167,27 @@ export function pushFailedText(item: Extract<NeedsYouItem, { type: 'push_failed'
 }
 
 /**
- * "Pull request not opened" in "Needs you" (04, section 3.1; lot 3 step F3): what happened and
- * what to do before **Try again**. `where` says where the owner fixes it: GitHub's token list,
+ * Why a ticket's pull request was not opened or updated (04, section 3.1; lot 3 step F3), for
+ * "Needs you" and the ticket page (step F4): the reason in a few words ("Pull request not opened:
+ * <reason>"), what to do before **Try again**, and where the owner fixes it: GitHub's token list,
  * Settings > GitHub, or nowhere (wait, or read GitHub's words).
  */
-export function pullRequestNotOpenedText(
-  item: Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>,
-): { title: string; detail: string; where: 'tokens' | 'settings' | null; showMessage: boolean } {
-  const ref = ticketRef(item.ticket.projectKey, item.ticket.number);
-  const { failure } = item;
+export function pullRequestFailureText(
+  ref: string,
+  failure: PullRequestFailure,
+): {
+  reason: string;
+  detail: string;
+  where: 'tokens' | 'settings' | null;
+  showMessage: boolean;
+} {
   const onGitHub = `The work of ${ref} is on GitHub, but the Orchestrator could not open or update its pull request.`;
   const tryAgain = 'Then press Try again.';
   switch (failure.reason) {
     case 'permission_missing':
       if (failure.permission !== null) {
         return {
-          title: `Pull request not opened for ${ref}: the token needs ${PULL_REQUEST_PERMISSION_WORDS}`,
+          reason: `the token needs ${PULL_REQUEST_PERMISSION_WORDS}`,
           detail: `${onGitHub} On GitHub's list of your tokens, open the Orchestrator's token, set ${PULL_REQUEST_PERMISSION_WORDS}, and save it; do not regenerate it. ${tryAgain}`,
           where: 'tokens',
           showMessage: false,
@@ -190,7 +196,7 @@ export function pullRequestNotOpenedText(
       break;
     case 'unreachable':
       return {
-        title: `Pull request not opened for ${ref}: GitHub could not be reached`,
+        reason: 'GitHub could not be reached',
         detail: `${onGitHub} Check that the computer running the Orchestrator is connected to the internet and that GitHub works. ${tryAgain} The Orchestrator also tries again by itself each time it starts.`,
         where: null,
         showMessage: false,
@@ -199,21 +205,21 @@ export function pullRequestNotOpenedText(
     case 'token_unreadable':
     case 'token_invalid':
       return {
-        title: `Pull request not opened for ${ref}: the GitHub token cannot be used`,
+        reason: 'the GitHub token cannot be used',
         detail: `${onGitHub} ${sentenceOf(failure.message)} Save a working token in Settings > GitHub. ${tryAgain}`,
         where: 'settings',
         showMessage: false,
       };
     case 'rate_limited':
       return {
-        title: `Pull request not opened for ${ref}: GitHub's request limit was reached`,
+        reason: "GitHub's request limit was reached",
         detail: `${onGitHub} GitHub limits how many requests a token makes per hour. Wait a few minutes. ${tryAgain}`,
         where: null,
         showMessage: false,
       };
     case 'unreadable':
       return {
-        title: `Pull request not opened for ${ref}: GitHub's answer could not be read`,
+        reason: "GitHub's answer could not be read",
         detail: `${onGitHub} GitHub answered in a form this version of the Orchestrator does not read; the fields below say what differed. GitHub may have done it anyway: Try again finds the pull request by its branch, so it never opens a second one. If it keeps failing, report these fields.`,
         where: null,
         showMessage: false,
@@ -222,10 +228,26 @@ export function pullRequestNotOpenedText(
       break;
   }
   return {
-    title: `GitHub refused to open the pull request of ${ref}`,
+    reason: 'GitHub refused it',
     detail: `${onGitHub} GitHub's words are below. When their cause is fixed, press Try again.`,
     where: null,
     showMessage: true,
+  };
+}
+
+/** "Pull request not opened" in "Needs you" (lot 3 step F3): its title and what to do. */
+export function pullRequestNotOpenedText(
+  item: Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>,
+): { title: string; detail: string; where: 'tokens' | 'settings' | null; showMessage: boolean } {
+  const ref = ticketRef(item.ticket.projectKey, item.ticket.number);
+  const { reason, ...rest } = pullRequestFailureText(ref, item.failure);
+  return {
+    ...rest,
+    title:
+      item.failure.reason === 'refused' ||
+      (item.failure.reason === 'permission_missing' && item.failure.permission === null)
+        ? `GitHub refused to open the pull request of ${ref}`
+        : `Pull request not opened for ${ref}: ${reason}`,
   };
 }
 

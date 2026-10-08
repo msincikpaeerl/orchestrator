@@ -1,4 +1,4 @@
-import type { Run } from '@orchestrator/protocol';
+import type { RunDetail } from '@orchestrator/protocol';
 import { Link, useParams } from 'react-router';
 import { ApiRequestError } from '../api';
 import { Card, ErrorMessage, InfoMessage, Loading, PageHeader } from '../components/ui';
@@ -8,21 +8,22 @@ import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/c
 import { useRunLog } from '../runs/log';
 import { isActive, purposeLabel, runStateText, usageText } from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
+import { CheckList, ReportFiles } from '../tickets/submission';
 import { ticketPath } from '../tickets/text';
 
 /** The ticket's number in `WEB-12`. */
-function ticketNumber(run: Run): number {
+function ticketNumber(run: RunDetail): number {
   return Number(run.ticket.slice(run.projectKey.length + 1));
 }
 
 /** The answer box while the run waits for the owner's answer (owner's decision, lot 2 step L). */
-function RunQuestion({ run }: { run: Run }) {
+function RunQuestion({ run }: { run: RunDetail }) {
   const ticket = useTicket(run.projectKey, ticketNumber(run));
   if (run.status !== 'waiting_human' || !ticket.data) return null;
   return <AnswerBox ticket={ticket.data} />;
 }
 
-function RunLog({ run }: { run: Run }) {
+function RunLog({ run }: { run: RunDetail }) {
   const { entries, error } = useRunLog(run.id);
   return (
     <Card className="space-y-3">
@@ -45,7 +46,33 @@ function RunLog({ run }: { run: Run }) {
   );
 }
 
-function RunContent({ run }: { run: Run }) {
+/**
+ * The run's latest refused submission (02, section 7; lot 3 step F4): each check's result and
+ * why, so the owner sees why an agent was refused, also one refused again and again.
+ */
+function RefusedSubmission({ run }: { run: RunDetail }) {
+  const refused = run.refusedSubmission;
+  if (!refused) return null;
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-lg font-semibold text-slate-900">Latest refused submission</h2>
+      <p className="text-slate-700">
+        The agent handed in its work on {formatDateTime(refused.at)}, and the checks refused it. A
+        refused agent fixes its work and hands it in again in the same run, except when the branch
+        could not be pushed to GitHub.
+      </p>
+      <CheckList checks={refused.checks} />
+      <details>
+        <summary className="cursor-pointer text-blue-700 underline">Files the agent listed</summary>
+        <div className="mt-2">
+          <ReportFiles report={refused.report} />
+        </div>
+      </details>
+    </Card>
+  );
+}
+
+function RunContent({ run }: { run: RunDetail }) {
   const number = ticketNumber(run);
   return (
     <>
@@ -138,6 +165,7 @@ function RunContent({ run }: { run: Run }) {
             <CommitList commits={run.branch.commits} />
           )}
         </Card>
+        <RefusedSubmission run={run} />
         <RunLog run={run} />
       </div>
     </>

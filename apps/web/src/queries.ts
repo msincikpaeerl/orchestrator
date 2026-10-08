@@ -15,7 +15,7 @@ import {
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
-  Run,
+  RunDetail,
   RunListResponse,
   TicketListResponse,
 } from '@orchestrator/protocol';
@@ -209,7 +209,7 @@ export function useTicketRuns(projectKey: string, number: number) {
 export function useRun(id: string, enabled = true) {
   return useQuery({
     queryKey: keys.run(id),
-    queryFn: () => api('GET', `/api/runs/${encodeURIComponent(id)}`, Run),
+    queryFn: () => api('GET', `/api/runs/${encodeURIComponent(id)}`, RunDetail),
     enabled: enabled && id !== '',
   });
 }
