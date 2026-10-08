@@ -89,7 +89,7 @@ In this version, a paused run never resumes by itself. [Needs you](needs-you.md#
 
 - The agent reports its work done, every acceptance criterion met, with its commits: the ticket moves to **In review**. In this version, **In review** means the work is finished and waits for you to check it. The ticket page shows the **Agent's report**: its summary, and for each acceptance criterion whether it is met and why.
 - The agent gives up, runs out of time, or its session stops unexpectedly: the run **fails**, the ticket goes back to **To do** with a comment saying why, and **Failed attempts** goes up by one. The run's page says why, with the machine's own words when it gave some (for example "Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits)", see [Machines > Troubleshooting](machines.md#troubleshooting)).
-- Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, a machine that could not start Claude Code in a process scope (see [Process scopes](machines.md#process-scopes)), or a machine that did not confirm the start in time.
+- Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, a machine that could not start Claude Code in a process scope (see [Process scopes](machines.md#process-scopes)), a machine that did not confirm the start in time, or a run whose branch could not be pushed to GitHub when the agent submitted its work (from version 0.4.0).
 
 ## Check finished work
 
