@@ -1,4 +1,8 @@
-import type { AccountStatus, NeedsYouItem } from '@orchestrator/protocol';
+import {
+  GITHUB_TOKEN_LIST_URL,
+  type AccountStatus,
+  type NeedsYouItem,
+} from '@orchestrator/protocol';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { UntrustedMarkdown } from '../components/markdown';
@@ -18,7 +22,7 @@ import {
   RunNowOffer,
   type TicketAddress,
 } from '../tickets/actions';
-import { ticketPath, ticketRef } from '../tickets/text';
+import { pushFailedText, ticketPath, ticketRef } from '../tickets/text';
 
 function itemKey(item: NeedsYouItem): string {
   switch (item.type) {
@@ -27,6 +31,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'question':
     case 'ticket_proposed':
     case 'work_to_check':
+    case 'push_failed':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -150,6 +155,46 @@ function WorkItemCard({
         </Card>
       );
   }
+}
+
+/** A push GitHub refused or could not take (04, section 5): what happened, what to do. */
+function PushFailedCard({ item }: { item: Extract<NeedsYouItem, { type: 'push_failed' }> }) {
+  const { title, detail } = pushFailedText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      {item.reason === 'refused' && item.permission === null && (
+        <pre
+          aria-label="GitHub's words"
+          className="overflow-x-auto rounded bg-slate-100 p-2 text-sm whitespace-pre-wrap break-words text-slate-800"
+        >
+          {item.message}
+        </pre>
+      )}
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap gap-4">
+        {item.permission !== null && (
+          <a
+            href={GITHUB_TOKEN_LIST_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-700 underline"
+          >
+            Open your tokens on GitHub
+          </a>
+        )}
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="tickets#when-the-work-cannot-be-pushed-to-github">What to do</HelpLink>
+      </div>
+    </Card>
+  );
 }
 
 /** Setup still to do and machine problems (02, section 4), with where to fix them. */
@@ -286,6 +331,8 @@ export function NeedsYouPage() {
                 item.type === 'work_to_check' ||
                 item.type === 'run_paused' ? (
                 <WorkItemCard item={item} onChangesRequested={setOffer} />
+              ) : item.type === 'push_failed' ? (
+                <PushFailedCard item={item} />
               ) : (
                 <MachineItemCard item={item} />
               )}

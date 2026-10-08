@@ -158,7 +158,11 @@ test('finished work is sent back with Request changes, then Run now starts the n
       adrs: [],
       summary: 'Adds the contact form with its checks.',
     },
-    { clean: true, branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS } },
+    {
+      clean: true,
+      branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+      push: { status: 'pushed', head: BRANCH_HEAD },
+    },
   );
   await reportState(page, runId, 'ended');
 
@@ -181,6 +185,60 @@ test('finished work is sent back with Request changes, then Run now starts the n
   await offer.getByRole('button', { name: 'Run now' }).click();
   await expect(page).toHaveURL(/\/activity\/runs\/[0-9a-f-]{36}$/);
   const next = page.url().split('/').at(-1) ?? '';
+  expect(next).not.toBe(runId);
+  expect((await runSent(page, next)).type).toBe('run.start');
+});
+
+test("a push GitHub refused names the token's permission, then Run now goes on", async ({
+  page,
+}) => {
+  const { runId, runToken } = await working(page);
+  // GitHub's own words without Contents write (the owner's smoke run, lot 3 step E3).
+  const answer = await daemonRequest(page, 'mcp.call', {
+    tool: 'ticket_submit',
+    runToken,
+    input: {
+      criteria: [
+        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
+        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+      ],
+      tests: { paths: ['src/contact.test.ts'], justification: null },
+      docs: { paths: [], justification: 'No user documentation in this project yet.' },
+      adrs: [],
+      summary: 'Adds the contact form with its checks.',
+    },
+    workspace: {
+      clean: true,
+      branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+      push: {
+        status: 'failed',
+        reason: 'refused',
+        message:
+          "Write access to repository not granted.\nfatal: unable to access 'https://github.com/o/bakery.git/': The requested URL returned error: 403",
+      },
+    },
+  });
+  expect(answer.payload).toMatchObject({ ok: false, error: { code: 'DOD_FAILED' } });
+  await reportState(page, runId, 'ended', { reason: 'push_failed' });
+
+  await page.goto('/');
+  const refused = item(page, 'GitHub refused the push of WEB-1');
+  await expect(refused.getByRole('heading')).toHaveText(
+    'GitHub refused the push of WEB-1: the token needs Contents (Read and write)',
+  );
+  await expect(refused).toContainText('The work is committed on machine Laptop');
+  await expect(refused.getByRole('link', { name: 'Open your tokens on GitHub' })).toHaveAttribute(
+    'href',
+    'https://github.com/settings/personal-access-tokens',
+  );
+  await expect(refused.getByRole('link', { name: 'What to do' })).toHaveAttribute(
+    'href',
+    '/help/tickets#when-the-work-cannot-be-pushed-to-github',
+  );
+  await expectFitsScreen(page);
+
+  await refused.getByRole('link', { name: 'Open the ticket' }).click();
+  const next = await runNow(page);
   expect(next).not.toBe(runId);
   expect((await runSent(page, next)).type).toBe('run.start');
 });

@@ -1,6 +1,8 @@
 import {
   BLOCKABLE_STATUSES,
+  PUSH_PERMISSION_WORDS,
   type AgentLink,
+  type NeedsYouItem,
   type DodCheck,
   type TicketLink,
   type TicketPriority,
@@ -116,4 +118,48 @@ export function statusChangeText(entry: Extract<TimelineEntry, { type: 'status_c
     return `${who} requested changes: it went back to ${statusLabel.todo}.`;
   }
   return `${who} moved it from ${statusLabel[entry.from]} to ${statusLabel[entry.to]}.`;
+}
+
+/**
+ * What a `push_failed` item of "Needs you" says (04, section 5; lot 3 step F): what happened and
+ * what the owner does, a missing permission named as GitHub's token page names it.
+ */
+export function pushFailedText(item: Extract<NeedsYouItem, { type: 'push_failed' }>): {
+  title: string;
+  detail: string;
+} {
+  const ref = ticketRef(item.ticket.projectKey, item.ticket.number);
+  const machine = item.machine.name;
+  const committed = `The work is committed on machine ${machine} but is not on GitHub.`;
+  const next = `press Run now on the ticket: the next run, on ${machine}, pushes the work.`;
+  const runNow = `Then ${next}`;
+  switch (item.reason) {
+    case 'diverged':
+      return {
+        title: `The branch of ${ref} changed on GitHub`,
+        detail: `GitHub's copy of the branch has commits machine ${machine} does not have (for example after "Update branch" on GitHub), so the work could not be pushed. Press Run now on the ticket: the next run, on ${machine}, brings GitHub's commits in with a merge, then pushes.`,
+      };
+    case 'unreachable':
+      return {
+        title: `GitHub could not be reached to push ${ref}`,
+        detail: `${committed} Check that ${machine} is connected to the internet and that GitHub works. ${runNow}`,
+      };
+    case 'refused': {
+      if (item.permission === null) {
+        return {
+          title: `GitHub refused the push of ${ref}`,
+          detail: `${committed} GitHub's words are below. When their cause is fixed, ${next}`,
+        };
+      }
+      const permission = PUSH_PERMISSION_WORDS[item.permission];
+      const why =
+        item.permission === 'workflows'
+          ? ' The work changes a GitHub workflow (a file in .github/workflows/), which needs this permission.'
+          : '';
+      return {
+        title: `GitHub refused the push of ${ref}: the token needs ${permission}`,
+        detail: `${committed}${why} On GitHub's list of your tokens, open the Orchestrator's token, set ${permission}, and save it; do not regenerate it. ${runNow}`,
+      };
+    }
+  }
 }
