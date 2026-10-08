@@ -1,0 +1,2 @@
+ALTER TABLE "runs" DROP CONSTRAINT "runs_failure_reason";--> statement-breakpoint
+ALTER TABLE "runs" ADD CONSTRAINT "runs_failure_reason" CHECK ("runs"."failure_reason" IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved', 'push_failed'));

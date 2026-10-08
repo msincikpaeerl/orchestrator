@@ -1,6 +1,6 @@
-import { appendFile, rm } from 'node:fs/promises';
+import { appendFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DodReport } from '@orchestrator/protocol';
+import { SUBMISSION_REPORT_MAX_BYTES, encodedBytes, type DodReport } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { findExecutable } from '../src/exec.js';
 import { bareClonePath } from '../src/workspace.js';
@@ -17,6 +17,7 @@ import {
   useRunnerHarness,
 } from './runner-harness.js';
 import { fakeExecutable } from './testing.js';
+import { answerTools } from './runner-harness.js';
 
 // The push at `ticket_submit` (05, section 4.9; lot 3 step D1), with the real tmux and Git and
 // the fake `claude`: only the ticket branch, by an explicit refspec, and the head read for the
@@ -150,6 +151,81 @@ describe('the push at ticket_submit', () => {
       // The commit reaches GitHub only with the end push of the run that gave up (lot 3 step D2).
       expect(end).toMatchObject({ reason: 'gave_up', push: { status: 'pushed' } });
       expect(remoteRefs()).toEqual(['refs/heads/main', 'refs/heads/t/1-add-notes']);
+    },
+    TIMEOUT,
+  );
+});
+
+/** GitHub refusing every push, as a remote's pre-receive hook. */
+async function refusePushes(): Promise<void> {
+  const hook = join(cloneUrl.replace(/^file:\/\//, ''), 'hooks', 'pre-receive');
+  await writeFile(hook, '#!/bin/sh\necho "refused by the test" >&2\nexit 1\n', { mode: 0o755 });
+}
+
+describe('a push that failed at ticket_submit (lot 3 step F)', () => {
+  for (const answer of ['accepted', 'refused'] as const) {
+    it(
+      `ends the run at the turn's end with push_failed, the server's answer ${answer}, and still tries the end push`,
+      async () => {
+        await refusePushes();
+        if (answer === 'refused') {
+          answerTools(() => ({
+            ok: false,
+            error: { code: 'DOD_FAILED', message: 'The push failed: end your turn.' },
+          }));
+        }
+        const manager = daemon();
+        await fake.play({
+          turns: [
+            {
+              steps: [
+                { do: 'bash', command: COMMIT },
+                { do: 'mcp', tool: 'ticket_submit', arguments: SUBMISSION },
+                { do: 'text', text: 'The push failed: ending my turn.' },
+              ],
+            },
+          ],
+        });
+        const run = await start(manager);
+        const end = await ended(run.runId);
+        const call = toolCalls[0];
+        if (call?.tool !== 'ticket_submit') throw new Error('no ticket_submit');
+        expect(call.workspace.push).toMatchObject({ status: 'failed', reason: 'refused' });
+        expect(end).toMatchObject({ reason: 'push_failed', push: { status: 'failed' } });
+        expect(remoteRefs()).toEqual(['refs/heads/main']);
+      },
+      TIMEOUT,
+    );
+  }
+
+  it(
+    'refuses a DoD report above its budget before pushing, with both sizes',
+    async () => {
+      const summary = 'x'.repeat(SUBMISSION_REPORT_MAX_BYTES);
+      const report = { ...SUBMISSION, summary };
+      const manager = daemon();
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'bash', command: COMMIT },
+              { do: 'mcp', tool: 'ticket_submit', arguments: report },
+              { do: 'mcp', tool: 'ticket_give_up', arguments: { reason: 'Stop.', tried: 'This.' } },
+            ],
+          },
+        ],
+      });
+      const run = await start(manager);
+      const end = await ended(run.runId);
+      expect(toolCalls.map((call) => call.tool)).toEqual(['ticket_give_up']);
+      const refusal = JSON.stringify(
+        (await fake.log()).find((entry) => entry.event === 'mcp' && entry.tool === 'ticket_submit'),
+      );
+      expect(refusal).toContain('VALIDATION_FAILED');
+      expect(refusal).toContain(`${String(encodedBytes(report))} bytes`);
+      expect(refusal).toContain(`${String(SUBMISSION_REPORT_MAX_BYTES)} bytes`);
+      // Nothing was pushed for the refused call: the branch reached GitHub with the end push.
+      expect(end).toMatchObject({ reason: 'gave_up', push: { status: 'pushed' } });
     },
     TIMEOUT,
   );

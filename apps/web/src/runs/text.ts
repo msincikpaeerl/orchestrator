@@ -48,6 +48,7 @@ export const failureText: Record<FailureReason, string> = {
   ci_failed: 'CI failed more times than the run allows',
   ci_timeout: 'CI did not finish in time',
   review_branch_moved: 'the branch changed during the review',
+  push_failed: 'its branch could not be pushed to GitHub',
 };
 
 export const pauseText: Record<PauseReason, string> = {

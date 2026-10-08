@@ -4,6 +4,7 @@ import { RepositoryName } from '../api/projects.js';
 import { TicketReference } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
 import { message } from './envelope.js';
+import { END_REPORT_TEXT_MAX_CHARACTERS, cutText } from './budgets.js';
 import { BranchReport, GitBranchName, PushResult, RepositoryOwner } from './git.js';
 
 export const RunId = z.uuid();
@@ -68,6 +69,11 @@ export const RunEndReason = z.enum([
   'ci_timeout',
   /** The branch head moved during a review run (04, section 3.2; protocol 2). */
   'review_branch_moved',
+  /**
+   * The push at a `ticket_submit` failed (refused, diverged or GitHub unreachable): the run ends
+   * at the turn's end, since the agent cannot fix it (04, section 3.1; lot 3 step F).
+   */
+  'push_failed',
 ]);
 export type RunEndReason = z.infer<typeof RunEndReason>;
 
@@ -226,8 +232,13 @@ export const RunState = message(
     RunStateBase.extend({
       state: z.literal('ended'),
       reason: RunEndReason,
-      /** Plain-words detail for the event log ("workspace trust or startup dialog suspected"). */
-      detail: boundedText().nullable(),
+      /**
+       * Plain-words detail for the event log ("workspace trust or startup dialog suspected"), cut
+       * at `END_REPORT_TEXT_MAX_CHARACTERS` (lot 3 step F; cut, not refused, from a 0.3.0 daemon).
+       */
+      detail: boundedText()
+        .transform((detail) => cutText(detail, END_REPORT_TEXT_MAX_CHARACTERS))
+        .nullable(),
       /** The ticket branch at the end; null when no worktree was created. */
       branch: BranchReport.nullable(),
       /**
@@ -246,7 +257,7 @@ export const RunState = message(
        * values or content (05, section 7.1; protocol 2). Null when nothing changed, and absent
        * from protocol 1.
        */
-      gitConfigRestored: boundedText().nullable().default(null),
+      gitConfigRestored: boundedText(END_REPORT_TEXT_MAX_CHARACTERS).nullable().default(null),
     }),
   ]),
 );

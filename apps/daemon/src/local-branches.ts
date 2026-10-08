@@ -70,6 +70,8 @@ export async function localBranches(paths: DaemonPaths, git: Git): Promise<Local
               '-C',
               bare,
               'log',
+              // `log.showSignature`, set by an agent, would start `gpg.program` (lot 3 step F).
+              '--no-show-signature',
               '--format=%H%x00%s',
               `refs/heads/${name}`,
               '--not',

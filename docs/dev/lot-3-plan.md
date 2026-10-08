@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3 and F0 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0 and F1 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -491,12 +491,21 @@ Split approved by the owner on 2026-10-08, with the answers below. Scope of the 
 
 *Done 2026-10-08.* Later steps that touched the same files as D3's five commits: only documents (`CHANGELOG.md` in E1; this plan in E1, E2, E2's fixes and E3; `docs/dev/testing.md` in E1, E2's fixes and E3); no code file. With the five commits in, `pnpm typecheck`, `pnpm verify` (1,454 tests) and `pnpm test:e2e` (96, desktop and phone) pass, including E2 and E3's smoke script tests, which use the daemon's branch code.
 
-### [ ] F1. Daemon facts
+### [x] F1. Daemon facts
 
 - The changed files (answer 1) and the budgets (answer 2), with the protocol shapes (protocol 2 is not released: no version change).
 - A failed push at submission ends the run at the turn's end with the end reason `push_failed` (answer 5).
 
 **Done when** daemon tests with real Git show: renames, deletions and the base brought in with `git merge origin/<base>` (twice) giving exactly the branch's own files; no program planted (`diff.external`, a text conversion driver in the configuration and in `.gitattributes`, `core.pager`, hooks, a file system monitor, `config.worktree`) running; the ceiling at its budget and one above; the largest `ticket_submit` and the largest end report within `DAEMON_MESSAGE_MAX_BYTES`; a push failure ending the run at the turn's end.
+
+*Done 2026-10-08.* Choices made in the step (04 section 8, 05 sections 4.9 and 7.1, 03 section 3.2):
+
+- **The budgets' sum, measured** (answer 2 said "about 780 KiB"): two parts were left out of that count, the `notOnGitHub` hashes (at most 500, about 34 KiB) and a push message at 4,000 characters of JSON-escaped text (24,000 bytes). A `ticket_submit` is at most about 830 KiB, an end report about 340 KiB, both built at their largest in `budgets.test.ts`. The branch name (255 characters) and the run token (200) got bounds so "the rest" is bounded too; the end report's detail and restored configuration are cut at 2,000 characters.
+- **Cut or refused**: what a 0.3.0 daemon also sends (commit subjects, the commit list, the end detail) is cut when read, so its reports are still read; the protocol 2 fields (changed files, push message, restored configuration, the DoD report) are refused above their budget, which this daemon never sends.
+- **Found while testing "no program starts"**: `log.showSignature` with `gpg.program`, set in the bare clone by an agent, made the daemon's own `git log` (the branch report, and `orchestrator-daemon status`) start that program for a signed commit; its output even added a bogus commit to the report. Both now run with `--no-show-signature`, each with a test that failed before. `git status` of the facts can still start a filter named in `.gitattributes` (the known limit of 05 section 7.2, unchanged); the changed files never do (tested).
+- **The failure reason `push_failed`** (not counted, migration 0017) comes with this step rather than F2: the server must read the new end reason. Its words: "its branch could not be pushed to GitHub". F2 adds its "Needs you" items, its comment and Run now's first message. Until F2, a server that accepts a submission whose push failed still sees the run end `push_failed` (the daemon's fact wins).
+- **The decision `push_failed`** is kept over any later decision of the same turn, whatever the server answered; the end push is still tried.
+- **An agent-facing text in the daemon**: the refusal of a DoD report above its budget, since such a call cannot reach the server; recorded in 03 section 3.2 as a second exception beside the hook's reasons.
 
 ### [ ] F2. Server checks and `push_failed`
 

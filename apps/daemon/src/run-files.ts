@@ -54,8 +54,12 @@ export const RunStateFile = z.object({
   bare: z.string().nullable(),
   worktree: z.string().nullable(),
   // Defaults: a state.json written by daemon 0.2.0 has none of the fields below.
-  /** An accepted decision tool of the current turn, applied when the turn ends (05, section 4.8). */
-  decision: z.enum(['submitted', 'gave_up', 'asked']).nullable().default(null),
+  /**
+   * An accepted decision tool of the current turn, applied when the turn ends (05, section 4.8);
+   * `push_failed` when the push at a `ticket_submit` failed, whatever the server answered, kept
+   * over any later decision of the turn (04, section 3.1; lot 3 step F).
+   */
+  decision: z.enum(['submitted', 'gave_up', 'asked', 'push_failed']).nullable().default(null),
   /** A `PreToolUse` came during the current turn (05, section 4.10). */
   turnToolUsed: z.boolean().default(false),
   /** When the run started waiting for the owner (epoch ms): the waiting run lifetime's clock. */

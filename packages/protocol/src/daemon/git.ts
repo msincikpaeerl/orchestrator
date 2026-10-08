@@ -1,5 +1,15 @@
 import { z } from 'zod';
 import { boundedText, requiredText } from '../text-limits.js';
+import {
+  BRANCH_REPORT_COMMITS_MAX_BYTES,
+  CHANGED_FILES_MAX_BYTES,
+  COMMIT_SUBJECT_MAX_CHARACTERS,
+  GIT_BRANCH_NAME_MAX_CHARACTERS,
+  PUSH_MESSAGE_MAX_CHARACTERS,
+  cutText,
+  encodedBytes,
+  fitList,
+} from './budgets.js';
 
 /** A full commit hash: SHA-1 (40 hexadecimal digits) or SHA-256 (64). */
 export const GitHash = z
@@ -11,7 +21,7 @@ export type GitHash = z.infer<typeof GitHash>;
  * A branch name the daemon can pass to Git as an argument: no leading `-` (it would read as an
  * option), no `..`, no empty part, no trailing `/`, `.` or `.lock`.
  */
-export const GitBranchName = requiredText().refine(
+export const GitBranchName = requiredText(GIT_BRANCH_NAME_MAX_CHARACTERS).refine(
   (name) =>
     /^[A-Za-z0-9_][A-Za-z0-9._/-]*$/.test(name) &&
     !name.includes('..') &&
@@ -24,6 +34,15 @@ export type GitBranchName = z.infer<typeof GitBranchName>;
 /** A commit ahead of the base branch, as the ticket page lists it (01, section 3.7). */
 export const CommitSummary = z.object({ hash: GitHash, subject: boundedText() });
 export type CommitSummary = z.infer<typeof CommitSummary>;
+
+/**
+ * A commit as a branch report carries it: its subject cut at `COMMIT_SUBJECT_MAX_CHARACTERS`
+ * with a marker (lot 3 step F). Cut, not refused, so a 0.3.0 daemon's report is still read.
+ */
+const ReportedCommit = z.object({
+  hash: GitHash,
+  subject: boundedText().transform((subject) => cutText(subject, COMMIT_SUBJECT_MAX_CHARACTERS)),
+});
 
 /**
  * Most commits a branch report lists (05, section 4.9; lot 3 step D3): the newest ones. Commits
@@ -49,8 +68,15 @@ export type NotOnGitHub = z.infer<typeof NotOnGitHub>;
 export const BranchReport = z.object({
   name: GitBranchName,
   head: GitHash,
-  /** Newest first, at most `BRANCH_REPORT_MAX_COMMITS`. */
-  commitsAhead: z.array(CommitSummary).max(BRANCH_REPORT_MAX_COMMITS),
+  /**
+   * Newest first, at most `BRANCH_REPORT_MAX_COMMITS` and the newest that fit in
+   * `BRANCH_REPORT_COMMITS_MAX_BYTES` (lot 3 step F): the daemon sends no more, and a longer list
+   * from a 0.3.0 daemon is cut the same way.
+   */
+  commitsAhead: z
+    .array(ReportedCommit)
+    .max(BRANCH_REPORT_MAX_COMMITS)
+    .transform((commits) => fitList(commits, BRANCH_REPORT_COMMITS_MAX_BYTES)),
   /**
    * What of it is not on GitHub, as the machine knows (protocol 2); null when not read, and
    * absent from protocol 1: the server then counts every commit no push held.
@@ -58,6 +84,24 @@ export const BranchReport = z.object({
   notOnGitHub: NotOnGitHub.nullable().default(null),
 });
 export type BranchReport = z.infer<typeof BranchReport>;
+
+/**
+ * The files the branch changed against the base branch, as Git gives them (05, section 4.9; lot 3
+ * step F): `listed`, sorted, while they fit in `CHANGED_FILES_MAX_BYTES`; `count`, all of them.
+ * Paths are kept exactly, never trimmed, for the exact comparison with the report's paths.
+ */
+export const ChangedFiles = z
+  .object({
+    listed: z
+      .array(z.string().min(1))
+      .refine(
+        (paths) => encodedBytes(paths) <= CHANGED_FILES_MAX_BYTES,
+        `at most ${String(CHANGED_FILES_MAX_BYTES)} bytes`,
+      ),
+    count: z.int().min(0),
+  })
+  .refine((value) => value.listed.length <= value.count, 'count is below the listed files');
+export type ChangedFiles = z.infer<typeof ChangedFiles>;
 
 /** GitHub account or organisation name: a path part of the bare clone (05, section 4.2). */
 export const RepositoryOwner = z
@@ -82,6 +126,11 @@ export type PushFailureReason = z.infer<typeof PushFailureReason>;
  */
 export const PushResult = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pushed'), head: GitHash }),
-  z.object({ status: z.literal('failed'), reason: PushFailureReason, message: requiredText() }),
+  z.object({
+    status: z.literal('failed'),
+    reason: PushFailureReason,
+    /** Cut by the daemon at `PUSH_MESSAGE_MAX_CHARACTERS`, keeping its end (lot 3 step F). */
+    message: requiredText(PUSH_MESSAGE_MAX_CHARACTERS),
+  }),
 ]);
 export type PushResult = z.infer<typeof PushResult>;

@@ -196,8 +196,23 @@ export { McpPermission, ROLE_MCP_PERMISSIONS } from './mcp/permissions.js';
 export { parseAgentProfileFile, type AgentProfileFile } from './api/agent-profile-file.js';
 export { Ack, DAEMON_MESSAGE_MAX_BYTES, MessageId, message } from './daemon/envelope.js';
 export {
+  BRANCH_REPORT_COMMITS_MAX_BYTES,
+  CHANGED_FILES_MAX_BYTES,
+  COMMIT_SUBJECT_MAX_CHARACTERS,
+  CUT_MARKER,
+  END_REPORT_TEXT_MAX_CHARACTERS,
+  GIT_BRANCH_NAME_MAX_CHARACTERS,
+  PUSH_MESSAGE_MAX_CHARACTERS,
+  RUN_TOKEN_MAX_CHARACTERS,
+  SUBMISSION_REPORT_MAX_BYTES,
+  cutText,
+  encodedBytes,
+  fitList,
+} from './daemon/budgets.js';
+export {
   BRANCH_REPORT_MAX_COMMITS,
   BranchReport,
+  ChangedFiles,
   CommitSummary,
   GitBranchName,
   GitHash,

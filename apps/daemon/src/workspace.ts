@@ -1,9 +1,15 @@
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
+  BRANCH_REPORT_COMMITS_MAX_BYTES,
   BRANCH_REPORT_MAX_COMMITS,
-  TEXT_CEILING,
+  CHANGED_FILES_MAX_BYTES,
+  COMMIT_SUBJECT_MAX_CHARACTERS,
+  PUSH_MESSAGE_MAX_CHARACTERS,
+  cutText,
+  fitList,
   type BranchReport,
+  type ChangedFiles,
   type NotOnGitHub,
   type PushResult,
   type RunStart,
@@ -421,11 +427,11 @@ export class Workspaces {
       return {
         status: 'failed',
         reason: 'unreachable',
-        message:
-          `The push could not start: ${error instanceof Error ? error.message : String(error)}`.slice(
-            0,
-            TEXT_CEILING,
-          ),
+        message: cutText(
+          `The push could not start: ${error instanceof Error ? error.message : String(error)}`,
+          PUSH_MESSAGE_MAX_CHARACTERS,
+          'end',
+        ),
       };
     }
   }
@@ -450,6 +456,8 @@ export class Workspaces {
       '-C',
       bare,
       'log',
+      // `log.showSignature`, set by an agent, would start `gpg.program` (lot 3 step F).
+      '--no-show-signature',
       `--max-count=${String(BRANCH_REPORT_MAX_COMMITS)}`,
       '--format=%H%x00%s',
       range,
@@ -457,13 +465,18 @@ export class Workspaces {
     const report: BranchReport = {
       name: repository.ticketBranch,
       head,
-      commitsAhead: log
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => {
-          const [hash = '', subject = ''] = line.split('\0');
-          return { hash, subject: subject.slice(0, TEXT_CEILING) };
-        }),
+      // Within the budgets (04, section 8; lot 3 step F): subjects cut with a marker, and the
+      // newest commits that fit; `notOnGitHub` still counts every commit.
+      commitsAhead: fitList(
+        log
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const [hash = '', subject = ''] = line.split('\0');
+            return { hash, subject: cutText(subject, COMMIT_SUBJECT_MAX_CHARACTERS) };
+          }),
+        BRANCH_REPORT_COMMITS_MAX_BYTES,
+      ),
       notOnGitHub: null,
     };
     report.notOnGitHub = await this.notOnGitHub(bare, report);
@@ -495,8 +508,60 @@ export class Workspaces {
       { [RUN_MARKER]: runId },
     );
     const branch = await this.branchReport(bare, repository);
-    // The changed files are not collected before lot 3's step F; the push is added by the run.
-    return branch ? { clean: status.trim() === '', branch, push: null, changedFiles: null } : null;
+    if (!branch) return null;
+    // The push is added by the run.
+    return {
+      clean: status.trim() === '',
+      branch,
+      push: null,
+      changedFiles: await this.changedFiles(bare, repository, branch.head),
+    };
+  }
+
+  /**
+   * The files `head` changed against the base branch, as GitHub's "Files changed" tab compares
+   * them (05, section 4.9; lot 3 step F): from the merge base with the fetched base branch, so
+   * what the base brought, merged or not, is not listed; a rename gives both paths, a deletion
+   * its path. Without a base branch or a merge base, every file of `head`. Sorted, the first that
+   * fit `CHANGED_FILES_MAX_BYTES` listed, all counted. Plumbing commands only, reading no file
+   * content and no worktree: no external diff, text conversion, pager, attribute driver or filter
+   * an agent named can start.
+   */
+  async changedFiles(
+    bare: string,
+    repository: Pick<Repository, 'baseBranch'>,
+    head: string,
+  ): Promise<ChangedFiles> {
+    const { git } = this.options;
+    const base = `refs/remotes/origin/${repository.baseBranch}`;
+    let mergeBase: string | null = null;
+    if (await git.hasRef(bare, base)) {
+      const found = await git.exec(['-C', bare, 'merge-base', base, head]);
+      // 1: no common ancestor.
+      if (found.code === 0) mergeBase = found.stdout.trim();
+      else if (found.code !== 1) throw new Error(`merge base not read: ${found.stderr.trim()}`);
+    }
+    const listing = await git.run(
+      mergeBase === null
+        ? ['-C', bare, 'ls-tree', '-r', '-z', '--name-only', head]
+        : [
+            '-C',
+            bare,
+            'diff-tree',
+            '-r',
+            '-z',
+            '--name-only',
+            '--no-renames',
+            '--no-commit-id',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--ignore-submodules=none',
+            mergeBase,
+            head,
+          ],
+    );
+    const paths = [...new Set(listing.split('\0').filter(Boolean))].sort();
+    return { listed: fitList(paths, CHANGED_FILES_MAX_BYTES), count: paths.length };
   }
 
   /** Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). */

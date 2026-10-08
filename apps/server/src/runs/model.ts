@@ -107,6 +107,7 @@ export function endOfReason(
     case 'ci_failed':
     case 'ci_timeout':
     case 'review_branch_moved':
+    case 'push_failed':
       return { status: 'failed', failureReason: reason };
   }
 }
@@ -143,6 +144,8 @@ export function failureWords(reason: FailureReason): string {
       return 'CI did not finish in time';
     case 'review_branch_moved':
       return 'the branch changed during the review';
+    case 'push_failed':
+      return 'its branch could not be pushed to GitHub';
   }
 }
 
