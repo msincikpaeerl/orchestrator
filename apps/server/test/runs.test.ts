@@ -786,6 +786,25 @@ describe('the run reported by the daemon (05, section 4.7)', () => {
       "The run on machine Laptop ended: its machine could not start Claude Code in a process scope (Claude Code could not be started in the run's process scope (Access denied)). It does not count as a failed attempt.",
     ]);
   });
+
+  it('fails a run whose push at its submission failed with push_failed, not counted (lot 3 step F)', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    await working(daemon, created.id);
+    expect(
+      await report(daemon, state(created.id, { state: 'ended', reason: 'push_failed' })),
+    ).toEqual({ ok: true });
+    expect(await run(created.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'push_failed',
+    });
+    const detail = await ticket();
+    expect(detail).toMatchObject({ status: 'todo', attemptCount: 0 });
+    expect(comments(detail)).toEqual([
+      'The run on machine Laptop ended: its branch could not be pushed to GitHub. It does not count as a failed attempt.',
+    ]);
+  });
 });
 
 describe('Stop run (04, section 2)', () => {

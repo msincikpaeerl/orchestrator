@@ -30,6 +30,8 @@ export const FailureReason = z.enum([
   'ci_timeout',
   /** The branch head moved during a review run (lot 3). */
   'review_branch_moved',
+  /** The push at a submission failed: refused, diverged or GitHub unreachable (lot 3 step F). */
+  'push_failed',
 ]);
 export type FailureReason = z.infer<typeof FailureReason>;
 
@@ -42,6 +44,7 @@ export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
   'cancelled',
   'ci_timeout',
   'review_branch_moved',
+  'push_failed',
 ];
 
 /** What made a run change status, for its events and the run page. */
