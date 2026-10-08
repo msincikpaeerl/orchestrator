@@ -357,7 +357,10 @@ describe('the workflow flag (04, section 3.1)', () => {
 
   it('is raised with its reason on the checked submission', () => {
     const changed = { listed: ['.github/workflows/ci.yml', 'src/contact.ts'], count: 2 };
-    const checked = checkSubmission(texts, facts({ workspace: workspace({ changedFiles: changed }) }));
+    const checked = checkSubmission(
+      texts,
+      facts({ workspace: workspace({ changedFiles: changed }) }),
+    );
     expect(checked).toMatchObject({ workflowChanges: true, workflowReason: 'changed' });
     expect(workflowReason(null)).toBe('not_listed');
   });

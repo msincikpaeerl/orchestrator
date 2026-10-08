@@ -246,7 +246,9 @@ export type TicketBranch = z.infer<typeof TicketBranch>;
  * accepted submission still waits for it; and the latest failed attempt.
  */
 export const TicketPullRequest = z.object({
-  opened: z.object({ number: z.int().positive(), url: z.url(), state: PullRequestState }).nullable(),
+  opened: z
+    .object({ number: z.int().positive(), url: z.url(), state: PullRequestState })
+    .nullable(),
   wanted: z.boolean(),
   failure: PullRequestFailure.nullable(),
 });

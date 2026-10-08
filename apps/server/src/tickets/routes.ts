@@ -55,7 +55,6 @@ import {
 import { ticketBranch } from './branch.js';
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
-
 /** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
 function ticketPullRequest(ticket: TicketRow): TicketPullRequest {
   const { pullRequestNumber: number, pullRequestUrl: url, pullRequestState: state } = ticket;
