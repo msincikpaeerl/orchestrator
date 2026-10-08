@@ -136,7 +136,7 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
     expect(Object.values(results(submission.checks))).toEqual(Array(6).fill('passed'));
     const ticket = await ticketRow();
     expect(results(ticket.dodChecks)).toEqual(results(submission.checks));
-    expect(ticket.workflowChanges).toBe(false);
+    expect(ticket).toMatchObject({ workflowChanges: false, workflowReason: null });
     const [event] = await h.events('ticket.submitted');
     expect(event).toMatchObject({ payload: { criteria: 2, workflowChanges: false } });
 
@@ -199,10 +199,14 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       messages: [
         'Could not be fully done: this machine listed 1 of the 5000 files the branch changed, so 2 listed paths could not be compared.',
       ],
+      reasons: [{ kind: 'files_cut', listed: 1, count: 5000, unchecked: 2 }],
     });
-    // A cut list may hide a workflow: flagged, the safe side.
-    expect(submission.workflowChanges).toBe(true);
-    expect((await ticketRow()).workflowChanges).toBe(true);
+    // A cut list may hide a workflow: flagged, the safe side, with its reason.
+    expect(submission).toMatchObject({ workflowChanges: true, workflowReason: 'not_listed' });
+    expect(await ticketRow()).toMatchObject({
+      workflowChanges: true,
+      workflowReason: 'not_listed',
+    });
   });
 
   it('flags a branch that changes a workflow', async () => {
@@ -215,7 +219,7 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       REPORT,
       cleanWorkspace({ changedFiles: { listed, count: 3 } }),
     );
-    expect((await ticketRow()).workflowChanges).toBe(true);
+    expect(await ticketRow()).toMatchObject({ workflowChanges: true, workflowReason: 'changed' });
     const [event] = await h.events('ticket.submitted');
     expect(event).toMatchObject({ payload: { workflowChanges: true } });
   });

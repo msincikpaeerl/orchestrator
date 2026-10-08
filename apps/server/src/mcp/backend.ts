@@ -1090,6 +1090,7 @@ export class McpBackend {
       report,
       checks: checked.checks,
       workflowChanges: checked.workflowChanges,
+      workflowReason: checked.workflowReason,
     };
     const refused = refusal(texts, checked);
     if (refused) throw new SubmissionRefused(refused, call, record);
@@ -1099,6 +1100,7 @@ export class McpBackend {
         dodReport: report,
         dodChecks: checked.checks,
         workflowChanges: checked.workflowChanges,
+        workflowReason: checked.workflowReason,
         // Opened or updated after the answer, never inside the call (04, section 3.1).
         pullRequestWantedSince: at,
         updatedAt: at,

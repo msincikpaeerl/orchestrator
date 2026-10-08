@@ -1,12 +1,15 @@
 import {
   shorten,
   type ChangedFiles,
+  type CheckReason,
   type DodCheck,
   type DodCheckResult,
   type DodReport,
   type McpError,
   type McpErrorDetail,
+  type ReportList,
   type TicketType,
+  type WorkflowReason,
   type WorkspaceFacts,
 } from '@orchestrator/protocol';
 import type { Template } from '../agents/files.js';
@@ -38,10 +41,16 @@ export function normalisePath(path: string): NormalisedPath {
   return { kind: 'path', path: parts.join('/') };
 }
 
-/** The workflow flag: a changed path under `.github/workflows/`, or a list cut or not sent. */
-export function changesWorkflows(changedFiles: ChangedFiles | null): boolean {
-  if (changedFiles === null || changedFiles.listed.length < changedFiles.count) return true;
-  return changedFiles.listed.some((path) => path.startsWith(WORKFLOWS));
+/**
+ * Why the workflow flag is raised, or null: a changed path under `.github/workflows/`, even in
+ * the part of a cut list received; otherwise a list cut or not sent (owner's answer 2, step F4).
+ */
+export function workflowReason(changedFiles: ChangedFiles | null): WorkflowReason | null {
+  if (changedFiles?.listed.some((path) => path.startsWith(WORKFLOWS))) return 'changed';
+  if (changedFiles === null || changedFiles.listed.length < changedFiles.count) {
+    return 'not_listed';
+  }
+  return null;
 }
 
 export interface SubmissionFacts {
@@ -56,6 +65,7 @@ export interface SubmissionFacts {
 export interface CheckedSubmission {
   checks: DodCheckResult[];
   workflowChanges: boolean;
+  workflowReason: WorkflowReason | null;
   /** The push failed: the agent is told only that, and the run ends (04, section 3.1). */
   pushFailed: boolean;
 }
@@ -82,40 +92,73 @@ export function criteriaOutOfRange(
   };
 }
 
-const result = (
-  check: DodCheck,
-  messages: string[],
-  otherwise: DodCheckResult['result'] = 'passed',
-): DodCheckResult => ({ check, result: messages.length > 0 ? 'failed' : otherwise, messages });
+/** A check's failure: the agent's message and the same as facts, for the owner's screens. */
+interface Issue {
+  message: string;
+  reason: CheckReason;
+}
+
+const result = (check: DodCheck, issues: Issue[]): DodCheckResult => ({
+  check,
+  result: issues.length > 0 ? 'failed' : 'passed',
+  messages: issues.map((issue) => issue.message),
+  reasons: issues.map((issue) => issue.reason),
+});
 
 /** Every check, in the order of 04 section 3.1; the refusal is built from them. */
 export function checkSubmission(texts: Template, facts: SubmissionFacts): CheckedSubmission {
   const { report, workspace } = facts;
   const branch = workspace.branch.name;
 
-  const criteria: string[] = [];
+  const criteria: Issue[] = [];
   facts.criteria.forEach((text, index) => {
     const entry = report.criteria.find((each) => each.index === index);
-    const values = { index: String(index), text: shorten(text, 120) };
-    if (!entry) criteria.push(part(texts, 'criterion-missing', values));
-    else if (entry.status !== 'met') criteria.push(part(texts, 'criterion-not-met', values));
+    const short = shorten(text, 120);
+    const values = { index: String(index), text: short };
+    if (!entry) {
+      criteria.push({
+        message: part(texts, 'criterion-missing', values),
+        reason: { kind: 'criterion_missing', index, text: short },
+      });
+    } else if (entry.status !== 'met') {
+      criteria.push({
+        message: part(texts, 'criterion-not-met', values),
+        reason: { kind: 'criterion_not_met', index, text: short },
+      });
+    }
   });
 
-  const clean = workspace.clean ? [] : [part(texts, 'worktree-dirty')];
-  const ahead =
+  const clean: Issue[] = workspace.clean
+    ? []
+    : [{ message: part(texts, 'worktree-dirty'), reason: { kind: 'uncommitted_changes' } }];
+  const ahead: Issue[] =
     workspace.branch.commitsAhead.length > 0
       ? []
-      : [part(texts, 'no-commits', { branch, base: facts.baseBranch })];
+      : [
+          {
+            message: part(texts, 'no-commits', { branch, base: facts.baseBranch }),
+            reason: { kind: 'no_commits', base: facts.baseBranch },
+          },
+        ];
 
   // The daemon pushes only a clean worktree with commits ahead (05, section 4.9).
   const push = workspace.push;
   let pushed: DodCheckResult;
   if (push?.status === 'pushed') pushed = result('pushed', []);
   else if (push?.status === 'failed') {
-    pushed = result('pushed', [part(texts, `push-${push.reason}`, { branch })]);
+    pushed = result('pushed', [
+      {
+        message: part(texts, `push-${push.reason}`, { branch }),
+        reason: { kind: `push_${push.reason}` },
+      },
+    ]);
   } else if (clean.length > 0 || ahead.length > 0) {
-    pushed = { check: 'pushed', result: 'skipped', messages: [] };
-  } else pushed = result('pushed', [part(texts, 'push-missing', { branch })]);
+    pushed = { check: 'pushed', result: 'skipped', messages: [], reasons: [] };
+  } else {
+    pushed = result('pushed', [
+      { message: part(texts, 'push-missing', { branch }), reason: { kind: 'push_missing' } },
+    ]);
+  }
 
   const paths = checkPaths(texts, facts);
   return {
@@ -127,7 +170,8 @@ export function checkSubmission(texts: Template, facts: SubmissionFacts): Checke
       paths.typeRules,
       paths.pathsChanged,
     ],
-    workflowChanges: changesWorkflows(workspace.changedFiles),
+    workflowChanges: workflowReason(workspace.changedFiles) !== null,
+    workflowReason: workflowReason(workspace.changedFiles),
     pushFailed: push?.status === 'failed',
   };
 }
@@ -144,62 +188,93 @@ function checkPaths(
   const listedPaths = changed?.listed ?? [];
   const listed = new Set(listedPaths);
   const complete = changed !== null && changed.listed.length === changed.count;
-  const failures: string[] = [];
+  const failures: Issue[] = [];
   let unchecked = 0;
 
-  const state = (field: string, path: string): PathState => {
+  const fields: Record<ReportList, string> = {
+    tests: 'tests.paths',
+    docs: 'docs.paths',
+    adrs: 'adrs',
+  };
+  const state = (list: ReportList, path: string): PathState => {
+    const field = fields[list];
     const normalised = normalisePath(path);
     if (normalised.kind === 'outside') {
-      failures.push(part(texts, 'path-outside', { field, path }));
+      failures.push({
+        message: part(texts, 'path-outside', { field, path }),
+        reason: { kind: 'path_outside', list, path },
+      });
       return 'failed';
     }
     if (listed.has(normalised.path)) return 'changed';
     const prefix = normalised.path === '' ? '' : `${normalised.path}/`;
     if (normalised.path === '' || listedPaths.some((each) => each.startsWith(prefix))) {
-      failures.push(part(texts, 'path-folder', { field, path }));
+      failures.push({
+        message: part(texts, 'path-folder', { field, path }),
+        reason: { kind: 'path_folder', list, path },
+      });
       return 'failed';
     }
     if (complete) {
-      failures.push(part(texts, 'path-not-changed', { field, path, base: facts.baseBranch }));
+      failures.push({
+        message: part(texts, 'path-not-changed', { field, path, base: facts.baseBranch }),
+        reason: { kind: 'path_not_changed', list, path },
+      });
       return 'failed';
     }
     unchecked += 1;
     return 'unknown';
   };
-  for (const path of report.tests.paths) state('tests.paths', path);
-  const docs = report.docs.paths.map((path) => state('docs.paths', path));
+  for (const path of report.tests.paths) state('tests', path);
+  const docs = report.docs.paths.map((path) => state('docs', path));
   const adrs = report.adrs.map((path) => state('adrs', path));
 
-  const pathsChanged =
+  const incomplete: Issue =
+    changed === null
+      ? { message: part(texts, 'paths-unknown'), reason: { kind: 'files_not_sent' } }
+      : {
+          message: part(texts, 'paths-cut', {
+            listed: String(changed.listed.length),
+            count: String(changed.count),
+            unchecked: String(unchecked),
+          }),
+          reason: {
+            kind: 'files_cut',
+            listed: changed.listed.length,
+            count: changed.count,
+            unchecked,
+          },
+        };
+  const pathsChanged: DodCheckResult =
     failures.length > 0 || unchecked === 0
       ? result('paths_changed', failures)
       : {
-          check: 'paths_changed' as const,
-          result: 'incomplete' as const,
-          messages: [
-            changed === null
-              ? part(texts, 'paths-unknown')
-              : part(texts, 'paths-cut', {
-                  listed: String(changed.listed.length),
-                  count: String(changed.count),
-                  unchecked: String(unchecked),
-                }),
-          ],
+          check: 'paths_changed',
+          result: 'incomplete',
+          messages: [incomplete.message],
+          reasons: [incomplete.reason],
         };
 
   // 04 section 3.3: a docs ticket needs a documentation path, a spike an ADR or one; changed on
   // the branch, or not known otherwise when the machine's list was cut.
   const required =
     facts.ticketType === 'docs'
-      ? { states: docs, text: 'type-docs' }
+      ? { states: docs, text: 'type-docs', kind: 'docs_rule' as const }
       : facts.ticketType === 'spike'
-        ? { states: [...adrs, ...docs], text: 'type-spike' }
+        ? { states: [...adrs, ...docs], text: 'type-spike', kind: 'spike_rule' as const }
         : null;
   let typeRules: DodCheckResult = result('type_rules', []);
   if (required !== null && !required.states.includes('changed')) {
     typeRules = required.states.includes('unknown')
-      ? { check: 'type_rules', result: 'incomplete', messages: pathsChanged.messages }
-      : result('type_rules', [part(texts, required.text)]);
+      ? {
+          check: 'type_rules',
+          result: 'incomplete',
+          messages: [incomplete.message],
+          reasons: [incomplete.reason],
+        }
+      : result('type_rules', [
+          { message: part(texts, required.text), reason: { kind: required.kind } },
+        ]);
   }
   return { typeRules, pathsChanged };
 }

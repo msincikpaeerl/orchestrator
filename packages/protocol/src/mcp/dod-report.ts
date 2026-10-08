@@ -42,19 +42,63 @@ export const DodReport = z.strictObject({
 });
 export type DodReport = z.infer<typeof DodReport>;
 
+/** The report's list a path came from: tests, documentation or ADRs. */
+export const ReportList = z.enum(['tests', 'docs', 'adrs']);
+export type ReportList = z.infer<typeof ReportList>;
+
+/**
+ * Why a check failed or could not be fully done, as facts (lot 3 step F4): the screens word it
+ * for the owner when they show it, so a wording fix applies to every submission kept. One per
+ * message, in the same order. Strings are the agent's or the ticket's (a path, a criterion).
+ */
+export const CheckReason = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('criterion_missing'), index: z.int().min(0), text: z.string() }),
+  z.object({ kind: z.literal('criterion_not_met'), index: z.int().min(0), text: z.string() }),
+  z.object({ kind: z.literal('uncommitted_changes') }),
+  z.object({ kind: z.literal('no_commits'), base: z.string() }),
+  z.object({ kind: z.literal('push_diverged') }),
+  z.object({ kind: z.literal('push_refused') }),
+  z.object({ kind: z.literal('push_unreachable') }),
+  z.object({ kind: z.literal('push_missing') }),
+  z.object({ kind: z.literal('docs_rule') }),
+  z.object({ kind: z.literal('spike_rule') }),
+  z.object({ kind: z.literal('path_outside'), list: ReportList, path: z.string() }),
+  z.object({ kind: z.literal('path_folder'), list: ReportList, path: z.string() }),
+  z.object({ kind: z.literal('path_not_changed'), list: ReportList, path: z.string() }),
+  z.object({
+    kind: z.literal('files_cut'),
+    listed: z.int().min(0),
+    count: z.int().min(0),
+    unchecked: z.int().min(0),
+  }),
+  z.object({ kind: z.literal('files_not_sent') }),
+]);
+export type CheckReason = z.infer<typeof CheckReason>;
+export type CheckReasonKind = CheckReason['kind'];
+
 /**
  * One submission check's result (04, section 3.1; lot 3 step F): `incomplete` when the server
  * could not fully do it (the machine's list of changed files was cut, or not sent), which never
  * refuses a submission; `skipped` when an earlier check made it pointless (no push is tried on a
  * worktree with uncommitted changes). `messages` are the texts the agent received, or for an
- * incomplete check what could not be done.
+ * incomplete check what could not be done; `reasons` the same as facts, empty for a submission
+ * kept before step F4.
  */
 export const DodCheckResult = z.object({
   check: DodCheck,
   result: z.enum(['passed', 'failed', 'incomplete', 'skipped']),
   messages: z.array(z.string()),
+  reasons: z.array(CheckReason).default([]),
 });
 export type DodCheckResult = z.infer<typeof DodCheckResult>;
+
+/**
+ * Why the workflow flag is raised (04, section 3.1; lot 3 step F4): a changed file under
+ * `.github/workflows/` (also when it is in the part of a cut list received), or the machine's
+ * list of changed files cut or not sent, so a workflow change cannot be ruled out.
+ */
+export const WorkflowReason = z.enum(['changed', 'not_listed']);
+export type WorkflowReason = z.infer<typeof WorkflowReason>;
 
 /**
  * A submission as the server checked it: kept for the accepted one (on the run and the ticket)
@@ -66,5 +110,7 @@ export const SubmissionRecord = z.object({
   checks: z.array(DodCheckResult),
   /** The branch changes `.github/workflows/`, or its changed files were cut or not sent. */
   workflowChanges: z.boolean(),
+  /** Why the flag is raised; null when it is not, or for a submission kept before step F4. */
+  workflowReason: WorkflowReason.nullable().default(null),
 });
 export type SubmissionRecord = z.infer<typeof SubmissionRecord>;

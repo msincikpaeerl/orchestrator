@@ -2,11 +2,11 @@ import type { DodReport, WorkspaceFacts } from '@orchestrator/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadTemplates, type Template } from '../agents/files.js';
 import {
-  changesWorkflows,
   checkSubmission,
   criteriaOutOfRange,
   normalisePath,
   refusal,
+  workflowReason,
   type SubmissionFacts,
 } from './submission-checks.js';
 
@@ -136,7 +136,12 @@ describe('checkSubmission', () => {
     );
     expect(checked.worktree_clean?.result).toBe('failed');
     expect(checked.commits_ahead?.result).toBe('failed');
-    expect(checked.pushed).toEqual({ check: 'pushed', result: 'skipped', messages: [] });
+    expect(checked.pushed).toEqual({
+      check: 'pushed',
+      result: 'skipped',
+      messages: [],
+      reasons: [],
+    });
   });
 
   it.each([
@@ -226,6 +231,7 @@ describe('listed paths (04, section 3.1)', () => {
       messages: [
         'Could not be fully done: this machine listed 1 of the 40 files the branch changed, so 2 listed paths could not be compared.',
       ],
+      reasons: [{ kind: 'files_cut', listed: 1, count: 40, unchecked: 2 }],
     });
     // A cut list still finds a folder and a path outside the repository.
     const refused = refusal(
@@ -249,6 +255,7 @@ describe('listed paths (04, section 3.1)', () => {
       messages: ['Could not be done: this machine did not send the files the branch changed.'],
     });
     expect(checked.workflowChanges).toBe(true);
+    expect(checked.workflowReason).toBe('not_listed');
   });
 });
 
@@ -309,25 +316,121 @@ describe('rules per ticket type (04, section 3.3)', () => {
     expect(checked.type_rules?.result).toBe('incomplete');
   });
 
+  it('a type rule not fully done says why, even when another listed path failed', () => {
+    const checked = results(
+      facts({
+        ticketType: 'docs',
+        report: { ...REPORT, tests: { paths: ['src'], justification: null } },
+        workspace: workspace({ changedFiles: { listed: ['src/contact.ts'], count: 9 } }),
+      }),
+    );
+    expect(checked.paths_changed?.result).toBe('failed');
+    expect(checked.type_rules).toMatchObject({
+      result: 'incomplete',
+      messages: [matching(/^Could not be fully done: this machine listed 1 of the 9 files/)],
+    });
+  });
+
   it.each(['feature', 'bug', 'chore'] as const)(
     'a %s ticket has no rule beyond the form',
     (type) => {
       expect(
         results(facts({ ticketType: type, report: { ...REPORT, docs: noDocs } })).type_rules,
-      ).toEqual({ check: 'type_rules', result: 'passed', messages: [] });
+      ).toEqual({ check: 'type_rules', result: 'passed', messages: [], reasons: [] });
     },
   );
 });
 
 describe('the workflow flag (04, section 3.1)', () => {
   it.each([
-    [['src/a.ts'], 1, false],
-    [['.github/workflows/ci.yml'], 1, true],
-    [['.github/workflows-notes.md'], 1, false],
-    [['.GitHub/Workflows/ci.yml'], 1, false],
-    [['.github/dependabot.yml'], 1, false],
-    [['src/a.ts'], 2, true],
-  ])('%j of %i changed files: %s', (listed, count, flagged) => {
-    expect(changesWorkflows({ listed, count })).toBe(flagged);
+    [['src/a.ts'], 1, null],
+    [['.github/workflows/ci.yml'], 1, 'changed'],
+    [['.github/workflows-notes.md'], 1, null],
+    [['.GitHub/Workflows/ci.yml'], 1, null],
+    [['.github/dependabot.yml'], 1, null],
+    [['src/a.ts'], 2, 'not_listed'],
+    // A workflow file in the part of a cut list received: the owner's answer 2, step F4.
+    [['.github/workflows/ci.yml'], 2, 'changed'],
+  ])('%j of %i changed files: %s', (listed, count, reason) => {
+    expect(workflowReason({ listed, count })).toBe(reason);
+  });
+
+  it('is raised with its reason on the checked submission', () => {
+    const changed = { listed: ['.github/workflows/ci.yml', 'src/contact.ts'], count: 2 };
+    const checked = checkSubmission(texts, facts({ workspace: workspace({ changedFiles: changed }) }));
+    expect(checked).toMatchObject({ workflowChanges: true, workflowReason: 'changed' });
+    expect(workflowReason(null)).toBe('not_listed');
+  });
+});
+
+describe('reasons for the owner (lot 3 step F4)', () => {
+  it('pairs every message of a failed or incomplete check with its reason, in order', () => {
+    const checked = checkSubmission(
+      texts,
+      facts({
+        ticketType: 'docs',
+        report: {
+          ...REPORT,
+          criteria: [{ index: 0, status: 'not_met', justification: 'No' }],
+          tests: { paths: ['../secrets.txt', 'src'], justification: null },
+          docs: { paths: [], justification: 'None' },
+          adrs: ['docs/adr/0002-other.md'],
+        },
+        workspace: workspace({
+          clean: false,
+          push: null,
+          branch: { ...workspace().branch, commitsAhead: [] },
+        }),
+      }),
+    );
+    const reasons = Object.fromEntries(checked.checks.map((each) => [each.check, each.reasons]));
+    expect(reasons).toEqual({
+      criteria_met: [
+        { kind: 'criterion_not_met', index: 0, text: 'The contact page has a form' },
+        { kind: 'criterion_missing', index: 1, text: 'The e-mail address is checked' },
+      ],
+      worktree_clean: [{ kind: 'uncommitted_changes' }],
+      commits_ahead: [{ kind: 'no_commits', base: 'main' }],
+      pushed: [],
+      type_rules: [{ kind: 'docs_rule' }],
+      paths_changed: [
+        { kind: 'path_outside', list: 'tests', path: '../secrets.txt' },
+        { kind: 'path_folder', list: 'tests', path: 'src' },
+        { kind: 'path_not_changed', list: 'adrs', path: 'docs/adr/0002-other.md' },
+      ],
+    });
+    for (const each of checked.checks) expect(each.reasons).toHaveLength(each.messages.length);
+  });
+
+  it.each([
+    ['diverged', 'push_diverged'],
+    ['refused', 'push_refused'],
+    ['unreachable', 'push_unreachable'],
+  ] as const)('gives a push failed as %s its reason', (reason, kind) => {
+    const checked = results(
+      facts({ workspace: workspace({ push: { status: 'failed', reason, message: 'No' } }) }),
+    );
+    expect(checked.pushed?.reasons).toEqual([{ kind }]);
+  });
+
+  it('gives the push not made, the spike rule and a list not sent their reasons', () => {
+    expect(results(facts({ workspace: workspace({ push: null }) })).pushed?.reasons).toEqual([
+      { kind: 'push_missing' },
+    ]);
+    const spike = results(
+      facts({
+        ticketType: 'spike',
+        report: { ...REPORT, docs: { paths: [], justification: 'None' } },
+      }),
+    );
+    expect(spike.type_rules?.reasons).toEqual([{ kind: 'spike_rule' }]);
+    const unsent = results(
+      facts({ ticketType: 'docs', workspace: workspace({ changedFiles: null }) }),
+    );
+    expect(unsent.paths_changed?.reasons).toEqual([{ kind: 'files_not_sent' }]);
+    expect(unsent.type_rules).toMatchObject({
+      result: 'incomplete',
+      reasons: [{ kind: 'files_not_sent' }],
+    });
   });
 });

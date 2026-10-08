@@ -264,6 +264,11 @@ export const tickets = pgTable(
      */
     dodChecks: jsonb('dod_checks'),
     workflowChanges: boolean('workflow_changes'),
+    /**
+     * Why the flag is raised (`WorkflowReason`: `changed` or `not_listed`; lot 3 step F4); null
+     * when it is not, or for a report accepted before step F4.
+     */
+    workflowReason: text('workflow_reason'),
     /** The agent profile expected to do the work (01, section 3.4); null when unassigned. */
     assigneeProfileId: uuid('assignee_profile_id').references(() => agentProfiles.id),
     /** `t/<number>-<slug>`, set at the first run (01, section 3.4; 04, section 4). */
@@ -311,6 +316,7 @@ export const tickets = pgTable(
     check('tickets_created_by', sql`${table.createdBy} IN ('owner', 'agent')`),
     index('tickets_created_by_run_id').on(table.createdByRunId),
     check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
+    check('tickets_workflow_reason', sql`${table.workflowReason} IN ('changed', 'not_listed')`),
     check(
       'tickets_pull_request_state',
       sql`${table.pullRequestState} IN ('open', 'closed', 'merged')`,
