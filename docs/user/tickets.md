@@ -132,6 +132,24 @@ Open the ticket and:
 - click **Accept** to keep it: it moves to **To do**, ready for **Run now**. You can **Edit** it before or after accepting it;
 - or click **Reject**, write why if you like, and confirm: the ticket is **Cancelled** with its history. You can reopen it later.
 
+## When the work cannot be pushed to GitHub
+
+From version 0.4.0, when an agent submits its work, its machine first pushes the ticket's branch to GitHub. If GitHub refuses the push or cannot be reached, the agent can do nothing about it, so it stops at once:
+
+- the run ends as **failed**, with the reason "its branch could not be pushed to GitHub". It does **not** count as a failed attempt;
+- the ticket goes back to **To do**, with a comment saying what happened. The work stays committed on that machine;
+- [Needs you](needs-you.md#agents-work) shows what to do, as one of these items:
+
+| Item | Why | What to do |
+|---|---|---|
+| GitHub refused the push of …: the token needs Contents (Read and write) | The GitHub token is not allowed to write to the repository. | Click **Open your tokens on GitHub**, open the Orchestrator's token, set **Contents** to **Read and write**, and save it. Do not regenerate the token: a new token would have to be entered again in the Orchestrator. Then **Run now**. |
+| GitHub refused the push of …: the token needs Workflows (Read and write) | The work changes a GitHub workflow, a file in `.github/workflows/`, and the token is not allowed to. GitHub's own message speaks of a "`workflow` scope": this is the **Workflows** permission of the token page. | Same, with **Workflows** set to **Read and write**. Before you do, keep in mind that a workflow change runs on GitHub before anyone reads it, and could weaken the checks that judge the agent's work. |
+| GitHub refused the push of … (other reasons) | GitHub refused for another reason, for example a rule of the repository. The item shows GitHub's own words, with any secret hidden. | Fix the cause on GitHub, then **Run now**. |
+| The branch of … changed on GitHub | GitHub's copy of the ticket's branch has commits the machine does not have, for example after **Update branch** on GitHub or a push by hand. The Orchestrator never overwrites GitHub's branch. | **Run now**: the next run, on the same machine, first brings GitHub's commits in with a merge, then continues and pushes. |
+| GitHub could not be reached to push … | The machine could not connect to GitHub. | Check that the machine is connected to the internet and that GitHub works, then **Run now**. |
+
+**Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done. It stays while the next run works.
+
 ## Ticket states
 
 | State | Meaning |

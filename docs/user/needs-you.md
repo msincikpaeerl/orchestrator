@@ -29,10 +29,11 @@ Each item links to its ticket; its buttons are the same as on the ticket page.
 | Question from agent … | An agent needs a decision only you can make; the ticket is **Waiting for you**. | Write your answer in **Your answer** and click **Send answer**, as on the ticket page (see [Questions](runs.md#questions)). |
 | Ticket proposed by agent … | While working, an agent found more work and proposed a ticket. | **Accept** it (it moves to **To do**) or **Reject** it (see [Tickets proposed by agents](tickets.md#tickets-proposed-by-agents)). |
 | Work finished: check it | An agent finished a ticket: it is **In review**. The item shows the agent's summary; **Open the run** shows its log. | If the work is right, **Mark as done manually**. If not, **Request changes** (see [Check finished work](runs.md#check-finished-work)). |
+| GitHub refused the push of … / The branch of … changed on GitHub / GitHub could not be reached to push … | From version 0.4.0: the agent's work is committed on its machine, but could not be pushed to GitHub. The item names the token permission to give when GitHub said which, in the words of GitHub's token page, with **Open your tokens on GitHub**. | Fix what the item says, then open the ticket and click **Run now**. See [When the work cannot be pushed to GitHub](tickets.md#when-the-work-cannot-be-pushed-to-github). |
 | Run paused: Claude usage limit reached | The run stopped at the usage limit of its Claude account. The item says when you can resume it, "(estimated)" when Claude gave no reset time. | Wait for that time, then click **Resume**: the button becomes available by itself. Or **Stop run**. |
 | Run paused: possible Claude usage limit | The run stopped on an error that may be the usage limit, or Claude being overloaded, or a network problem. | Click **Resume** at once: the run may pause again if it was the limit. Or **Stop run**. |
 
-In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, resumed or stopped.
+In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, resumed or stopped, or the branch pushed to GitHub.
 
 ## GitHub items
 
