@@ -1,4 +1,4 @@
-import { maskSecrets, type DodReport } from '@orchestrator/protocol';
+import { isLoopback, maskSecrets, type DodReport } from '@orchestrator/protocol';
 import type { Template } from '../agents/files.js';
 import { fill, part } from '../agents/messages.js';
 
@@ -71,9 +71,7 @@ export function ticketLink(
     `projects/${encodeURIComponent(projectKey)}/tickets/${String(number)}`,
     base.href.endsWith('/') ? base.href : `${base.href}/`,
   ).href;
-  const host = base.hostname.replace(/^\[|\]$/g, '');
-  const loopback = host === 'localhost' || host === '::1' || /^127\.\d+\.\d+\.\d+$/.test(host);
-  return { url, loopback };
+  return { url, loopback: isLoopback(base.hostname) };
 }
 
 export interface PullRequestBodyInput {

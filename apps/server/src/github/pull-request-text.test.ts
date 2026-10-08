@@ -146,7 +146,11 @@ describe('pullRequestBody', () => {
     const long = 'x'.repeat(PULL_REQUEST_BODY_MAX_LENGTH);
     const text = body({
       workflowChanges: true,
-      report: { ...report, summary: long, tests: { paths: ['a'.repeat(30_000)], justification: null } },
+      report: {
+        ...report,
+        summary: long,
+        tests: { paths: ['a'.repeat(30_000)], justification: null },
+      },
     });
     expect(text.length).toBeLessThanOrEqual(PULL_REQUEST_BODY_MAX_LENGTH);
     expect(text.length).toBeGreaterThan(PULL_REQUEST_BODY_MAX_LENGTH - 100);
