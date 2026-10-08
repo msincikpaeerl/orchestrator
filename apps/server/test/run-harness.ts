@@ -5,6 +5,7 @@ import {
   ClaudeAccount,
   EnrollmentResponse,
   Run,
+  RunDetail,
   TicketDetail,
   type McpCall,
   type McpResult,
@@ -127,10 +128,10 @@ export class RunHarness {
     return TicketDetail.parse(response.json());
   }
 
-  async run(id: string): Promise<Run> {
+  async run(id: string): Promise<RunDetail> {
     const response = await this.call('GET', `/api/runs/${id}`);
     expect(response.statusCode, response.body).toBe(200);
-    return Run.parse(response.json());
+    return RunDetail.parse(response.json());
   }
 
   /** A machine enrolled and connected with its account, sending heartbeats. */

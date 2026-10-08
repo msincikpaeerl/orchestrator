@@ -7,8 +7,10 @@ import {
   RUN_LOG_PAGE_SIZE,
   RunHistoryQuery,
   RunLogQuery,
+  SubmissionRecord,
   TicketNumber,
   type LiveRunsResponse,
+  type RunDetail,
   type RunHistoryResponse,
   type RunListResponse,
   type RunLogEntry,
@@ -19,6 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
+import { maskStrings } from '../event-log.js';
 import { HttpError, parseInput } from '../http.js';
 import { runNotFound, type RunService } from './service.js';
 
@@ -167,7 +170,17 @@ export function registerRunRoutes(
 
   app.get<RunParams>('/api/runs/:id', async (request) => {
     await requireSession(db, request);
-    return runs.view(runId(request.params.id));
+    const id = runId(request.params.id);
+    const run = await runs.view(id);
+    const [row] = await db
+      .select({ refused: schema.runs.refusedSubmission })
+      .from(schema.runs)
+      .where(eq(schema.runs.id, id));
+    const refused = row?.refused ?? null;
+    return {
+      ...run,
+      refusedSubmission: refused === null ? null : maskStrings(SubmissionRecord.parse(refused)),
+    } satisfies RunDetail;
   });
 
   app.post<RunParams>('/api/runs/:id/stop', async (request) => {
