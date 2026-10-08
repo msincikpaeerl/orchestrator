@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CUT_MARKER, PUSH_MESSAGE_MAX_CHARACTERS } from '@orchestrator/protocol';
 import { checkCloneUrl, pushResult } from './isolated-git.js';
 
 // Reading a push's outcome from `git push --porcelain` (05, section 4.9). The texts are Git
@@ -136,6 +137,29 @@ describe('pushResult', () => {
       reason: 'unreachable',
       message: 'The push took longer than Longest push (1 second) and was stopped.',
     });
+  });
+
+  it('cuts a long message at its budget, keeping its end, which says why (lot 3 step F)', () => {
+    const noise = Array.from({ length: 400 }, (_, n) => `remote: line ${String(n)} of noise`);
+    const why =
+      "fatal: unable to access 'https://github.com/owner/notes.git/': Could not resolve host";
+    const result = pushResult(
+      { code: 128, stdout: '', stderr: [...noise, why].join('\n'), timedOut: false },
+      none,
+      expected,
+    );
+    if (result.status !== 'failed') throw new Error('not failed');
+    expect(result.message).toHaveLength(PUSH_MESSAGE_MAX_CHARACTERS);
+    expect(result.message.startsWith(CUT_MARKER)).toBe(true);
+    expect(result.message.endsWith(why)).toBe(true);
+    // Short ones are kept whole.
+    const refused = pushResult(
+      { code: 128, stdout: '', stderr: 'fatal: could not read Username', timedOut: false },
+      { refusal: 'x'.repeat(PUSH_MESSAGE_MAX_CHARACTERS), secret: null },
+      expected,
+    );
+    if (refused.status !== 'failed') throw new Error('not failed');
+    expect(refused.message).toHaveLength(PUSH_MESSAGE_MAX_CHARACTERS);
   });
 
   it('never reads another ref as the pushed one', () => {

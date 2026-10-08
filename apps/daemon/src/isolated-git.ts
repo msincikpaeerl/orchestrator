@@ -4,6 +4,8 @@ import { isIP } from 'node:net';
 import { join } from 'node:path';
 import {
   GitHash,
+  PUSH_MESSAGE_MAX_CHARACTERS,
+  cutText,
   HIDDEN,
   TEXT_CEILING,
   maskSecrets,
@@ -435,8 +437,22 @@ const DIVERGED = /\[rejected\] \((?:non-fast-forward|fetch first|stale info)\)/;
 const REFUSED_BY_GITHUB =
   /Authentication failed|could not read Username|could not read Password|terminal prompts disabled|The requested URL returned error: 40[134]|Permission to \S+ denied|Repository not found|repository '[^']*' not found/;
 
-/** Reads a push's outcome (exported for tests of the parsing alone). */
+/**
+ * Reads a push's outcome (exported for tests of the parsing alone). A failure's message is cut at
+ * `PUSH_MESSAGE_MAX_CHARACTERS`, keeping its end, where Git and GitHub say why (lot 3 step F).
+ */
 export function pushResult(
+  pushed: Spawned,
+  credential: { refusal: string | null; secret: string | null },
+  expected: { ref: string; head: string; timeoutSeconds: number },
+): PushResult {
+  const result = readPushResult(pushed, credential, expected);
+  return result.status === 'failed'
+    ? { ...result, message: cutText(result.message, PUSH_MESSAGE_MAX_CHARACTERS, 'end') }
+    : result;
+}
+
+function readPushResult(
   pushed: Spawned,
   credential: { refusal: string | null; secret: string | null },
   expected: { ref: string; head: string; timeoutSeconds: number },
