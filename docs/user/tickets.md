@@ -150,6 +150,14 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 
 **Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done, or the machine is revoked (its work not on GitHub is then lost, see [Runs](runs.md#where-the-work-is)). It stays while the next run works.
 
+## The pull request
+
+From version 0.4.0, when an agent's submission passes the checks, the Orchestrator opens a pull request for the ticket on GitHub, from the ticket's branch into the project's default branch. Its title is the ticket's number and title, and its description holds the agent's summary, the acceptance criteria, the tests, documentation and architecture decisions it lists, a warning when the work changes a GitHub workflow, and a link to the ticket in the Orchestrator. A later accepted submission updates the same pull request; one you closed without merging is reopened. If a pull request of the ticket was already merged, a new one is opened.
+
+Nothing in it can act on GitHub by itself: secrets are hidden, HTML is shown as text, and an invisible space is added after `@`, `#` and `GH-` (and in links to issues), so the text notifies nobody and closes no issue. A ticket title longer than GitHub allows for a pull request is cut, and so is a very long description, with a note saying so. One limit remains: a commit message an agent wrote with "fixes #3" still closes issue 3 when you merge, since the Orchestrator never rewrites the agent's commits.
+
+If GitHub cannot open it, [Needs you](needs-you.md#pull-request-not-opened) says why, with **Try again**.
+
 ## Ticket states
 
 | State | Meaning |
