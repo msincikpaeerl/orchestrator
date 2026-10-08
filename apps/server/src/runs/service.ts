@@ -6,10 +6,13 @@ import {
   CLAUDE_CODE_MIN_VERSION,
   Capability,
   FIRST_MESSAGE_MAX_BYTES,
+  PUSH_PERMISSION_WORDS,
+  PushResult,
   RunStatus,
   TicketStatus,
   claudeCodeSupport,
   maskSecrets,
+  shorten,
   type Ack,
   type BranchReport,
   type FailureReason,
@@ -73,7 +76,14 @@ import {
   type CommentRow,
   type TicketRow,
 } from '../tickets/model.js';
-import { commitsNotOnGitHub, pushedCommits, recordPush, runReport } from '../tickets/branch.js';
+import {
+  commitsNotOnGitHub,
+  pushFailure,
+  pushPermission,
+  pushedCommits,
+  recordPush,
+  runReport,
+} from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
 import {
@@ -165,6 +175,7 @@ export class RunService {
       log: options.log,
       now: () => this.now(),
       secondMs: this.secondMs,
+      templates: async () => (await this.files()).templates,
     });
   }
 
@@ -351,9 +362,11 @@ export class RunService {
     const detail = facts.detail ? ` (${facts.detail})` : '';
     const comment =
       facts.comment ??
-      (counted
-        ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
-        : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
+      (failureReason === 'push_failed'
+        ? await this.pushFailedComment(tx, locked.ticket.id, locked.run.id, locked.machine.name)
+        : counted
+          ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
+          : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
     await applyRunAction(tx, {
       projectKey: locked.project.key,
       ticket: locked.ticket,
@@ -365,6 +378,43 @@ export class RunService {
       comment,
       now: this.now(),
     });
+  }
+
+  /**
+   * The `system` comment of a run ended `push_failed` (04, section 5; lot 3 step F), from the
+   * ticket's failure as it stands after the run's end push: gone when the end push was done.
+   */
+  private async pushFailedComment(
+    tx: Executor,
+    ticketId: string,
+    runId: string,
+    machineName: string,
+  ): Promise<string> {
+    const [ticket] = await tx.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId));
+    if (!ticket) throw new Error(`ticket ${ticketId} not found`);
+    const [run] = await tx
+      .select({ push: schema.runs.push })
+      .from(schema.runs)
+      .where(eq(schema.runs.id, runId));
+    const failure = pushFailure(ticket);
+    const ended = `The run on machine ${machineName} ended: its branch could not be pushed to GitHub`;
+    const uncounted = 'It does not count as a failed attempt.';
+    if (failure === null) {
+      // The run's own latest push is its end push when it made one.
+      return PushResult.nullable().parse(run?.push ?? null)?.status === 'pushed'
+        ? `${ended} when the agent submitted, but the push at the run's end succeeded, so the branch is on GitHub now. ${uncounted} Run now continues the work on any machine.`
+        : `${ended}. ${uncounted}`;
+    }
+    const permission = failure.reason === 'refused' ? pushPermission(failure.message) : null;
+    const why =
+      failure.reason === 'diverged'
+        ? ", because GitHub's copy of the branch has commits that machine does not have. The next run brings them in with a merge."
+        : failure.reason === 'unreachable'
+          ? ', because GitHub could not be reached.'
+          : permission === null
+            ? `, because GitHub refused it: ${shorten(failure.message, 300)}`
+            : `, because GitHub refused it. The token needs the permission ${PUSH_PERMISSION_WORDS[permission]}.`;
+    return `${ended}${why} ${uncounted} The work is committed on ${machineName}: "Needs you" says what to do, then Run now continues it there.`;
   }
 
   /** Whether every commit of a branch report is on GitHub (07, section 3; lot 3 step D3). */
@@ -781,6 +831,14 @@ export class RunService {
         pushedCommits(ticket).size > 0
           ? `origin/${baseBranch}`
           : null;
+      // A push that failed and none done since: the work is committed but not on GitHub.
+      const failure = pushFailure(ticket);
+      const branchName = ticket.branchName ?? ticketBranchName(ticket.number, ticket.title);
+      // Only on the machine whose push failed: another machine starts from GitHub's branch.
+      const notPushed =
+        failure === null || failure.machineId !== machine.id
+          ? null
+          : { branch: branchName, diverged: failure.reason === 'diverged' };
       let initialPrompt: string;
       try {
         initialPrompt = implementFirstMessage(
@@ -791,6 +849,7 @@ export class RunService {
             ticket,
             attempt,
             earlierWorkBase,
+            notPushed,
           }),
         );
       } catch (error) {
@@ -801,7 +860,6 @@ export class RunService {
         );
       }
 
-      const branchName = ticket.branchName ?? ticketBranchName(ticket.number, ticket.title);
       if (ticket.branchName === null) {
         await tx.update(schema.tickets).set({ branchName }).where(eq(schema.tickets.id, ticket.id));
       }

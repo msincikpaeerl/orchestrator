@@ -188,13 +188,15 @@ test('a finished run shows the branch and its commits on the ticket page', async
     {
       clean: true,
       branch: { name: 't/1-contact-form', head: BRANCH_HEAD, commitsAhead: COMMITS },
+      // From lot 3 step F2 a submission is accepted only once its push is done.
+      push: { status: 'pushed', head: BRANCH_HEAD },
     },
   );
   await reportState(page, runId, 'ended');
 
   await expect(page.getByText('In review').first()).toBeVisible();
   await expect(page.getByLabel('Branch')).toHaveText(
-    't/1-contact-form on machine Laptop, not on GitHub yet',
+    't/1-contact-form: every commit reported was on GitHub when machine Laptop last pushed or downloaded the branch',
   );
   const commits = page.getByRole('list', { name: 'Commits' });
   await expect(commits.getByRole('listitem')).toHaveText([

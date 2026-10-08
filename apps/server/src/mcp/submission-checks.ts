@@ -1,0 +1,225 @@
+import {
+  shorten,
+  type ChangedFiles,
+  type DodCheck,
+  type DodCheckResult,
+  type DodReport,
+  type McpError,
+  type McpErrorDetail,
+  type TicketType,
+  type WorkspaceFacts,
+} from '@orchestrator/protocol';
+import type { Template } from '../agents/files.js';
+import { fill, part } from '../agents/messages.js';
+
+// The mechanical checks of a full `ticket_submit` (04, sections 3.1 and 3.3; lot 3 step F):
+// criteria, the worktree, the push, the rules per ticket type and the listed paths, on the
+// daemon's facts (05, section 4.9). Every text the agent reads comes from the template
+// `agents/templates/submit-checks.md` (03, section 3.2).
+
+/** Where a workflow lives: a change there is flagged (04, section 3.1). Case-sensitive. */
+const WORKFLOWS = '.github/workflows/';
+
+/** A report path after the POSIX rules of 04 section 3.1, or why it leaves the repository. */
+export type NormalisedPath = { kind: 'path'; path: string } | { kind: 'outside' };
+
+/**
+ * A leading `./` removed, repeated `/` collapsed, a trailing `/` removed and `.` resolved (04,
+ * section 3.1). `..` is not resolved: a path still starting with `/` or `..`, or holding a NUL
+ * or a backslash, is outside the repository; one with `..` further on matches no changed file.
+ * The root itself (`.`) gives an empty path, a folder.
+ */
+export function normalisePath(path: string): NormalisedPath {
+  if (path.includes('\0') || path.includes('\\') || path.startsWith('/')) {
+    return { kind: 'outside' };
+  }
+  const parts = path.split('/').filter((part) => part !== '' && part !== '.');
+  if (parts[0] === '..') return { kind: 'outside' };
+  return { kind: 'path', path: parts.join('/') };
+}
+
+/** The workflow flag: a changed path under `.github/workflows/`, or a list cut or not sent. */
+export function changesWorkflows(changedFiles: ChangedFiles | null): boolean {
+  if (changedFiles === null || changedFiles.listed.length < changedFiles.count) return true;
+  return changedFiles.listed.some((path) => path.startsWith(WORKFLOWS));
+}
+
+export interface SubmissionFacts {
+  ticketType: TicketType;
+  /** The ticket's acceptance criteria, by index. */
+  criteria: readonly string[];
+  report: DodReport;
+  workspace: WorkspaceFacts;
+  baseBranch: string;
+}
+
+export interface CheckedSubmission {
+  checks: DodCheckResult[];
+  workflowChanges: boolean;
+  /** The push failed: the agent is told only that, and the run ends (04, section 3.1). */
+  pushFailed: boolean;
+}
+
+/** Criteria reported with an index the ticket does not have: the input is wrong. */
+export function criteriaOutOfRange(
+  texts: Template,
+  criteria: readonly string[],
+  report: DodReport,
+): McpError | null {
+  const outOfRange = report.criteria.filter((entry) => entry.index >= criteria.length);
+  if (outOfRange.length === 0) return null;
+  return {
+    code: 'VALIDATION_FAILED',
+    message: part(texts, 'criteria-out-of-range', {
+      count: String(criteria.length),
+      last: String(criteria.length - 1),
+      indexes: outOfRange.map((entry) => entry.index).join(', '),
+    }),
+    details: outOfRange.map((entry) => ({
+      field: `criteria.${String(report.criteria.indexOf(entry))}.index`,
+      message: part(texts, 'criteria-out-of-range-field', { index: String(entry.index) }),
+    })),
+  };
+}
+
+const result = (
+  check: DodCheck,
+  messages: string[],
+  otherwise: DodCheckResult['result'] = 'passed',
+): DodCheckResult => ({ check, result: messages.length > 0 ? 'failed' : otherwise, messages });
+
+/** Every check, in the order of 04 section 3.1; the refusal is built from them. */
+export function checkSubmission(texts: Template, facts: SubmissionFacts): CheckedSubmission {
+  const { report, workspace } = facts;
+  const branch = workspace.branch.name;
+
+  const criteria: string[] = [];
+  facts.criteria.forEach((text, index) => {
+    const entry = report.criteria.find((each) => each.index === index);
+    const values = { index: String(index), text: shorten(text, 120) };
+    if (!entry) criteria.push(part(texts, 'criterion-missing', values));
+    else if (entry.status !== 'met') criteria.push(part(texts, 'criterion-not-met', values));
+  });
+
+  const clean = workspace.clean ? [] : [part(texts, 'worktree-dirty')];
+  const ahead =
+    workspace.branch.commitsAhead.length > 0
+      ? []
+      : [part(texts, 'no-commits', { branch, base: facts.baseBranch })];
+
+  // The daemon pushes only a clean worktree with commits ahead (05, section 4.9).
+  const push = workspace.push;
+  let pushed: DodCheckResult;
+  if (push?.status === 'pushed') pushed = result('pushed', []);
+  else if (push?.status === 'failed') {
+    pushed = result('pushed', [part(texts, `push-${push.reason}`, { branch })]);
+  } else if (clean.length > 0 || ahead.length > 0) {
+    pushed = { check: 'pushed', result: 'skipped', messages: [] };
+  } else pushed = result('pushed', [part(texts, 'push-missing', { branch })]);
+
+  const paths = checkPaths(texts, facts);
+  return {
+    checks: [
+      result('criteria_met', criteria),
+      result('worktree_clean', clean),
+      result('commits_ahead', ahead),
+      pushed,
+      paths.typeRules,
+      paths.pathsChanged,
+    ],
+    workflowChanges: changesWorkflows(workspace.changedFiles),
+    pushFailed: push?.status === 'failed',
+  };
+}
+
+/** How a listed path compares with the branch's changed files. */
+type PathState = 'changed' | 'unknown' | 'failed';
+
+function checkPaths(
+  texts: Template,
+  facts: SubmissionFacts,
+): { typeRules: DodCheckResult; pathsChanged: DodCheckResult } {
+  const { report } = facts;
+  const changed = facts.workspace.changedFiles;
+  const listedPaths = changed?.listed ?? [];
+  const listed = new Set(listedPaths);
+  const complete = changed !== null && changed.listed.length === changed.count;
+  const failures: string[] = [];
+  let unchecked = 0;
+
+  const state = (field: string, path: string): PathState => {
+    const normalised = normalisePath(path);
+    if (normalised.kind === 'outside') {
+      failures.push(part(texts, 'path-outside', { field, path }));
+      return 'failed';
+    }
+    if (listed.has(normalised.path)) return 'changed';
+    const prefix = normalised.path === '' ? '' : `${normalised.path}/`;
+    if (normalised.path === '' || listedPaths.some((each) => each.startsWith(prefix))) {
+      failures.push(part(texts, 'path-folder', { field, path }));
+      return 'failed';
+    }
+    if (complete) {
+      failures.push(part(texts, 'path-not-changed', { field, path, base: facts.baseBranch }));
+      return 'failed';
+    }
+    unchecked += 1;
+    return 'unknown';
+  };
+  for (const path of report.tests.paths) state('tests.paths', path);
+  const docs = report.docs.paths.map((path) => state('docs.paths', path));
+  const adrs = report.adrs.map((path) => state('adrs', path));
+
+  const pathsChanged =
+    failures.length > 0 || unchecked === 0
+      ? result('paths_changed', failures)
+      : {
+          check: 'paths_changed' as const,
+          result: 'incomplete' as const,
+          messages: [
+            changed === null
+              ? part(texts, 'paths-unknown')
+              : part(texts, 'paths-cut', {
+                  listed: String(changed.listed.length),
+                  count: String(changed.count),
+                  unchecked: String(unchecked),
+                }),
+          ],
+        };
+
+  // 04 section 3.3: a docs ticket needs a documentation path, a spike an ADR or one; changed on
+  // the branch, or not known otherwise when the machine's list was cut.
+  const required =
+    facts.ticketType === 'docs'
+      ? { states: docs, text: 'type-docs' }
+      : facts.ticketType === 'spike'
+        ? { states: [...adrs, ...docs], text: 'type-spike' }
+        : null;
+  let typeRules: DodCheckResult = result('type_rules', []);
+  if (required !== null && !required.states.includes('changed')) {
+    typeRules = required.states.includes('unknown')
+      ? { check: 'type_rules', result: 'incomplete', messages: pathsChanged.messages }
+      : result('type_rules', [part(texts, required.text)]);
+  }
+  return { typeRules, pathsChanged };
+}
+
+/**
+ * The answer to a refused submission (04, section 3.1; 06, section 4.2): after a failed push only
+ * the push, which the agent cannot fix, so it ends its turn; otherwise every failed check. Null
+ * when every check passed or could not be fully done.
+ */
+export function refusal(texts: Template, checked: CheckedSubmission): McpError | null {
+  const details: McpErrorDetail[] = checked.checks.flatMap((each) =>
+    each.result === 'failed' && (!checked.pushFailed || each.check === 'pushed')
+      ? each.messages.map((message) => ({ check: each.check, message }))
+      : [],
+  );
+  if (details.length === 0) return null;
+  const message = checked.pushFailed
+    ? part(texts, 'refused-push')
+    : details.length === 1
+      ? part(texts, 'refused-one')
+      : fill(texts, texts.main, { count: String(details.length) });
+  return { code: 'DOD_FAILED', message, details };
+}

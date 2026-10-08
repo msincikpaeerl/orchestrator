@@ -13,7 +13,7 @@ import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
 import { causeText, failureText, pauseText, runStatusLabel } from '../runs/text';
-import { priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
+import { checkLabel, priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
 /**
  * A piece of an event's text: plain text, or a link to the project or ticket page. Owner or agent
@@ -50,6 +50,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.dependency_removed': 'Dependency removed',
   'ticket.commented': 'Comment added',
   'ticket.submitted': 'Work submitted by an agent',
+  'ticket.submission_refused': 'Submission refused by the checks',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -315,6 +316,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     ': ',
     ...(p.agentName === undefined ? ['the agent'] : ['agent ', quote(p.agentName, null)]),
     ` submitted its work with every acceptance criterion reported met (${String(p.criteria)})`,
+    ...(p.workflowChanges === true ? ['; it changes the GitHub workflows'] : []),
+  ],
+  'ticket.submission_refused': (p, c) => [
+    c.ticket,
+    ': the submission of ',
+    ...(p.agentName === undefined ? ['the agent'] : ['agent ', quote(p.agentName, null)]),
+    ` was refused by the checks (${p.failed.map((check) => checkLabel[check]).join(', ')})`,
   ],
   'setting.changed': (p, c) => {
     const { label } = SETTINGS[p.name];

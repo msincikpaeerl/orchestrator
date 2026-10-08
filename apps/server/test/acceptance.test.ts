@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createTestHome,
@@ -17,10 +17,11 @@ import {
   startGitHttpServer,
   type GitHttpServer,
 } from '@orchestrator/daemon/testing/git-http-server';
-import { createRemote } from '@orchestrator/daemon/testing/remote';
+import { createRemote, gitIn } from '@orchestrator/daemon/testing/remote';
 import {
   AccountListResponse,
   ClaudeAccount,
+  NeedsYouResponse,
   EnrollmentResponse,
   Machine,
   Run,
@@ -48,6 +49,8 @@ const CHANGES = 'Please add a "Thank you" message after sending.';
 let home: TestHome;
 let fake: FakeClaude;
 let git: GitHttpServer;
+/** The bare repository standing for the project on GitHub. */
+let remote: string;
 let h: RunHarness;
 const daemons: DaemonProcess[] = [];
 
@@ -66,7 +69,7 @@ beforeEach(async () => {
   await writeFile(join(home.paths.claudeConfig, '.credentials.json'), '{}');
   // The project's GitHub repository (RunHarness's `octo-owner/bakery`), served with the token.
   const remotes = join(home.root, 'remotes');
-  await createRemote(remotes, 'octo-owner', 'bakery', home.env);
+  remote = await createRemote(remotes, 'octo-owner', 'bakery', home.env);
   git = await startGitHttpServer(remotes, { username: 'x-access-token', password: TOKEN });
   h = new RunHarness();
   await h.start({ gitBaseUrl: git.url });
@@ -427,6 +430,86 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
         'Add the thank-you message',
         'Add the contact form',
       ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "D: a push refused as diverged; the next run merges GitHub's branch, its push is accepted and the item goes (lot 3 step F2)",
+    async () => {
+      const BRANCH_ON_GITHUB = `origin/${BRANCH}`;
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              commit('contact.html', 'Add the contact form'),
+              // Waits while the test changes the branch on GitHub, as Update branch would.
+              {
+                do: 'bash',
+                command: 'touch running; while [ ! -e go ]; do sleep 0.1; done; rm go running',
+              },
+              submit,
+              { do: 'text', text: 'The push was refused: ending my turn.' },
+            ],
+          },
+        ],
+      });
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      const first = await runNow();
+      const worktree = join(home.paths.home, 'worktrees', first.id);
+      await until('the agent waiting', async () =>
+        (await readdir(worktree).catch((): string[] => [])).includes('running'),
+      );
+
+      // Someone adds a commit to the ticket's branch on GitHub: the machine's branch diverges.
+      const elsewhere = await mkdtemp(join(home.root, 'elsewhere-'));
+      gitIn(elsewhere, ['clone', '--quiet', remote, '.'], home.env);
+      gitIn(elsewhere, ['checkout', '--quiet', '-b', BRANCH, 'origin/main'], home.env);
+      await writeFile(join(elsewhere, 'notes.md'), 'Opening hours\n');
+      gitIn(elsewhere, ['add', 'notes.md'], home.env);
+      gitIn(elsewhere, ['commit', '--quiet', '-m', 'Add the opening hours'], home.env);
+      gitIn(elsewhere, ['push', '--quiet', 'origin', BRANCH], home.env);
+      await writeFile(join(worktree, 'go'), '');
+
+      // Refused: the run ends push_failed, not counted, and Needs you says the branch diverged.
+      await until('the first run failed', async () => (await run(first.id)).status === 'failed');
+      expect((await run(first.id)).failureReason).toBe('push_failed');
+      expect(await ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+      const needsYou = () =>
+        json((v) => NeedsYouResponse.parse(v), 'GET', '/api/needs-you').then((response) =>
+          response.items.filter((item) => item.type === 'push_failed'),
+        );
+      expect(await needsYou()).toMatchObject([
+        { reason: 'diverged', machine: { id: machineId, name: 'Laptop' } },
+      ]);
+
+      // The next run merges GitHub's branch first, as its first message says, then submits.
+      await fake.play({
+        turns: [
+          {
+            steps: [{ do: 'bash', command: `git merge --no-edit ${BRANCH_ON_GITHUB}` }, submit],
+          },
+        ],
+      });
+      const second = await runNow();
+      expect(second.machine.id).toBe(machineId);
+      await until(
+        'the second run succeeded',
+        async () => (await run(second.id)).status === 'succeeded',
+      );
+      const sent = await messages();
+      expect(sent).toHaveLength(2);
+      expect(sent[1]).toContain(`run \`git merge ${BRANCH_ON_GITHUB}\``);
+
+      // Pushed: GitHub's branch is the machine's, with both commits, and the item is gone.
+      const done = await ticket();
+      expect(done.status).toBe('in_review');
+      const onGitHub = gitIn(remote, ['rev-parse', `refs/heads/${BRANCH}`], home.env).trim();
+      expect(done.branch?.head).toBe(onGitHub);
+      const files = gitIn(remote, ['ls-tree', '--name-only', onGitHub], home.env).split('\n');
+      expect(files).toEqual(expect.arrayContaining(['contact.html', 'notes.md']));
+      expect(await needsYou()).toEqual([]);
     },
     TIMEOUT,
   );

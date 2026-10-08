@@ -101,7 +101,14 @@ export {
   TimelineEntry,
   UpdateTicketRequest,
 } from './api/tickets.js';
-export { AccountStatus, NeedsYouItem, NeedsYouResponse } from './api/needs-you.js';
+export {
+  AccountStatus,
+  GITHUB_TOKEN_LIST_URL,
+  NeedsYouItem,
+  NeedsYouResponse,
+  PUSH_PERMISSION_WORDS,
+  PushPermission,
+} from './api/needs-you.js';
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
 export {
   LiveRun,
@@ -292,6 +299,7 @@ export {
   isCompatibleProtocol,
 } from './daemon/enrollment.js';
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
+export { DodCheckResult, SubmissionRecord } from './mcp/dod-report.js';
 export { CiCheck, CiFailedJob, CiResult, CiState } from './mcp/ci.js';
 export {
   DodReport,

@@ -70,10 +70,20 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(commonRules).toMatch(/One command per Bash call/i);
     expect(commonRules).toMatch(/A refused chained command says nothing about its parts/);
     expect(commonRules).toMatch(/Ask the owner only for what the owner can decide/);
+    // The full submission (lot 3 step F2): listed files, a failed push, a diverged branch.
+    expect(commonRules).toMatch(/must be a file your branch changed.*a folder is not accepted/);
+    expect(commonRules).toMatch(/If the push itself fails.*end your turn at once/);
+    expect(commonRules).toMatch(/`git merge origin\/<your ticket branch>`/);
   });
 
-  it('ship the four run message templates of 03, section 3.2', async () => {
+  it('ship the run message templates of 03, section 3.2, with the texts of ticket_submit', async () => {
     const templates = await loadTemplates();
-    expect(Object.keys(templates)).toEqual(['implement', 'continue', 'answer', 'nudge']);
+    expect(Object.keys(templates)).toEqual([
+      'implement',
+      'continue',
+      'answer',
+      'nudge',
+      'submit-checks',
+    ]);
   });
 });

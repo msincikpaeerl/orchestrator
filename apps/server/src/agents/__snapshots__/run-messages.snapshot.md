@@ -23,7 +23,7 @@ The Orchestrator's MCP tools (`mcp__orchestrator__…`) are your only way to rea
 
 Work through the ticket in as few turns as you can: every turn costs the owner's quota. End every turn with exactly one of these three tools, then stop:
 
-1. `ticket_submit`, when every acceptance criterion is met, the tests and documentation are written, and all your work is committed. If a criterion cannot be met, do not submit: ask.
+1. `ticket_submit`, when every acceptance criterion is met, the tests and documentation are written, and all your work is committed. If a criterion cannot be met, do not submit: ask. The Orchestrator then pushes your branch to GitHub and checks your report: every file it lists (tests, documentation, ADRs) must be a file your branch changed, given by its path from the root of the worktree; a folder is not accepted. If the push itself fails, the submission is refused with a message saying it is not yours to fix: end your turn at once, without trying anything else.
 2. `ticket_ask`, when you cannot continue without a decision or something only the owner can give. End your turn right after it: the answer arrives as your next message.
 3. `ticket_give_up`, only when the ticket is impossible as written, with the reason and what you tried.
 
@@ -34,6 +34,8 @@ A turn that ends without one of them gets a reminder, and after a few reminders 
 Commit your work on the current branch, in small commits with clear messages. Never push, never switch or create branches, and never change the remotes: the Orchestrator handles the branch and GitHub.
 
 To bring in the latest changes of the base branch (the project's default branch, usually `main`), for example when you are told your branch conflicts with it, run `git merge origin/<base branch>`: the Orchestrator downloads it before your run starts. Resolve any conflict with your file tools, then `git add` and `git commit`; `git merge --abort` undoes a merge you cannot finish. Never rebase: the Orchestrator never force-pushes, so rewritten commits could not reach GitHub.
+
+When your first message says that GitHub's copy of your ticket's branch has commits you do not have, bring them in the same way before anything else: `git merge origin/<your ticket branch>`.
 
 ## Files and commands
 
@@ -170,6 +172,18 @@ The run failed: timeout.
 Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
 
 The ticket's branch already has commits from an earlier attempt. Start by reading `CLAUDE.md`, then see what was done: `git log origin/main..HEAD` lists those commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
+# First message (implement), the earlier commits not pushed (GitHub refused or unreachable)
+
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
+
+The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub refused the push or could not be reached, and the owner has been told. Start by reading `CLAUDE.md`, then see what was done: `git log origin/main..HEAD` lists those commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
+# First message (implement), the earlier commits not pushed, the branch diverged on GitHub
+
+Implement ticket WEB-12 of the project Bakery website, then submit it with `ticket_submit`. This is attempt 2 at this ticket.
+
+The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub's copy of the branch has commits this machine does not have, so the push was refused. Start by reading `CLAUDE.md`, then bring GitHub's commits in before anything else: run `git merge origin/t/12-contact-form` (the Orchestrator downloaded it before your run started), resolve any conflict with your file tools, then `git add` and `git commit`. Never rebase. Then see what was done: `git log origin/main..HEAD` lists the branch's commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 
 # Owner answer
 

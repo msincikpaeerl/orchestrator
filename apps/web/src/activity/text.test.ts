@@ -187,6 +187,14 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     runId: '00000000-0000-4000-8000-000000000001',
     criteria: 3,
   },
+  'ticket.submission_refused': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    agent: 'web_dev',
+    agentName: 'Web Developer',
+    runId: '00000000-0000-4000-8000-000000000001',
+    failed: ['criteria_met', 'paths_changed'],
+  },
   'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
   'agent_profile.updated': {
     key: 'web_dev',

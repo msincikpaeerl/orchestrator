@@ -166,6 +166,38 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   const runToken = (start as RunStart).payload.runToken;
   await tool({ tool: 'ticket_progress', runToken, input: { text: 'Writing the tests' } });
   const shop2 = TicketDetail.parse((await call('GET', '/api/projects/SHOP/tickets/2')).json());
+  // A submission refused first: its test file is not changed on the branch.
+  const refused = await daemon.request({
+    type: 'mcp.call',
+    id: randomUUID(),
+    payload: {
+      tool: 'ticket_submit',
+      runToken,
+      input: {
+        criteria: shop2.acceptanceCriteria.map((_, index) => ({
+          index,
+          status: 'met',
+          justification: 'Checked by its test',
+        })),
+        tests: { paths: ['src/other.test.ts'], justification: null },
+        docs: { paths: [], justification: 'Nothing user-facing' },
+        adrs: [],
+        summary: 'Everything done',
+      },
+      workspace: {
+        clean: true,
+        branch: {
+          name: 't/2-work',
+          head: 'a'.repeat(40),
+          commitsAhead: [{ hash: 'a'.repeat(40), subject: 'Do the work' }],
+          notOnGitHub: { listed: ['a'.repeat(40)], count: 1 },
+        },
+        push: { status: 'pushed', head: 'a'.repeat(40) },
+        changedFiles: { listed: ['src/app.test.ts'], count: 1 },
+      },
+    } as McpCall['payload'],
+  });
+  expect(refused).toMatchObject({ type: 'mcp.result', payload: { ok: false } });
   await tool({
     tool: 'ticket_submit',
     runToken,
@@ -189,7 +221,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         notOnGitHub: { listed: ['a'.repeat(40)], count: 1 },
       },
       push: { status: 'pushed', head: 'a'.repeat(40) },
-      changedFiles: null,
+      changedFiles: { listed: ['src/app.test.ts'], count: 1 },
     },
   });
   await daemon.request({

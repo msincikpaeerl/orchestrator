@@ -258,6 +258,12 @@ export const tickets = pgTable(
     createdByRunId: uuid('created_by_run_id'),
     /** Latest Definition of Done report accepted by `ticket_submit` (`DodReport`, 04 section 3.1). */
     dodReport: jsonb('dod_report'),
+    /**
+     * The checks of that report (`DodCheckResult[]`) and the workflow flag (04, section 3.1; lot 3
+     * step F); null for a report accepted before 0.4.0, or none.
+     */
+    dodChecks: jsonb('dod_checks'),
+    workflowChanges: boolean('workflow_changes'),
     /** The agent profile expected to do the work (01, section 3.4); null when unassigned. */
     assigneeProfileId: uuid('assignee_profile_id').references(() => agentProfiles.id),
     /** `t/<number>-<slug>`, set at the first run (01, section 3.4; 04, section 4). */
@@ -547,6 +553,13 @@ export const runs = pgTable(
     /** The run's latest push of the ticket branch (`PushResult`) and when it was reported. */
     push: jsonb('push'),
     pushAt: timestamp('push_at', { withTimezone: true }),
+    /**
+     * The run's accepted submission and its latest refused one (`SubmissionRecord`: the report,
+     * each check's result, the workflow flag; lot 3 step F, owner's addition). Each holds a DoD
+     * report of at most 256 KiB (04, section 8), replaced at each refusal: a run keeps two at most.
+     */
+    submission: jsonb('submission'),
+    refusedSubmission: jsonb('refused_submission'),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
