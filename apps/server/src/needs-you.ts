@@ -139,7 +139,8 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
 /**
  * Tickets whose run ended with `push_failed` and whose branch has not been pushed since (04,
  * section 5; lot 3 step F): from that run's end until the next push done (an end push included),
- * or until the ticket is cancelled or done; still shown while a next run works.
+ * or until the ticket is cancelled or done, or its machine revoked; still shown while a next run
+ * works.
  */
 async function pushFailedItems(db: Database): Promise<Items> {
   const rows = await db
@@ -169,10 +170,11 @@ async function pushFailedItems(db: Database): Promise<Items> {
   for (const { ticket, projectKey, endedAt } of rows) {
     const failure = pushFailure(ticket);
     if (!failure) continue;
+    // A revoked machine's commits not on GitHub are lost (07, section 3): nothing to push.
     const [machine] = await db
       .select({ id: schema.machines.id, name: schema.machines.name })
       .from(schema.machines)
-      .where(eq(schema.machines.id, failure.machineId));
+      .where(and(eq(schema.machines.id, failure.machineId), isNull(schema.machines.revokedAt)));
     if (!machine) continue;
     items.push({
       type: 'push_failed',

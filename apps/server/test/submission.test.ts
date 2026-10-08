@@ -437,6 +437,18 @@ describe('push_failed (04, sections 3.1 and 5)', () => {
     expect(await needsYou()).toEqual([]);
   });
 
+  it('an item goes when its machine is revoked: the work there is lost', async () => {
+    const { id } = await pushFailed({
+      status: 'failed',
+      reason: 'unreachable',
+      message: 'Could not resolve host: github.com',
+    });
+    expect(await needsYou()).toHaveLength(1);
+    const revoked = await h.call('POST', `/api/machines/${id}/revoke`);
+    expect(revoked.statusCode, revoked.body).toBe(200);
+    expect(await needsYou()).toEqual([]);
+  });
+
   it("a diverged branch: the next run merges GitHub's branch first", async () => {
     const { daemon } = await pushFailed({
       status: 'failed',

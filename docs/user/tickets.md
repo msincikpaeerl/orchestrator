@@ -148,7 +148,7 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 | The branch of … changed on GitHub | GitHub's copy of the ticket's branch has commits the machine does not have, for example after **Update branch** on GitHub or a push by hand. The Orchestrator never overwrites GitHub's branch. | **Run now**: the next run, on the same machine, first brings GitHub's commits in with a merge, then continues and pushes. |
 | GitHub could not be reached to push … | The machine could not connect to GitHub. | Check that the machine is connected to the internet and that GitHub works, then **Run now**. |
 
-**Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done. It stays while the next run works.
+**Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done, or the machine is revoked (its work not on GitHub is then lost, see [Runs](runs.md#where-the-work-is)). It stays while the next run works.
 
 ## Ticket states
 

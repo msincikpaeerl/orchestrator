@@ -7,6 +7,7 @@ import {
   Capability,
   FIRST_MESSAGE_MAX_BYTES,
   PUSH_PERMISSION_WORDS,
+  PushResult,
   RunStatus,
   TicketStatus,
   claudeCodeSupport,
@@ -362,7 +363,7 @@ export class RunService {
     const comment =
       facts.comment ??
       (failureReason === 'push_failed'
-        ? await this.pushFailedComment(tx, locked.ticket.id, locked.machine.name)
+        ? await this.pushFailedComment(tx, locked.ticket.id, locked.run.id, locked.machine.name)
         : counted
           ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
           : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
@@ -386,15 +387,23 @@ export class RunService {
   private async pushFailedComment(
     tx: Executor,
     ticketId: string,
+    runId: string,
     machineName: string,
   ): Promise<string> {
     const [ticket] = await tx.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId));
     if (!ticket) throw new Error(`ticket ${ticketId} not found`);
+    const [run] = await tx
+      .select({ push: schema.runs.push })
+      .from(schema.runs)
+      .where(eq(schema.runs.id, runId));
     const failure = pushFailure(ticket);
     const ended = `The run on machine ${machineName} ended: its branch could not be pushed to GitHub`;
     const uncounted = 'It does not count as a failed attempt.';
     if (failure === null) {
-      return `${ended} when the agent submitted, but the push at the run's end succeeded, so the branch is on GitHub now. ${uncounted} Run now continues the work on any machine.`;
+      // The run's own latest push is its end push when it made one.
+      return PushResult.nullable().parse(run?.push ?? null)?.status === 'pushed'
+        ? `${ended} when the agent submitted, but the push at the run's end succeeded, so the branch is on GitHub now. ${uncounted} Run now continues the work on any machine.`
+        : `${ended}. ${uncounted}`;
     }
     const permission = failure.reason === 'refused' ? pushPermission(failure.message) : null;
     const why =
@@ -825,8 +834,11 @@ export class RunService {
       // A push that failed and none done since: the work is committed but not on GitHub.
       const failure = pushFailure(ticket);
       const branchName = ticket.branchName ?? ticketBranchName(ticket.number, ticket.title);
+      // Only on the machine whose push failed: another machine starts from GitHub's branch.
       const notPushed =
-        failure === null ? null : { branch: branchName, diverged: failure.reason === 'diverged' };
+        failure === null || failure.machineId !== machine.id
+          ? null
+          : { branch: branchName, diverged: failure.reason === 'diverged' };
       let initialPrompt: string;
       try {
         initialPrompt = implementFirstMessage(
