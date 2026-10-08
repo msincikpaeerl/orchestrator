@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0 and F1 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1 and F2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -509,7 +509,7 @@ Split approved by the owner on 2026-10-08, with the answers below. Scope of the 
 
 Confirmed by the owner at the start of step F2 (2026-10-08): `push_failed`'s failure reason came with F1; the fields a 0.3.0 daemon also sends are cut when read, and the protocol 2 fields are refused above their budget; the daemon's own refusal of an oversized report stays as the second agent-facing exception of 03 section 3.2.
 
-### [ ] F2. Server checks and `push_failed`
+### [x] F2. Server checks and `push_failed`
 
 - Checks: criteria, type rules (answer 9), listed paths (answer 7), the push; the workflow flag (answer 6); the check results stored with the report.
 - The failure reason `push_failed` (not counted), its three "Needs you" items and Run now's next first message (answer 5); the agent-facing texts in `agents/templates/` (answer 10), profile versions up; Help for `push_failed`.
