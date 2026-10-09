@@ -95,14 +95,18 @@ export class RunManager {
       }
       case 'run.input': {
         if (!run) return { ok: false, message: 'No such run on this machine.' };
-        const refused = run.input(command.payload.text);
+        const refused = await run.input(command.payload.text, command.payload.fetchBase);
         return refused ? { ok: false, message: refused } : { ok: true };
       }
       case 'run.resume': {
         const problem = this.context.scopes.problem;
         if (problem !== null) return { ok: false, message: problem };
         if (!run) return { ok: false, message: 'No such run on this machine.' };
-        const refused = await run.resume(command.payload.claudeSessionId, command.payload.message);
+        const refused = await run.resume(
+          command.payload.claudeSessionId,
+          command.payload.message,
+          command.payload.fetchBase,
+        );
         return refused ? { ok: false, message: refused } : { ok: true };
       }
       case 'run.stop':

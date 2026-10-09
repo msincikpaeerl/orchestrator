@@ -226,8 +226,9 @@ async function prepare() {
 }
 
 /**
- * Prepares a run, commits in its worktree, plants `plant`, then pushes and makes a second run
- * (a fetch and a new worktree), and runs the five checks.
+ * Prepares a run, commits in its worktree, plants `plant`, then pushes, downloads the base branch
+ * as before a conflict's message (lot 3 step G2a) and makes a second run (a fetch and a new
+ * worktree), and runs the five checks.
  */
 async function attempt(plant: (planted: Planted) => Promise<void>): Promise<void> {
   const run = await prepare();
@@ -239,6 +240,7 @@ async function attempt(plant: (planted: Planted) => Promise<void>): Promise<void
 
   const sampler = sampleProcesses();
   const pushed = await workspaces.push(run.start, run.bare, run.folder, head);
+  await workspaces.fetchBase(run.start, run.folder, run.bare);
   await workspaces.remove(run.bare, run.worktree);
   await prepare();
   const sampled = await sampler.stop();
@@ -252,7 +254,7 @@ async function attempt(plant: (planted: Planted) => Promise<void>): Promise<void
       home.env,
     ).trim(),
   ).toBe(head);
-  expect(asked.map((request) => request.command)).toEqual(['push', 'fetch']);
+  expect(asked.map((request) => request.command)).toEqual(['push', 'fetch', 'fetch']);
   // 1. Nothing reached another host.
   expect({ connections: trap.connections, authorizations: trap.authorizations }).toEqual({
     connections: 0,

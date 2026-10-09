@@ -378,6 +378,22 @@ export class Workspaces {
   }
 
   /** What a credentialed command of this run needs (05, section 7). */
+  /**
+   * Downloads the run's base branch from GitHub into the bare clone's `refs/remotes/origin/<base>`
+   * (lot 3 step G2a), under the bare clone's lock, through the isolated fetch (05, section 7.1):
+   * before the agent is told to merge it after a conflict. Throws with the masked reason.
+   */
+  async fetchBase(start: RunStart['payload'], runFolder: string, bare: string): Promise<void> {
+    const base = start.repository.baseBranch;
+    try {
+      await this.locked(bare, () => isolatedFetch(this.isolated(start, runFolder), bare, base));
+    } catch (error) {
+      throw new Error(`Downloading ${base} from GitHub failed: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+  }
+
   private isolated(start: RunStart['payload'], runFolder: string): IsolatedGitOptions {
     const { repository } = start;
     return {

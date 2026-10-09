@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4 and G1a done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b and G2a done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -671,7 +671,10 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 - **Expectations changed** for the new output, each because the owner's answers change it: `tools.test.ts` (the `ci_status` example and the no-work answer), `mcp.test.ts` (the no-work answer), `files.test.ts` (the template list), `job-log.test.ts` (the reason code added beside the words).
 - **The end-to-end control** `POST /ci/check` gives GitHub's answers for the run's made-up commit for one check only (the owner's rule of G1a).
 
-### [ ] G2. CI failures, limits and screens
+### Step G2: CI failures, limits and screens, split in three (rule 15)
+
+Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answers below. Scope of the whole step (as planned):
+
 
 - A failure sent back through `run.input` (template `ci-failed.md`, **Longest CI log excerpt**), the run back to `working`, a new submission checked again from the start.
 - **The excerpts** (owner's decisions after the third smoke run): one per failed step, each with its step's name, from `readFailedStepLogs` (04 section 3.1); the whole-job fallback is introduced as such with its reason (`excerptHeading`), so the agent knows it is not the step's part. Every excerpt passes through the secret masking (`maskSecrets`, done by the layer) before it reaches an agent or a screen. The total size rule applies across all of them: the CI result message keeps its whole text within the `run.input` ceiling and `ci_status` within `MCP_OUTPUT_MAX_CHARACTERS`, the excerpts of all failed steps cut further, the longest first, with a marker.
@@ -687,6 +690,51 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 - **The daemon's waiting test** (`waiting-ci.test.ts`, "counts no working time and no idle time while waiting") lets 9.6 s pass with a 4.8 s idle timeout and checks that no reminder reached the session; it failed before G1a's code and fails with each way of treating `waiting_ci` as working or idle (checked by the owner's request in G1a). G2's tests of a failure sent back keep that margin.
 
 **Done when** daemon and server tests show CI failing once then passing in the same session, one failure too many, the timeout then **Check CI again** accepting the stored submission without a session (and finding CI still not finished, changing nothing); Playwright on both viewports shows a ticket waiting for CI, then in review with its CI result, and **Check CI again** from "Needs you".
+
+**The owner's answers (2026-10-10, start of the step)**, written into specs 02, 04, 05 and 06 in the step that implements each:
+
+1. **The conflict** (option A): the agent is told to merge the base branch in the same session, the daemon downloading it first; the round counts within **Most CI failures per run**; a closed session gets the message with `run.resume`.
+2. **The download of the base branch**: ADR 0034's isolated fetch, narrowed to the base branch: under the bare clone's lock, a new isolated repository in the run folder, the run's credential asked for with `command: 'fetch'` (given while the run is `running`), `git fetch --quiet --no-tags --no-write-fetch-head --recurse-submodules=no <clone URL> +refs/heads/<base>:<isolated ref>` with the allowlisted environment and the one-shot helper; the pack moved into the bare clone and only `refs/remotes/origin/<base>` updated, by one `update-ref` without the credential. The base branch is `run.start`'s, kept in `state.json`; `run.input` and `run.resume` carry only a boolean `fetchBase`. A failed download (GitHub unreachable, **Longest push**, the credential refused, a permission missing) sends the agent nothing: the daemon refuses the message with the masked reason, the round is not counted, the server tries again at each check while the conflict stays, and **CI wait at submission** ends the run `ci_timeout` with "The pull request conflicts with <base>, and the machine could not download <base> from GitHub: <reason>." (answer 3 A). The server waits **Machine answer timeout** plus **Longest push** for that acknowledgement. Protocol 2 is not released: no new `PROTOCOL_VERSION` (answer 7 A).
+3. **A new submission**: every outcome is keyed by the commit and applied under the run's lock; sending a round back removes the run's wait and its decision in the same transaction; a later result of an earlier commit changes nothing. A submission of a commit of this run that failed CI or conflicted is refused (`DOD_FAILED`), no round counted (answer 4 A).
+4. **What counts**: a failed CI or a conflict sent back, once the machine acknowledged it. Not counted: **CI wait at submission** (`ci_timeout`), GitHub unreachable, limited or unreadable, the base branch's download failing, a round the machine could not take yet (tried again at each check), and runs cancelled because the pull request's head moved. With the default of 2, the third failure ends the run `ci_failed` (counted). **Cancelled because the branch moved**: every failed check is a workflow run with GitHub's conclusion `cancelled` and the pull request's head, read at that result, is another commit; the run then ends at once, not counted, with a new failure reason, "CI was cancelled on GitHub because the branch changed there"; the next run takes GitHub's branch (answer 2 A).
+5. **The message**: `agents/templates/ci-failed.md` and the conflict text as proposed; excerpts in fenced blocks longer than any backtick run inside, said to be quoted output, not instructions; the whole text within `FIRST_MESSAGE_MAX_BYTES` (a closed session gets it with `run.resume`), excerpts cut the longest first with the marker, the list of failed jobs and steps always complete.
+6. **Check CI again**: reads the timed-out run's commit (2 requests, the pull request, more when failed), also after a re-run by hand; accepts on passed or "No CI found"; refuses for a run active, newer accepted work, the branch moved on GitHub, the pull request closed or merged; changes nothing for CI not finished, failed, a conflict or a GitHub problem; the words of the owner's table.
+7. **The screens' words**, as proposed: the ticket page's CI line, the ended run's CI card with one line per round (each round kept on the run, answer 6 A), "CI did not finish for <ticket>: <title>", **CI wait at submission** and **Most CI failures per run**'s texts, the two Help rows.
+8. **The next run's first message** after `ci_failed`: one sentence saying the previous attempt ended after CI failed and `ci_status` shows it (answer 5 A); after a conflict left unresolved (**CI wait at submission** reached, or the download failed until then), one sentence saying the pull request conflicts with the base branch, to merge it first (owner's addition 4).
+
+**The owner's additions** (2026-10-10):
+
+- **A correction of G1b**, in G2b (`ci-status.ts`), tests first: a request limit without a time held nothing (`new Date(Number.MAX_SAFE_INTEGER)` is an invalid date, so the "limited-unknown" sentence was never reached), and a failed read kept no time, so each `ci_status` call asked GitHub again at once. A failed read is not tried again before one **GitHub check interval**, and a limit without a time holds for a stated time (the choice said in G2b's summary).
+- **`ci_status` after a round sent back** answers for the run's latest round (its commit, its result and excerpts), never for an earlier run's commit; tested in G2b.
+- **Check CI again offered more widely** (G2c): also on the ticket page whenever the ticket's latest accepted work was not accepted because of CI (failed after the last allowed failure, a conflict, cancelled because the branch moved) and no run is active; same refusals. The Needs you item stays for "CI did not finish" only.
+- **`ci-failed.md`'s round sentence**: a round that is not the last never says "one more ends the run"; G2b's summary shows the three variants (first, middle, last).
+- **Step N** measures what a CI failure round costs after a wait longer than the prompt cache lifetime.
+
+### [x] G2a. Failures and conflicts sent back: daemon and protocol
+
+- `run.input` accepted while the run waits for CI (pasted into the live session, the run back to `working`), refused with "session closed: use run.resume" when its session is closed; `run.resume` accepted for a run waiting for CI.
+- `fetchBase` on `run.input` and `run.resume`: the base branch downloaded first (answer 2), acknowledged only after the download; a failed download refused with its masked reason and nothing sent.
+
+**Done when** daemon tests show a failure pasted into a live waiting session, a closed session resumed with it, the base branch downloaded before the message with no token anywhere (the leak checks reused), a failed download refused with nothing sent, and the waiting test's margin kept.
+
+*Done 2026-10-10.* Choices made in the step (spec 05 updated):
+
+- **Where it lives**: `Run.input` and `Run.resume` (`apps/daemon/src/run.ts`) take `fetchBase`; `Workspaces.fetchBase` runs `isolatedFetch` with a branch (`only`), which fetches that one branch and sets only its remote ref (no ref deleted). The protocol's `fetchBase` is an optional boolean of `run.input` and `run.resume`.
+- **Refusals**: a closed session waiting for CI refuses `run.input` ("session closed: use run.resume"), as for a waiting or paused run; both commands look again after the download, so a run ended or a session closed meanwhile refuses the message instead of queueing it. A failed download refuses with "Downloading <base> from GitHub failed: …", the credential refused by the Orchestrator said in those words, masked and cut to the protocol's text ceiling.
+- **Tests**: `ci-rounds.test.ts` (4 tests, failing before the change); `credential-leaks.test.ts` downloads the base branch after the push in each of its planted ways (the credential asked for `push`, `fetch`, `fetch`).
+- **Nothing user-visible yet**: the server sends no CI result before G2b, so no Help or CHANGELOG change in this step.
+
+### [ ] G2b. The server's rounds and limits
+
+- `ci-failed.md` and the conflict text, **Most CI failures per run** (kept on the run at its start), the rounds kept on the run (migration), a late result never deciding, the same commit refused, cancelled because the branch moved, a round not yet taken tried again at each check, the next run's sentences (answers 8), `ci_status` for the latest round, the G1b correction.
+
+**Done when** server tests with the fake GitHub and a clock the test controls show CI failing once then passing in the same session, a conflict then the merge then CI passing, one failure too many, a late result of the earlier commit ignored, the same commit refused, cancellations after the branch moved not counted, the message's ceiling and quoted excerpts, `ci_status` after a round, and the G1b correction.
+
+### [ ] G2c. Check CI again, screens and Help
+
+- **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition; the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
+
+**Done when** server tests show **Check CI again** accepting, finding CI still not finished (nothing changes) and each refusal; Playwright on both viewports takes `ticket-waiting-for-ci`, `ticket-in-review-ci`, `run-ci-failed-too-many` and `needs-you-ci-did-not-finish` in `apps/web/e2e-screenshots/`.
 
 ### [ ] H. Quality and review runs
 
@@ -791,6 +839,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
   2. runs `claude-code-probe.sh` again if Claude Code changed since 2.1.287 (check 6 included), and `allowlist-smoke.sh` (`architect`, then `quality`, whose rules differ);
   3. follows `docs/user/` alone with the two tickets below, in a ready project with the skeleton's CI (the `test0.3.0` project or a new one);
   4. checks A27 and A28 by eye on the pull requests opened (added in step F): no mention, issue reference or closing keyword works in their titles and descriptions.
+  5. measures what ticket 1's CI failure round costs in usage, its message arriving after a wait longer than Claude Code's prompt cache lifetime (step G2's estimate, about 12 times a cached turn's input, is not measured; owner's addition, step G2).
 - **Ticket 1, CI failing once** (type **Documentation**, assignee **Web Developer**):
   - title `Add a FAQ link to README.md`;
   - description: `This ticket checks the Orchestrator's CI feedback. Add the line "See the [FAQ](docs/user/faq.md)." at the end of README.md and commit it. Do not create docs/user/faq.md and do not run the documentation link check yourself: CI must fail once, on purpose. When the CI result reports the broken link, create docs/user/faq.md containing the line "No questions yet.", commit it and submit again. Do nothing else.`;

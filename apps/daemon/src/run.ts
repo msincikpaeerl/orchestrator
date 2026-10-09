@@ -103,6 +103,9 @@ export interface RunContext {
 /** Purposes whose runs push their ticket branch (05, section 4.9); a review run never does. */
 const PUSHING: readonly RunStart['payload']['purpose'][] = ['implement', 'fix_review'];
 
+/** States in which a closed session takes no `run.input`, only `run.resume` (05, section 4.4). */
+const CLOSED_STATES: readonly DaemonRunState[] = ['waiting_human', 'quota_paused', 'waiting_ci'];
+
 /** States whose time counts as working time (05, section 5). */
 const WORKING: readonly DaemonRunState[] = ['starting', 'working', 'idle'];
 
@@ -762,7 +765,9 @@ export class Run {
 
   /** Sends the first queued message when the session can take it; false when none was sent. */
   private async sendQueued(): Promise<boolean> {
-    if (!this.sessionAlive || !['idle', 'waiting_human'].includes(this.data.state)) return false;
+    if (!this.sessionAlive || !['idle', 'waiting_human', 'waiting_ci'].includes(this.data.state)) {
+      return false;
+    }
     const next = this.data.pendingInputs.shift();
     if (next === undefined) return false;
     await this.send(next);
@@ -841,18 +846,25 @@ export class Run {
   }
 
   /**
-   * `run.input`: sent at once when the session is idle or waiting for the owner, queued while
-   * the agent works; refused once the session was closed (05, section 4.4).
+   * `run.input`: sent at once when the session is idle, waiting for the owner or waiting for CI
+   * (a CI result, lot 3 step G2a), queued while the agent works; refused once the session was
+   * closed (05, section 4.4). With `fetchBase`, the base branch is downloaded first, and a failed
+   * download refuses the message, which never reaches the agent.
    */
-  input(text: string): string | null {
-    if (this.ended || this.ending) return 'The run has ended.';
-    if (!this.sessionAlive && ['waiting_human', 'quota_paused'].includes(this.data.state)) {
-      return 'session closed: use run.resume';
+  async input(text: string, fetchBase = false): Promise<string | null> {
+    const refused = this.inputRefused();
+    if (refused !== null) return refused;
+    if (fetchBase) {
+      const failed = await this.fetchBase();
+      if (failed !== null) return failed;
+      // The run may have ended, or its session closed, during the download.
+      const meanwhile = this.inputRefused();
+      if (meanwhile !== null) return meanwhile;
     }
     this.data.pendingInputs.push(text);
     this.save();
     // Between a turn's end and `afterTurn`, the queue waits: `afterTurn` sends it first.
-    if (this.data.state === 'waiting_human' || !this.turnEnding) {
+    if (['waiting_human', 'waiting_ci'].includes(this.data.state) || !this.turnEnding) {
       this.background('queued message', async () => {
         await this.sendQueued();
       });
@@ -864,13 +876,56 @@ export class Run {
    * `run.resume`: launches the closed session again with `--resume` and `message` (05, section
    * 4.3). Refused while the session is alive.
    */
-  async resume(claudeSessionId: string, message: string): Promise<string | null> {
-    if (this.ended || this.ending) return 'The run has ended.';
-    if (this.sessionAlive) return 'The session is still running.';
-    if (!this.data.worktree) return "The run's workspace is not on this machine any more.";
+  async resume(
+    claudeSessionId: string,
+    message: string,
+    fetchBase = false,
+  ): Promise<string | null> {
+    const refused = this.resumeRefused();
+    if (refused !== null) return refused;
+    if (fetchBase) {
+      const failed = await this.fetchBase();
+      if (failed !== null) return failed;
+      const meanwhile = this.resumeRefused();
+      if (meanwhile !== null) return meanwhile;
+    }
     this.data.claudeSessionId = claudeSessionId;
     await this.launch(message, claudeSessionId);
     return null;
+  }
+
+  /** Why a `run.input` cannot be taken now; null when it can. */
+  private inputRefused(): string | null {
+    if (this.ended || this.ending) return 'The run has ended.';
+    if (!this.sessionAlive && CLOSED_STATES.includes(this.data.state)) {
+      return 'session closed: use run.resume';
+    }
+    return null;
+  }
+
+  /** Why a `run.resume` cannot be taken now; null when it can. */
+  private resumeRefused(): string | null {
+    if (this.ended || this.ending) return 'The run has ended.';
+    if (this.sessionAlive) return 'The session is still running.';
+    if (!this.data.worktree) return "The run's workspace is not on this machine any more.";
+    return null;
+  }
+
+  /**
+   * Downloads the base branch before a conflict's message (lot 3 step G2a); the masked reason
+   * when it failed, null when done.
+   */
+  private async fetchBase(): Promise<string | null> {
+    const { bare } = this.data;
+    if (!bare) return "The run's workspace is not on this machine any more.";
+    try {
+      const folder = createRunFolder(this.context.paths, this.runId);
+      await this.context.workspaces.fetchBase(this.data.start, folder, bare);
+      return null;
+    } catch (error) {
+      this.log.warn({ err: error }, 'base branch not downloaded: message refused');
+      return cutText(maskSecrets((error as Error).message), TEXT_CEILING, 'end');
+    }
   }
 
   /**
