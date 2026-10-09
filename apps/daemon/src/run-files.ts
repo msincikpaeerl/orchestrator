@@ -78,8 +78,17 @@ export const RunStateFile = z.object({
     .object({ head: GitHash, localBranch: GitHash.nullable() })
     .nullable()
     .default(null),
+  /**
+   * Ids of the latest `run.input` and `run.resume` given to the session, written with the queued
+   * text: a copy of one after a daemon restart is acknowledged without being given again, so a CI
+   * round reaches the agent once (lot 3 step G2b). The newest `DELIVERED_IDS_KEPT`.
+   */
+  deliveredIds: z.array(z.string()).default([]),
 });
 export type RunStateFile = z.infer<typeof RunStateFile>;
+
+/** How many delivered message ids a run keeps: far more than the server ever sends again. */
+export const DELIVERED_IDS_KEPT = 50;
 
 export function stateFilePath(paths: DaemonPaths, runId: string): string {
   return join(runFolder(paths, runId), 'state.json');
