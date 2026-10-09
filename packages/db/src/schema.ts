@@ -586,6 +586,23 @@ export const runs = pgTable(
     submission: jsonb('submission'),
     refusedSubmission: jsonb('refused_submission'),
     /**
+     * The wait for CI of the accepted submission (04, section 3.1; lot 3 step G1a). The commit
+     * pushed at the submission, whose workflow runs and statuses are the CI result; null when
+     * the run has no such wait.
+     */
+    ciCommit: text('ci_commit'),
+    /** **Wait for CI to start** and **CI wait at submission** when the run started (04, 8). */
+    ciStartWaitMinutes: integer('ci_start_wait_minutes'),
+    ciWaitTimeoutMinutes: integer('ci_wait_timeout_minutes'),
+    /** When the wait began: the pull request open. Null until then. */
+    ciWaitStartedAt: timestamp('ci_wait_started_at', { withTimezone: true }),
+    /** When the daemon reported `waiting_ci`: the run's time counts as waiting from then. */
+    ciWaitingSince: timestamp('ci_waiting_since', { withTimezone: true }),
+    /** The latest result read (`CiResult`) and when; the latest failed check (`CiCheckFailure`). */
+    ciResult: jsonb('ci_result'),
+    ciCheckedAt: timestamp('ci_checked_at', { withTimezone: true }),
+    ciCheckFailure: jsonb('ci_check_failure'),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */
