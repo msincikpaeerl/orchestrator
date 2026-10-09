@@ -106,7 +106,7 @@ describe('a run waiting for CI', () => {
       });
       const run = await start(manager, {
         limits: {
-          maxRunDurationMinutes: 1,
+          maxRunDurationMinutes: 10,
           idleTimeoutMinutes: 1,
           maxNudgesPerRun: 2,
           sessionStartTimeoutSeconds: 600,
@@ -116,9 +116,10 @@ describe('a run waiting for CI', () => {
       const file = stateFilePath(home.paths, run.runId);
       const read = () => JSON.parse(readFileSync(file, 'utf8')) as { workingMs: number };
       const workedBefore = read().workingMs;
-      // Proving that nothing happens needs the clock to pass both limits, twice each.
+      // Proving that nothing happens needs the clock to pass the idle timeout, twice. Longest run
+      // counts working time only, which stays the same while waiting.
       const since = Date.now();
-      await waitFor(() => Date.now() - since > 2 * 4800, 30_000, 'both limits passed twice');
+      await waitFor(() => Date.now() - since > 2 * 4800, 30_000, 'the idle timeout passed twice');
       expect(states(run.runId).at(-1)?.state).toBe('waiting_ci');
       expect(read().workingMs).toBe(workedBefore);
       expect(await stop(manager, run.runId, 'completed')).toEqual({ ok: true });
