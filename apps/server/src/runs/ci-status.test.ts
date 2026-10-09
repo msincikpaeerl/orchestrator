@@ -1,4 +1,11 @@
-import { MCP_OUTPUT_MAX_CHARACTERS, McpCiStatus, type CiResult } from '@orchestrator/protocol';
+import {
+  MCP_OUTPUT_MAX_CHARACTERS,
+  McpCiStatus,
+  type CiExcerpt,
+  type CiJobLog,
+  type CiReadProblem,
+  type CiResult,
+} from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { loadTemplates } from '../agents/files.js';
 import { jsonLength } from '../mcp/output.js';
@@ -25,7 +32,7 @@ function failed(jobs: CiResult['failed_jobs']): CiResult {
   };
 }
 
-const excerpt = (step: string, text: string, changes: object = {}) => ({
+const excerpt = (step: string, text: string, changes: Partial<CiExcerpt> = {}): CiExcerpt => ({
   step,
   fallback: null,
   read_to_end: true,
@@ -124,11 +131,14 @@ describe('the result as the agent reads it', () => {
   });
 
   it('says why a log could not be read, and when to call again', () => {
-    const problem = (reason: string, changes: object = {}) => ({
-      state: 'unavailable' as const,
+    const problem = (
+      reason: CiReadProblem['reason'],
+      changes: Partial<CiReadProblem> = {},
+    ): CiJobLog => ({
+      state: 'unavailable',
       problem: { reason, message: '', retry_at: null, at: AT, ...changes },
     });
-    const job = (name: string, log: object) => ({
+    const job = (name: string, log: CiJobLog) => ({
       workflow: 'CI',
       job: name,
       url: null,

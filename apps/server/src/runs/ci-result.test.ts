@@ -79,7 +79,7 @@ describe('the names GitHub gives (lot 3 step G1b)', () => {
   it('masks secrets in workflow names and status contexts, which anyone can write', () => {
     const token = `ghp_${'a'.repeat(36)}`;
     const status = statuses('success');
-    status.statuses[0] = { ...status.statuses[0]!, context: `deploy ${token}` };
+    status.statuses = status.statuses.map((each) => ({ ...each, context: `deploy ${token}` }));
     const checks = ciChecks(COMMIT, [run({ name: `CI ${token}` })], status);
     expect(checks.map((check) => check.name)).toEqual(['CI [hidden]', 'deploy [hidden]']);
     const linked = ciChecks(COMMIT, [run({ url: `https://example.com/?t=${token}` })], status);
