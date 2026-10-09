@@ -8,7 +8,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FakeRepository } from './fake-github.js';
 import type { FakeReply, RecordedRequest } from './fake-github/common.js';
-import { RunHarness, TOKEN, eventually, state } from './run-harness.js';
+import { RunHarness, TOKEN, eventually } from './run-harness.js';
 import type { ScriptedDaemon } from './daemon-client.js';
 
 // The ticket's pull request (04, section 3.1; lot 3 step F3), opened by the server after an
@@ -85,9 +85,9 @@ async function tryAgain() {
   return PullRequestTryAgainResponse.parse(response.json());
 }
 
-/** Ends the run (submitted), sends the ticket back with Request changes, starts the next run. */
+/** CI passes and the run ends, the ticket goes back with Request changes, the next run starts. */
 async function nextRun(daemon: ScriptedDaemon, runId: string) {
-  await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+  await h.ciPasses(daemon, runId);
   const changes = await h.call('POST', '/api/projects/WEB/tickets/1/request-changes', {
     comment: 'One more thing',
   });
@@ -123,7 +123,7 @@ describe('the pull request (04, section 3.1)', () => {
       title: 'Contact form for @bob, fixes #3',
     });
     const accepted = await h.ok(daemon, runToken, 'ticket_submit', REPORT);
-    expect(accepted).toMatchObject({ result: 'accepted' });
+    expect(accepted).toMatchObject({ result: 'pending_ci' });
     await settled();
 
     const [pull] = pulls(repo);
@@ -253,7 +253,7 @@ describe('a pull request not opened (04, section 3.1)', () => {
     h.github.override = (request) => (isList(request) ? { status: 502 } : undefined);
     // The agent's answer never depends on GitHub.
     expect(await h.ok(daemon, runToken, 'ticket_submit', REPORT)).toMatchObject({
-      result: 'accepted',
+      result: 'pending_ci',
     });
     await settled();
     expect(pulls(repo)).toHaveLength(0);
