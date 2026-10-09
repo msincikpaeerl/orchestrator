@@ -107,7 +107,7 @@ export class RunManager {
       }
       case 'run.stop':
         // Stopping a run that already ended changes nothing.
-        if (run && !run.ended) await run.stop();
+        if (run && !run.ended) await run.stop(command.payload.reason);
         return { ok: true };
     }
   }
