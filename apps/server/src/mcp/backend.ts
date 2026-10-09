@@ -16,6 +16,7 @@ import {
   TicketType,
   shorten,
   type McpCall,
+  type McpCiStatus,
   type McpComment,
   type McpError,
   type McpErrorDetail,
@@ -143,6 +144,8 @@ export interface McpBackendOptions {
   templates: () => Promise<Templates>;
   /** After an accepted submission is committed: open or update its pull request (lot 3 step F3). */
   pullRequestWanted: (ticketId: string) => void;
+  /** `ci_status`'s answer for the call's run (lot 3 step G1b). */
+  ciStatus: (call: { run: RunRow; ticket: TicketRow; project: ProjectRow }) => Promise<McpCiStatus>;
 }
 
 export class McpBackend {
@@ -331,8 +334,7 @@ export class McpBackend {
       case 'agent_list':
         return this.agentList();
       case 'ci_status':
-        // No ticket has a pull request before the server opens them (lot 3 step F).
-        return { pull_request: null, ci: null } satisfies McpToolOutput<'ci_status'>;
+        return this.options.ciStatus(call) satisfies Promise<McpToolOutput<'ci_status'>>;
       default:
         throw new Error(`${tool} is not a reading tool`);
     }

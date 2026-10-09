@@ -66,6 +66,7 @@ export const TEMPLATE_NAMES = [
   'nudge',
   'submit-checks',
   'pull-request',
+  'ci-status',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 

@@ -1,4 +1,4 @@
-import { maskSecrets } from '@orchestrator/protocol';
+import { maskSecrets, type CiLogFallback } from '@orchestrator/protocol';
 
 // The part of a GitHub Actions job log that belongs to each failed step (lot 3, after the owner's
 // third smoke run; plan, step E2 fixes). The end of a failed job's log is the clean-up of its post
@@ -38,6 +38,8 @@ export type StepExcerpt =
   | {
       step: string;
       cut: 'job';
+      /** Why, as a fact (the template's words for an agent), and in the owner's script's words. */
+      why: CiLogFallback;
       reason: string;
       readToEnd: boolean;
       text: string;
@@ -225,7 +227,9 @@ export class JobLogReader {
     if (this.states.length === 0) {
       const reason = 'GitHub names no failed step in the job';
       return {
-        excerpts: [{ step: '', cut: 'job', reason, readToEnd, ...mask(job) }],
+        excerpts: [
+          { step: '', cut: 'job', why: 'no_failed_step', reason, readToEnd, ...mask(job) },
+        ],
         facts: { ...this.facts },
       };
     }
@@ -234,20 +238,29 @@ export class JobLogReader {
       if (state.cut && (state.closed || end !== 'ceiling')) {
         return { step: name, cut: 'step', ...mask(state.cut) };
       }
-      return { step: name, cut: 'job', reason: this.reason(state, end), readToEnd, ...mask(job) };
+      return { step: name, cut: 'job', ...this.reason(state, end), readToEnd, ...mask(job) };
     });
     return { excerpts, facts: { ...this.facts } };
   }
 
-  private reason(state: StepState, end: LogEnd): string {
-    if (state.from === null) return 'GitHub gave no start or end time for the step';
+  private reason(state: StepState, end: LogEnd): { why: CiLogFallback; reason: string } {
+    if (state.from === null) {
+      return { why: 'no_times', reason: 'GitHub gave no start or end time for the step' };
+    }
     if (end === 'ceiling') {
       const ceiling = megabytes(this.options.maxReadBytes);
-      return `the job's log is larger than Longest CI log read (${ceiling}), and the step's part does not end within its first ${ceiling}`;
+      return {
+        why: 'ceiling',
+        reason: `the job's log is larger than Longest CI log read (${ceiling}), and the step's part does not end within its first ${ceiling}`,
+      };
     }
-    if (this.facts.timestamped === 0) return "the log's lines carry no timestamp";
-    if (!state.inWindow) return "no line of the log falls within the step's times";
-    return "no ##[error] line falls within the step's times";
+    if (this.facts.timestamped === 0) {
+      return { why: 'no_timestamps', reason: "the log's lines carry no timestamp" };
+    }
+    if (!state.inWindow) {
+      return { why: 'outside_window', reason: "no line of the log falls within the step's times" };
+    }
+    return { why: 'no_error', reason: "no ##[error] line falls within the step's times" };
   }
 }
 

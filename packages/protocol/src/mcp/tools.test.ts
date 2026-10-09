@@ -127,11 +127,19 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
   ci_status: {
     input: {},
     output: {
+      commit: {
+        hash: 'a'.repeat(40),
+        by: 'this_run',
+        attempt: 1,
+        submitted_at: '2026-10-09T10:00:00.000Z',
+      },
       pull_request: {
         number: 7,
         url: 'https://github.com/owner-login/bakery/pull/7',
         head: 'a'.repeat(40),
       },
+      read_at: '2026-10-09T10:05:00.000Z',
+      note: 'This is the CI result of commit aaaa…, which your run handed in.',
       ci: {
         state: 'failed',
         checks: [
@@ -148,11 +156,19 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
             workflow: 'CI',
             job: 'docs-links',
             url: 'https://github.com/owner-login/bakery/actions/runs/1/job/2',
-            failed_steps: ['Check links'],
-            log_excerpt: 'README.md:3: docs/user/faq.md not found',
-            log_cut: true,
+            failed_steps: [
+              {
+                step: 'Check links',
+                about: 'Step "Check links": its own part of the job\'s log.',
+                log: 'README.md:3: docs/user/faq.md not found',
+              },
+            ],
           },
         ],
+        logs_not_read: {
+          count: 1,
+          jobs: [{ workflow: 'CI', job: 'build', url: null, failed_steps: ['Build'] }],
+        },
       },
     },
   },
@@ -331,9 +347,18 @@ describe('outputs of lot 3', () => {
     expect(output.safeParse({ ...pending, result: 'merged' }).success).toBe(false);
   });
 
-  it('ci_status says when there is no pull request yet, and refuses an unknown CI state', () => {
+  it('ci_status says when no work was accepted yet, and refuses an unknown CI state', () => {
     const output = MCP_TOOLS.ci_status.output;
-    expect(output.safeParse({ pull_request: null, ci: null }).success).toBe(true);
+    const none = {
+      commit: null,
+      pull_request: null,
+      read_at: null,
+      note: 'No work yet.',
+      ci: null,
+    };
+    expect(output.safeParse(none).success).toBe(true);
+    // The answer always says what it is about (lot 3 step G1b).
+    expect(output.safeParse({ ...none, note: undefined }).success).toBe(false);
     const ci = examples.ci_status.output.ci as Json;
     expect(
       output.safeParse({ ...examples.ci_status.output, ci: { ...ci, state: 'no_ci' } }),

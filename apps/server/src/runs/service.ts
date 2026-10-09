@@ -90,6 +90,7 @@ import {
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
+import { CiStatusReader } from './ci-status.js';
 import {
   endOfReason,
   failureWords,
@@ -176,6 +177,14 @@ export class RunService {
     this.db = options.db;
     this.log = options.log;
     this.secondMs = options.secondMs ?? 1000;
+    const ciStatus = new CiStatusReader({
+      db: options.db,
+      key: options.key,
+      apiUrl: options.githubApiUrl,
+      log: options.log,
+      now: () => this.now(),
+      templates: async () => (await this.files()).templates,
+    });
     this.mcp = new McpBackend({
       db: options.db,
       log: options.log,
@@ -183,6 +192,7 @@ export class RunService {
       secondMs: this.secondMs,
       templates: async () => (await this.files()).templates,
       pullRequestWanted: (ticketId) => options.pullRequestWanted?.(ticketId),
+      ciStatus: (call) => ciStatus.answer(call),
     });
   }
 

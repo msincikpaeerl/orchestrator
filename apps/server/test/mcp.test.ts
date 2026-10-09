@@ -121,10 +121,19 @@ describe('role permissions (06, section 5)', () => {
 });
 
 describe('ci_status (06, section 4.1)', () => {
-  it('says there is no pull request yet, for every role', async () => {
+  it('says no work was accepted yet, so there is no commit, pull request or result', async () => {
     const { daemon, runToken } = await working();
     const result = await h.tool(daemon, runToken, 'ci_status');
-    expect(result).toEqual({ ok: true, output: { pull_request: null, ci: null } });
+    expect(result).toEqual({
+      ok: true,
+      output: {
+        commit: null,
+        pull_request: null,
+        read_at: null,
+        note: 'No work of this ticket has been accepted yet, so there is no CI result to read. CI is read after ticket_submit accepts your work.',
+        ci: null,
+      },
+    });
   });
 });
 
