@@ -8,7 +8,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FakeRepository } from './fake-github.js';
 import type { FakeReply, RecordedRequest } from './fake-github/common.js';
-import { RunHarness, TOKEN, eventually } from './run-harness.js';
+import { RunHarness, TOKEN, eventually, state } from './run-harness.js';
 import type { ScriptedDaemon } from './daemon-client.js';
 
 // The ticket's pull request (04, section 3.1; lot 3 step F3), opened by the server after an
@@ -279,6 +279,46 @@ describe('a pull request not opened (04, section 3.1)', () => {
     const again = await h.call('POST', '/api/projects/WEB/tickets/1/pull-request/try-again');
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ error: { code: 'no_pull_request_wanted' } });
+  });
+
+  it('repeated failures are quiet: one event when it starts failing or its reason changes, "Since" kept', async () => {
+    const { daemon, runId, runToken } = await working();
+    h.github.override = (request) => (isList(request) ? { status: 502 } : undefined);
+    await h.ok(daemon, runToken, 'ticket_submit', REPORT);
+    await settled();
+    const [first] = await needsYou();
+    const since = first?.since;
+    expect(since).toBeTruthy();
+    // Tried again by the owner and by the CI checks, failing the same way: no new event.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect((await tryAgain()).failure).toMatchObject({ reason: 'unreachable' });
+    await h.report(daemon, state(runId, { state: 'waiting_ci' }));
+    await h.t.ciTick();
+    await h.t.ciTick();
+    const reasons = async () =>
+      (await h.events('ticket.pull_request_not_opened')).map(
+        (event) => (event.payload as { reason: string }).reason,
+      );
+    expect(await reasons()).toEqual(['unreachable']);
+    const [same] = await needsYou();
+    expect(same?.since).toBe(since);
+    // Its reason changes: one more event, the item keeps its first date.
+    h.github.override = (request) =>
+      isList(request)
+        ? {
+            status: 403,
+            body: { message: 'API rate limit exceeded' },
+            headers: { 'x-ratelimit-remaining': '0' },
+          }
+        : undefined;
+    expect((await tryAgain()).failure).toMatchObject({ reason: 'rate_limited' });
+    expect(await reasons()).toEqual(['unreachable', 'rate_limited']);
+    expect((await needsYou())[0]?.since).toBe(since);
+    // Opened at last: its own event.
+    h.github.override = undefined;
+    expect((await tryAgain()).failure).toBeNull();
+    expect(await h.events('ticket.pull_request_opened')).toHaveLength(1);
+    expect(await reasons()).toEqual(['unreachable', 'rate_limited']);
   });
 
   it('a permission missing: named in the token page words, then Try again', async () => {

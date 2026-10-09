@@ -52,7 +52,7 @@ When the ticket's pull request is already open, the item says **Pull request not
 | … GitHub's answer could not be read | GitHub answered in a form this version of the Orchestrator does not read. The item lists what differed (field names and kinds of value, never their content). | **Try again**. If it keeps failing, report the listed fields. |
 | GitHub refused to open (or update) the pull request of … | Any other refusal, for example a repository that was deleted or renamed. The item shows GitHub's own words, with any secret hidden. | Fix the cause on GitHub, then **Try again**. |
 
-**Try again** makes one new attempt and the item disappears when it succeeds. The Orchestrator also tries again by itself each time it starts. A try never opens a second pull request: it first looks for the ticket's pull request on GitHub by its branch, even when GitHub did the work but its answer was lost. The item also disappears when the ticket is cancelled or marked as done.
+**Try again** makes one new attempt and the item disappears when it succeeds. The Orchestrator also tries again by itself each time it starts, and every **GitHub check interval** while the run waits for CI. The item's **Since** is the first attempt that failed, whatever the tries since; Activity shows "Pull request not opened or updated" when attempts start failing or fail for another reason, not at each try. A try never opens a second pull request: it first looks for the ticket's pull request on GitHub by its branch, even when GitHub did the work but its answer was lost. The item also disappears when the ticket is cancelled or marked as done.
 
 ## GitHub items
 

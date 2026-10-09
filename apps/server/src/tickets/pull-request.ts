@@ -375,11 +375,22 @@ export class PullRequestOpener {
       }
       // Done or cancelled meanwhile: nothing more to ask of the owner.
       if (ticket.pullRequestWantedSince === null || FINISHED.includes(ticket.status)) return;
-      const failure: PullRequestFailure = { ...outcome.failure, at: at.toISOString() };
+      const previous =
+        ticket.pullRequestFailure === null
+          ? null
+          : PullRequestFailure.parse(ticket.pullRequestFailure);
+      const failure: PullRequestFailure = {
+        ...outcome.failure,
+        at: at.toISOString(),
+        since: previous?.since ?? previous?.at ?? at.toISOString(),
+      };
       await tx
         .update(schema.tickets)
         .set({ pullRequestFailure: failure, updatedAt: at })
         .where(eq(schema.tickets.id, ticketId));
+      // Repeated failures are quiet: one event when it starts failing or its reason changes
+      // (owner's correction, lot 3 step G1a).
+      if (previous?.reason === failure.reason) return;
       await recordEvent(tx, {
         actor: 'system',
         ...ticketEntity(ticket),

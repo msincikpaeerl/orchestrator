@@ -215,7 +215,7 @@ async function pullRequestItems(db: Database): Promise<Items> {
       ticket: { projectKey, number: ticket.number, title: ticket.title },
       failure,
       openPullRequest: ticket.pullRequestState === 'open' ? ticket.pullRequestNumber : null,
-      since: failure.at,
+      since: failure.since ?? failure.at,
     };
   });
 }
