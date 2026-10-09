@@ -31,11 +31,14 @@ import { formatDateTime } from '../github/text';
 import { refusalText } from '../refusals';
 import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
 import { BlockedBadge } from '../tickets/board';
+import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
+import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
   assigneeLabel,
   priorityLabel,
+  pullRequestFailureText,
   showsBlocked,
   statusChangeText,
   statusLabel,
@@ -218,7 +221,68 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
   );
 }
 
-/** The agent's report with its latest accepted submission (lot 2: summary and criteria). */
+/**
+ * The ticket's pull request (02, section 6.4; lot 3 step F4): its link and state as last seen,
+ * "Opening the pull request on GitHub…" while an accepted submission waits for it, "Pull request
+ * not opened: <reason>" with **Try again**, and the workflow flag.
+ */
+function PullRequest({ ticket }: { ticket: TicketDetail }) {
+  const { opened, wanted, failure } = ticket.pullRequest;
+  const flag = ticket.workflowFlag === null ? null : workflowFlagText(ticket.workflowFlag);
+  if (!opened && !wanted && !failure && !flag) return null;
+  return (
+    <Card className="space-y-3">
+      <SectionTitle>Pull request</SectionTitle>
+      {opened && (
+        <p className="break-words" aria-label="Pull request">
+          <a href={opened.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">
+            Pull request #{opened.number}
+          </a>{' '}
+          · {pullRequestStateLabel[opened.state]}
+        </p>
+      )}
+      {wanted && !failure && (
+        <p role="status" className="text-slate-700">
+          Opening the pull request on GitHub…
+        </p>
+      )}
+      {!opened && !wanted && !failure && <p className="text-slate-700">No pull request yet.</p>}
+      {failure && (
+        <div
+          className="space-y-2 rounded border border-amber-300 bg-amber-50 p-3"
+          aria-label="Pull request not opened"
+        >
+          <p className="font-medium break-words text-slate-900">
+            Pull request not opened:{' '}
+            {pullRequestFailureText(ticketRef(ticket.projectKey, ticket.number), failure).reason}
+          </p>
+          <p className="text-sm text-slate-600">Since {formatDateTime(failure.at)}</p>
+          <PullRequestFailureDetails ticket={ticket} failure={failure} inTicket />
+        </div>
+      )}
+      {flag && (
+        <div
+          className="space-y-1 rounded border border-amber-300 bg-amber-50 p-3"
+          aria-label="Workflow warning"
+        >
+          <p className="font-medium text-slate-900">{flag.title}</p>
+          <p className="break-words text-slate-700">{flag.detail}</p>
+        </div>
+      )}
+      <p className="text-sm text-slate-600">
+        <HelpLink page="tickets#submission-and-the-pull-request">
+          Submission and the pull request
+        </HelpLink>
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * The agent's report with its latest accepted submission: summary, criteria, the files it listed,
+ * and each check's result (02, section 6.4; lot 3 step F4). A report accepted before 0.4.0 has
+ * no check results kept.
+ */
 function Report({ ticket }: { ticket: TicketDetail }) {
   const report = ticket.dodReport;
   if (!report) return null;
@@ -238,6 +302,15 @@ function Report({ ticket }: { ticket: TicketDetail }) {
           </li>
         ))}
       </ol>
+      <ReportFiles report={report} />
+      <h3 className="font-medium text-slate-900">Checks</h3>
+      {ticket.dodChecks === null ? (
+        <p className="text-slate-700">
+          Checked by an earlier version of the Orchestrator, which kept no result for each check.
+        </p>
+      ) : (
+        <CheckList checks={ticket.dodChecks} />
+      )}
     </Card>
   );
 }
@@ -620,6 +693,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
           </div>
         </Card>
         <Branch ticket={data} />
+        <PullRequest ticket={data} />
         <Report ticket={data} />
         <Dependencies project={project} ticket={data} />
         <Runs ticket={data} />

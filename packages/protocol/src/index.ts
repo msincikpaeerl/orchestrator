@@ -90,6 +90,8 @@ export {
   BranchWhere,
   TicketBranch,
   TicketDetail,
+  TicketPullRequest,
+  WorkflowFlag,
   TicketLink,
   TicketListResponse,
   TicketNumber,
@@ -136,6 +138,7 @@ export {
   PROGRESS_CARD_MAX_LENGTH,
   RUN_LOG_PAGE_SIZE,
   Run,
+  RunDetail,
   RunBranch,
   RunChangeCause,
   RunListResponse,
@@ -306,7 +309,14 @@ export {
   isCompatibleProtocol,
 } from './daemon/enrollment.js';
 export { DodCheck, McpError, McpErrorCode, McpErrorDetail } from './mcp/errors.js';
-export { DodCheckResult, SubmissionRecord } from './mcp/dod-report.js';
+export {
+  CheckReason,
+  DodCheckResult,
+  ReportList,
+  SubmissionRecord,
+  WorkflowReason,
+  type CheckReasonKind,
+} from './mcp/dod-report.js';
 export { CiCheck, CiFailedJob, CiResult, CiState } from './mcp/ci.js';
 export {
   DodReport,

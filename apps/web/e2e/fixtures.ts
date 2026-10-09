@@ -1,4 +1,5 @@
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 // Tokens accepted by the fake GitHub of apps/server/test/e2e-server.ts.
 export const TOKEN_FULL = 'github_pat_e2e_full_0123456789';
@@ -56,6 +57,20 @@ export const test = base.extend<{
 });
 
 export { expect };
+
+/**
+ * Pictures of the screens for the owner, who judges them without building the server (lot 3 step
+ * F4): `apps/web/e2e-screenshots/<name>.<desktop|phone>.png`, ignored by Git and emptied at the
+ * start of each run (`e2e/screenshots-setup.ts`). The whole page, or one part of it.
+ */
+export const SCREENSHOTS = fileURLToPath(new URL('../e2e-screenshots/', import.meta.url));
+
+export async function screenshot(target: Page | Locator, testInfo: TestInfo, name: string) {
+  const path = `${SCREENSHOTS}${name}.${testInfo.project.name}.png`;
+  await ('goto' in target
+    ? target.screenshot({ path, fullPage: true })
+    : target.screenshot({ path }));
+}
 
 export function inDays(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);

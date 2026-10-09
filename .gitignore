@@ -10,5 +10,8 @@ coverage/
 test-results/
 playwright-report/
 
+# Pictures of the screens saved by `pnpm test:e2e` for the owner (lot 3 step F4).
+apps/web/e2e-screenshots/
+
 # Browsers of `pnpm test:e2e:host` (ADR 0021).
 .playwright-browsers/

@@ -50,6 +50,7 @@ The screens update on their own while you look at them: you never need to reload
   - the time spent **working**, and **waiting** for you or for the usage limit;
   - the **estimated usage**: what the run would cost in US dollars, as Claude Code estimates it. With a Pro or Max plan you pay nothing more: it only helps compare runs;
   - the agent's latest progress line, and its outcome at the end;
+  - from version 0.4.0, the **Latest refused submission**: when the checks refused the agent's work in this run, each check's result and why, in plain words (see [The checks](tickets.md#the-checks)). An agent refused again and again shows here what it keeps getting wrong;
   - the **log**: what the agent writes, each tool it uses with a short input, the results (long ones shortened, see **Longest stored log entry** in [Settings](settings.md#runs)), and the messages sent to it. Passwords and tokens are hidden.
 
 The agent sends a progress line when it moves to another part of the work. A new one is shown at most once per **Progress update interval** (60 seconds by default).
@@ -87,13 +88,13 @@ In this version, a paused run never resumes by itself. [Needs you](needs-you.md#
 
 ## When a run ends
 
-- The agent reports its work done, every acceptance criterion met, with its commits: the ticket moves to **In review**. In this version, **In review** means the work is finished and waits for you to check it. The ticket page shows the **Agent's report**: its summary, and for each acceptance criterion whether it is met and why.
+- The agent reports its work done, every acceptance criterion met, with its commits: the ticket moves to **In review**. In this version, **In review** means the work is finished and waits for you to check it. The ticket page shows the **Agent's report**: its summary, for each acceptance criterion whether it is met and why, the files it lists, and from version 0.4.0 the result of each check and the pull request.
 - The agent gives up, runs out of time, or its session stops unexpectedly: the run **fails**, the ticket goes back to **To do** with a comment saying why, and **Failed attempts** goes up by one. The run's page says why, with the machine's own words when it gave some (for example "Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits)", see [Machines > Troubleshooting](machines.md#troubleshooting)).
 - Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, a machine that could not start Claude Code in a process scope (see [Process scopes](machines.md#process-scopes)), a machine that did not confirm the start in time, or a run whose branch could not be pushed to GitHub when the agent submitted its work (from version 0.4.0).
 
 ## Check finished work
 
-When an agent finishes, its ticket is **In review** and [Needs you](needs-you.md#agents-work) lists it as **Work finished: check it**, with the agent's summary. Read the summary, the **Agent's report** and the commits on the ticket page (see [Where the work is](#where-the-work-is)), then:
+When an agent finishes, its ticket is **In review** and [Needs you](needs-you.md#agents-work) lists it as **Work finished: check it**, with the agent's summary. Read the summary, the **Agent's report** with its **Checks**, and the commits on the ticket page (see [Where the work is](#where-the-work-is)). From version 0.4.0 the work is also on GitHub: **Pull request** on the ticket page opens its pull request, where GitHub shows every change and the automatic checks (see [Submission and the pull request](tickets.md#submission-and-the-pull-request)). Then:
 
 - if the work is right, click **Mark as done manually** and say why (see [Mark as done manually](tickets.md#mark-as-done-manually));
 - if something must change, click **Request changes**, write what should change (required), and confirm. The ticket goes back to **To do** with your comment. Its branch and commits are kept and it does not count as a failed attempt. The next dialog offers **Run now**: click it to start the next run at once, or **Later** to start it from the ticket page. The next run continues the earlier commits, on the machine holding them (any machine when they are all on GitHub), and reads your comment first. If it cannot start (the account is limited, the machine is offline), the dialog says why, as **Run now** does on the ticket page.

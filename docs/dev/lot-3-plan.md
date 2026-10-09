@@ -562,11 +562,31 @@ Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine r
 - **The limits** (65,536 and 256) are code constants in 04 section 8, like `MCP_OUTPUT_MAX_CHARACTERS`: they follow GitHub's limits (A27), not a choice of the owner.
 - **The ticket page** shows nothing of the pull request yet (F4); "Needs you" shows "Pull request not opened" with **Try again** (Playwright, desktop and phone).
 
-### [ ] F4. Screens and docs
+### [x] F4. Screens and docs
 
 - Ticket page: pull request link and state, each check's result, the workflow flag; the "Needs you" rows; Help (Tickets "Submission and the pull request", Needs you, `github-token.md` rewritten for 0.4.0); CHANGELOG.
 
 **Done when** Playwright on desktop and phone shows a submitted ticket with its pull request link and checks, and "Pull request not opened" with **Try again**.
+
+**The owner's answers (2026-10-09, start of the step)**:
+
+1. **Why a check failed, in the owner's words** (A): on the ticket page and the run page, a check that failed or could not be fully done says why in plain words; the agent's exact message is folded under "What the agent was told". One test lists every reason and proves each has its sentence, without the agent's or the code's names. Agent text is shown as untrusted content (plain text, ADR 0024) and every stored text passes the event log's credential masking before it reaches the browser.
+2. **The workflow flag keeps its reason** (A): `changed` or `not_listed`; a workflow file in the part of a cut list received is `changed`. Each text says to look at the changed files on the pull request before merging.
+3. **The pull request's state** (A, changed): "Pull request #12 · Open"; Help says the state is the one the Orchestrator saw when it last opened or updated the pull request, and the link gives the current one. No date.
+4. **"Work finished: check it"** (B): unchanged; step H's "Ready for review" carries the pull request link. Only a sentence made false by F2 or F3 is corrected now.
+5. **Screenshots** (A): `apps/web/e2e-screenshots/`, ignored by Git, emptied at the start of every run, the files the owner's.
+6. Smaller choices accepted: the result words "Passed", "Failed", "Could not be fully done", "Not checked"; the check labels as Activity shows them, a test failing when Help lacks one; "Opening the pull request on GitHub…"; the report's listed files; a 0.3.0 report without results; the "In review" row of Help's states table rewritten.
+
+*Done 2026-10-09.* Choices made in the step (specs 01, 02 and 04 updated):
+
+- **Where the owner's words are made**: in the UI, `apps/web/src/tickets/check-text.ts`, from reasons the server keeps as facts with each check (`CheckReason` in `packages/protocol`: the criterion, the listed path and its list, the counts of a cut list), one per agent message. Nothing worded is stored for the owner, so a wording fix changes every submission shown, old ones included. Submissions kept before this step (only on development databases: 0.4.0 is not released) have no reasons: they show their results and the agent's messages.
+- **Migration 0020** adds `tickets.workflow_reason`; rows flagged before keep null, since neither the reason nor the changed files were kept: the ticket page shows "Workflow files may have changed" with a sentence covering both reasons. The run's stored submissions get `workflowReason` null by default.
+- **Found while writing the reasons**, with a test that failed first: a type rule "could not be fully done" carried another listed path's failure message instead of its own when both happened.
+- **API**: the ticket detail gains `dodChecks`, `workflowFlag` and `pullRequest`; `GET /api/runs/:id` returns `RunDetail` with `refusedSubmission`, the run lists keep the plain run (a refused submission can weigh hundreds of KiB). Masking: `maskStrings` of `event-log.ts` on the report, the checks and the pull request failure.
+- **Long lists**: the first 10 items (`SUBMISSION_LIST_SHOWN`, a display constant), the rest under "Show the other N"; paths wrap anywhere (`run-refused-submission.phone.png` shows a 120-character path).
+- **Needs you** and the ticket page share one "Pull request not opened" part (`PullRequestFailureDetails`); the ticket page leaves out "Open the ticket".
+- **Screenshots**: `screenshot()` of `e2e/fixtures.ts`, emptied by `e2e/screenshots-setup.ts` (Playwright's global setup); the image runs with `--user $(id -u):$(id -g)` (`tools/e2e-docker.sh`), so the files belong to the owner's user.
+- **Help sentences promising "a later version"** for what a later step of this lot delivers, left as they are (owner's answer 3): Runs > "What on GitHub means" ("A later version reads the branch from GitHub with the pull request", step J), Needs you's introduction ("Later versions add … pull requests to merge", step J). Tickets' states table now says **Awaiting merge** is "not used yet in this version" (step H changes it). `github-token.md` says what each permission does in 0.4.0 as a whole, including review comments (step H), merge detection (step J) and CI logs given to the agent (step G2).
 
 ### [ ] G1. CI: waiting and success
 
@@ -613,6 +633,8 @@ Confirmed by the owner at the start of step F3 (2026-10-08): a revoked machine r
 
 Playwright: **Start review**, **Skip review**, the review summary on the ticket page.
 
+- **From step F4** (owner's answer 4): "Ready for review" in "Needs you" carries the pull request link; it replaces "Work finished: check it". Help > Tickets' states table says **Awaiting merge** is "not used yet in this version": rewrite it.
+
 ### [ ] I. Changes after a review
 
 - `fix_review` runs: **Run now** picks the purpose, first message with the latest points, same branch and pull request, CI, then `in_review`.
@@ -642,6 +664,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - **The stored GitHub head refreshed** (from step D3): at each read of a ticket's pull request (G1's CI poll and this step's poll), the server compares the pull request's `head.sha` with the last push it recorded. A head GitHub moved (**Update branch**, a push by hand) or a deleted branch is shown on the ticket page as a change made on GitHub; this step decides with the owner whether the machine rule and the "not on GitHub" commits use it. A ticket without a pull request is not read: its page keeps the D3 wording ("Last pushed to GitHub on …").
 - **Every merge method** (owner's note, step E3): a merge is detected the same way whether the owner used a merge commit, a squash or a rebase (`merged`, or `GET .../merge` 204), never from the shape of the default branch's commits; the owner's E3 run says which shapes GitHub gave for the method they used. No product code reads the merge commit (step E3's decision: ask the owner first if a need appears).
 - Help: merging, closed pull requests, conflicts; CHANGELOG.
+- **From step F4** (owner's answer 3): the ticket page shows "Pull request #12 · Open" with the state the server saw when it last opened or updated it. This step refreshes that state at each read of the pull request, and reviews the Help sentence of Tickets > "The pull request" ("It is the state the Orchestrator saw when it last opened or updated the pull request; the link always shows its current state on GitHub"), and the "a later version" sentences of Runs > "What on GitHub means" and Needs you's introduction.
 
 **Done when** tests with the fake GitHub cover: a merge to `done` by merge commit, squash and rebase (dependents unblocked), a merge during `in_review` with a run active, a pull request closed then reopened, cancel closing it, conflicts, and the clean-up: the GitHub branch deleted after a merge, a branch GitHub already deleted accepted, a branch another open pull request uses kept, the local branch deleted after a squash merge, a local branch with an unpushed commit kept, nothing deleted after a cancellation. Playwright: "Needs you" lists a pull request to merge, which becomes `done` after the fake merge without reload.
 

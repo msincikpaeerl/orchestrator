@@ -3,6 +3,7 @@ import {
   AddCommentRequest,
   AddDependencyRequest,
   AnswerRequest,
+  DodCheckResult,
   DodReport,
   CreateTicketRequest,
   EDITABLE_STATUSES,
@@ -20,13 +21,18 @@ import {
   type TicketListResponse,
   type TimelineEntry,
   PullRequestFailure,
+  PullRequestState,
+  WorkflowReason,
   type PullRequestTryAgainResponse,
+  type TicketPullRequest,
 } from '@orchestrator/protocol';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { requireSession } from '../auth/routes.js';
 import type { Database, Executor } from '../database.js';
+import { maskStrings } from '../event-log.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
@@ -48,6 +54,22 @@ import {
 } from './model.js';
 import { ticketBranch } from './branch.js';
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
+
+/** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
+function ticketPullRequest(ticket: TicketRow): TicketPullRequest {
+  const { pullRequestNumber: number, pullRequestUrl: url, pullRequestState: state } = ticket;
+  return {
+    opened:
+      number === null || url === null || state === null
+        ? null
+        : { number, url, state: PullRequestState.parse(state) },
+    wanted: ticket.pullRequestWantedSince !== null,
+    failure:
+      ticket.pullRequestFailure === null
+        ? null
+        : maskStrings(PullRequestFailure.parse(ticket.pullRequestFailure)),
+  };
+}
 
 export interface TicketRoutesOptions {
   db: Database;
@@ -325,7 +347,17 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       timeline,
       attemptCount: ticket.attemptCount,
       branch,
-      dodReport: ticket.dodReport === null ? null : DodReport.parse(ticket.dodReport),
+      dodReport: ticket.dodReport === null ? null : maskStrings(DodReport.parse(ticket.dodReport)),
+      dodChecks:
+        ticket.dodChecks === null
+          ? null
+          : maskStrings(z.array(DodCheckResult).parse(ticket.dodChecks)),
+      workflowFlag: ticket.workflowChanges
+        ? ticket.workflowReason === null
+          ? 'not_kept'
+          : WorkflowReason.parse(ticket.workflowReason)
+        : null,
+      pullRequest: ticketPullRequest(ticket),
     };
   }
 

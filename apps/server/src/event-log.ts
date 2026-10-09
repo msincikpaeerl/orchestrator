@@ -26,6 +26,14 @@ function maskValue(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Every string of a parsed value with credentials masked, as the event log shows them: for stored
+ * agent text sent to the browser (a submission's report and checks; lot 3 step F4).
+ */
+export function maskStrings<T>(value: T): T {
+  return maskValue(value) as T;
+}
+
 /** Only the fields of the type's payload schema, secrets masked; null if it does not match. */
 export function visiblePayload(type: EventType, payload: unknown): Record<string, unknown> | null {
   const parsed = EventPayloads[type].safeParse(payload);

@@ -132,7 +132,61 @@ Open the ticket and:
 - click **Accept** to keep it: it moves to **To do**, ready for **Run now**. You can **Edit** it before or after accepting it;
 - or click **Reject**, write why if you like, and confirm: the ticket is **Cancelled** with its history. You can reopen it later.
 
-## When the work cannot be pushed to GitHub
+## Submission and the pull request
+
+From version 0.4.0, when an agent has finished a ticket, it hands its work in with a report: a summary, each acceptance criterion met or not with why, and the files of tests, documentation and architecture decisions it changed (or why none were needed). Its machine first pushes the ticket's branch to GitHub. The Orchestrator then checks the work, and:
+
+- when the checks pass, it accepts the work: the run ends, the ticket moves to **In review**, and the Orchestrator opens the ticket's pull request on GitHub just after (see [The pull request](#the-pull-request));
+- when a check fails, it refuses the work and tells the agent why; the agent fixes it and hands it in again, in the same run. Only a branch that could not be pushed to GitHub ends the run at once (see [When the work cannot be pushed to GitHub](#when-the-work-cannot-be-pushed-to-github)).
+
+### The checks
+
+The ticket page shows them under **Agent's report** > **Checks**, for the work accepted. The run page shows them under **Latest refused submission**, for the last work of that run the checks refused: there you see why an agent was refused, also when it is refused again and again.
+
+| Check | What the Orchestrator checks |
+|---|---|
+| **Acceptance criteria met** | The agent reports every acceptance criterion of the ticket as met. |
+| **All work committed** | No change is left uncommitted on the machine. |
+| **Commits on the branch** | The ticket's branch has commits of its own, compared with the project's default branch. |
+| **Branch pushed to GitHub** | The machine pushed the ticket's branch to GitHub. |
+| **Rules of the ticket type** | A **Documentation** ticket lists at least one documentation file its branch changed (a README.md counts). A **Spike** lists at least one architecture decision or document its branch changed. An explanation does not replace them. Other types have no rule of their own. |
+| **Listed files changed on the branch** | Every file the agent lists for tests, documentation and architecture decisions is a file its branch changed. A folder is not accepted, nor a path outside the project's files. |
+
+Each check shows one result:
+
+| Result | Meaning |
+|---|---|
+| **Passed** | The check found nothing wrong. |
+| **Failed** | The check found a problem, and the work was refused. The lines below it say why, for example "Documentation listed: “docs/user/contact.md” is not a file the ticket's branch changed." |
+| **Could not be fully done** | The machine could not send the whole list of files the branch changed (a very large change, or a daemon older than 0.4.0), so some listed files could not be compared. The lines below say how many. This never refuses the work. |
+| **Not checked** | The branch was not pushed because the work was not ready: changes not committed, or no commits. The checks that failed say which. |
+
+Under each check that failed or could not be fully done, **What the agent was told** opens the message the agent received, word for word. It is written for an agent, in the terms an agent works with; the lines above it say the same in plain words. Paths and sentences written by an agent are always shown as plain text, with any secret hidden. A long list shows its first 10 lines; **Show the other …** opens the rest.
+
+Work accepted by version 0.3.0 has no result per check: its page says it was checked by an earlier version.
+
+### The pull request
+
+When the work is accepted, the Orchestrator opens a pull request for the ticket on GitHub, from the ticket's branch into the project's default branch. Its title is the ticket's number and title, and its description holds the agent's summary, the acceptance criteria, the tests, documentation and architecture decisions it lists, a warning when the work may change a GitHub workflow, and a link to the ticket in the Orchestrator. A later accepted submission updates the same pull request; one you closed without merging is reopened. If a pull request of the ticket was already merged, a new one is opened.
+
+Nothing in it can act on GitHub by itself: secrets are hidden, HTML is shown as text, and an invisible space is added after `@`, `#` and `GH-` (and in links to issues), so the text notifies nobody and closes no issue. A ticket title longer than GitHub allows for a pull request is cut, and so is a very long description, with a note saying so. One limit remains: a commit message an agent wrote with "fixes #3" still closes issue 3 when you merge, since the Orchestrator never rewrites the agent's commits.
+
+The ticket page shows it under **Pull request**:
+
+- **Pull request #12 · Open**: the link opens it on GitHub. The state is **Open**, **Closed without merging** or **Merged**. It is the state the Orchestrator saw when it last opened or updated the pull request; the link always shows its current state on GitHub.
+- **Opening the pull request on GitHub…**: the work was just accepted, and the pull request is being opened or updated.
+- **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open or update it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
+
+### Workflow files
+
+Workflows are the files of `.github/workflows/`: the automatic checks GitHub runs on the pull request. A workflow runs on GitHub before anyone reads it, and an agent changing one could weaken the checks that judge its own work. So the ticket page warns you under **Pull request**, and the pull request's description says the same:
+
+| Warning | Why | What to do |
+|---|---|---|
+| **Workflow files changed** | The work changes files in `.github/workflows/`. | Before merging, open the pull request's **Files changed** tab and read the changes in `.github/workflows/` first. |
+| **Workflow files may have changed** | The machine could not send the whole list of files the work changed, so a workflow change cannot be ruled out. Work accepted before this warning kept its reason also shows it. | Before merging, look at every changed file on the pull request's **Files changed** tab, `.github/workflows/` first. |
+
+### When the work cannot be pushed to GitHub
 
 From version 0.4.0, when an agent submits its work, its machine first pushes the ticket's branch to GitHub. If GitHub refuses the push or cannot be reached, the agent can do nothing about it, so it stops at once:
 
@@ -150,14 +204,6 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 
 **Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done, or the machine is revoked (its work not on GitHub is then lost, see [Runs](runs.md#where-the-work-is)). It stays while the next run works.
 
-## The pull request
-
-From version 0.4.0, when an agent's submission passes the checks, the Orchestrator opens a pull request for the ticket on GitHub, from the ticket's branch into the project's default branch. Its title is the ticket's number and title, and its description holds the agent's summary, the acceptance criteria, the tests, documentation and architecture decisions it lists, a warning when the work changes a GitHub workflow, and a link to the ticket in the Orchestrator. A later accepted submission updates the same pull request; one you closed without merging is reopened. If a pull request of the ticket was already merged, a new one is opened.
-
-Nothing in it can act on GitHub by itself: secrets are hidden, HTML is shown as text, and an invisible space is added after `@`, `#` and `GH-` (and in links to issues), so the text notifies nobody and closes no issue. A ticket title longer than GitHub allows for a pull request is cut, and so is a very long description, with a note saying so. One limit remains: a commit message an agent wrote with "fixes #3" still closes issue 3 when you merge, since the Orchestrator never rewrites the agent's commits.
-
-If GitHub cannot open it, [Needs you](needs-you.md#pull-request-not-opened) says why, with **Try again**.
-
 ## Ticket states
 
 | State | Meaning |
@@ -166,12 +212,12 @@ If GitHub cannot open it, [Needs you](needs-you.md#pull-request-not-opened) says
 | **To do** | Waiting for work. |
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
-| **In review** | In this version: the agent finished its work, on a branch of your machine, and it waits for you to check it. From a later version: the work is on GitHub and being reviewed. |
-| **Awaiting merge** | The review approved the work: you merge the pull request on GitHub. |
+| **In review** | The agent finished its work and the checks accepted it. From version 0.4.0 the work is on GitHub, with its pull request (see [Submission and the pull request](#submission-and-the-pull-request)); it waits for you to check it. |
+| **Awaiting merge** | The review approved the work: you merge the pull request on GitHub. Not used yet in this version. |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 
-In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, use [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not. **Awaiting merge** comes with pull requests, in a later version.
+In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, on its pull request, use [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not. Nothing moves a ticket to **Awaiting merge** yet.
 
 ## If an action is refused
 

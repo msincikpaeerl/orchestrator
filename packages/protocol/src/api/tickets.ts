@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
-import { DodReport } from '../mcp/dod-report.js';
+import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
+import { PullRequestFailure, PullRequestState } from './pull-requests.js';
 import { PauseReason, RunStatus } from './run-status.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
@@ -239,6 +240,27 @@ export const TicketBranch = z.object({
 });
 export type TicketBranch = z.infer<typeof TicketBranch>;
 
+/**
+ * The ticket's pull request (02, section 6.4; lot 3 step F4): the one the server last opened,
+ * updated or found, with its state as the server saw it then (step J reads it again); whether an
+ * accepted submission still waits for it; and the latest failed attempt.
+ */
+export const TicketPullRequest = z.object({
+  opened: z
+    .object({ number: z.int().positive(), url: z.url(), state: PullRequestState })
+    .nullable(),
+  wanted: z.boolean(),
+  failure: PullRequestFailure.nullable(),
+});
+export type TicketPullRequest = z.infer<typeof TicketPullRequest>;
+
+/**
+ * The workflow flag of the accepted submission, with its reason (04, section 3.1; lot 3 step F4):
+ * `not_kept` for a submission flagged before the reason was kept.
+ */
+export const WorkflowFlag = z.enum(['changed', 'not_listed', 'not_kept']);
+export type WorkflowFlag = z.infer<typeof WorkflowFlag>;
+
 export const TicketDetail = TicketSummary.extend({
   description: z.string(),
   acceptanceCriteria: z.array(z.string()),
@@ -251,8 +273,16 @@ export const TicketDetail = TicketSummary.extend({
   attemptCount: z.int().min(0),
   /** The ticket branch, set at the first run, and where its commits are (01, section 3.4). */
   branch: TicketBranch.nullable(),
-  /** The latest Definition of Done report accepted from an agent (04, section 3.1). */
+  /**
+   * The latest Definition of Done report accepted from an agent (04, section 3.1). Agent text,
+   * credentials masked.
+   */
   dodReport: DodReport.nullable(),
+  /** Each check's result of that submission; null when accepted before 0.4.0, or none. */
+  dodChecks: z.array(DodCheckResult).nullable(),
+  /** Its workflow flag; null when not raised. */
+  workflowFlag: WorkflowFlag.nullable(),
+  pullRequest: TicketPullRequest,
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 
