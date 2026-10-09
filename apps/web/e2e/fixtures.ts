@@ -229,6 +229,27 @@ export async function ciPasses(page: Page, runId: string) {
   expect(response.status()).toBe(204);
 }
 
+/**
+ * One CI check of the run's submission with GitHub's answers given for it (lot 3 step G1b): its
+ * workflow runs and statuses, GitHub's request limit, a conflict, the start wait over.
+ */
+export async function ciCheck(
+  page: Page,
+  runId: string,
+  answers: {
+    runs?: { name: string; status: string; conclusion: string | null }[];
+    statuses?: { context: string; state: 'error' | 'failure' | 'pending' | 'success' }[];
+    rateLimitedSeconds?: number;
+    mergeable?: boolean | null;
+    startedMinutesAgo?: number;
+  },
+) {
+  const response = await page.request.post(`${controlUrl}/ci/check`, {
+    data: { runId, ...answers },
+  });
+  expect(response.status()).toBe(204);
+}
+
 /** A `run.state` report, which the server must accept. */
 export async function reportState(
   page: Page,

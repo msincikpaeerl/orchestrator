@@ -114,7 +114,11 @@ const server = await startServer(
 // offer (a merge with conflicts) answers 409 with the reason. POST /ci/pass `{"runId":"…"}`: CI
 // passes for the commit the run submitted (lot 3 step G1a). The tests' submissions report made-up
 // commits, so the wait is begun and GitHub's answers for that commit are given here, then one CI
-// check runs; it answers 204 once the check is over.
+// check runs; it answers 204 once the check is over. POST /ci/check `{"runId":"…","runs":[{"name":
+// "CI","status":"in_progress","conclusion":null}],"statuses":[{"context":"deploy","state":"success"}]}`
+// runs one CI check with these answers for the run's commit, used for that check only (lot 3 step
+// G1b); `"rateLimitedSeconds":600` makes GitHub refuse it for its request limit, `"mergeable":false`
+// gives the pull request a conflict, `"startedMinutesAgo":6` puts **Wait for CI to start** behind.
 const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
@@ -149,6 +153,24 @@ function latestDaemon(): ScriptedDaemon {
 }
 
 const RunControl = z.object({ runId: z.uuid() });
+/** One CI check of a run's made-up commit, with GitHub's answers for it (lot 3 step G1b). */
+const CiCheckControl = z.object({
+  runId: z.uuid(),
+  runs: z
+    .array(z.object({ name: z.string(), status: z.string(), conclusion: z.string().nullable() }))
+    .default([]),
+  statuses: z
+    .array(
+      z.object({ context: z.string(), state: z.enum(['error', 'failure', 'pending', 'success']) }),
+    )
+    .default([]),
+  /** GitHub's request limit on the runs' listing, allowing requests again after this long. */
+  rateLimitedSeconds: z.int().positive().optional(),
+  /** The pull request's `mergeable`, when the check reads it. */
+  mergeable: z.boolean().nullable().optional(),
+  /** **Wait for CI to start** over: the wait begun this many minutes ago. */
+  startedMinutesAgo: z.int().min(0).optional(),
+});
 const RequestControl = z.object({ message: DaemonMessage });
 
 const ConnectDaemon = z.object({
@@ -271,6 +293,75 @@ async function handle(
           status: 200,
           body: { state: 'pending', sha: commit, total_count: 0, statuses: [] },
         };
+      }
+      return reply;
+    };
+    try {
+      await ciWatcherOf(server.app).tick();
+    } finally {
+      github.alter = undefined;
+    }
+    return 204;
+  }
+  if (request.method === 'POST' && request.url === '/ci/check') {
+    const check = CiCheckControl.parse(await readJson(request));
+    const { rows } = await pool.query<{ commit: string | null }>(
+      `UPDATE runs SET ci_wait_started_at = CASE WHEN $2::int IS NULL
+         THEN coalesce(ci_wait_started_at, now()) ELSE now() - make_interval(mins => $2::int) END
+       WHERE id = $1 RETURNING ci_commit AS commit`,
+      [check.runId, check.startedMinutesAgo ?? null],
+    );
+    const commit = rows[0]?.commit;
+    if (!commit) return 409;
+    github.alter = (sent, reply) => {
+      if (sent.path.includes(`/actions/runs?head_sha=${commit}`)) {
+        if (check.rateLimitedSeconds !== undefined) {
+          const reset = Math.floor(Date.now() / 1000) + check.rateLimitedSeconds;
+          return {
+            status: 403,
+            body: { message: 'API rate limit exceeded for user ID 1.' },
+            headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) },
+          };
+        }
+        return {
+          status: 200,
+          body: {
+            total_count: check.runs.length,
+            workflow_runs: check.runs.map((run, index) => ({
+              id: index + 1,
+              name: run.name,
+              event: 'pull_request',
+              status: run.status,
+              conclusion: run.conclusion,
+              head_sha: commit,
+              head_branch: null,
+              html_url: `${github.url}/octo-owner/bakery/actions/runs/${String(index + 1)}`,
+              pull_requests: [],
+            })),
+          },
+        };
+      }
+      if (sent.path.includes(`/commits/${commit}/status`)) {
+        return {
+          status: 200,
+          body: {
+            state: 'pending',
+            sha: commit,
+            total_count: check.statuses.length,
+            statuses: check.statuses.map((status) => ({
+              ...status,
+              description: null,
+              target_url: `https://preview.example.com/${status.context.length > 20 ? 'long' : 'short'}`,
+            })),
+          },
+        };
+      }
+      if (
+        check.mergeable !== undefined &&
+        sent.method === 'GET' &&
+        /\/pulls\/\d+$/.test(new URL(sent.path, 'http://fake').pathname)
+      ) {
+        return { ...reply, body: { ...(reply.body as object), mergeable: check.mergeable } };
       }
       return reply;
     };
