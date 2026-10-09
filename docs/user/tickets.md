@@ -136,7 +136,7 @@ Open the ticket and:
 
 From version 0.4.0, when an agent has finished a ticket, it hands its work in with a report: a summary, each acceptance criterion met or not with why, and the files of tests, documentation and architecture decisions it changed (or why none were needed). Its machine first pushes the ticket's branch to GitHub. The Orchestrator then checks the work, and:
 
-- when the checks pass, it accepts the work: the run ends, the ticket moves to **In review**, and the Orchestrator opens the ticket's pull request on GitHub just after (see [The pull request](#the-pull-request));
+- when the checks pass, it accepts the work and opens the ticket's pull request on GitHub just after (see [The pull request](#the-pull-request)). The run then waits for CI, GitHub's automatic checks of the pull request: when CI passes, the run ends and the ticket moves to **In review** (see [Waiting for CI](#waiting-for-ci));
 - when a check fails, it refuses the work and tells the agent why; the agent fixes it and hands it in again, in the same run. Only a branch that could not be pushed to GitHub ends the run at once (see [When the work cannot be pushed to GitHub](#when-the-work-cannot-be-pushed-to-github)).
 
 ### The checks
@@ -178,6 +178,29 @@ The ticket page shows it under **Pull request**:
 - **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
 - **Pull request not updated**, under an open pull request: a later accepted submission could not update it. The pull request is there, but its description still shows the report of the earlier submission; the new commits are on GitHub, in the pull request. Click **Try again** as above. A pull request closed without merging, or merged, says **Pull request not opened**, since the next try reopens it or opens a new one.
 
+### Waiting for CI
+
+CI is the set of automatic checks GitHub runs on the pull request: the GitHub Actions workflows of the project, and any other service reporting a status on GitHub. While it runs, the run page says **waiting for CI**. The agent's session stays open, idle: it uses none of your Claude usage, and its time counts as waiting, not working (so **Longest run** and **Idle timeout** do not apply). The run still counts in its Claude account's **Runs at the same time**, so with the default of 1, another ticket of that account waits for it.
+
+What the Orchestrator reads:
+
+- Only the commit the machine pushed when the agent handed its work in: never an older commit of the branch, even one whose CI passed, nor a commit added to the branch on GitHub afterwards (for example by **Update branch**).
+- It asks GitHub every **GitHub check interval** (60 seconds by default, in **Settings > Limits**). The wait starts when the pull request is open; a pull request that was already open counts at once.
+
+What it decides:
+
+| CI result | What happens |
+|---|---|
+| **Passed**: every workflow run and status finished and passed (a skipped one counts as passed) | The run ends as succeeded, and the ticket moves to **In review**. |
+| **No CI found**: nothing appeared within **Wait for CI to start** (5 minutes by default) | The work is accepted as if CI had passed, and the ticket moves to **In review**. A project without workflows always gets this. When the work also changed workflow files, Activity says both in one sentence: the agent may have removed or weakened CI, so read the changes in `.github/workflows/` before merging (see [Workflow files](#workflow-files)). |
+| **Conflicts with the default branch**: nothing appeared, and the pull request conflicts with the project's default branch | Never accepted: GitHub runs no CI on a pull request with a conflict, so the work was not tested. In this version the run waits until **CI wait at submission**, then stops as below. |
+| **Failed**: a workflow run failed, was cancelled or timed out, or a status failed | In this version the run ends as **failed**, and it counts as a failed attempt. The ticket goes back to **To do** with a comment naming what failed. |
+| Still running when **CI wait at submission** (20 minutes by default) is reached | The run ends as **failed**, without counting as a failed attempt. The ticket goes back to **To do** with its branch, its pull request and a comment saying why. |
+
+If GitHub cannot be reached, refuses because of its request limit, or answers something the Orchestrator cannot read, the run keeps waiting and the Orchestrator asks again: only **CI wait at submission** ends the wait. [Activity](activity.md) shows when GitHub could not be checked, and when it could again. A problem with the token shows in [Needs you](needs-you.md) as usual.
+
+If the agent's session stops while it waits (Claude Code closed, or the machine restarted), nothing is lost: CI still decides, and a run whose CI passes ends as succeeded. If the Orchestrator itself restarts, it goes on waiting where it stopped. A result GitHub gave meanwhile counts, even after **CI wait at submission**.
+
 ### Workflow files
 
 Workflows are the files of `.github/workflows/`: the automatic checks GitHub runs on the pull request. A workflow runs on GitHub before anyone reads it, and an agent changing one could weaken the checks that judge its own work. So the ticket page warns you under **Pull request**, and the pull request's description says the same:
@@ -213,7 +236,7 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 | **To do** | Waiting for work. |
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
-| **In review** | The agent finished its work and the checks accepted it. From version 0.4.0 the work is on GitHub, with its pull request (see [Submission and the pull request](#submission-and-the-pull-request)); it waits for you to check it. |
+| **In review** | The agent finished its work and the checks accepted it. From version 0.4.0 the work is on GitHub, with its pull request, and CI passed or found nothing to run (see [Submission and the pull request](#submission-and-the-pull-request)); it waits for you to check it. |
 | **Awaiting merge** | The review approved the work: you merge the pull request on GitHub. Not used yet in this version. |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |

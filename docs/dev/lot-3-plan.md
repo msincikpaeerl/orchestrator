@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3 and F4 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4 and G1a done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -618,7 +618,7 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 9. **After a server restart**: the run keeps its commit, when its wait started, the two waits as resolved when the run started (04 section 8), the last result and the last check failure. The first tick checks every waiting run; a finished result wins over a deadline passed meanwhile. CI passed: the server ends the run `succeeded` and moves the ticket to `in_review` in one transaction, then sends `run.stop` `completed`; a machine offline gets the stop at its reconnection.
 10. **Existing tests** adapted to wait for CI on the fake change how they wait, never what they expect; any changed expectation is listed in the summary with its reason.
 
-### [ ] G1a. The wait and success
+### [x] G1a. The wait and success
 
 - Protocol and daemon: `pending_ci`, the daemon's `waiting_ci` (no reminder, no working time, no idle timeout), `run.stop` `completed` ending the run `submitted`, a session lost during the wait (answer 4), the daemon's restart.
 - Server: the run's CI fields (migration), the wait's start (answer 7), the polling loop restored at start, the CI result of the pushed commit (answer 1), "No CI found" and conflicts (answer 6), CI passed (answer 9), GitHub problems (answer 8).
@@ -626,6 +626,16 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 - The settings **GitHub check interval** and **Wait for CI to start**, with their texts in Settings and Help.
 
 **Done when** server and daemon tests with the fake GitHub and a clock the test controls show: CI passing; no CI found; an older green result not accepting newer work; a conflict with no run never passing (also `mergeable` null then false), a conflict after the runs started changing nothing; GitHub unreachable, rate limited and unreadable with the run still waiting; a server restart, also with CI finished while it was down; the session ending during the wait then CI passing (`submitted`, no failed attempt); working time and the idle timeout not counting while waiting.
+
+*Done 2026-10-09.* Choices made in the step (specs 01, 04 and 05 updated):
+
+- **Where it lives**: `apps/server/src/runs/ci-wait.ts` (`CiWatcher`, the loop `PollLoop`, the wait's start shared with the submission and the pull request's opener), `ci-result.ts` (the result of one commit), the run service's `ciRecorded`, `ciDecided` and `ciTimedOut`; migration 0021 adds the run's CI fields; the API's run gains `ci` (for G1b's run page). Events `run.ci_waiting`, `run.ci_result`, `run.ci_check_failed`, `run.ci_check_recovered`; causes `ci_result` and `ci_timeout`.
+- **Conclusions**: a completed run passes on `success`, `skipped` or `neutral` only; every other conclusion (`action_required`, `stale`, …) fails, the safe side. A status's link is kept only when it is a link.
+- **A daemon reporting its end `submitted` while its run waits** accepts nothing: the run keeps waiting, its session gone, and the CI result decides (no run accepted by mistake, owner's point 2).
+- **Found by the phone end-to-end run**, with a test that failed first: the end report of a run the server already ended (Stop run, and now every run whose CI passed) added the branch without telling the realtime stream, so an open ticket page kept no commits.
+- **Found while testing the fake** (A29): it could not remove a file in its bare repositories (`update-index --force-remove` needs a work tree); it uses `--index-info`.
+- **A pull request not opened**: the loop tries it again at every check until **CI wait at submission**, and each failed attempt writes `ticket.pull_request_not_opened` (F3's behaviour): up to one event per minute while GitHub refuses. Flagged to the owner.
+- **Existing tests**: they wait for CI on the fake before `in_review` (`run-harness.ts` `ciPasses`; `runs.test.ts` and the acceptance scenarios with GitHub's answers for their made-up commits; the end-to-end tests with `POST /ci/pass`). Expectations changed, each because a spec says so: `ticket_submit` answers `pending_ci` instead of `accepted` (04 section 3.1; `submission.test.ts`, `pull-request.test.ts`, `submission.e2e.ts`, `needs-you.e2e.ts`); **Wait for CI to start** is per project (04 section 8; `settings.test.ts`); the agents' texts snapshot (the common rules' new sentence); the every-event scenario writes the four new events. The acceptance scenarios now wait for the daemon's end report after the run succeeded, since the server ends the run when CI passes and the branch comes with the report afterwards.
 
 ### [ ] G1b. `ci_status` and the run page
 
