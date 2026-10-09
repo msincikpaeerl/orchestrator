@@ -142,6 +142,8 @@ export const TicketSummary = z.object({
       machine: z.object({ id: z.uuid(), name: z.string(), online: z.boolean() }),
       /** The progress line as shown (06, section 4.2); null before the first. */
       progress: z.object({ text: z.string(), at: z.iso.datetime() }).nullable(),
+      /** Its work accepted, it waits for CI on GitHub (lot 3 step G1b). */
+      waitingForCi: z.boolean(),
     })
     .nullable(),
   createdAt: z.iso.datetime(),

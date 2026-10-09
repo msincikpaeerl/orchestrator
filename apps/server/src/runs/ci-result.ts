@@ -1,17 +1,20 @@
-import type { CiCheck } from '@orchestrator/protocol';
+import { maskSecrets, type CiCheck } from '@orchestrator/protocol';
 import { z } from 'zod';
 import type { CommitStatus, WorkflowRun } from '../github/ci.js';
 
 // The CI result of a submission (04, section 3.1; lot 3 step G1a): every GitHub Actions workflow
 // run of the commit pushed at the submission, plus that commit's statuses. A run of another
-// commit is never part of it, whatever GitHub answered (owner's answer 1, step G1).
+// commit is never part of it, whatever GitHub answered (owner's answer 1, step G1). Names are
+// anyone's text: secrets masked before they reach an agent or a screen (lot 3 step G1b).
 
 /** GitHub's conclusions that pass: success, and skipped or neutral (04, section 3.1). */
 const PASSING = ['success', 'skipped', 'neutral'];
 
 /** A link GitHub gave, kept only when it is one: a status's `target_url` is anyone's text. */
 function link(url: string | null): string | null {
-  return url !== null && z.url().safeParse(url).success ? url : null;
+  if (url === null) return null;
+  const masked = maskSecrets(url);
+  return z.url().safeParse(masked).success ? masked : null;
 }
 
 /**
@@ -25,7 +28,7 @@ export function ciChecks(commit: string, runs: WorkflowRun[], status: CommitStat
     .filter((run) => run.headSha === commit)
     .map((run): CiCheck => ({
       kind: 'workflow_run',
-      name: run.name === '' ? `Workflow run ${String(run.id)}` : run.name,
+      name: run.name === '' ? `Workflow run ${String(run.id)}` : maskSecrets(run.name),
       state:
         run.status !== 'completed'
           ? 'pending'
@@ -33,12 +36,14 @@ export function ciChecks(commit: string, runs: WorkflowRun[], status: CommitStat
             ? 'passed'
             : 'failed',
       url: link(run.url),
+      run_id: run.id,
     }));
   const fromStatuses = status.statuses.map((each): CiCheck => ({
     kind: 'status',
-    name: each.context,
+    name: maskSecrets(each.context),
     state: each.state === 'success' ? 'passed' : each.state === 'pending' ? 'pending' : 'failed',
     url: link(each.targetUrl),
+    run_id: null,
   }));
   return [...fromRuns, ...fromStatuses];
 }

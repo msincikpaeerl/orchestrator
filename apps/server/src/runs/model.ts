@@ -161,6 +161,9 @@ export interface RunViewContext {
   account: { id: string; label: string };
   /** For a run paused on a detected limit: when it can be resumed (02, section 4). */
   resumeAfter: { at: string; estimated: boolean } | null;
+  /** The ticket's pull request and the project's default branch, for the wait for CI. */
+  pullRequest: { number: number; url: string } | null;
+  base: string | null;
 }
 
 export function toRun(row: RunRow, context: RunViewContext): Run {
@@ -191,7 +194,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
         ? null
         : { text: row.progressShown, at: row.progressShownAt.toISOString() },
     outcome: row.outcome,
-    ci: ciWait(row),
+    ci: ciWait(row, context),
     workingMs: row.workingMs,
     waitingMs: row.waitingMs,
     statusSince: row.statusSince.toISOString(),
@@ -247,11 +250,15 @@ export function ciDeadlines(
   };
 }
 
-function ciWait(row: RunRow): RunCiWait | null {
+function ciWait(
+  row: RunRow,
+  context: Pick<RunViewContext, 'pullRequest' | 'base'>,
+): RunCiWait | null {
   const deadlines = ciDeadlines(row);
   if (row.ciCommit === null || deadlines === null) return null;
   return {
     commit: row.ciCommit,
+    submittedAt: SubmissionRecord.parse(row.submission).at,
     since: row.ciWaitStartedAt?.toISOString() ?? null,
     waitingSince: row.ciWaitingSince?.toISOString() ?? null,
     deadline: deadlines.deadline.toISOString(),
@@ -259,6 +266,8 @@ function ciWait(row: RunRow): RunCiWait | null {
     result: row.ciResult === null ? null : CiResult.parse(row.ciResult),
     checkedAt: row.ciCheckedAt?.toISOString() ?? null,
     checkFailure: row.ciCheckFailure === null ? null : CiCheckFailure.parse(row.ciCheckFailure),
+    pullRequest: context.pullRequest,
+    base: context.base,
   };
 }
 

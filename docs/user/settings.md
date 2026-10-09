@@ -65,6 +65,8 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Failed attempts before asking you (from version 0.4.0) | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
 | CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a submitted ticket waits for its CI result before the attempt fails. |
 | Wait for CI to start (from version 0.4.0) | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch). |
+| Longest CI log excerpt (from version 0.4.0) | 4,000 characters | 500 to 20,000 | No | How much of each failed CI step's log an agent receives, keeping its end. |
+| Longest CI log read (from version 0.4.0) | 20 megabytes | 1 to 500 | No | How much of a failed CI job's log the Orchestrator downloads from GitHub to find each failed step's part. Beyond it, the agent gets the end of what was read and is told so. |
 
 ### Runs
 

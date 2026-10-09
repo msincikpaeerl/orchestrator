@@ -9,7 +9,7 @@ import {
   TicketType,
 } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
-import { CiResult } from './ci.js';
+import { McpCiStatus } from './ci.js';
 import { DodReport } from './dod-report.js';
 
 export { DodReport };
@@ -176,14 +176,9 @@ export const MCP_TOOLS = {
   },
   ci_status: {
     description:
-      "Returns the CI result of your run's pull request: every GitHub Actions workflow run and commit status of its head commit, with pending, passed or failed, and for each failed job its failed steps and the end of its log. Use it when you need the CI result again; when CI fails after your submission, you receive the same result as a message without asking. Before your ticket has a pull request, `pull_request` and `ci` are null.",
+      "Returns the CI result of the latest work of your ticket that ticket_submit accepted: every GitHub Actions workflow run and commit status of that commit, pending, passed or failed, and for each failed job its failed steps, each with its part of the job's log. The answer names the commit, says whether your run or an earlier one handed it in, and when the result was read on GitHub; a finished result is not read again. It never covers work you did after that submission. When CI fails after your submission, you receive the same result as a message without asking.",
     input: NoInput,
-    output: z.object({
-      pull_request: z
-        .object({ number: z.int().positive(), url: z.url(), head: z.string() })
-        .nullable(),
-      ci: CiResult.nullable(),
-    }),
+    output: McpCiStatus,
   },
   agent_list: {
     description:

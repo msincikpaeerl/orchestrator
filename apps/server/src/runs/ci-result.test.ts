@@ -74,3 +74,20 @@ describe('the CI result of a submitted commit', () => {
     expect(ciChecks(COMMIT, [run({ name: '' })], statuses())[0]?.name).toBe('Workflow run 7');
   });
 });
+
+describe('the names GitHub gives (lot 3 step G1b)', () => {
+  it('masks secrets in workflow names and status contexts, which anyone can write', () => {
+    const token = `ghp_${'a'.repeat(36)}`;
+    const status = statuses('success');
+    status.statuses = status.statuses.map((each) => ({ ...each, context: `deploy ${token}` }));
+    const checks = ciChecks(COMMIT, [run({ name: `CI ${token}` })], status);
+    expect(checks.map((check) => check.name)).toEqual(['CI [hidden]', 'deploy [hidden]']);
+    const linked = ciChecks(COMMIT, [run({ url: `https://example.com/?t=${token}` })], status);
+    expect(linked[0]?.url).not.toContain(token);
+  });
+
+  it('keeps the workflow run id to read its jobs, none for a status', () => {
+    const checks = ciChecks(COMMIT, [run()], statuses('success'));
+    expect(checks.map((check) => check.run_id)).toEqual([7, null]);
+  });
+});

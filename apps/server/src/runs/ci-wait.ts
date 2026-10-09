@@ -457,6 +457,10 @@ export class CiWatcher {
       decided = state;
       if (state !== 'pending') await head().catch(() => undefined);
     }
-    return { ok: true, result: { state: decided, checks, failed_jobs: [] }, pullRequestHead };
+    return {
+      ok: true,
+      result: { state: decided, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
+      pullRequestHead,
+    };
   }
 }

@@ -18,6 +18,7 @@ import {
   type TicketSummary,
 } from '@orchestrator/protocol';
 import { formatDateTime } from '../github/text';
+import { WAITING_FOR_CI } from './ci-text';
 import { statusLabel } from '../tickets/text';
 
 // Runs in plain words (02, section 1: the owner never reads codes), for the run screens, the
@@ -235,9 +236,11 @@ export function accountStatusText(
 
 /** The run's status in one sentence, for the run page and the lists of runs. */
 export function runStateText(
-  run: Pick<Run, 'status' | 'pauseReason' | 'failureReason' | 'machine'>,
+  run: Pick<Run, 'status' | 'pauseReason' | 'failureReason' | 'machine'> & { ci?: Run['ci'] },
 ): string {
   const offline = isActive(run.status) && !run.machine.online ? ' (machine offline)' : '';
+  // Its work accepted, the run waits for CI on GitHub (lot 3 step G1b).
+  if (run.status === 'running' && (run.ci ?? null) !== null) return `${WAITING_FOR_CI}${offline}`;
   switch (run.status) {
     case 'paused_quota':
       return `Paused: ${run.pauseReason ? pauseText[run.pauseReason] : 'usage limit'}${offline}`;
@@ -260,7 +263,9 @@ export function cardRunText(run: NonNullable<TicketSummary['activeRun']>): {
       ? `Paused ${where}`
       : run.status === 'waiting_human'
         ? `Waiting for your answer (${run.machine.name})`
-        : `${runStatusLabel[run.status]} ${where}`;
+        : run.waitingForCi
+          ? `${WAITING_FOR_CI} ${where}`
+          : `${runStatusLabel[run.status]} ${where}`;
   const text = run.progress?.text ?? null;
   return {
     status,

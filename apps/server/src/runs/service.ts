@@ -90,6 +90,7 @@ import {
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
+import { CiStatusReader } from './ci-status.js';
 import {
   endOfReason,
   failureWords,
@@ -176,6 +177,14 @@ export class RunService {
     this.db = options.db;
     this.log = options.log;
     this.secondMs = options.secondMs ?? 1000;
+    const ciStatus = new CiStatusReader({
+      db: options.db,
+      key: options.key,
+      apiUrl: options.githubApiUrl,
+      log: options.log,
+      now: () => this.now(),
+      templates: async () => (await this.files()).templates,
+    });
     this.mcp = new McpBackend({
       db: options.db,
       log: options.log,
@@ -183,6 +192,7 @@ export class RunService {
       secondMs: this.secondMs,
       templates: async () => (await this.files()).templates,
       pullRequestWanted: (ticketId) => options.pullRequestWanted?.(ticketId),
+      ciStatus: (call) => ciStatus.answer(call),
     });
   }
 
@@ -1534,6 +1544,9 @@ export class RunService {
     await this.withRun(runId, async (tx, locked) => {
       if (!this.waitsFor(locked, commit)) return;
       const now = this.now();
+      // Every check changes the run page's CI card (its time, its checks), also when it writes no
+      // event (lot 3 step G1b): the screens read the run again.
+      await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project.id });
       const previous =
         locked.run.ciCheckFailure === null ? null : CiCheckFailure.parse(locked.run.ciCheckFailure);
       const event = <T extends 'run.ci_check_failed' | 'run.ci_check_recovered' | 'run.ci_result'>(
@@ -1730,7 +1743,10 @@ export class RunService {
       .select({
         run: schema.runs,
         projectKey: schema.projects.key,
+        base: schema.projects.defaultBranch,
         ticketNumber: schema.tickets.number,
+        pullRequestNumber: schema.tickets.pullRequestNumber,
+        pullRequestUrl: schema.tickets.pullRequestUrl,
         profile: { key: schema.agentProfiles.key, name: schema.agentProfiles.name },
         machine: {
           id: schema.machines.id,
@@ -1761,6 +1777,11 @@ export class RunService {
         },
         account: { id: row.account.id, label: row.account.label },
         resumeAfter: resumeAfter(row.run, row.account, now),
+        pullRequest:
+          row.pullRequestNumber === null || row.pullRequestUrl === null
+            ? null
+            : { number: row.pullRequestNumber, url: row.pullRequestUrl },
+        base: row.base,
       }),
     );
   }

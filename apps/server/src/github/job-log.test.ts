@@ -138,15 +138,17 @@ const EXPECTED_STEP = { step: '', cut: 'step' as const, text: '', truncated: fal
 describe('when the step cannot be cut, the end of the job, and why', () => {
   const end = (log: string) => log.trimEnd().split('\n').slice(-1)[0];
 
-  it.each<[string, FailedStep[], string, string?]>([
+  it.each<[string, FailedStep[], string, string, string?]>([
     [
       'no times for the step',
       [{ ...CHECK, startedAt: null }],
+      'no_times',
       'GitHub gave no start or end time for the step',
     ],
     [
       'no line within its times',
       [{ ...CHECK, startedAt: '2026-10-06T19:00:00Z', completedAt: '2026-10-06T19:00:05Z' }],
+      'outside_window',
       "no line of the log falls within the step's times",
     ],
     [
@@ -159,13 +161,14 @@ describe('when the step cannot be cut, the end of the job, and why', () => {
           completedAt: '2026-10-06T18:11:58Z',
         },
       ],
+      'no_error',
       "no ##[error] line falls within the step's times",
     ],
-    ['no timestamps', [CHECK], "the log's lines carry no timestamp", 'strip'],
-  ])('%s', (_what, steps, reason, change) => {
+    ['no timestamps', [CHECK], 'no_timestamps', "the log's lines carry no timestamp", 'strip'],
+  ])('%s', (_what, steps, why, reason, change) => {
     const log = change === 'strip' ? REAL.replace(/^\S+Z ?/gm, '') : REAL;
     const [excerpt] = read(log, steps).excerpts;
-    expect(excerpt).toMatchObject({ cut: 'job', reason, readToEnd: true, truncated: true });
+    expect(excerpt).toMatchObject({ cut: 'job', why, reason, readToEnd: true, truncated: true });
     expect(excerpt?.text.endsWith('Cleaning up orphan processes')).toBe(true);
     expect(end(REAL)).toMatch(/Cleaning up orphan processes$/);
     expect(excerptHeading(excerpt ?? EXPECTED_STEP)).toBe(
@@ -180,6 +183,7 @@ describe('when the step cannot be cut, the end of the job, and why', () => {
     expect(excerpt).toMatchObject({
       cut: 'job',
       readToEnd: false,
+      why: 'ceiling',
       reason:
         "the job's log is larger than Longest CI log read (2 MB), and the step's part does not end within its first 2 MB",
     });
@@ -195,6 +199,7 @@ describe('when the step cannot be cut, the end of the job, and why', () => {
     expect(excerpt).toMatchObject({
       step: '',
       cut: 'job',
+      why: 'no_failed_step',
       reason: 'GitHub names no failed step in the job',
     });
     expect(excerptHeading(excerpt ?? EXPECTED_STEP)).toMatch(/^The job's failed step is not known/);

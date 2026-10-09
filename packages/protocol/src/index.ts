@@ -322,7 +322,12 @@ export {
   CiCheck,
   CiCheckFailure,
   CiCheckFailureReason,
+  CiExcerpt,
   CiFailedJob,
+  CiJobLog,
+  CiLogFallback,
+  CiReadProblem,
+  McpCiStatus,
   CiResult,
   CiState,
 } from './mcp/ci.js';

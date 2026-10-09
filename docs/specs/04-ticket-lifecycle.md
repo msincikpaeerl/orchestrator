@@ -222,8 +222,8 @@ This table lists the settings of this document and the settings added in lots 0,
 | CI wait at submission (`ciWaitTimeoutMinutes`) | 20 minutes | 1 to 240 minutes | Yes | Section 3.1 |
 | Wait for CI to start (`ciStartWaitMinutes`; lot 3) | 5 minutes | 1 to 60 minutes | Yes | Section 3.1 |
 | Most CI failures per run (`maxCiFailuresPerRun`; lot 3) | 2 | 1 to 10 | Yes | Section 3.1 |
-| Longest CI log excerpt (`ciLogExcerptMaxLength`; lot 3; per failed step, in the CI result message and `ci.status`) | 4,000 characters | 500 to 20,000 characters | No | Section 3.1; 06, section 4.1 |
-| Longest CI log read (`ciLogReadMaxMegabytes`; lot 3; how much of a failed job's log is read to find each failed step's part; beyond it the excerpt is the end of what was read, and says so) | 20 MB | 1 to 500 MB | No | Section 3.1; 06, section 4.1 |
+| Longest CI log excerpt (`ciLogExcerptMaxLength`; lot 3; per failed step, in the CI result message and `ci.status`; on screen: "How much of each failed CI step's log an agent receives, keeping its end.") | 4,000 characters | 500 to 20,000 characters | No | Section 3.1; 06, section 4.1 |
+| Longest CI log read (`ciLogReadMaxMegabytes`; lot 3; on screen: "How much of a failed CI job's log the Orchestrator downloads from GitHub to find each failed step's part. Beyond it, the agent gets the end of what was read and is told so.") | 20 MB | 1 to 500 MB | No | Section 3.1; 06, section 4.1 |
 | GitHub check interval (`githubPollSeconds`; lot 3; how often tickets waiting on GitHub are checked: CI, open pull requests) | 60 seconds | 15 to 600 seconds | No | Section 3.1; 09, section 4 |
 | Most review rounds per ticket (`maxReviewRounds`; lot 3) | 2 | 1 to 10 | Yes | Sections 2 and 5 |
 | Waiting run lifetime (`waitingRunLifetimeMinutes`): how long a waiting run stays alive after a question | 30 minutes | 1 to 1,440 minutes | No | Section 6; 05, section 5 |

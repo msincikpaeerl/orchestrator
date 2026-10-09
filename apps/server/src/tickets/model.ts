@@ -76,6 +76,7 @@ export async function activeRuns(
         pauseReason: schema.runs.pauseReason,
         progressShown: schema.runs.progressShown,
         progressShownAt: schema.runs.progressShownAt,
+        ciCommit: schema.runs.ciCommit,
       },
       machine: {
         id: schema.machines.id,
@@ -104,6 +105,7 @@ export async function activeRuns(
         run.progressShown === null || run.progressShownAt === null
           ? null
           : { text: run.progressShown, at: run.progressShownAt.toISOString() },
+      waitingForCi: status === 'running' && run.ciCommit !== null,
     });
   }
   return active;
