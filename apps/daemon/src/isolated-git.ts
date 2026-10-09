@@ -286,9 +286,16 @@ function masked(text: string, secret: string | null): string {
 /**
  * Fetches GitHub's branches into the bare clone's `refs/remotes/origin/*`, deleting those no
  * longer on GitHub (05, section 4.2). The fetched pack is moved into the bare clone, then its
- * refs are set in one `update-ref` transaction; neither step holds the credential.
+ * refs are set in one `update-ref` transaction; neither step holds the credential. With `only`,
+ * that one branch is fetched and only its remote ref set: the base branch before a conflict is
+ * sent back to a run waiting for CI (lot 3 step G2a). A credential the Orchestrator refused is
+ * then said in those words.
  */
-export async function isolatedFetch(options: IsolatedGitOptions, bare: string): Promise<void> {
+export async function isolatedFetch(
+  options: IsolatedGitOptions,
+  bare: string,
+  only: string | null = null,
+): Promise<void> {
   const { git } = options;
   const marker = { [RUN_MARKER]: options.request.runId };
   await inIsolatedRepository(options, 'fetch', bare, async (context) => {
@@ -319,18 +326,23 @@ export async function isolatedFetch(options: IsolatedGitOptions, bare: string): 
         '--no-write-fetch-head',
         '--recurse-submodules=no',
         options.cloneUrl,
-        `+refs/heads/*:${REMOTE_REFS}*`,
+        only === null
+          ? `+refs/heads/*:${REMOTE_REFS}*`
+          : `+refs/heads/${only}:${REMOTE_REFS}${only}`,
       ],
       context.env,
       options.timeoutSeconds,
     );
-    const { secret } = context.outcome();
+    const { secret, refusal } = context.outcome();
     if (fetched.timedOut) {
       throw new Error(
         `Downloading the project from GitHub took longer than Longest push (${seconds(options.timeoutSeconds)}, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.`,
       );
     }
     if (fetched.code !== 0) {
+      if (only !== null && refusal !== null) {
+        throw new Error(masked(`The Orchestrator refused the credential: ${refusal}`, null));
+      }
       throw new GitError(['fetch'], fetched.code, masked(fetched.stderr, secret));
     }
     await moveObjects(join(context.repository, 'objects'), join(bare, 'objects'));
@@ -340,10 +352,11 @@ export async function isolatedFetch(options: IsolatedGitOptions, bare: string): 
       REMOTE_REFS,
     ]);
     if (refs.code !== 0) throw new GitError(['for-each-ref'], refs.code, refs.stderr);
-    const current = await git.run(
-      ['-C', bare, 'for-each-ref', '--format=%(refname)', REMOTE_REFS],
-      marker,
-    );
+    // One branch fetched: the others stay as the bare clone has them.
+    const current =
+      only === null
+        ? await git.run(['-C', bare, 'for-each-ref', '--format=%(refname)', REMOTE_REFS], marker)
+        : '';
     await git.run(['-C', bare, 'update-ref', '--stdin'], marker, refUpdates(refs.stdout, current));
   });
 }
