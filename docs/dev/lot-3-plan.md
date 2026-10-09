@@ -706,7 +706,7 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 
 - **A correction of G1b**, in G2b (`ci-status.ts`), tests first: a request limit without a time held nothing (`new Date(Number.MAX_SAFE_INTEGER)` is an invalid date, so the "limited-unknown" sentence was never reached), and a failed read kept no time, so each `ci_status` call asked GitHub again at once. A failed read is not tried again before one **GitHub check interval**, and a limit without a time holds for a stated time (the choice said in G2b's summary).
 - **`ci_status` after a round sent back** answers for the run's latest round (its commit, its result and excerpts), never for an earlier run's commit; tested in G2b.
-- **Check CI again offered more widely** (G2c): also on the ticket page whenever the ticket's latest accepted work was not accepted because of CI (failed after the last allowed failure, a conflict, cancelled because the branch moved) and no run is active; same refusals. The Needs you item stays for "CI did not finish" only.
+- **Check CI again offered more widely** (G2c): also on the ticket page whenever the ticket's latest accepted work was not accepted because of CI and no run is active; same refusals. The Needs you item stays for "CI did not finish" only. **Changed by the owner at the start of G2b** (2026-10-10): **Check CI again** is offered only for "CI did not finish" (`ci_timeout`) and for CI failed after the last allowed failure (`ci_failed`); not for a conflict, nor for runs cancelled because the branch moved, where it would nearly always refuse: the ticket page says to use **Run now** instead.
 - **`ci-failed.md`'s round sentence**: a round that is not the last never says "one more ends the run"; G2b's summary shows the three variants (first, middle, last).
 - **Step N** measures what a CI failure round costs after a wait longer than the prompt cache lifetime.
 
@@ -732,7 +732,7 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 
 ### [ ] G2c. Check CI again, screens and Help
 
-- **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition; the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
+- **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition (as changed at the start of G2b: after `ci_timeout` and `ci_failed` only, **Run now** said instead after a conflict or a cancellation because the branch moved); the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
 
 **Done when** server tests show **Check CI again** accepting, finding CI still not finished (nothing changes) and each refusal; Playwright on both viewports takes `ticket-waiting-for-ci`, `ticket-in-review-ci`, `run-ci-failed-too-many` and `needs-you-ci-did-not-finish` in `apps/web/e2e-screenshots/`.
 
