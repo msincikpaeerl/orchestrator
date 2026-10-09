@@ -118,6 +118,23 @@ function problemOf(refusal: GitHubRefusal, now: Date): Omit<CiReadProblem, 'at'>
   }
 }
 
+/**
+ * GitHub's request limit without a time (no `retry-after`, no `x-ratelimit-reset`) holds for the
+ * longer of one minute, what GitHub's documentation asks before trying again, and **GitHub check
+ * interval**: a stated time, said to the agent (owner's addition, lot 3 step G2b).
+ */
+export const LIMIT_WITHOUT_TIME_MIN_MS = 60_000;
+
+function withLimitTime<T extends Omit<CiReadProblem, 'at'>>(
+  problem: T,
+  now: Date,
+  githubPollSeconds: number,
+): T {
+  if (problem.reason !== 'rate_limited' || problem.retry_at !== null) return problem;
+  const holdMs = Math.max(LIMIT_WITHOUT_TIME_MIN_MS, githubPollSeconds * 1000);
+  return { ...problem, retry_at: new Date(now.getTime() + holdMs).toISOString() };
+}
+
 /** A problem after which GitHub is asked again, once the interval or the limit is over. */
 function passing(problem: CiReadProblem | null): boolean {
   return (
@@ -135,6 +152,11 @@ export class CiStatusReader {
   private readonly reads = new Map<string, Promise<void>>();
   /** GitHub's request limit, as a read of `ci_status` met it. */
   private limitedUntil: Date | null = null;
+  /**
+   * The latest failed read of a run's result, by run: not tried again before one **GitHub check
+   * interval** (owner's addition, lot 3 step G2b), its problem said meanwhile.
+   */
+  private readonly failedReads = new Map<string, CiReadProblem>();
 
   constructor(private readonly options: CiStatusOptions) {}
 
@@ -211,11 +233,7 @@ export class CiStatusReader {
     if (result !== null && FINISHED.has(result.state)) notes.push(part(t, 'finished'));
     else notes.push(part(t, 'not-finished', { seconds: String(settings.githubPollSeconds) }));
     if (held !== null) {
-      notes.push(
-        held.getTime() === Number.MAX_SAFE_INTEGER
-          ? part(t, 'limited-unknown')
-          : part(t, 'limited', { at: held.toISOString() }),
-      );
+      notes.push(part(t, 'limited', { at: held.toISOString() }));
     } else if (problem !== null) {
       notes.push(part(t, 'read-failed', { problem: problem.message }));
     }
@@ -277,7 +295,7 @@ export class CiStatusReader {
 
   /**
    * When GitHub allows requests again, while its request limit holds: as the wait for CI met it
-   * on a waiting run, or as `ci_status` met it. `MAX_SAFE_INTEGER` when GitHub did not say.
+   * on a waiting run, or as `ci_status` met it (a limit without a time held for a stated time).
    */
   private async heldUntil(): Promise<Date | null> {
     const now = this.now();
@@ -317,18 +335,28 @@ export class CiStatusReader {
       await inFlight;
       return null;
     }
+    const failed = this.failedReads.get(run.id);
+    if (
+      failed !== undefined &&
+      this.now().getTime() - new Date(failed.at).getTime() < settings.githubPollSeconds * 1000
+    ) {
+      return failed;
+    }
+    this.failedReads.delete(run.id);
     const read = (async () => {
       try {
         await this.read(run, project, waiting, settings);
       } catch (error) {
         if (error instanceof ReadStopped) {
-          problem = { ...error.problem, at: this.now().toISOString() };
-          if (problem.reason === 'rate_limited') {
-            this.limitedUntil =
-              problem.retry_at === null
-                ? new Date(Number.MAX_SAFE_INTEGER)
-                : new Date(problem.retry_at);
+          const now = this.now();
+          problem = {
+            ...withLimitTime(error.problem, now, settings.githubPollSeconds),
+            at: now.toISOString(),
+          };
+          if (problem.retry_at !== null && problem.reason === 'rate_limited') {
+            this.limitedUntil = new Date(problem.retry_at);
           }
+          this.failedReads.set(run.id, problem);
           return;
         }
         throw error;
@@ -477,7 +505,11 @@ export class CiStatusReader {
     client: GitHubClient,
     repo: { owner: string; name: string },
     result: CiResult,
-    settings: { ciLogExcerptMaxLength: number; ciLogReadMaxMegabytes: number },
+    settings: {
+      githubPollSeconds: number;
+      ciLogExcerptMaxLength: number;
+      ciLogReadMaxMegabytes: number;
+    },
     now: Date,
   ): Promise<CiResult> {
     const workflows = result.checks.filter(
@@ -535,7 +567,11 @@ export class CiStatusReader {
     client: GitHubClient,
     repo: { owner: string; name: string },
     job: WorkflowJob,
-    settings: { ciLogExcerptMaxLength: number; ciLogReadMaxMegabytes: number },
+    settings: {
+      githubPollSeconds: number;
+      ciLogExcerptMaxLength: number;
+      ciLogReadMaxMegabytes: number;
+    },
     now: Date,
   ): Promise<CiFailedJob['log']> {
     let read;
@@ -565,12 +601,12 @@ export class CiStatusReader {
           problem: { reason: 'expired', message: '', retry_at: null, at: now.toISOString() },
         };
       }
-      const problem = { ...problemOf(refusal, now), at: now.toISOString() };
-      if (problem.reason === 'rate_limited') {
-        this.limitedUntil =
-          problem.retry_at === null
-            ? new Date(Number.MAX_SAFE_INTEGER)
-            : new Date(problem.retry_at);
+      const problem = {
+        ...withLimitTime(problemOf(refusal, now), now, settings.githubPollSeconds),
+        at: now.toISOString(),
+      };
+      if (problem.reason === 'rate_limited' && problem.retry_at !== null) {
+        this.limitedUntil = new Date(problem.retry_at);
       }
       return { state: 'unavailable', problem };
     }

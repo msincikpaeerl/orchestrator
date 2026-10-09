@@ -36,9 +36,9 @@ const advance = (minutes: number) => {
   clock = new Date(clock.getTime() + minutes * MINUTE);
 };
 
-async function working() {
+async function working(settings: { githubPollSeconds?: number } = {}) {
   clock = new Date('2026-10-09T10:00:00.000Z');
-  await h.start({ now: () => clock, ci: 'queued' });
+  await h.start({ now: () => clock, ci: 'queued', settings });
   const repo = h.github.repository('octo-owner', 'bakery');
   await h.createTicket();
   const machine = await h.machine();
@@ -93,8 +93,8 @@ function failBoth(repo: FakeRepository, commit: string) {
 }
 
 /** The run fails on CI (G1a's interim end), then the ticket's next run starts. */
-async function failedThenNextRun() {
-  const first = await working();
+async function failedThenNextRun(settings: { githubPollSeconds?: number } = {}) {
+  const first = await working(settings);
   const commit = await submitted(first.daemon, first.runId, first.runToken);
   failBoth(first.repo, commit);
   const decidedAt = clock.toISOString();
@@ -272,6 +272,49 @@ describe('ci_status: a failed result', () => {
   });
 });
 
+describe('ci_status: a request limit without a time (owner addition, step G2b)', () => {
+  /** GitHub's limit on the jobs, without `retry-after` or `x-ratelimit-reset`. */
+  function limitedWithoutTime() {
+    h.github.override = (request) =>
+      /\/actions\/runs\/\d+\/jobs/.test(request.path)
+        ? {
+            status: 429,
+            body: { message: 'You have exceeded a secondary rate limit' },
+            headers: { 'x-ratelimit-remaining': '0' },
+          }
+        : undefined;
+  }
+
+  for (const [interval, heldMinutes] of [
+    [60, 1],
+    [300, 5],
+  ] as const) {
+    it(`holds for the longer of one minute and the check interval (${String(interval)} s), and says until when`, async () => {
+      const { daemon, next } = await failedThenNextRun({ githubPollSeconds: interval });
+      limitedWithoutTime();
+      const until = new Date(clock.getTime() + heldMinutes * MINUTE).toISOString();
+      const limited = await ciStatus(daemon, next.runToken);
+      expect(limited.note).toContain(
+        'GitHub could not be read just now (You have exceeded a secondary rate limit)',
+      );
+      h.github.override = undefined;
+      advance(heldMinutes - 0.5);
+      let held: McpCiStatus | undefined;
+      expect(
+        await asked(async () => {
+          held = await ciStatus(daemon, next.runToken);
+        }),
+      ).toEqual(NOTHING);
+      expect(held?.note).toContain(
+        `GitHub's request limit is reached: nothing is asked of GitHub before ${until}.`,
+      );
+      advance(0.5);
+      const read = await ciStatus(daemon, next.runToken);
+      expect(read.ci?.failed_jobs.map((job) => job.job)).toEqual(['docs-links', 'ci']);
+    });
+  }
+});
+
 describe('ci_status: an unfinished result of an ended run', () => {
   /** The wait ends without a result (`ci_timeout`), then the ticket's next run starts. */
   async function timedOutThenNextRun() {
@@ -338,5 +381,32 @@ describe('ci_status: an unfinished result of an ended run', () => {
       }),
     ).toEqual(NOTHING);
     expect(answer?.note).toContain(`nothing is asked of GitHub before ${retryAt}.`);
+  });
+
+  it('does not ask GitHub again within one check interval after a failed read (owner addition, step G2b)', async () => {
+    const { daemon, next } = await timedOutThenNextRun();
+    advance(1);
+    const failedAt = clock.toISOString();
+    h.github.override = (request) =>
+      request.path.includes('/actions/runs?') ? { status: 503 } : undefined;
+    expect(await asked(() => ciStatus(daemon, next.runToken))).toMatchObject({ runs: 1 });
+    advance(0.5);
+    let again: McpCiStatus | undefined;
+    expect(
+      await asked(async () => {
+        again = await ciStatus(daemon, next.runToken);
+      }),
+    ).toEqual(NOTHING);
+    expect(again?.note).toContain(
+      'GitHub could not be read just now (GitHub could not be reached, or answered with a server error)',
+    );
+    expect(again?.read_at).not.toBe(failedAt);
+    h.github.override = undefined;
+    advance(0.5);
+    expect(await asked(() => ciStatus(daemon, next.runToken))).toEqual({
+      ...NOTHING,
+      runs: 1,
+      status: 1,
+    });
   });
 });
