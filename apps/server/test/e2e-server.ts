@@ -8,6 +8,7 @@ import { createPool, endPool } from '@orchestrator/db';
 import { z } from 'zod';
 import { daemonPackageFile } from '../src/downloads.js';
 import { createLogger } from '../src/logger.js';
+import { ciWatcherOf } from '../src/app.js';
 import { startServer } from '../src/server.js';
 import { defaultWebRoot } from '../src/web.js';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
@@ -41,6 +42,7 @@ const github = await startFakeGitHub();
 function resetGitHub() {
   github.accounts.clear();
   github.override = undefined;
+  github.alter = undefined;
   // Every permission; GitHub announces an expiry date 300 days ahead. Repositories to link:
   // `notes` (GitHub's README only) and `legacy-site` (CLAUDE.md and user documentation only).
   github.accounts.set(
@@ -85,7 +87,8 @@ const server = await startServer(
     publicUrl: `http://localhost:${String(port)}`,
   },
   createLogger(process.env.E2E_LOG_LEVEL ?? 'warn'),
-  { githubApiUrl: github.url, gitBaseUrl: github.url, webRoot, daemonPackageDir },
+  // No CI check starts by itself: a test asks for one (POST /ci/pass).
+  { githubApiUrl: github.url, gitBaseUrl: github.url, webRoot, daemonPackageDir, ciTimers: false },
 );
 
 // Test-only controls, never part of the server: POST /reset empties every table but the agent
@@ -108,7 +111,10 @@ const server = await startServer(
 // /github/status `{"repository":"notes","ref":"…","context":"deploy","state":"success"}`; POST
 // /github/merge `{"repository":"notes","pullRequest":1,"method":"squash"}`, /github/close and
 // /github/update-branch `{"repository":"notes","pullRequest":1}`. A control GitHub would not
-// offer (a merge with conflicts) answers 409 with the reason.
+// offer (a merge with conflicts) answers 409 with the reason. POST /ci/pass `{"runId":"…"}`: CI
+// passes for the commit the run submitted (lot 3 step G1a). The tests' submissions report made-up
+// commits, so the wait is begun and GitHub's answers for that commit are given here, then one CI
+// check runs; it answers 204 once the check is over.
 const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
@@ -229,6 +235,51 @@ async function handle(
   if (request.method === 'POST' && request.url === '/daemon/request') {
     const { message } = RequestControl.parse(await readJson(request));
     return { status: 200, body: await latestDaemon().request(message) };
+  }
+  if (request.method === 'POST' && request.url === '/ci/pass') {
+    const { runId } = RunControl.parse(await readJson(request));
+    const { rows } = await pool.query<{ commit: string | null }>(
+      'UPDATE runs SET ci_wait_started_at = coalesce(ci_wait_started_at, now()) WHERE id = $1 RETURNING ci_commit AS commit',
+      [runId],
+    );
+    const commit = rows[0]?.commit;
+    if (!commit) return 409;
+    github.alter = (sent, reply) => {
+      if (sent.path.includes(`/actions/runs?head_sha=${commit}`)) {
+        return {
+          status: 200,
+          body: {
+            total_count: 1,
+            workflow_runs: [
+              {
+                id: 1,
+                name: 'CI',
+                event: 'pull_request',
+                status: 'completed',
+                conclusion: 'success',
+                head_sha: commit,
+                head_branch: null,
+                html_url: `${github.url}/octo-owner/bakery/actions/runs/1`,
+                pull_requests: [],
+              },
+            ],
+          },
+        };
+      }
+      if (sent.path.includes(`/commits/${commit}/status`)) {
+        return {
+          status: 200,
+          body: { state: 'pending', sha: commit, total_count: 0, statuses: [] },
+        };
+      }
+      return reply;
+    };
+    try {
+      await ciWatcherOf(server.app).tick();
+    } finally {
+      github.alter = undefined;
+    }
+    return 204;
   }
   if (request.method === 'POST' && request.url === '/daemon/disconnect') {
     await disconnectDaemons();
