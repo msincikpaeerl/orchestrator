@@ -161,15 +161,25 @@ export type RunStart = z.infer<typeof RunStart>;
  */
 const RUN_INPUT_CEILING = 2 * settingCeiling('commentMaxLength') + 10_000;
 
+/**
+ * `fetchBase` (lot 3 step G2a): the daemon downloads the base branch from GitHub before it gives
+ * the text, through the isolated fetch of 05 section 7.1, and acknowledges only afterwards; a
+ * failed download refuses the message, which then never reaches the agent. Only a run waiting
+ * for CI takes it: the message telling the agent to merge the base branch after a conflict.
+ * A yes or no, never a branch or a URL: the base branch is `run.start`'s.
+ */
+const FetchBase = z.boolean().optional();
+
 export const RunInput = message(
   'run.input',
-  z.object({ runId: RunId, text: requiredText(RUN_INPUT_CEILING) }),
+  z.object({ runId: RunId, text: requiredText(RUN_INPUT_CEILING), fetchBase: FetchBase }),
 );
 export type RunInput = z.infer<typeof RunInput>;
 
 /**
- * `run.resume`: start a closed session again, after a usage-limit pause or when the owner answers
- * after the waiting run lifetime (04, section 6). `message` is the first message after
+ * `run.resume`: start a closed session again, after a usage-limit pause, when the owner answers
+ * after the waiting run lifetime (04, section 6), or to give a CI result to a run waiting for CI
+ * whose session closed (lot 3 step G2). `message` is the first message after
  * `--resume`: the answer, or the message asking the agent to continue, both built from run message
  * templates in `agents/` (03, section 3.2).
  */
@@ -183,6 +193,7 @@ export const RunResume = message(
       (text) => new TextEncoder().encode(text).length <= FIRST_MESSAGE_MAX_BYTES,
       `at most ${String(FIRST_MESSAGE_MAX_BYTES)} bytes`,
     ),
+    fetchBase: FetchBase,
   }),
 );
 export type RunResume = z.infer<typeof RunResume>;
