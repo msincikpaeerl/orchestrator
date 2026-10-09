@@ -144,6 +144,38 @@ describe('GET /api/stream', () => {
     await stream.find(changed('run', runId), "the run's end report");
   }, 15_000);
 
+  it('sends each CI check of a waiting run, even one that writes no event', async () => {
+    await h.start({ ci: 'queued' });
+    await h.createTicket();
+    const { daemon } = await h.machine();
+    const { runId, runToken } = await h.running(daemon);
+    await h.ok(daemon, runToken, 'ticket_submit', {
+      criteria: [
+        { index: 0, status: 'met', justification: 'The form is there' },
+        { index: 1, status: 'met', justification: 'Checked by its test' },
+      ],
+      tests: { paths: ['src/contact.test.ts'], justification: null },
+      docs: { paths: ['docs/user/contact.md'], justification: null },
+      adrs: [],
+      summary: 'Adds the contact form.',
+    });
+    await h.report(daemon, state(runId, { state: 'waiting_ci' }));
+    await eventually('the wait for CI begun', async () => {
+      expect((await h.run(runId)).ci?.since).toBeTruthy();
+    });
+    // CI not finished: no event, yet the run page's CI card shows the checks and their time
+    // (lot 3 step G1b).
+    const stream = await open();
+    await h.t.ciTick();
+    expect((await h.run(runId)).ci?.result?.state).toBe('pending');
+    await stream.find(changed('run', runId), 'the first CI check');
+    const seen = stream.messages.filter(changed('run', runId)).length;
+    await h.t.ciTick();
+    await eventually('the next CI check sent', () => {
+      expect(stream.messages.filter(changed('run', runId)).length).toBeGreaterThan(seen);
+    });
+  }, 15_000);
+
   it('ends at logout', async () => {
     await h.start();
     const stream = await open();

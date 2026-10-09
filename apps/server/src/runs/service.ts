@@ -1544,6 +1544,9 @@ export class RunService {
     await this.withRun(runId, async (tx, locked) => {
       if (!this.waitsFor(locked, commit)) return;
       const now = this.now();
+      // Every check changes the run page's CI card (its time, its checks), also when it writes no
+      // event (lot 3 step G1b): the screens read the run again.
+      await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project.id });
       const previous =
         locked.run.ciCheckFailure === null ? null : CiCheckFailure.parse(locked.run.ciCheckFailure);
       const event = <T extends 'run.ci_check_failed' | 'run.ci_check_recovered' | 'run.ci_result'>(
@@ -1740,7 +1743,10 @@ export class RunService {
       .select({
         run: schema.runs,
         projectKey: schema.projects.key,
+        base: schema.projects.defaultBranch,
         ticketNumber: schema.tickets.number,
+        pullRequestNumber: schema.tickets.pullRequestNumber,
+        pullRequestUrl: schema.tickets.pullRequestUrl,
         profile: { key: schema.agentProfiles.key, name: schema.agentProfiles.name },
         machine: {
           id: schema.machines.id,
@@ -1771,6 +1777,11 @@ export class RunService {
         },
         account: { id: row.account.id, label: row.account.label },
         resumeAfter: resumeAfter(row.run, row.account, now),
+        pullRequest:
+          row.pullRequestNumber === null || row.pullRequestUrl === null
+            ? null
+            : { number: row.pullRequestNumber, url: row.pullRequestUrl },
+        base: row.base,
       }),
     );
   }
