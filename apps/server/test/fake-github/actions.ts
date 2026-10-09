@@ -20,6 +20,9 @@ import { has, notFound, paged, refuse } from './common.js';
 //   workflows", section `pull_request`
 //   (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
 //   A `pull_request` run's `head_sha` is the pull request's head commit, which `head_sha` filters.
+//   Its `GITHUB_SHA` is the "Last merge commit on the `GITHUB_REF` branch", so the fake reads the
+//   workflow files from the pull request's merge commit: a workflow whose file is not there does
+//   not run (assumption A29 of lot 3's plan, checked by the owner in step N).
 // - Runs: `GET /repos/{owner}/{repo}/actions/runs` (filters `head_sha`, `branch`, `event`,
 //   `status`), `GET .../actions/runs/{run_id}` ("REST API endpoints for workflow runs",
 //   https://docs.github.com/en/rest/actions/workflow-runs).
@@ -85,6 +88,19 @@ function hasConflict(state: RepositoryState, pull: FakePullRequest): boolean {
   return base !== undefined && state.store.mergeTree(base, pull.headSha) === null;
 }
 
+/** The workflow files of the merge of `head` into `base` (A29); none without a merge. */
+function workflowFiles(state: RepositoryState, base: string, head: string): Set<string> {
+  const baseSha = state.store.branch(base);
+  const tree = baseSha === undefined ? null : state.store.mergeTree(baseSha, head);
+  if (tree === null) return new Set();
+  return new Set(
+    state.store
+      .treeEntries(tree, true)
+      .map((entry) => entry.path)
+      .filter((path) => path.startsWith('.github/workflows/')),
+  );
+}
+
 /** Starts the runs of every workflow `event` triggers, then applies the repository's script. */
 function startRuns(
   ctx: FakeContext,
@@ -96,11 +112,12 @@ function startRuns(
 ): void {
   const script = state.repo.ci ?? 'queued';
   if (script === 'none') return;
+  const merged = pull ? workflowFiles(state, pull.base, sha) : null;
   for (const [index, workflow] of (state.repo.workflows ?? []).entries()) {
     const wanted =
       event === 'push'
         ? (workflow.on.pushBranches ?? []).includes(branch)
-        : workflow.on.pullRequest === true;
+        : workflow.on.pullRequest === true && (merged?.has(workflow.path) ?? false);
     if (!wanted) continue;
     const runId = ctx.nextId();
     const now = ctx.now();

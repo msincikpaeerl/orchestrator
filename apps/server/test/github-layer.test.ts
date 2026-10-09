@@ -45,7 +45,13 @@ let client: GitHubClient;
 
 beforeEach(async () => {
   github = await startFakeGitHub();
-  repo = { name: 'shop', private: true, workflows: [skeletonWorkflow()] };
+  repo = {
+    name: 'shop',
+    private: true,
+    // The skeleton's CI file: a `pull_request` run needs it in the merge commit (A29).
+    files: { 'README.md': '# Shop\n', '.github/workflows/ci.yml': 'name: CI\n' },
+    workflows: [skeletonWorkflow()],
+  };
   account = fullAccount({ repositories: [repo] });
   github.accounts.set(TOKEN, account);
   client = clientWith(TOKEN);

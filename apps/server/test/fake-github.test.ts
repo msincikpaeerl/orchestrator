@@ -35,7 +35,13 @@ let work: string;
 
 beforeEach(async () => {
   github = await startFakeGitHub();
-  repo = { name: 'shop', private: true, workflows: [skeletonWorkflow()] };
+  repo = {
+    name: 'shop',
+    private: true,
+    // The skeleton's CI file: a `pull_request` run needs it in the merge commit (A29).
+    files: { 'README.md': '# Shop\n', '.github/workflows/ci.yml': 'name: Skeleton CI\n' },
+    workflows: [skeletonWorkflow()],
+  };
   account = fullAccount({ repositories: [repo, { name: 'site', private: false }] });
   github.accounts.set(TOKEN, account);
   home = await createTestHome();
@@ -454,6 +460,18 @@ describe('Actions runs and commit statuses', () => {
     const second = await pushCommit('t/1-cart', { 'cart.md': 'Cart, v2\n' });
     expect((await runsOf(second)).map((found) => found.status)).toEqual(['queued']);
     expect(await runsOf(head)).toHaveLength(1);
+  });
+
+  it('start no pull_request run for a workflow whose file the pull request deletes (A29)', async () => {
+    // The workflow files of the merge commit run: a branch deleting them gets no run.
+    github.commit(repo, 't/2-no-ci', { '.github/workflows/ci.yml': null }, 'No CI', 'main');
+    const head = github.branches(repo).get('t/2-no-ci') ?? '';
+    await openPull('t/2-no-ci');
+    expect(github.runs(repo, head)).toEqual([]);
+    // Another branch keeping the file gets its run.
+    const kept = github.commit(repo, 't/3-ci', { 'cart.md': 'Cart\n' }, 'Cart', 'main');
+    await openPull('t/3-ci');
+    expect(github.runs(repo, kept)).toHaveLength(1);
   });
 
   it('give a failed job its steps and its log through a redirect to another host', async () => {
