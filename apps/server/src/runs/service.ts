@@ -57,7 +57,7 @@ import {
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import { notifyRunLog } from '../realtime/changes.js';
+import { notifyChange, notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
 import { inspectToken } from '../github/token-check.js';
@@ -1867,7 +1867,8 @@ export class RunService {
             }
           : {};
         if (!ACTIVE.has(run.status)) {
-          // Already ended on the server (Stop run, revocation): the report adds the branch only.
+          // Already ended on the server (Stop run, revocation, CI passed): the report adds the
+          // branch only, which open screens read again.
           await tx
             .update(schema.runs)
             .set({
@@ -1877,6 +1878,7 @@ export class RunService {
               updatedAt: this.now(),
             })
             .where(eq(schema.runs.id, run.id));
+          await notifyChange(tx, { entity: 'run', id: run.id, projectId: locked.project.id });
           return true;
         }
         await tx
