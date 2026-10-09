@@ -135,6 +135,18 @@ const definitions = {
     default: 120,
     perProject: false,
   },
+  githubPollSeconds: {
+    group: 'github',
+    label: 'GitHub check interval',
+    description:
+      'How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result.',
+    unit: 'seconds',
+    min: 15,
+    max: 600,
+    default: 60,
+    perProject: false,
+    usedFrom: '0.4.0',
+  },
   ticketTitleMaxLength: {
     group: 'tickets',
     label: 'Longest ticket title',
@@ -227,6 +239,18 @@ const definitions = {
     min: 1,
     max: 240,
     default: 20,
+    perProject: true,
+    usedFrom: '0.4.0',
+  },
+  ciStartWaitMinutes: {
+    group: 'tickets',
+    label: 'Wait for CI to start',
+    description:
+      'When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch).',
+    unit: 'minutes',
+    min: 1,
+    max: 60,
+    default: 5,
     perProject: true,
     usedFrom: '0.4.0',
   },

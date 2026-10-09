@@ -49,6 +49,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | GitHub token expiry warning | 14 days | 1 to 90 | No | "Needs you" warns this many days before the GitHub token expires. |
 | GitHub request timeout | 15 seconds | 1 to 300 | No | How long the Orchestrator waits for GitHub to answer one request. |
 | GitHub clock tolerance | 120 seconds | 0 to 3,600 | No | Allowed difference between this computer's clock and GitHub's, when Try again checks whether a repository was created by an earlier attempt. |
+| GitHub check interval (from version 0.4.0) | 60 seconds | 15 to 600 | No | How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result. |
 
 ### Tickets
 
@@ -63,6 +64,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
 | Failed attempts before asking you (from version 0.4.0) | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
 | CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a submitted ticket waits for its CI result before the attempt fails. |
+| Wait for CI to start (from version 0.4.0) | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch). |
 
 ### Runs
 

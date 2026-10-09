@@ -16,6 +16,7 @@ import {
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
+import { CiCheckFailureReason, CiState } from './mcp/ci.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
@@ -108,6 +109,10 @@ export const EventType = z.enum([
   'run.git_config_restored',
   'run.branch_pushed',
   'run.branch_push_failed',
+  'run.ci_waiting',
+  'run.ci_result',
+  'run.ci_check_failed',
+  'run.ci_check_recovered',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -408,6 +413,42 @@ export const EventPayloads = {
     reason: PushFailureReason,
     message: z.string(),
   }),
+  /**
+   * The run's submission waits for CI on GitHub from now: its pull request is open (04, section
+   * 3.1; lot 3 step G1a). `commit` is the commit pushed at the submission, whose CI is read.
+   */
+  'run.ci_waiting': z.object({
+    ...TicketFacts,
+    commit: z.string(),
+    pullRequest: z.int().positive().nullable(),
+  }),
+  /**
+   * A CI result that decides, or a conflict that keeps the submission from passing (lot 3 step
+   * G1a): the counts of the workflow runs and statuses, the names of those that failed, the
+   * workflow flag of the submission, and the pull request's head when it is another commit.
+   */
+  'run.ci_result': z.object({
+    ...TicketFacts,
+    commit: z.string(),
+    state: CiState.exclude(['pending']),
+    checks: z.int().min(0),
+    failed: z.array(z.string()),
+    workflowChanges: z.enum(['changed', 'not_listed']).nullable(),
+    baseBranch: z.string(),
+    pullRequestHead: z.string().nullable(),
+  }),
+  /**
+   * GitHub could not be checked for the run's CI (unreachable, the request limit, an answer that
+   * cannot be read, the token): the run keeps waiting. Written when it starts, or its reason
+   * changes (lot 3 step G1a).
+   */
+  'run.ci_check_failed': z.object({
+    ...TicketFacts,
+    reason: CiCheckFailureReason,
+    message: z.string(),
+  }),
+  /** GitHub could be checked again for the run's CI after a failure. */
+  'run.ci_check_recovered': z.object({ ...TicketFacts }),
 } satisfies Record<EventType, z.ZodType>;
 
 export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;
