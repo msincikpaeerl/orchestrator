@@ -82,6 +82,8 @@ export type RunChangeCause = z.infer<typeof RunChangeCause>;
 export const RunCiWait = z.object({
   /** The commit pushed at the submission: its workflow runs and statuses are the result. */
   commit: GitHash,
+  /** When the submission was accepted (lot 3 step G1b). */
+  submittedAt: z.iso.datetime(),
   /** When the wait began: the pull request was open. Null while it is not opened yet. */
   since: z.iso.datetime().nullable(),
   /** When the agent's turn ended and the session went idle: waiting time from then. */
@@ -95,6 +97,10 @@ export const RunCiWait = z.object({
   checkedAt: z.iso.datetime().nullable(),
   /** The latest check that failed, until one works again. */
   checkFailure: CiCheckFailure.nullable(),
+  /** The ticket's pull request, as last seen; null while it is not opened (lot 3 step G1b). */
+  pullRequest: z.object({ number: z.int().positive(), url: z.url() }).nullable(),
+  /** The project's default branch, the pull request's base: named by a conflict. */
+  base: z.string().nullable(),
 });
 export type RunCiWait = z.infer<typeof RunCiWait>;
 
