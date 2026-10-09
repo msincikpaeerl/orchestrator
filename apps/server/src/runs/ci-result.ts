@@ -37,6 +37,7 @@ export function ciChecks(commit: string, runs: WorkflowRun[], status: CommitStat
             : 'failed',
       url: link(run.url),
       run_id: run.id,
+      cancelled: run.status === 'completed' && run.conclusion === 'cancelled',
     }));
   const fromStatuses = status.statuses.map((each): CiCheck => ({
     kind: 'status',
@@ -44,6 +45,7 @@ export function ciChecks(commit: string, runs: WorkflowRun[], status: CommitStat
     state: each.state === 'success' ? 'passed' : each.state === 'pending' ? 'pending' : 'failed',
     url: link(each.targetUrl),
     run_id: null,
+    cancelled: false,
   }));
   return [...fromRuns, ...fromStatuses];
 }

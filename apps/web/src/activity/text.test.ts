@@ -203,6 +203,21 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     message: 'GitHub could not be reached, or answered with a server error',
   },
   'run.ci_check_recovered': { project: 'WEB', ticket: 'WEB-12' },
+  'run.ci_round_sent': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    commit: 'c'.repeat(40),
+    kind: 'failed',
+    round: 1,
+    of: 2,
+  },
+  'run.ci_round_not_taken': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    commit: 'c'.repeat(40),
+    kind: 'conflict',
+    message: 'Downloading main from GitHub failed: GitHub could not be reached',
+  },
   'ticket.submitted': {
     project: 'WEB',
     ticket: 'WEB-12',

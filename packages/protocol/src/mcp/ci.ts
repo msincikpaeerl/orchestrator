@@ -28,6 +28,11 @@ export const CiCheck = z.object({
   url: z.url().nullable(),
   /** A workflow run's id, to read its jobs (lot 3 step G1b); null for a status. */
   run_id: z.int().positive().nullable().default(null),
+  /**
+   * A workflow run GitHub concluded `cancelled` (lot 3 step G2b): when every failed check is one
+   * and the pull request's head is another commit, the branch moved, not the agent's failure.
+   */
+  cancelled: z.boolean().default(false),
 });
 export type CiCheck = z.infer<typeof CiCheck>;
 
@@ -173,7 +178,7 @@ export const McpCiStatus = z.object({
   ci: z
     .object({
       state: CiState,
-      checks: z.array(CiCheck.omit({ run_id: true })),
+      checks: z.array(CiCheck.omit({ run_id: true, cancelled: true })),
       /** The failed jobs whose log was read or could not be read, in GitHub's order. */
       failed_jobs: z.array(
         z.object({
@@ -206,3 +211,38 @@ export const McpCiStatus = z.object({
     .nullable(),
 });
 export type McpCiStatus = z.infer<typeof McpCiStatus>;
+
+/**
+ * One CI round of a run (04, section 3.1; lot 3 step G2b): a failed result or a conflict sent
+ * back to the agent with `run.input` (`run.resume` when its session is closed), the base branch
+ * downloaded first for a conflict (`fetchBase`). It counts within **Most CI failures per run**
+ * once the machine confirmed the message (`confirmedAt`); until then it is the run's one
+ * unanswered round, sent again with the same `messageId` after **Machine answer timeout** plus
+ * **Longest push**, which the daemon recognises and never gives twice. A round the machine refused
+ * is not kept: the next check decides again. `result` is what the agent received, with its
+ * excerpts, kept on the run (owner's answer 6).
+ */
+export const CiRound = z.object({
+  /** From 1: the confirmed rounds before it, plus one. */
+  round: z.int().positive(),
+  kind: z.enum(['failed', 'conflict']),
+  commit: z.string(),
+  messageId: z.uuid(),
+  via: z.enum(['input', 'resume']),
+  decidedAt: z.iso.datetime(),
+  /** When the message was last sent; null while the machine could not be reached. */
+  sentAt: z.iso.datetime().nullable(),
+  confirmedAt: z.iso.datetime().nullable(),
+  result: CiResult,
+  /** When `result` was read on GitHub. */
+  readAt: z.iso.datetime(),
+});
+export type CiRound = z.infer<typeof CiRound>;
+
+/** The latest refusal of a round by the machine (a failed download of the base branch, say). */
+export const CiRoundRefusal = z.object({
+  kind: z.enum(['failed', 'conflict']),
+  message: z.string(),
+  at: z.iso.datetime(),
+});
+export type CiRoundRefusal = z.infer<typeof CiRoundRefusal>;

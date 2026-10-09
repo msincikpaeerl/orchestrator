@@ -150,6 +150,8 @@ export function failureWords(reason: FailureReason): string {
       return 'the branch changed during the review';
     case 'push_failed':
       return 'its branch could not be pushed to GitHub';
+    case 'ci_cancelled':
+      return 'CI was cancelled on GitHub because the branch changed there';
   }
 }
 

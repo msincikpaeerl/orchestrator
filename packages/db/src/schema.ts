@@ -602,6 +602,17 @@ export const runs = pgTable(
     ciResult: jsonb('ci_result'),
     ciCheckedAt: timestamp('ci_checked_at', { withTimezone: true }),
     ciCheckFailure: jsonb('ci_check_failure'),
+    /** **Most CI failures per run** when the run started (04, section 8; lot 3 step G2b). */
+    maxCiFailures: integer('max_ci_failures'),
+    /**
+     * The run's CI rounds (`CiRound[]`, 04 section 3.1; lot 3 step G2b): each failed result or
+     * conflict sent back to the agent, confirmed by the machine or still unanswered (the last).
+     */
+    ciRounds: jsonb('ci_rounds').notNull().default([]),
+    /** The unanswered round's message id, matched by the daemon's `ack`; null when none. */
+    ciRoundMessageId: uuid('ci_round_message_id'),
+    /** The machine's latest refusal of a round (`CiRoundRefusal`), until a round is confirmed. */
+    ciRoundRefusal: jsonb('ci_round_refusal'),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
@@ -630,7 +641,7 @@ export const runs = pgTable(
     ),
     check(
       'runs_failure_reason',
-      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved', 'push_failed')`,
+      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved', 'push_failed', 'ci_cancelled')`,
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
     check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),

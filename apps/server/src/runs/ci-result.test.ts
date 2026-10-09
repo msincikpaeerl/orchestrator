@@ -90,4 +90,17 @@ describe('the names GitHub gives (lot 3 step G1b)', () => {
     const checks = ciChecks(COMMIT, [run()], statuses('success'));
     expect(checks.map((check) => check.run_id)).toEqual([7, null]);
   });
+
+  it('marks the workflow runs GitHub cancelled, never a status or another conclusion (step G2b)', () => {
+    const checks = ciChecks(
+      COMMIT,
+      [
+        run({ conclusion: 'cancelled' }),
+        run({ conclusion: 'failure' }),
+        run({ status: 'queued', conclusion: null }),
+      ],
+      statuses('error'),
+    );
+    expect(checks.map((check) => check.cancelled)).toEqual([true, false, false, false]);
+  });
 });

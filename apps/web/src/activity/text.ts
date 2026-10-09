@@ -87,6 +87,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'run.ci_result': 'CI result',
   'run.ci_check_failed': 'CI could not be checked on GitHub',
   'run.ci_check_recovered': 'CI checked on GitHub again',
+  'run.ci_round_sent': 'CI result sent to the agent',
+  'run.ci_round_not_taken': 'CI result not taken by the machine',
 };
 
 /** Kinds of entity, for the filter. */
@@ -558,6 +560,18 @@ const describe: { [T in EventType]: Describe<T> } = {
     'Run of ',
     c.ticket,
     ': CI could be checked on GitHub again',
+  ],
+  'run.ci_round_sent': (p, c) => [
+    'Run of ',
+    c.ticket,
+    p.kind === 'failed'
+      ? `: CI failed on GitHub for the submitted commit ${p.commit.slice(0, 7)}; the failure was sent to the agent to fix (${String(p.round)} of ${String(p.of)} allowed in this run)`
+      : `: the pull request of the submitted commit ${p.commit.slice(0, 7)} conflicts with the default branch; the agent was told to merge it (${String(p.round)} of ${String(p.of)} allowed in this run)`,
+  ],
+  'run.ci_round_not_taken': (p, c) => [
+    'Run of ',
+    c.ticket,
+    `: ${p.kind === 'failed' ? 'the CI failure' : 'the conflict'} of the submitted commit ${p.commit.slice(0, 7)} could not be sent to the agent yet; the Orchestrator tries again at each check — ${shorten(p.message)}`,
   ],
 };
 

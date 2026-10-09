@@ -113,6 +113,8 @@ export const EventType = z.enum([
   'run.ci_result',
   'run.ci_check_failed',
   'run.ci_check_recovered',
+  'run.ci_round_sent',
+  'run.ci_round_not_taken',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -449,6 +451,27 @@ export const EventPayloads = {
   }),
   /** GitHub could be checked again for the run's CI after a failure. */
   'run.ci_check_recovered': z.object({ ...TicketFacts }),
+  /**
+   * A failed CI result or a conflict reached the agent: the machine confirmed the message, and the
+   * round counts within **Most CI failures per run** (`of`; lot 3 step G2b).
+   */
+  'run.ci_round_sent': z.object({
+    ...TicketFacts,
+    commit: z.string(),
+    kind: z.enum(['failed', 'conflict']),
+    round: z.int().positive(),
+    of: z.int().positive(),
+  }),
+  /**
+   * The machine could not take a round yet (the base branch's download failed, say): not counted,
+   * tried again at the next check. Written when it starts, or its words change (lot 3 step G2b).
+   */
+  'run.ci_round_not_taken': z.object({
+    ...TicketFacts,
+    commit: z.string(),
+    kind: z.enum(['failed', 'conflict']),
+    message: z.string(),
+  }),
 } satisfies Record<EventType, z.ZodType>;
 
 export type EventPayload<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;
