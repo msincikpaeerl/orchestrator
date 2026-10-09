@@ -37,6 +37,7 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { hashCredential } from '../machines/credentials.js';
 import type { ProjectRow } from '../projects/model.js';
+import { startCiWait } from '../runs/ci-wait.js';
 import type { RunRow } from '../runs/model.js';
 import { resolveSettings } from '../settings/store.js';
 import {
@@ -1063,8 +1064,8 @@ export class McpBackend {
    * `ticket_submit` (04, sections 3.1 and 3.3; lot 3 step F): every check on the daemon's facts
    * (05, section 4.9), with the texts of `agents/templates/submit-checks.md`. A refused submission
    * is kept on the run (`SubmissionRefused`); an accepted one on the run and the ticket, with each
-   * check's result and the workflow flag. The run ends `succeeded` and the ticket moves to
-   * `in_review` when the turn ends.
+   * check's result and the workflow flag. The answer is `pending_ci`: the run waits for the CI
+   * result of the commit pushed (`CiWatcher`, lot 3 step G1a).
    */
   private async submit(
     tx: Transaction,
@@ -1108,10 +1109,42 @@ export class McpBackend {
       .where(eq(schema.tickets.id, call.ticket.id))
       .returning();
     if (!updated) throw new Error('ticket disappeared');
+    // The CI result is that of the commit pushed now (04, section 3.1; lot 3 step G1a). Runs
+    // started before 0.4.0 kept no CI waits: today's values.
+    const waits =
+      call.run.ciWaitTimeoutMinutes === null || call.run.ciStartWaitMinutes === null
+        ? await resolveSettings(tx, ['ciStartWaitMinutes', 'ciWaitTimeoutMinutes'], call.project.id)
+        : {
+            ciStartWaitMinutes: call.run.ciStartWaitMinutes,
+            ciWaitTimeoutMinutes: call.run.ciWaitTimeoutMinutes,
+          };
+    const ciCommit = workspace.push?.status === 'pushed' ? workspace.push.head : null;
     await tx
       .update(schema.runs)
-      .set({ decision: 'submitted', outcome: report.summary, submission: record, updatedAt: at })
+      .set({
+        decision: 'submitted',
+        outcome: report.summary,
+        submission: record,
+        ciCommit,
+        ...waits,
+        ciWaitStartedAt: null,
+        ciResult: null,
+        ciCheckedAt: null,
+        ciCheckFailure: null,
+        updatedAt: at,
+      })
       .where(eq(schema.runs.id, call.run.id));
+    // An open pull request runs CI on the pushed commit at once, whether or not its description
+    // is updated: the wait begins now (owner's point 1, step G1).
+    if (ciCommit !== null && call.ticket.pullRequestState === 'open') {
+      await startCiWait(tx, {
+        run: { id: call.run.id, ciCommit },
+        ticket: call.ticket,
+        projectKey: call.project.key,
+        pullRequest: call.ticket.pullRequestNumber,
+        at,
+      });
+    }
     await recordEvent(tx, {
       actor: 'agent',
       ...ticketEntity(call.ticket),
@@ -1126,7 +1159,7 @@ export class McpBackend {
     const ticketId = call.ticket.id;
     return {
       output: {
-        result: 'accepted' as const,
+        result: 'pending_ci' as const,
         ticket: await this.mcpTicket(tx, call.project.key, updated),
       },
       after: () => {

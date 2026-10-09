@@ -3,6 +3,7 @@ import {
   BRANCH_HEAD,
   COMMITS,
   callTool,
+  ciPasses,
   completeSetup,
   createReadyProject,
   daemonRequest,
@@ -192,6 +193,7 @@ test('a finished run shows the branch and its commits on the ticket page', async
       push: { status: 'pushed', head: BRANCH_HEAD },
     },
   );
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await expect(page.getByText('In review').first()).toBeVisible();
@@ -323,6 +325,7 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
       push: { status: 'pushed', head: D.hash },
     },
   );
+  await ciPasses(page, third.runId);
   await reportState(page, third.runId, 'ended', {
     branch: {
       name: 't/1-contact-form',

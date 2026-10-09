@@ -7,14 +7,18 @@ import {
   Capability,
   FIRST_MESSAGE_MAX_BYTES,
   PUSH_PERMISSION_WORDS,
+  CiCheckFailure,
+  CiResult,
   PushResult,
   RunStatus,
+  SubmissionRecord,
   TicketStatus,
   claudeCodeSupport,
   maskSecrets,
   shorten,
   type Ack,
   type BranchReport,
+  type EventPayload,
   type FailureReason,
   type GitCredential,
   type GitCredentialRequest,
@@ -53,7 +57,7 @@ import {
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import { notifyRunLog } from '../realtime/changes.js';
+import { notifyChange, notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
 import { inspectToken } from '../github/token-check.js';
@@ -202,7 +206,7 @@ export class RunService {
   private async sendStop(
     machineId: string,
     runId: string,
-    reason: 'owner_stopped' | 'ticket_cancelled' | 'not_active',
+    reason: 'owner_stopped' | 'ticket_cancelled' | 'not_active' | 'completed',
   ): Promise<void> {
     await this.db
       .update(schema.runs)
@@ -724,11 +728,12 @@ export class RunService {
       if (!profile) throw new Error(`profile ${ticket.assigneeProfileId} not found`);
       const required = z.array(Capability).parse(profile.requiredCapabilities);
       // Kept for the whole run: a later change of the setting applies to later runs (04, 8).
-      const { maxAgentTicketsPerRun } = await resolveSettings(
-        tx,
-        ['maxAgentTicketsPerRun'],
-        project.id,
-      );
+      const { maxAgentTicketsPerRun, ciStartWaitMinutes, ciWaitTimeoutMinutes } =
+        await resolveSettings(
+          tx,
+          ['maxAgentTicketsPerRun', 'ciStartWaitMinutes', 'ciWaitTimeoutMinutes'],
+          project.id,
+        );
 
       // The ticket's earlier runs, newest first, and the machine holding its commits not on
       // GitHub (07, section 3): once pushed, any machine can take the branch from GitHub.
@@ -882,6 +887,8 @@ export class RunService {
           status: 'queued',
           attempt,
           maxAgentTickets: maxAgentTicketsPerRun,
+          ciStartWaitMinutes,
+          ciWaitTimeoutMinutes,
           runTokenHash: hashCredential(runToken),
           dispatchMessageId,
           dispatchKind: 'start',
@@ -1506,6 +1513,189 @@ export class RunService {
       );
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // The wait for CI (04, section 3.1; lot 3 step G1a): what `CiWatcher` found
+
+  /** The run still waits for CI of `commit`: running, with that commit (a later one replaces it). */
+  private waitsFor(locked: Locked, commit: string): boolean {
+    return locked.run.status === 'running' && locked.run.ciCommit === commit;
+  }
+
+  private ciFacts(locked: Locked) {
+    return { project: locked.project.key, ticket: this.reference(locked) };
+  }
+
+  /** The result read, or the failed check, kept on the run with their events. */
+  async ciRecorded(
+    runId: string,
+    commit: string,
+    found: { result: CiResult } | { failure: Omit<CiCheckFailure, 'since' | 'at'> },
+  ): Promise<void> {
+    await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit)) return;
+      const now = this.now();
+      const previous =
+        locked.run.ciCheckFailure === null ? null : CiCheckFailure.parse(locked.run.ciCheckFailure);
+      const event = <T extends 'run.ci_check_failed' | 'run.ci_check_recovered' | 'run.ci_result'>(
+        type: T,
+        payload: Omit<EventPayload<T>, 'project' | 'ticket'>,
+      ) =>
+        recordEvent(tx, {
+          actor: 'system',
+          entityType: 'run',
+          entityId: runId,
+          projectId: locked.project.id,
+          type,
+          payload: { ...this.ciFacts(locked), ...payload },
+          at: now,
+        });
+      if ('failure' in found) {
+        const same = previous !== null && previous.reason === found.failure.reason;
+        const failure: CiCheckFailure = {
+          ...found.failure,
+          since: same ? previous.since : now.toISOString(),
+          at: now.toISOString(),
+        };
+        await tx
+          .update(schema.runs)
+          .set({ ciCheckFailure: failure, updatedAt: now })
+          .where(eq(schema.runs.id, runId));
+        // Once when checking starts failing, or its reason changes; never at each tick.
+        if (!same) {
+          await event('run.ci_check_failed', {
+            reason: failure.reason,
+            message: failure.message,
+          });
+        }
+        return;
+      }
+      const before =
+        locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult).state;
+      await tx
+        .update(schema.runs)
+        .set({ ciResult: found.result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
+        .where(eq(schema.runs.id, runId));
+      if (previous !== null) await event('run.ci_check_recovered', {});
+      // A conflict keeps the submission from passing: said once, when it is found.
+      if (found.result.state === 'conflict' && before !== 'conflict') {
+        await event('run.ci_result', {
+          ...this.ciResultFacts(locked, commit, found.result, null),
+          state: 'conflict',
+        });
+      }
+    });
+  }
+
+  private ciResultFacts(
+    locked: Locked,
+    commit: string,
+    result: CiResult,
+    pullRequestHead: string | null,
+  ) {
+    const submission =
+      locked.run.submission === null ? null : SubmissionRecord.parse(locked.run.submission);
+    return {
+      commit,
+      state: result.state,
+      checks: result.checks.length,
+      failed: result.checks.filter((check) => check.state === 'failed').map((check) => check.name),
+      workflowChanges: submission?.workflowChanges
+        ? (submission.workflowReason ?? 'not_listed')
+        : null,
+      baseBranch: locked.run.baseBranch,
+      pullRequestHead,
+    };
+  }
+
+  /**
+   * A result that decides. Passed or "No CI found": the run succeeds and the ticket moves to
+   * `in_review` in one transaction, then `run.stop` `completed` ends the session (a machine
+   * offline gets its stop at its reconnection). Failed: until step G2 sends it back, the run ends
+   * with `ci_failed`, a failed attempt (owner's point 2, step G1).
+   */
+  async ciDecided(
+    runId: string,
+    commit: string,
+    decided: {
+      result: CiResult & { state: 'passed' | 'no_ci' | 'failed' };
+      pullRequestHead: string | null;
+    },
+  ): Promise<void> {
+    const ended = await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit)) return null;
+      const now = this.now();
+      const { result } = decided;
+      await tx
+        .update(schema.runs)
+        .set({ ciResult: result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
+        .where(eq(schema.runs.id, runId));
+      if (locked.run.ciCheckFailure !== null) {
+        await recordEvent(tx, {
+          actor: 'system',
+          entityType: 'run',
+          entityId: runId,
+          projectId: locked.project.id,
+          type: 'run.ci_check_recovered',
+          payload: this.ciFacts(locked),
+          at: now,
+        });
+      }
+      locked.run = { ...locked.run, ciResult: result, ciCheckedAt: now, ciCheckFailure: null };
+      await recordEvent(tx, {
+        actor: 'system',
+        entityType: 'run',
+        entityId: runId,
+        projectId: locked.project.id,
+        type: 'run.ci_result',
+        payload: {
+          ...this.ciFacts(locked),
+          ...this.ciResultFacts(locked, commit, result, decided.pullRequestHead),
+          state: result.state,
+        },
+        at: now,
+      });
+      if (result.state === 'failed') {
+        const failed = result.checks.filter((check) => check.state === 'failed');
+        const names = failed.map((check) => check.name).join(', ');
+        await this.fail(tx, locked, 'ci_failed', 'ci_result', {
+          detail: `CI failed on GitHub: ${names}`,
+          comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: CI failed on GitHub for the submitted commit ${commit.slice(0, 7)} (${names}). It counts as a failed attempt. The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
+        });
+        return { machineId: locked.machine.id, reason: 'not_active' as const };
+      }
+      await this.setStatus(tx, locked, 'succeeded', 'ci_result');
+      if (locked.ticket) {
+        await applyRunAction(tx, {
+          projectKey: locked.project.key,
+          ticket: locked.ticket,
+          action: 'run_submitted',
+          actor: 'system',
+          runId,
+          now,
+        });
+      }
+      return { machineId: locked.machine.id, reason: 'completed' as const };
+    });
+    if (ended) await this.sendStop(ended.machineId, runId, ended.reason);
+  }
+
+  /**
+   * **CI wait at submission** reached without a result that decides: the run fails with
+   * `ci_timeout`, not counted, and the ticket returns to `todo` (04, sections 3.1 and 5). Step G2
+   * adds "CI did not finish" and **Check CI again**.
+   */
+  async ciTimedOut(runId: string, commit: string, detail: string): Promise<void> {
+    const ended = await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit)) return null;
+      const minutes = locked.run.ciWaitTimeoutMinutes ?? 0;
+      await this.fail(tx, locked, 'ci_timeout', 'ci_timeout', {
+        detail: `CI wait at submission (${String(minutes)} minutes) reached: ${detail}`,
+      });
+      return locked.machine.id;
+    });
+    if (ended) await this.sendStop(ended, runId, 'not_active');
+  }
+
   /** After **Revoke**: the machine's active runs fail with `machine_revoked`, not counted. */
   async failMachineRuns(machineId: string): Promise<void> {
     const active = await this.db
@@ -1677,7 +1867,8 @@ export class RunService {
             }
           : {};
         if (!ACTIVE.has(run.status)) {
-          // Already ended on the server (Stop run, revocation): the report adds the branch only.
+          // Already ended on the server (Stop run, revocation, CI passed): the report adds the
+          // branch only, which open screens read again.
           await tx
             .update(schema.runs)
             .set({
@@ -1687,12 +1878,18 @@ export class RunService {
               updatedAt: this.now(),
             })
             .where(eq(schema.runs.id, run.id));
+          await notifyChange(tx, { entity: 'run', id: run.id, projectId: locked.project.id });
           return true;
         }
         await tx
           .update(schema.runs)
           .set({ ...session, ...branch, endReportedAt: this.now() })
           .where(eq(schema.runs.id, run.id));
+        if (payload.reason === 'submitted' && run.ciCommit !== null) {
+          // Only the CI result accepts a submission waiting for it: the run keeps waiting with
+          // its session gone, as when Claude Code ends during the wait (lot 3 step G1a).
+          return true;
+        }
         const end = endOfReason(payload.reason);
         const detail = payload.detail ?? undefined;
         if (end.status === 'succeeded') {
@@ -1735,6 +1932,17 @@ export class RunService {
         // The server ended it: the daemon stops the session (05, section 6).
         after.push(() => this.sendStop(machineId, run.id, 'not_active'));
         return true;
+      }
+      // The session idle waiting for CI: its time counts as waiting from now, and as working
+      // again when the agent works on (01, section 3.7; lot 3 step G1a).
+      const waitingForCi = payload.state === 'waiting_ci';
+      if (waitingForCi !== (run.ciWaitingSince !== null)) {
+        const ciTimes = {
+          ...statusTimes(run, this.now()),
+          ciWaitingSince: waitingForCi ? this.now() : null,
+        };
+        await tx.update(schema.runs).set(ciTimes).where(eq(schema.runs.id, run.id));
+        locked.run = { ...run, ...ciTimes };
       }
       await tx.update(schema.runs).set(session).where(eq(schema.runs.id, run.id));
       this.clearTimer(run.id);
@@ -2014,7 +2222,7 @@ export class RunService {
 
 function stopMessage(
   runId: string,
-  reason: 'owner_stopped' | 'ticket_cancelled' | 'not_active',
+  reason: 'owner_stopped' | 'ticket_cancelled' | 'not_active' | 'completed',
 ): ServerMessage {
   return { type: 'run.stop', id: randomUUID(), payload: { runId, reason } };
 }

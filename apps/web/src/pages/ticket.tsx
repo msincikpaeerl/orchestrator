@@ -244,7 +244,7 @@ function PullRequestFailureLine({
       <p className="font-medium break-words text-slate-900">
         {heading}: {reason}
       </p>
-      <p className="text-sm text-slate-600">Since {formatDateTime(failure.at)}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(failure.since ?? failure.at)}</p>
       <PullRequestFailureDetails
         ticket={ticket}
         failure={failure}

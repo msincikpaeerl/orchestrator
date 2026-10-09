@@ -29,6 +29,8 @@ import {
   TicketDetail,
   type DodReport,
 } from '@orchestrator/protocol';
+import { schema } from '@orchestrator/db';
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RunHarness, TOKEN } from './run-harness.js';
 
@@ -157,6 +159,64 @@ async function runNow(): Promise<Run> {
   return run(created.id);
 }
 
+/**
+ * CI passes for the commit the run submitted (lot 3 step G1a). The daemon pushed it to this
+ * file's own Git server, not to the fake GitHub, so no pull request opens there: the wait is begun
+ * and GitHub's answers for that commit are given here, then one check runs.
+ */
+async function ciPasses(runId: string) {
+  await until('the run waiting for CI', async () => {
+    const current = await run(runId);
+    return current.ci !== null && current.ci.waitingSince !== null;
+  });
+  const commit = (await run(runId)).ci?.commit ?? '';
+  await h.t.db
+    .update(schema.runs)
+    .set({ ciWaitStartedAt: new Date() })
+    .where(eq(schema.runs.id, runId));
+  h.github.alter = (request, reply) => {
+    if (request.path.includes(`/actions/runs?head_sha=${commit}`)) {
+      return {
+        status: 200,
+        body: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 1,
+              name: 'CI',
+              event: 'pull_request',
+              status: 'completed',
+              conclusion: 'success',
+              head_sha: commit,
+              head_branch: BRANCH,
+              html_url: 'https://github.com/octo-owner/bakery/actions/runs/1',
+              pull_requests: [],
+            },
+          ],
+        },
+      };
+    }
+    if (request.path.includes(`/commits/${commit}/status`)) {
+      return { status: 200, body: { state: 'pending', sha: commit, total_count: 0, statuses: [] } };
+    }
+    return reply;
+  };
+  try {
+    await h.t.ciTick();
+  } finally {
+    h.github.alter = undefined;
+  }
+}
+
+/**
+ * Succeeded when CI passed, and ended on the machine: the daemon's end report, which adds the
+ * branch, came after `run.stop` (its session reported closed).
+ */
+async function endedSucceeded(id: string): Promise<boolean> {
+  const current = await run(id);
+  return current.status === 'succeeded' && !current.sessionAlive;
+}
+
 async function runLog(id: string) {
   return json((v) => RunLogResponse.parse(v), 'GET', `/api/runs/${id}/log`);
 }
@@ -246,7 +306,8 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       );
 
       // Submitted: the run succeeds and the ticket waits for the owner's check with its branch.
-      await until('the run succeeded', async () => (await run(started.id)).status === 'succeeded');
+      await ciPasses(started.id);
+      await until('the run succeeded and ended', () => endedSucceeded(started.id));
       const done = await ticket();
       expect(done.status).toBe('in_review');
       expect(done.dodReport?.summary).toBe(report.summary);
@@ -332,7 +393,8 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       });
       await until('the reset time', () => Promise.resolve(Date.now() > resetAt + 500), 20_000);
       await json((v) => Run.parse(v), 'POST', `/api/runs/${started.id}/resume`);
-      await until('the run succeeded', async () => (await run(started.id)).status === 'succeeded');
+      await ciPasses(started.id);
+      await until('the run succeeded and ended', () => endedSucceeded(started.id));
       expect((await ticket()).status).toBe('in_review');
 
       const starts = (await fake.log()).flatMap((entry) =>
@@ -395,10 +457,8 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
 
       // The agent goes on: its tool calls reach the new daemon, and the run finishes.
       await writeFile(join(worktree, 'go'), '');
-      await until(
-        'the first run succeeded',
-        async () => (await run(first.id)).status === 'succeeded',
-      );
+      await ciPasses(first.id);
+      await until('the first run succeeded and ended', () => endedSucceeded(first.id));
       expect((await ticket()).status).toBe('in_review');
 
       // Request changes, then Run now: the next run's first message holds the owner's comment.
@@ -418,10 +478,8 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       });
       const second = await runNow();
       expect(second.id).not.toBe(first.id);
-      await until(
-        'the second run succeeded',
-        async () => (await run(second.id)).status === 'succeeded',
-      );
+      await ciPasses(second.id);
+      await until('the second run succeeded and ended', () => endedSucceeded(second.id));
       const sent = await messages();
       expect(sent).toHaveLength(2);
       expect(sent[1]).toContain(CHANGES);
@@ -494,10 +552,8 @@ describe('lot 2 acceptance scenario, real server and daemon', () => {
       });
       const second = await runNow();
       expect(second.machine.id).toBe(machineId);
-      await until(
-        'the second run succeeded',
-        async () => (await run(second.id)).status === 'succeeded',
-      );
+      await ciPasses(second.id);
+      await until('the second run succeeded and ended', () => endedSucceeded(second.id));
       const sent = await messages();
       expect(sent).toHaveLength(2);
       expect(sent[1]).toContain(`run \`git merge ${BRANCH_ON_GITHUB}\``);

@@ -1,0 +1,462 @@
+import { schema } from '@orchestrator/db';
+import {
+  maskSecrets,
+  type CiCheckFailure,
+  type CiResult,
+  type CiState,
+} from '@orchestrator/protocol';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import type { FastifyBaseLogger } from 'fastify';
+import type { Database, Executor } from '../database.js';
+import { recordEvent } from '../events.js';
+import type { GitHubRefusal } from '../github/answers.js';
+import { listCommitRuns, readCommitStatus } from '../github/ci.js';
+import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
+import { storedTokenClient } from '../github/connection.js';
+import { readPullRequest } from '../github/pull-requests.js';
+import { SecretUnreadableError, type SecretKey } from '../secrets.js';
+import { resolveSettings } from '../settings/store.js';
+import { ticketReference } from '../tickets/model.js';
+import { ciChecks, ciChecksState } from './ci-result.js';
+import { ciDeadlines, type RunRow } from './model.js';
+
+// The wait for CI after an accepted submission (04, section 3.1; lot 3 step G1a). The run keeps
+// its session open and stays `running`; the server polls GitHub at **GitHub check interval** for
+// the commit pushed at the submission, and decides: passed or "No CI found" accept the
+// submission, a conflict never does, a failure ends the run (until step G2 sends it back), and
+// **CI wait at submission** ends a wait without a result. GitHub unreachable, its request limit
+// or an answer that cannot be read never end a wait: only the deadline does. Everything the loop
+// needs is stored on the run, so a restarted server goes on where it stopped.
+
+/**
+ * The wait begins (owner's point 1, step G1): at the submission when the ticket's pull request
+ * is open, or when the pull request is opened or reopened. Writes `run.ci_waiting`.
+ */
+export async function startCiWait(
+  tx: Executor,
+  facts: {
+    run: Pick<RunRow, 'id' | 'ciCommit'>;
+    ticket: { id: string; projectId: string; number: number };
+    projectKey: string;
+    pullRequest: number | null;
+    at: Date;
+  },
+): Promise<void> {
+  const { run, ticket, at } = facts;
+  if (run.ciCommit === null) return;
+  await tx.update(schema.runs).set({ ciWaitStartedAt: at }).where(eq(schema.runs.id, run.id));
+  await recordEvent(tx, {
+    actor: 'system',
+    entityType: 'run',
+    entityId: run.id,
+    projectId: ticket.projectId,
+    type: 'run.ci_waiting',
+    payload: {
+      project: facts.projectKey,
+      ticket: ticketReference(facts.projectKey, ticket.number),
+      commit: run.ciCommit,
+      pullRequest: facts.pullRequest,
+    },
+    at,
+  });
+}
+
+/**
+ * When the ticket's pull request is opened or updated: the wait of its active run waiting for
+ * one begins, in the caller's transaction.
+ */
+export async function pullRequestReady(
+  tx: Executor,
+  ticket: { id: string; projectId: string; number: number },
+  projectKey: string,
+  pullRequest: number,
+  at: Date,
+): Promise<void> {
+  const [run] = await tx
+    .select({ id: schema.runs.id, ciCommit: schema.runs.ciCommit })
+    .from(schema.runs)
+    .where(
+      and(
+        eq(schema.runs.ticketId, ticket.id),
+        eq(schema.runs.status, 'running'),
+        isNotNull(schema.runs.ciCommit),
+        isNull(schema.runs.ciWaitStartedAt),
+      ),
+    )
+    .for('update');
+  if (!run) return;
+  await startCiWait(tx, { run, ticket, projectKey, pullRequest, at });
+}
+
+/** What the run service does with what the loop found. */
+export interface CiOutcomes {
+  /** Keeps the result read, or the failed check, on the run, with their events. */
+  recorded(
+    runId: string,
+    commit: string,
+    found: { result: CiResult } | { failure: Omit<CiCheckFailure, 'since' | 'at'> },
+  ): Promise<void>;
+  /** A result that decides: `passed` or `no_ci` accept the submission, `failed` ends the run. */
+  decided(
+    runId: string,
+    commit: string,
+    decided: {
+      result: CiResult & { state: 'passed' | 'no_ci' | 'failed' };
+      pullRequestHead: string | null;
+    },
+  ): Promise<void>;
+  /** **CI wait at submission** reached without a result that decides. */
+  timedOut(runId: string, commit: string, detail: string): Promise<void>;
+}
+
+export interface CiWatcherOptions {
+  db: Database;
+  key: SecretKey;
+  apiUrl: string;
+  log: FastifyBaseLogger;
+  outcomes: CiOutcomes;
+  /** One more attempt at the pull request of a ticket whose pull request is not opened. */
+  retryPullRequest: (ticketId: string) => Promise<void>;
+  now?: () => Date;
+  /** False in tests: no tick starts by itself, the test calls `tick()`. */
+  timers?: boolean;
+}
+
+type Check =
+  | { ok: true; result: CiResult; pullRequestHead: string | null }
+  | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
+
+/** A refusal of GitHub's as a failed check: its words masked, never a value of an answer. */
+function failureOf(refusal: GitHubRefusal): Omit<CiCheckFailure, 'since' | 'at'> {
+  const base = { message: maskSecrets(refusal.message), fields: [], retryAt: null };
+  switch (refusal.kind) {
+    case 'token_invalid':
+      return { ...base, reason: 'token' };
+    case 'permission_missing':
+      return { ...base, reason: 'permission_missing' };
+    case 'rate_limited':
+      return { ...base, reason: 'rate_limited' };
+    case 'unreadable':
+      return { ...base, reason: 'unreadable', fields: refusal.fields };
+    default:
+      return { ...base, reason: 'refused' };
+  }
+}
+
+/** The first moment GitHub allows requests again, as its refusal says; null when it does not. */
+function retryAt(refusal: GitHubRefusal, now: Date): Date | null {
+  if (refusal.kind !== 'rate_limited' || refusal.retry === null) return null;
+  return 'afterSeconds' in refusal.retry
+    ? new Date(now.getTime() + refusal.retry.afterSeconds * 1000)
+    : new Date(refusal.retry.resetAtSeconds * 1000);
+}
+
+/**
+ * A loop running `work` every `intervalMs()` milliseconds, the interval read again each time; a
+ * tick never overlaps the previous one, and `pauseUntil` holds the next one back.
+ */
+export class PollLoop {
+  private timer: NodeJS.Timeout | undefined;
+  private running: Promise<void> | null = null;
+  private closed = false;
+  private resumeAt: number | null = null;
+
+  constructor(
+    private readonly options: {
+      intervalMs: () => Promise<number>;
+      work: () => Promise<void>;
+      log: Pick<FastifyBaseLogger, 'error'>;
+      now: () => number;
+    },
+  ) {}
+
+  /** Starts with a tick at once. */
+  start(): void {
+    this.schedule(0);
+  }
+
+  /** The next tick waits at least until `at`. */
+  pauseUntil(at: number): void {
+    this.resumeAt = Math.max(this.resumeAt ?? 0, at);
+  }
+
+  /** One tick now, after the one in flight; never rejects. */
+  tick(): Promise<void> {
+    const previous = this.running ?? Promise.resolve();
+    const next = previous.then(async () => {
+      try {
+        await this.options.work();
+      } catch (error) {
+        this.options.log.error({ err: error }, 'CI check failed');
+      }
+    });
+    this.running = next.finally(() => {
+      if (this.running === next) this.running = null;
+    });
+    return next;
+  }
+
+  private schedule(delayMs: number): void {
+    if (this.closed) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      void this.loop();
+    }, delayMs);
+  }
+
+  private async loop(): Promise<void> {
+    const now = this.options.now();
+    if (this.resumeAt !== null && now < this.resumeAt) {
+      this.schedule(this.resumeAt - now);
+      return;
+    }
+    this.resumeAt = null;
+    // A tick still running (a slow GitHub) is not doubled: the next one waits for it.
+    await this.tick();
+    let interval = 60_000;
+    try {
+      interval = await this.options.intervalMs();
+    } catch (error) {
+      this.options.log.error({ err: error }, 'GitHub check interval not read');
+    }
+    this.schedule(interval);
+  }
+
+  /** Stops the loop; resolves once the tick in flight is over. */
+  async close(): Promise<void> {
+    this.closed = true;
+    clearTimeout(this.timer);
+    await this.running;
+  }
+}
+
+export class CiWatcher {
+  private readonly loop: PollLoop;
+
+  constructor(private readonly options: CiWatcherOptions) {
+    this.loop = new PollLoop({
+      intervalMs: async () =>
+        (await resolveSettings(options.db, ['githubPollSeconds'])).githubPollSeconds * 1000,
+      work: () => this.checkAll(),
+      log: options.log,
+      now: () => this.now().getTime(),
+    });
+  }
+
+  private now(): Date {
+    return this.options.now?.() ?? new Date();
+  }
+
+  /** At server start: the first tick at once, then every **GitHub check interval**. */
+  start(): void {
+    if (this.options.timers !== false) this.loop.start();
+  }
+
+  /** One check of every waiting run, after the tick in flight. */
+  tick(): Promise<void> {
+    return this.loop.tick();
+  }
+
+  close(): Promise<void> {
+    return this.loop.close();
+  }
+
+  /** Every run waiting for CI, one after another; the request limit stops the tick. */
+  private async checkAll(): Promise<void> {
+    const waiting = await this.options.db
+      .select({
+        run: schema.runs,
+        ticket: schema.tickets,
+        project: schema.projects,
+      })
+      .from(schema.runs)
+      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+      .where(and(eq(schema.runs.status, 'running'), isNotNull(schema.runs.ciCommit)));
+    for (const row of waiting) {
+      const limited = await this.checkRun(row);
+      if (limited !== null) {
+        this.loop.pauseUntil(limited.getTime());
+        return;
+      }
+    }
+  }
+
+  /** One waiting run; returns when GitHub allows requests again after its request limit. */
+  private async checkRun(row: {
+    run: RunRow;
+    ticket: typeof schema.tickets.$inferSelect;
+    project: typeof schema.projects.$inferSelect;
+  }): Promise<Date | null> {
+    const { run, ticket, project } = row;
+    const commit = run.ciCommit;
+    const deadlines = ciDeadlines(run);
+    if (commit === null || deadlines === null) return null;
+    const now = this.now();
+    const { outcomes } = this.options;
+    if (run.ciWaitStartedAt === null) {
+      if (now >= deadlines.deadline) {
+        await outcomes.timedOut(run.id, commit, 'the pull request could not be opened');
+        return null;
+      }
+      // The loop tries again the pull requests not opened (lot 3 plan, step G1).
+      await this.options.retryPullRequest(ticket.id);
+      return null;
+    }
+    const check = await this.check(
+      { owner: project.repoOwner, name: project.repoName },
+      commit,
+      ticket.pullRequestNumber,
+      now >= (deadlines.startDeadline ?? now),
+    );
+    if (!check.ok) {
+      await outcomes.recorded(run.id, commit, { failure: check.failure });
+      if (now >= deadlines.deadline) {
+        await outcomes.timedOut(
+          run.id,
+          commit,
+          `GitHub could not be checked: ${check.failure.message}`,
+        );
+      }
+      return check.retryAt ?? null;
+    }
+    const { result } = check;
+    if (result.state === 'passed' || result.state === 'no_ci' || result.state === 'failed') {
+      // A result that decides wins over a deadline passed meanwhile (owner's answer 4, step G1).
+      await outcomes.decided(run.id, commit, {
+        result: { ...result, state: result.state },
+        pullRequestHead: check.pullRequestHead,
+      });
+      return null;
+    }
+    await outcomes.recorded(run.id, commit, { result });
+    if (now >= deadlines.deadline) {
+      await outcomes.timedOut(
+        run.id,
+        commit,
+        result.state === 'conflict'
+          ? `the pull request conflicts with ${project.defaultBranch ?? 'its base branch'}, so GitHub started no CI`
+          : result.checks.length === 0
+            ? 'no CI run or status appeared yet'
+            : 'CI had not finished',
+      );
+    }
+    return null;
+  }
+
+  /** Reads the CI result of `commit` (2 requests), and the pull request when it is needed. */
+  private async check(
+    repo: { owner: string; name: string },
+    commit: string,
+    pullRequest: number | null,
+    startWaitOver: boolean,
+  ): Promise<Check & { retryAt?: Date }> {
+    let client: GitHubClient | null;
+    try {
+      client = await storedTokenClient({ ...this.options, log: this.options.log });
+    } catch (error) {
+      if (!(error instanceof SecretUnreadableError)) throw error;
+      return {
+        ok: false,
+        failure: {
+          reason: 'token',
+          message:
+            'The saved GitHub token cannot be decrypted (ORCHESTRATOR_SECRET_KEY changed): save the token again in Settings',
+          fields: [],
+          retryAt: null,
+        },
+      };
+    }
+    if (client === null) {
+      return {
+        ok: false,
+        failure: {
+          reason: 'token',
+          message: 'No GitHub token is saved: connect GitHub in Settings',
+          fields: [],
+          retryAt: null,
+        },
+      };
+    }
+    try {
+      return await this.read(client, repo, commit, pullRequest, startWaitOver);
+    } catch (error) {
+      if (!(error instanceof GitHubUnreachableError)) throw error;
+      return {
+        ok: false,
+        failure: {
+          reason: 'unreachable',
+          message: 'GitHub could not be reached, or answered with a server error',
+          fields: [],
+          retryAt: null,
+        },
+      };
+    }
+  }
+
+  private async read(
+    client: GitHubClient,
+    repo: { owner: string; name: string },
+    commit: string,
+    pullRequest: number | null,
+    startWaitOver: boolean,
+  ): Promise<Check & { retryAt?: Date }> {
+    const refused = (refusal: GitHubRefusal): Check & { retryAt?: Date } => {
+      const at = retryAt(refusal, this.now());
+      return {
+        ok: false,
+        failure: { ...failureOf(refusal), retryAt: at?.toISOString() ?? null },
+        ...(at === null ? {} : { retryAt: at }),
+      };
+    };
+    const runs = await listCommitRuns(client, repo, commit);
+    if (!runs.ok) return refused(runs.refusal);
+    const status = await readCommitStatus(client, repo, commit);
+    if (!status.ok) return refused(status.refusal);
+    if (status.value.sha !== commit) {
+      // Asked by its hash: another commit's statuses would not be this submission's result.
+      const fields = ['sha: expected the submitted commit, received another commit'];
+      client.unreadable(
+        { method: 'GET', path: `/repos/${repo.owner}/${repo.name}/commits/<commit>/status` },
+        200,
+        fields,
+      );
+      return {
+        ok: false,
+        failure: {
+          reason: 'unreadable',
+          message: `GitHub's answer does not fit what the Orchestrator reads: ${fields.join('; ')}`,
+          fields,
+          retryAt: null,
+        },
+      };
+    }
+    const checks = ciChecks(commit, runs.value, status.value);
+    const state = ciChecksState(checks);
+    let decided: CiState;
+    let pullRequestHead: string | null = null;
+    const head = async (): Promise<void> => {
+      if (pullRequest === null) return;
+      // Only to say so in the result's event: never part of the result (owner's answer 2).
+      const read = await readPullRequest(client, repo, pullRequest);
+      if (read.ok && read.value.headSha !== commit) pullRequestHead = read.value.headSha;
+    };
+    if (state === 'none') {
+      if (!startWaitOver || pullRequest === null) {
+        decided = 'pending';
+      } else {
+        // GitHub starts no `pull_request` run on a conflict (A18): read it before "No CI found".
+        const read = await readPullRequest(client, repo, pullRequest);
+        if (!read.ok) return refused(read.refusal);
+        if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
+        // Null while GitHub computes it (A5): read again at the next check.
+        decided =
+          read.value.mergeable === null ? 'pending' : read.value.mergeable ? 'no_ci' : 'conflict';
+      }
+    } else {
+      decided = state;
+      if (state !== 'pending') await head().catch(() => undefined);
+    }
+    return { ok: true, result: { state: decided, checks, failed_jobs: [] }, pullRequestHead };
+  }
+}

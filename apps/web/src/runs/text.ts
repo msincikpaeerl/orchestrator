@@ -69,6 +69,8 @@ export const causeText: Record<RunChangeCause, string> = {
   machine_revoked: 'the machine was revoked',
   claude_code_unsupported: "the machine's Claude Code is missing or too old",
   answer: 'you answered its question',
+  ci_result: 'its CI result on GitHub',
+  ci_timeout: '"CI wait at submission" was reached',
 };
 
 /** Why one machine cannot take a run, for the refusal of **Run now** or **Resume**. */
@@ -173,13 +175,19 @@ export function durationText(ms: number): string {
  * active run (01, section 3.7).
  */
 export function runTimes(
-  run: Pick<Run, 'status' | 'workingMs' | 'waitingMs' | 'statusSince'>,
+  run: Pick<Run, 'status' | 'workingMs' | 'waitingMs' | 'statusSince'> & {
+    ci?: Run['ci'];
+  },
   now: number,
 ): { workingMs: number; waitingMs: number } {
   const current = Math.max(0, now - new Date(run.statusSince).getTime());
+  // A run waiting for CI is running, its time waiting (lot 3 step G1a).
+  const waitingForCi = run.status === 'running' && (run.ci?.waitingSince ?? null) !== null;
   return {
-    workingMs: run.workingMs + (WORKING_RUN_STATUSES.includes(run.status) ? current : 0),
-    waitingMs: run.waitingMs + (WAITING_RUN_STATUSES.includes(run.status) ? current : 0),
+    workingMs:
+      run.workingMs + (WORKING_RUN_STATUSES.includes(run.status) && !waitingForCi ? current : 0),
+    waitingMs:
+      run.waitingMs + (WAITING_RUN_STATUSES.includes(run.status) || waitingForCi ? current : 0),
   };
 }
 

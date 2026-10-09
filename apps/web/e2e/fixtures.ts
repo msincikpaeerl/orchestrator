@@ -219,11 +219,29 @@ export async function daemonRequest(
   return (await response.json()) as { type: string; payload: Record<string, unknown> };
 }
 
+/**
+ * CI passes for the run's submission (lot 3 step G1a): the session idle waiting for CI, then one
+ * CI check that finds it passed. The run then succeeds and the ticket moves to In review.
+ */
+export async function ciPasses(page: Page, runId: string) {
+  await reportState(page, runId, 'waiting_ci');
+  const response = await page.request.post(`${controlUrl}/ci/pass`, { data: { runId } });
+  expect(response.status()).toBe(204);
+}
+
 /** A `run.state` report, which the server must accept. */
 export async function reportState(
   page: Page,
   runId: string,
-  state: 'preparing' | 'starting' | 'working' | 'idle' | 'waiting_human' | 'quota_paused' | 'ended',
+  state:
+    | 'preparing'
+    | 'starting'
+    | 'working'
+    | 'idle'
+    | 'waiting_ci'
+    | 'waiting_human'
+    | 'quota_paused'
+    | 'ended',
   extra: Record<string, unknown> = {},
 ) {
   const base = {

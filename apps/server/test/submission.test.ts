@@ -125,7 +125,8 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
     });
 
     const accepted = await h.ok(daemon, runToken, 'ticket_submit', REPORT);
-    expect(accepted).toMatchObject({ result: 'accepted', ticket: { status: 'in_progress' } });
+    // The run waits for CI from step G1a (04, section 3.1).
+    expect(accepted).toMatchObject({ result: 'pending_ci', ticket: { status: 'in_progress' } });
     const run = await runRow(runId);
     // The refusal before it is kept beside the accepted submission.
     expect(SubmissionRecord.parse(run.refusedSubmission).report.criteria[0]?.status).toBe(
@@ -140,7 +141,7 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
     const [event] = await h.events('ticket.submitted');
     expect(event).toMatchObject({ payload: { criteria: 2, workflowChanges: false } });
 
-    await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+    await h.ciPasses(daemon, runId);
     expect((await h.run(runId)).status).toBe('succeeded');
     expect((await h.ticket()).status).toBe('in_review');
   });

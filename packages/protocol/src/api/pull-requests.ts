@@ -27,7 +27,13 @@ export const PullRequestFailure = z.object({
   permission: z.literal('pull_requests').nullable(),
   /** For `unreadable`: each field that did not fit, as a type, never a value. */
   fields: z.array(z.string()),
+  /** The latest failed attempt. */
   at: z.iso.datetime(),
+  /**
+   * The first failed attempt since the pull request was last opened or updated, kept at each new
+   * try (owner's correction, lot 3 step G1a); absent from failures kept before, which read `at`.
+   */
+  since: z.iso.datetime().optional(),
 });
 export type PullRequestFailure = z.infer<typeof PullRequestFailure>;
 

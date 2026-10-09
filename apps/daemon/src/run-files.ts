@@ -57,9 +57,13 @@ export const RunStateFile = z.object({
   /**
    * An accepted decision tool of the current turn, applied when the turn ends (05, section 4.8);
    * `push_failed` when the push at a `ticket_submit` failed, whatever the server answered, kept
-   * over any later decision of the turn (04, section 3.1; lot 3 step F).
+   * over any later decision of the turn (04, section 3.1; lot 3 step F); `waiting_ci` when the
+   * server answered `pending_ci` (05, section 4.9; lot 3 step G1a).
    */
-  decision: z.enum(['submitted', 'gave_up', 'asked', 'push_failed']).nullable().default(null),
+  decision: z
+    .enum(['submitted', 'gave_up', 'asked', 'push_failed', 'waiting_ci'])
+    .nullable()
+    .default(null),
   /** A `PreToolUse` came during the current turn (05, section 4.10). */
   turnToolUsed: z.boolean().default(false),
   /** When the run started waiting for the owner (epoch ms): the waiting run lifetime's clock. */

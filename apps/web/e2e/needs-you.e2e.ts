@@ -3,6 +3,7 @@ import {
   BRANCH_HEAD,
   COMMITS,
   callTool,
+  ciPasses,
   daemonRequest,
   expect,
   expectFitsScreen,
@@ -164,6 +165,7 @@ test('finished work is sent back with Request changes, then Run now starts the n
       push: { status: 'pushed', head: BRANCH_HEAD },
     },
   );
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto('/');
@@ -279,7 +281,8 @@ test('a pull request GitHub could not open is opened with Try again', async ({
       push: { status: 'pushed', head: BRANCH_HEAD },
     },
   );
-  expect(answer).toMatchObject({ result: 'accepted' });
+  expect(answer).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto('/');

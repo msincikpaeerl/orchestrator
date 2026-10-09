@@ -19,7 +19,18 @@ export type GitHubRefusal =
   | { kind: 'token_invalid'; status: number; message: string }
   /** 403 "Resource not accessible": `permissions` as GitHub names them (`pull_requests=write`). */
   | { kind: 'permission_missing'; status: number; message: string; permissions: string[] }
-  | { kind: 'rate_limited'; status: number; message: string }
+  /**
+   * The request limit (primary or secondary): when GitHub says requests are allowed again, as it
+   * says it, `X-RateLimit-Reset` (Unix seconds) or `Retry-After` (seconds from now); null when
+   * neither is given ("Rate limits for the REST API",
+   * https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+   */
+  | {
+      kind: 'rate_limited';
+      status: number;
+      message: string;
+      retry: { resetAtSeconds: number } | { afterSeconds: number } | null;
+    }
   /** 404: the thing does not exist, or the token cannot see it. */
   | { kind: 'not_found'; status: number; message: string }
   /** 422: GitHub cannot do it; `details` are the texts of its `errors` list. */
@@ -72,7 +83,9 @@ export function refusalOf(response: GitHubResponse): GitHubRefusal {
   const status = response.status;
   const message = body.success ? errorText(body.data) : `HTTP ${String(status)}`;
   if (status === 401) return { kind: 'token_invalid', status, message };
-  if (isRateLimited(response)) return { kind: 'rate_limited', status, message };
+  if (isRateLimited(response)) {
+    return { kind: 'rate_limited', status, message, retry: retryOf(response.headers) };
+  }
   if (isNotAccessible(response)) {
     return {
       kind: 'permission_missing',
@@ -91,6 +104,19 @@ export function refusalOf(response: GitHubResponse): GitHubRefusal {
     };
   }
   return { kind: 'unexpected', status, message };
+}
+
+/** When GitHub allows requests again: `Retry-After` first, as GitHub's page says to. */
+function retryOf(headers: Headers): { resetAtSeconds: number } | { afterSeconds: number } | null {
+  const after = Number(headers.get('retry-after') ?? '');
+  if (headers.has('retry-after') && Number.isFinite(after) && after >= 0) {
+    return { afterSeconds: after };
+  }
+  const reset = Number(headers.get('x-ratelimit-reset') ?? '');
+  if (headers.has('x-ratelimit-reset') && Number.isFinite(reset) && reset > 0) {
+    return { resetAtSeconds: reset };
+  }
+  return null;
 }
 
 /** What a value is, never what it holds: it could be a secret. */

@@ -268,6 +268,51 @@ async function eventually(what: string, check: () => Promise<void>, timeoutMs = 
   }
 }
 
+/**
+ * CI passes for `commit` and accepts the run's submission (lot 3 step G1a): the wait begun, GitHub
+ * answering one successful workflow run of that commit, one check. These tests' commits are made
+ * up, so the fake's answers are given here.
+ */
+async function ciPasses(runId: string, commit: string) {
+  await t.db
+    .update(schema.runs)
+    .set({ ciWaitStartedAt: new Date() })
+    .where(eq(schema.runs.id, runId));
+  github.alter = (request, reply) => {
+    if (request.path.includes(`/actions/runs?head_sha=${commit}`)) {
+      return {
+        status: 200,
+        body: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 1,
+              name: 'CI',
+              event: 'pull_request',
+              status: 'completed',
+              conclusion: 'success',
+              head_sha: commit,
+              head_branch: 't/1-contact-form',
+              html_url: 'https://github.com/octo-owner/bakery/actions/runs/1',
+              pull_requests: [],
+            },
+          ],
+        },
+      };
+    }
+    if (request.path.includes(`/commits/${commit}/status`)) {
+      return { status: 200, body: { state: 'pending', sha: commit, total_count: 0, statuses: [] } };
+    }
+    return reply;
+  };
+  try {
+    await t.ciTick();
+  } finally {
+    github.alter = undefined;
+  }
+  expect((await run(runId)).status).toBe('succeeded');
+}
+
 async function eventTypes(prefix: string) {
   const rows = await t.db
     .select({ type: schema.events.type, payload: schema.events.payload })
@@ -1185,6 +1230,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
       daemon,
       state(created.id, { state: 'ended', reason: 'submitted', branch: told(second, C2) }),
     );
+    await ciPasses(created.id, C1);
     const detail = await ticket();
     expect(detail).toMatchObject({ status: 'in_review' });
     expect(detail.branch).toMatchObject({
@@ -1337,6 +1383,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
       daemon,
       state(created.id, { state: 'ended', reason: 'submitted', branch: told(second, C2) }),
     );
+    await ciPasses(created.id, C1);
     const desk = await connectedMachine('Desk', account.id);
     // The review on Desk reports GitHub's head, C1, all on GitHub.
     await reviewed(desk.id, desk.daemon, told(first));

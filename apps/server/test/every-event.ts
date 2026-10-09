@@ -262,6 +262,33 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   github.commit(shop, shopBranch, { 'src/more.ts': 'more\n' }, 'More work');
   await wantAgain();
   await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
+  // The run waits for CI since its pull request opened (`run.ci_waiting`). As if Wait for CI to
+  // start were over: GitHub unreachable at one check (`run.ci_check_failed`), then answering at
+  // the next (`run.ci_check_recovered`) with no run and a conflicting pull request
+  // (`run.ci_result`, a conflict: the run keeps waiting).
+  await t.db
+    .update(schema.runs)
+    .set({ ciWaitStartedAt: new Date(Date.now() - 10 * 60_000) })
+    .where(eq(schema.runs.id, created.id));
+  github.alter = () => ({ status: 502 });
+  await t.ciTick();
+  github.alter = (request, reply) => {
+    if (request.path.includes('/actions/runs?')) {
+      return { status: 200, body: { total_count: 0, workflow_runs: [] } };
+    }
+    if (request.path.includes('/status?')) {
+      return {
+        status: 200,
+        body: { state: 'pending', sha: 'a'.repeat(40), total_count: 0, statuses: [] },
+      };
+    }
+    if (request.method === 'GET' && /\/pulls\/\d+$/.test(request.path)) {
+      return { ...reply, body: { ...(reply.body as object), mergeable: false } };
+    }
+    return reply;
+  };
+  await t.ciTick();
+  github.alter = undefined;
   await daemon.request({
     type: 'run.quota_limited',
     id: randomUUID(),

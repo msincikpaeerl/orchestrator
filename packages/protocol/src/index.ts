@@ -140,6 +140,7 @@ export {
   Run,
   RunDetail,
   RunBranch,
+  RunCiWait,
   RunChangeCause,
   RunListResponse,
   RunLogEntry,
@@ -317,7 +318,14 @@ export {
   WorkflowReason,
   type CheckReasonKind,
 } from './mcp/dod-report.js';
-export { CiCheck, CiFailedJob, CiResult, CiState } from './mcp/ci.js';
+export {
+  CiCheck,
+  CiCheckFailure,
+  CiCheckFailureReason,
+  CiFailedJob,
+  CiResult,
+  CiState,
+} from './mcp/ci.js';
 export {
   DodReport,
   MCP_OUTPUT_MAX_CHARACTERS,

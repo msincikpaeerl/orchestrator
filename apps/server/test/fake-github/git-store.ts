@@ -256,7 +256,8 @@ export class GitStore {
       else this.git(['read-tree', '--empty'], undefined, env);
       for (const [path, content] of Object.entries(changes)) {
         if (content === null) {
-          this.git(['update-index', '--force-remove', '--', path], undefined, env);
+          // Mode 0 removes the entry; `--force-remove` needs a work tree, which a bare one lacks.
+          this.git(['update-index', '--index-info'], `0 ${'0'.repeat(40)}\t${path}\n`, env);
         } else {
           const blob = this.git(['hash-object', '-w', '--stdin'], content).trim();
           this.git(

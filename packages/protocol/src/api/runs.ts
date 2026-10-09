@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CommitSummary, GitHash, PushResult } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
+import { CiCheckFailure, CiResult } from '../mcp/ci.js';
 import { SubmissionRecord } from '../mcp/dod-report.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
@@ -67,8 +68,35 @@ export const RunChangeCause = z.enum([
   'claude_code_unsupported',
   /** The owner answered the run's question: it resumes (04, section 6). */
   'answer',
+  /** The CI result of the run's submission: passed, "No CI found", or failed (lot 3 step G1a). */
+  'ci_result',
+  /** **CI wait at submission** reached without a CI result (04, section 3.1; lot 3 step G1a). */
+  'ci_timeout',
 ]);
 export type RunChangeCause = z.infer<typeof RunChangeCause>;
+
+/**
+ * A run's wait for the CI result of its accepted submission (04, section 3.1; lot 3 step G1a).
+ * The run stays `running`, shown "waiting for CI"; from `waitingSince` its time counts as waiting.
+ */
+export const RunCiWait = z.object({
+  /** The commit pushed at the submission: its workflow runs and statuses are the result. */
+  commit: GitHash,
+  /** When the wait began: the pull request was open. Null while it is not opened yet. */
+  since: z.iso.datetime().nullable(),
+  /** When the agent's turn ended and the session went idle: waiting time from then. */
+  waitingSince: z.iso.datetime().nullable(),
+  /** **CI wait at submission** reached: from `since`, or from the submission while not opened. */
+  deadline: z.iso.datetime(),
+  /** **Wait for CI to start** reached; null while `since` is. */
+  startDeadline: z.iso.datetime().nullable(),
+  /** The latest result read, and when; null before the first check. */
+  result: CiResult.nullable(),
+  checkedAt: z.iso.datetime().nullable(),
+  /** The latest check that failed, until one works again. */
+  checkFailure: CiCheckFailure.nullable(),
+});
+export type RunCiWait = z.infer<typeof RunCiWait>;
 
 /** The ticket branch of a run, as the daemon reported it at the end (01, section 3.7). */
 export const RunBranch = z.object({
@@ -120,6 +148,8 @@ export const Run = z.object({
   progress: z.object({ text: z.string(), at: z.iso.datetime() }).nullable(),
   /** The agent's summary at the end: its submission's summary, or why it gave up. */
   outcome: z.string().nullable(),
+  /** The run's wait for CI after an accepted submission; null when it has none (lot 3 step G1a). */
+  ci: RunCiWait.nullable(),
   /**
    * Time spent in `starting` and `running`, and in `waiting_human` and `paused_quota`, up to
    * `statusSince` (01, section 3.7): a screen adds the current period of an active run.

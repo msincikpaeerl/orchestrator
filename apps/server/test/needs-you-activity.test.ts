@@ -15,7 +15,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
-import { RunHarness, state } from './run-harness.js';
+import { RunHarness } from './run-harness.js';
 
 // "Needs you", Live runs, History and the Add machine address check (lot 2 step L2; 02, sections
 // 4, 7 and 9).
@@ -83,10 +83,10 @@ async function needsYou(): Promise<NeedsYouResponse> {
   return NeedsYouResponse.parse(response.json());
 }
 
-/** The run submits its work and ends: the ticket is `in_review`. */
+/** The run submits its work, CI passes and the run ends: the ticket is `in_review`. */
 async function submitted(daemon: ScriptedDaemon, run: { runId: string; runToken: string }) {
   await h.ok(daemon, run.runToken, 'ticket_submit', REPORT);
-  await h.report(daemon, state(run.runId, { state: 'ended', reason: 'submitted' }));
+  await h.ciPasses(daemon, run.runId);
 }
 
 describe('Needs you (02, section 4)', () => {

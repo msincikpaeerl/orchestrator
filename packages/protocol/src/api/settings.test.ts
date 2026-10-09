@@ -45,6 +45,7 @@ describe('SETTINGS', () => {
       'maxAgentTicketsPerRun',
       'maxFailedAttempts',
       'ciWaitTimeoutMinutes',
+      'ciStartWaitMinutes',
     ]);
   });
 

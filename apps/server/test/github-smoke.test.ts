@@ -67,7 +67,12 @@ beforeEach(async () => {
     name: 'smoke-test',
     private: true,
     workflows: [skeletonWorkflow()],
-    files: { 'README.md': '# Smoke test\n', 'docs/user/index.md': '# Help\n' },
+    files: {
+      'README.md': '# Smoke test\n',
+      'docs/user/index.md': '# Help\n',
+      // The skeleton's CI file: a `pull_request` run needs it in the merge commit (A29).
+      '.github/workflows/ci.yml': 'name: CI\n',
+    },
   };
   github.accounts.set(TOKEN, {
     login: 'octo-owner',

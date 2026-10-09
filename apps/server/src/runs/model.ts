@@ -1,6 +1,8 @@
 import { schema } from '@orchestrator/db';
 import {
   AccountState,
+  CiCheckFailure,
+  CiResult,
   CommitSummary,
   FailureReason,
   PauseReason,
@@ -13,6 +15,8 @@ import {
   WORKING_RUN_STATUSES,
   type DaemonRunState,
   type Run,
+  type RunCiWait,
+  SubmissionRecord,
 } from '@orchestrator/protocol';
 import { z } from 'zod';
 
@@ -187,6 +191,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
         ? null
         : { text: row.progressShown, at: row.progressShownAt.toISOString() },
     outcome: row.outcome,
+    ci: ciWait(row),
     workingMs: row.workingMs,
     waitingMs: row.waitingMs,
     statusSince: row.statusSince.toISOString(),
@@ -201,15 +206,59 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
  * time since `statusSince` goes to the total of the status it leaves, if any.
  */
 export function statusTimes(
-  row: Pick<RunRow, 'status' | 'statusSince' | 'workingMs' | 'waitingMs'>,
+  row: Pick<RunRow, 'status' | 'statusSince' | 'workingMs' | 'waitingMs'> & {
+    ciWaitingSince?: Date | null;
+  },
   now: Date,
 ): Pick<RunRow, 'statusSince' | 'workingMs' | 'waitingMs'> {
   const status = RunStatus.parse(row.status);
   const spent = Math.max(0, now.getTime() - row.statusSince.getTime());
+  // A run waiting for CI is `running`, its time waiting (01, section 3.7; lot 3 step G1a).
+  const waitingForCi = status === 'running' && (row.ciWaitingSince ?? null) !== null;
   return {
     statusSince: now,
-    workingMs: row.workingMs + (WORKING_RUN_STATUSES.includes(status) ? spent : 0),
-    waitingMs: row.waitingMs + (WAITING_RUN_STATUSES.includes(status) ? spent : 0),
+    workingMs: row.workingMs + (WORKING_RUN_STATUSES.includes(status) && !waitingForCi ? spent : 0),
+    waitingMs: row.waitingMs + (WAITING_RUN_STATUSES.includes(status) || waitingForCi ? spent : 0),
+  };
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * When the run's wait for CI ends: **CI wait at submission** after its start, or after the
+ * submission while the pull request is not opened (owner's point 1, step G1); and **Wait for
+ * CI to start** after its start. Null for a run without a wait.
+ */
+export function ciDeadlines(
+  row: Pick<
+    RunRow,
+    'ciCommit' | 'ciWaitStartedAt' | 'ciStartWaitMinutes' | 'ciWaitTimeoutMinutes' | 'submission'
+  >,
+): { deadline: Date; startDeadline: Date | null } | null {
+  if (row.ciCommit === null || row.submission === null) return null;
+  const submitted = new Date(SubmissionRecord.parse(row.submission).at);
+  const from = row.ciWaitStartedAt ?? submitted;
+  return {
+    deadline: new Date(from.getTime() + (row.ciWaitTimeoutMinutes ?? 0) * MINUTE_MS),
+    startDeadline:
+      row.ciWaitStartedAt === null
+        ? null
+        : new Date(row.ciWaitStartedAt.getTime() + (row.ciStartWaitMinutes ?? 0) * MINUTE_MS),
+  };
+}
+
+function ciWait(row: RunRow): RunCiWait | null {
+  const deadlines = ciDeadlines(row);
+  if (row.ciCommit === null || deadlines === null) return null;
+  return {
+    commit: row.ciCommit,
+    since: row.ciWaitStartedAt?.toISOString() ?? null,
+    waitingSince: row.ciWaitingSince?.toISOString() ?? null,
+    deadline: deadlines.deadline.toISOString(),
+    startDeadline: deadlines.startDeadline?.toISOString() ?? null,
+    result: row.ciResult === null ? null : CiResult.parse(row.ciResult),
+    checkedAt: row.ciCheckedAt?.toISOString() ?? null,
+    checkFailure: row.ciCheckFailure === null ? null : CiCheckFailure.parse(row.ciCheckFailure),
   };
 }
 

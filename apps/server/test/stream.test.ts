@@ -5,7 +5,7 @@ import { createPool, endPool, runMigrations } from '@orchestrator/db';
 import { RunLogResponse, STREAM_RETRY_MS, type StreamMessage } from '@orchestrator/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import { recordEvent } from '../src/events.js';
-import { RunHarness } from './run-harness.js';
+import { RunHarness, eventually, state } from './run-harness.js';
 import { StreamClient } from './stream-client.js';
 
 // The realtime stream (lot 2 step L; 02, section 1; ADR 0029).
@@ -115,6 +115,34 @@ describe('GET /api/stream', () => {
       'Line 2',
     ]);
   }, 20_000);
+
+  it("sends the branch a run's late end report adds, after the server ended the run", async () => {
+    await h.start();
+    await h.createTicket();
+    const { daemon } = await h.machine();
+    const { runId, runToken } = await h.running(daemon);
+    await h.ok(daemon, runToken, 'ticket_submit', {
+      criteria: [
+        { index: 0, status: 'met', justification: 'The form is there' },
+        { index: 1, status: 'met', justification: 'Checked by its test' },
+      ],
+      tests: { paths: ['src/contact.test.ts'], justification: null },
+      docs: { paths: ['docs/user/contact.md'], justification: null },
+      adrs: [],
+      summary: 'Adds the contact form.',
+    });
+    await h.report(daemon, state(runId, { state: 'waiting_ci' }));
+    await eventually('the wait for CI begun', async () => {
+      expect((await h.run(runId)).ci?.since).toBeTruthy();
+    });
+    await h.t.ciTick();
+    expect((await h.run(runId)).status).toBe('succeeded');
+    // The server ended the run when CI passed; the machine's end report comes afterwards, with
+    // the branch the screens show (lot 3 step G1a).
+    const stream = await open();
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+    await stream.find(changed('run', runId), "the run's end report");
+  }, 15_000);
 
   it('ends at logout', async () => {
     await h.start();

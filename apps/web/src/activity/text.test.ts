@@ -179,6 +179,30 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     reason: 'unreachable',
     message: 'Could not resolve host: github.com',
   },
+  'run.ci_waiting': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    commit: 'c'.repeat(40),
+    pullRequest: 4,
+  },
+  'run.ci_result': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    commit: 'c'.repeat(40),
+    state: 'no_ci',
+    checks: 0,
+    failed: [],
+    workflowChanges: 'changed',
+    baseBranch: 'main',
+    pullRequestHead: null,
+  },
+  'run.ci_check_failed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    reason: 'unreachable',
+    message: 'GitHub could not be reached, or answered with a server error',
+  },
+  'run.ci_check_recovered': { project: 'WEB', ticket: 'WEB-12' },
   'ticket.submitted': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -270,6 +294,26 @@ describe('eventText', () => {
     // Written before step F4: either.
     expect(text(failed)).toBe(
       'WEB-12: the pull request could not be opened or updated on GitHub — Gone',
+    );
+  });
+
+  it('says the CI result in words, "No CI found" with the workflow flag (step G1a)', () => {
+    const base = examples['run.ci_result'];
+    const text = (payload: Record<string, unknown>) =>
+      plainText(eventText(entry('run.ci_result', { payload: { ...base, ...payload } })));
+    expect(text({})).toBe(
+      'Run of WEB-12: no CI found on GitHub for the submitted commit ccccccc: no CI run or status appeared within "Wait for CI to start". This submission also changed workflow files, so the agent may have removed or weakened CI: look at the changed files of the pull request before merging',
+    );
+    expect(text({ workflowChanges: null })).toBe(
+      'Run of WEB-12: no CI found on GitHub for the submitted commit ccccccc: no CI run or status appeared within "Wait for CI to start"',
+    );
+    expect(text({ state: 'conflict' })).toBe(
+      'Run of WEB-12: the pull request conflicts with main, so GitHub started no CI for the submitted commit ccccccc: the submission does not pass',
+    );
+    expect(
+      text({ state: 'failed', checks: 2, failed: ['CI'], pullRequestHead: 'd'.repeat(40) }),
+    ).toBe(
+      "Run of WEB-12: CI failed on GitHub for the submitted commit ccccccc (failed: CI). The pull request's latest commit is now ddddddd: this result is the submitted commit's",
     );
   });
 

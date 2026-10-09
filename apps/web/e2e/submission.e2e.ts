@@ -3,6 +3,7 @@ import {
   BRANCH_HEAD,
   COMMITS,
   callTool,
+  ciPasses,
   daemonRequest,
   expect,
   expectFitsScreen,
@@ -84,7 +85,8 @@ test('a submitted ticket shows its pull request link and every check passed', as
     REPORT,
     workspace({ listed: CHANGED, count: CHANGED.length }),
   );
-  expect(answer).toMatchObject({ result: 'accepted' });
+  expect(answer).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto(ticketPage);
@@ -124,7 +126,8 @@ test('a check that could not be fully done says why, and workflow files raise a 
     REPORT,
     workspace({ listed: ['.github/workflows/ci.yml', 'src/contact.ts'], count: 1500 }),
   );
-  expect(answer).toMatchObject({ result: 'accepted' });
+  expect(answer).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto(ticketPage);
@@ -169,7 +172,8 @@ test('"Pull request not opened" on the ticket page, then Try again opens it', as
     REPORT,
     workspace({ listed: CHANGED, count: CHANGED.length }),
   );
-  expect(answer).toMatchObject({ result: 'accepted' });
+  expect(answer).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto(ticketPage);
@@ -261,7 +265,8 @@ test('a refused submission followed by an accepted one says the work was accepte
     REPORT,
     workspace({ listed: CHANGED, count: CHANGED.length }),
   );
-  expect(answer).toMatchObject({ result: 'accepted' });
+  expect(answer).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
 
   await page.goto(`/activity/runs/${runId}`);
@@ -281,8 +286,9 @@ test('an open pull request a later submission could not update says "Pull reques
   const { ticketPage, runId, runToken } = await working(page, gitHubCommit);
   const facts = workspace({ listed: CHANGED, count: CHANGED.length });
   expect(await callTool(page, runToken, 'ticket_submit', REPORT, facts)).toMatchObject({
-    result: 'accepted',
+    result: 'pending_ci',
   });
+  await ciPasses(page, runId);
   await reportState(page, runId, 'ended');
   await page.goto(ticketPage);
   await expect(page.getByRole('link', { name: 'Pull request #1' })).toBeVisible();
@@ -304,7 +310,8 @@ test('an open pull request a later submission could not update says "Pull reques
       { ...REPORT, summary: 'Adds the phone number too.' },
       facts,
     ),
-  ).toMatchObject({ result: 'accepted' });
+  ).toMatchObject({ result: 'pending_ci' });
+  await ciPasses(page, next);
   await reportState(page, next, 'ended');
 
   await page.goto(ticketPage);

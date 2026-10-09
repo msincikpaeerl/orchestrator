@@ -26,6 +26,7 @@ import {
   type RunLogEvent,
   type RunSocketRequest,
   type RunStart,
+  type RunStop,
 } from '@orchestrator/protocol';
 import type { Logger } from 'pino';
 import { findExecutable, runCommand } from './exec.js';
@@ -685,7 +686,11 @@ export class Run {
     }
     const answer = await this.context.callServer(call, timeout);
     if (answer.ok) {
-      const decision = DECISIONS[tool.data];
+      // `pending_ci`: the run waits for CI at the turn's end instead of ending (protocol 2).
+      const decision =
+        tool.data === 'ticket_submit' && answer.output.result === 'pending_ci'
+          ? 'waiting_ci'
+          : DECISIONS[tool.data];
       if (decision && this.data.decision !== 'push_failed') {
         this.data.decision = decision;
         this.save();
@@ -725,6 +730,11 @@ export class Run {
     const { decision } = this.data;
     if (decision === 'submitted' || decision === 'gave_up' || decision === 'push_failed') {
       await this.end(decision, null);
+      return;
+    }
+    if (decision === 'waiting_ci') {
+      // No reminder, no working time, no idle timeout: the server ends the wait (05, section 4.9).
+      this.setState('waiting_ci');
       return;
     }
     if (await this.sendQueued()) return;
@@ -863,9 +873,12 @@ export class Run {
     return null;
   }
 
-  /** `run.stop` (05, section 3.3). */
-  stop(): Promise<void> {
-    return this.end('stopped', null);
+  /**
+   * `run.stop` (05, section 3.3); `completed` ends a run waiting for CI whose CI passed with
+   * `submitted` (05, section 4.9; protocol 2).
+   */
+  stop(reason: RunStop['payload']['reason']): Promise<void> {
+    return this.end(reason === 'completed' ? 'submitted' : 'stopped', null);
   }
 
   // Timeouts and liveness (05, sections 4.2.1 and 5).
@@ -946,6 +959,14 @@ export class Run {
     }
     if (this.sessionAlive && !(await this.context.tmux.hasSession(this.name))) {
       if (this.stoppedMeanwhile()) return;
+      if (this.data.state === 'waiting_ci') {
+        // The work was accepted: the run keeps waiting with its session closed, as a waiting
+        // run after its lifetime (lot 3 step G1a, owner's answer 4).
+        this.log.warn('Claude Code exited while the run waits for CI: the wait goes on');
+        await this.closeSession();
+        this.report('waiting_ci');
+        return;
+      }
       this.sessionAlive = false;
       const refused = this.context.systemd ? this.scopeRefusal() : null;
       if (refused !== null) {

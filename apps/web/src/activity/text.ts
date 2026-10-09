@@ -2,6 +2,7 @@ import {
   EventPayloads,
   SETTINGS,
   shorten,
+  type CiCheckFailureReason,
   type EventActor,
   type EventEntityType,
   type EventLogEntry,
@@ -82,6 +83,10 @@ export const eventTypeLabel: Record<EventType, string> = {
   'run.git_config_restored': 'Git configuration restored',
   'run.branch_pushed': 'Branch pushed to GitHub',
   'run.branch_push_failed': 'Branch push failed',
+  'run.ci_waiting': 'Waiting for CI',
+  'run.ci_result': 'CI result',
+  'run.ci_check_failed': 'CI could not be checked on GitHub',
+  'run.ci_check_recovered': 'CI checked on GitHub again',
 };
 
 /** Kinds of entity, for the filter. */
@@ -538,9 +543,57 @@ const describe: { [T in EventType]: Describe<T> } = {
     quote(p.machine, null),
     `: the push of branch ${p.branch} to GitHub ${pushMoment[p.at]} failed; its new commits stay on that machine — ${shorten(p.message)}`,
   ],
+  'run.ci_waiting': (p, c) => [
+    'Run of ',
+    c.ticket,
+    `: waiting for CI on GitHub for the submitted commit ${p.commit.slice(0, 7)}${p.pullRequest === null ? '' : ` (pull request #${String(p.pullRequest)})`}`,
+  ],
+  'run.ci_result': (p, c) => ['Run of ', c.ticket, ciResultText(p)],
+  'run.ci_check_failed': (p, c) => [
+    'Run of ',
+    c.ticket,
+    `: CI could not be checked, ${ciCheckFailureWords[p.reason]}; the run keeps waiting until "CI wait at submission" — ${shorten(p.message)}`,
+  ],
+  'run.ci_check_recovered': (_p, c) => [
+    'Run of ',
+    c.ticket,
+    ': CI could be checked on GitHub again',
+  ],
 };
 
 const pushMoment = { submission: 'at the submission', end: "at the run's end" } as const;
+
+const ciCheckFailureWords: Record<CiCheckFailureReason, string> = {
+  unreachable: 'GitHub could not be reached',
+  rate_limited: "GitHub's request limit was reached",
+  unreadable: "GitHub's answer could not be read",
+  token: 'the GitHub token cannot be used',
+  permission_missing: 'the GitHub token lacks a permission',
+  refused: 'GitHub refused the request',
+};
+
+/** The CI result in words (lot 3 step G1a), with the workflow flag beside "No CI found". */
+function ciResultText(p: EventPayload<'run.ci_result'>): string {
+  const commit = `the submitted commit ${p.commit.slice(0, 7)}`;
+  const checks = `${String(p.checks)} check${p.checks === 1 ? '' : 's'}`;
+  const result = {
+    passed: `CI passed on GitHub for ${commit} (${checks})`,
+    no_ci: `no CI found on GitHub for ${commit}: no CI run or status appeared within "Wait for CI to start"${
+      p.workflowChanges === 'changed'
+        ? '. This submission also changed workflow files, so the agent may have removed or weakened CI: look at the changed files of the pull request before merging'
+        : p.workflowChanges === 'not_listed'
+          ? '. This submission may also have changed workflow files (its list of changed files was not complete), so CI may have been removed: look at the changed files of the pull request before merging'
+          : ''
+    }`,
+    failed: `CI failed on GitHub for ${commit} (failed: ${p.failed.join(', ') || 'none named'})`,
+    conflict: `the pull request conflicts with ${p.baseBranch}, so GitHub started no CI for ${commit}: the submission does not pass`,
+  }[p.state];
+  const moved =
+    p.pullRequestHead === null
+      ? ''
+      : `. The pull request's latest commit is now ${p.pullRequestHead.slice(0, 7)}: this result is the submitted commit's`;
+  return `: ${result}${moved}`;
+}
 
 function run(type: EventType, payload: unknown, context: Context): Piece[] | null {
   const parsed = EventPayloads[type].safeParse(payload);
