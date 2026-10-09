@@ -18,7 +18,7 @@ import {
 import { asc, eq, like } from 'drizzle-orm';
 import { expect } from 'vitest';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
-import { fullAccount, startFakeGitHub, type FakeGitHub } from './fake-github.js';
+import { fullAccount, skeletonWorkflow, startFakeGitHub, type FakeGitHub } from './fake-github.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
 
 // The application, a ready project `WEB`, a Claude account and scripted daemons, for the tests of
@@ -40,6 +40,8 @@ export class RunHarness {
   private readonly heartbeats: NodeJS.Timeout[] = [];
   private started = false;
   private pushes = 0;
+  /** The commit the latest submission pushed on the fake GitHub. */
+  lastPushed: string | null = null;
   /** The ticket number of each run token `running` gave. */
   private readonly runTickets = new Map<string, number>();
 
@@ -50,9 +52,15 @@ export class RunHarness {
       daemonSecondMs?: number;
       streamKeepAliveMs?: number;
       gitBaseUrl?: string;
+      /** The application's clock, for the CI checks' deadlines (lot 3 step G1a). */
+      now?: () => Date;
+      /** What the project's CI does by itself: it passes at once unless a test says otherwise. */
+      ci?: 'success' | 'queued' | 'none';
     } = {},
   ) {
     this.started = true;
+    this.pushes = 0;
+    this.lastPushed = null;
     this.github = await startFakeGitHub();
     // The project's repository, where a push the scripted daemon reports lands (`tool`).
     this.github.accounts.set(
@@ -60,7 +68,14 @@ export class RunHarness {
       fullAccount({
         repositories: [
           { name: 'notes', private: true },
-          { name: 'bakery', private: true },
+          // The skeleton's CI: its `pull_request` run passes at once by default.
+          {
+            name: 'bakery',
+            private: true,
+            files: { 'README.md': '# Bakery\n', '.github/workflows/ci.yml': 'name: CI\n' },
+            workflows: [skeletonWorkflow()],
+            ci: options.ci ?? 'success',
+          },
         ],
       }),
     );
@@ -71,6 +86,7 @@ export class RunHarness {
       daemonSecondMs: options.daemonSecondMs,
       streamKeepAliveMs: options.streamKeepAliveMs,
       gitBaseUrl: options.gitBaseUrl,
+      now: options.now,
     });
     this.cookie = await createOwner(this.t.app);
     const saved = await this.call('PUT', '/api/github/token', { token: TOKEN, expiresOn: null });
@@ -196,12 +212,7 @@ export class RunHarness {
     input: object = {},
     workspace?: WorkspaceFacts,
   ): Promise<McpResult['payload']> {
-    const facts = workspace ?? cleanWorkspace();
-    const payload = (
-      tool === 'ticket_submit'
-        ? { tool, runToken, input, workspace: facts }
-        : { tool, runToken, input }
-    ) as McpCall['payload'];
+    let facts = workspace ?? cleanWorkspace();
     // The push the facts report, done on the fake GitHub as the daemon's push would.
     const number = this.runTickets.get(runToken);
     if (tool === 'ticket_submit' && facts.push?.status === 'pushed' && number !== undefined) {
@@ -213,14 +224,28 @@ export class RunHarness {
       const branch = ticket?.branch ?? facts.branch.name;
       const repo = this.github.repository('octo-owner', 'bakery');
       const exists = this.github.branches(repo).has(branch);
-      this.github.commit(
+      const pushed = this.github.commit(
         repo,
         branch,
         { [`src/work-${String(this.pushes)}.ts`]: 'export {};\n' },
         'Work of the agent',
         exists ? undefined : 'main',
       );
+      // The commit the fake holds is the one pushed: its CI is the submission's (lot 3 step G1a).
+      if (facts.push.head === HEAD) {
+        facts = {
+          ...facts,
+          branch: { ...facts.branch, head: pushed },
+          push: { status: 'pushed', head: pushed },
+        };
+      }
+      this.lastPushed = pushed;
     }
+    const payload = (
+      tool === 'ticket_submit'
+        ? { tool, runToken, input, workspace: facts }
+        : { tool, runToken, input }
+    ) as McpCall['payload'];
     const answer = await daemon.request({ type: 'mcp.call', id: randomUUID(), payload });
     if (answer.type !== 'mcp.result') throw new Error(`unexpected ${answer.type}`);
     return answer.payload;
@@ -236,6 +261,27 @@ export class RunHarness {
     const result = await this.tool(daemon, runToken, tool, input);
     if (!result.ok) throw new Error(`${tool} refused: ${JSON.stringify(result.error)}`);
     return result.output;
+  }
+
+  /**
+   * An accepted submission's wait for CI, to its end: the session idle (`waiting_ci`), the wait
+   * begun, one CI check by the test, then the daemon's end after `run.stop` `completed`.
+   * The project's CI passes at once unless the test said otherwise.
+   */
+  async ciPasses(daemon: ScriptedDaemon, runId: string) {
+    await this.report(daemon, state(runId, { state: 'waiting_ci' }));
+    await eventually('the wait for CI begun (the pull request open)', async () => {
+      expect((await this.run(runId)).ci?.since).toBeTruthy();
+    });
+    await this.t.ciTick();
+    await daemon.find(
+      (message) =>
+        message.type === 'run.stop' &&
+        message.payload.runId === runId &&
+        message.payload.reason === 'completed',
+      'run.stop completed',
+    );
+    await this.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
   }
 
   async events(prefix: string) {
@@ -275,7 +321,9 @@ export function cleanWorkspace(
 export function state(
   runId: string,
   payload:
-    | { state: 'preparing' | 'working' | 'idle' | 'waiting_human' | 'quota_paused' }
+    | {
+        state: 'preparing' | 'working' | 'idle' | 'waiting_ci' | 'waiting_human' | 'quota_paused';
+      }
     | { state: 'starting'; claudeCodeVersion: string | null }
     | { state: 'ended'; reason: Extract<RunState['payload'], { state: 'ended' }>['reason'] },
   sessionAlive = payload.state !== 'ended',

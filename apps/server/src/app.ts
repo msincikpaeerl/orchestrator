@@ -23,6 +23,7 @@ import { registerProjectRoutes } from './projects/routes.js';
 import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
+import { CiWatcher } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
 import { loadTemplates } from './agents/files.js';
@@ -52,6 +53,20 @@ export interface AppDependencies {
   daemonPackageDir?: string;
   /** Interval of the realtime stream's keep-alive and session check; tests shorten it. */
   streamKeepAliveMs?: number;
+  /**
+   * False in tests: the CI checks start only when the test asks (`ciWatcherOf(app).tick()`), with
+   * the test's clock (lot 3 step G1a).
+   */
+  ciTimers?: boolean;
+}
+
+const ciWatchers = new WeakMap<object, CiWatcher>();
+
+/** The application's CI checks, for tests that run them by hand. */
+export function ciWatcherOf(app: object): CiWatcher {
+  const watcher = ciWatchers.get(app);
+  if (!watcher) throw new Error('no CI watcher for this application');
+  return watcher;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -93,6 +108,26 @@ export function buildApp(dependencies: AppDependencies) {
   });
   runs.attach(gateway);
   gateway.attachRuns(runs);
+  // The wait for CI of accepted submissions (04, section 3.1; lot 3 step G1a), restored from what
+  // the runs keep: the first check at start, then every GitHub check interval.
+  const ci = new CiWatcher({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    outcomes: {
+      recorded: (runId, commit, found) => runs.ciRecorded(runId, commit, found),
+      decided: (runId, commit, decided) => runs.ciDecided(runId, commit, decided),
+      timedOut: (runId, commit, detail) => runs.ciTimedOut(runId, commit, detail),
+    },
+    retryPullRequest: (ticketId) => pullRequests.request(ticketId),
+    now: dependencies.now,
+    timers: dependencies.ciTimers,
+  });
+  ciWatchers.set(app, ci);
+  app.addHook('onReady', () => {
+    ci.start();
+  });
   gateway.register(app);
   // Dispatches waiting for their acknowledgement get their timers back after a restart. A
   // database problem is logged and does not stop the server: the health check reports it.
@@ -114,6 +149,7 @@ export function buildApp(dependencies: AppDependencies) {
     });
   });
   app.addHook('onClose', async () => {
+    await ci.close();
     runs.close();
     feed.close();
     await pullRequests.idle();

@@ -21,6 +21,7 @@ import {
   type PullRequest,
 } from '../github/pull-requests.js';
 import { pullRequestBody, pullRequestTitle, ticketLink } from '../github/pull-request-text.js';
+import { pullRequestReady } from '../runs/ci-wait.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { acceptanceCriteria, ticketEntity, ticketReference } from './model.js';
 
@@ -347,6 +348,10 @@ export class PullRequestOpener {
             updatedAt: at,
           })
           .where(eq(schema.tickets.id, ticketId));
+        // The pull request is open: CI runs on the pushed commit, and the wait begins (G1a).
+        if (pull.state === 'open' && !pull.merged) {
+          await pullRequestReady(tx, ticket, current.projectKey, pull.number, at);
+        }
         const payload = { ...facts, number: pull.number, url: pull.url };
         await recordEvent(tx, {
           actor: 'system',

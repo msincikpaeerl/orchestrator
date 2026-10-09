@@ -3,7 +3,7 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { loadShippedAgents } from '../src/agents/files.js';
 import { seedAgentProfiles } from '../src/agents/seed.js';
-import { buildApp, type App } from '../src/app.js';
+import { buildApp, ciWatcherOf, type App } from '../src/app.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
 import { markAllOffline } from '../src/machines/gateway.js';
@@ -38,6 +38,11 @@ export interface TestApp {
    * restart does (machines left online become offline); `app` is then the new one.
    */
   restart(): Promise<void>;
+  /**
+   * One check of every run waiting for CI, as the GitHub check interval would start (lot 3 step
+   * G1a); resolves once it is over. No check starts by itself in tests.
+   */
+  ciTick(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -90,6 +95,7 @@ export async function startTestApp(
       // No package unless a test builds one: what `pnpm build` left must not change a test.
       daemonPackageDir: options.daemonPackageDir ?? NO_DAEMON_PACKAGE,
       streamKeepAliveMs: options.streamKeepAliveMs,
+      ciTimers: false,
     });
   const app = build();
   await app.ready();
@@ -109,6 +115,9 @@ export async function startTestApp(
       if (options.listen) {
         await testApp.app.listen({ port: Number(new URL(url).port), host: '127.0.0.1' });
       }
+    },
+    ciTick() {
+      return ciWatcherOf(testApp.app).tick();
     },
     async close() {
       await testApp.app.close();
