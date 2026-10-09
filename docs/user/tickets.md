@@ -180,7 +180,7 @@ The ticket page shows it under **Pull request**:
 
 ### Waiting for CI
 
-CI is the set of automatic checks GitHub runs on the pull request: the GitHub Actions workflows of the project, and any other service reporting a status on GitHub. While it runs, the run page says **waiting for CI**. The agent's session stays open, idle: it uses none of your Claude usage, and its time counts as waiting, not working (so **Longest run** and **Idle timeout** do not apply). The run still counts in its Claude account's **Runs at the same time**, so with the default of 1, another ticket of that account waits for it.
+CI is the set of automatic checks GitHub runs on the pull request: the GitHub Actions workflows of the project, and any other service reporting a status on GitHub. While it runs, the run's status reads **Waiting for CI**, and the run page's **CI** card shows each check and its state (see [Runs > Waiting for CI](runs.md#waiting-for-ci)). The agent's session stays open, idle: it uses none of your Claude usage, and its time counts as waiting, not working (so **Longest run** and **Idle timeout** do not apply). The run still counts in its Claude account's **Runs at the same time**, so with the default of 1, another ticket of that account waits for it.
 
 What the Orchestrator reads:
 

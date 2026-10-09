@@ -639,7 +639,7 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 
 **The owner's review of G1a** (2026-10-09, same branch): a pull request that cannot be opened is quiet, one `ticket.pull_request_not_opened` when tries start failing or their reason changes, the failure keeping the date of its first try ("Since" in Needs you and on the ticket page; 04 section 3.1). The answers giving a passing CI for a made-up commit live only in test code, each turned on by a test for itself and removed after its one check: `ciPasses` of `runs.test.ts` (2 tests) and of `acceptance.test.ts` (4 scenarios), and `POST /ci/pass` of `e2e-server.ts` (`ciPasses` of `e2e/fixtures.ts`). The fake's default stays "queued"; the run harness's project repository runs its skeleton CI on real commits, passing at once unless a test says otherwise. The tests of the wait in `ci-wait.test.ts` use none of them.
 
-### [ ] G1b. `ci_status` and the run page
+### [x] G1b. `ci_status` and the run page
 
 - `ci_status` for all roles: one excerpt per failed step (the protocol's `CiFailedJob` changes; protocol 2 is not released), cut to **Longest CI log excerpt**, read with **Longest CI log read** (`readFailedStepLogs`), the whole output within `MCP_OUTPUT_MAX_CHARACTERS`; those two settings and their texts.
 - The run page's "Waiting for CI", with the line saying when GitHub could not be checked; screenshots on desktop and phone in `apps/web/e2e-screenshots/`; Help; CHANGELOG.
@@ -659,6 +659,17 @@ Split approved by the owner on 2026-10-09, with the answers below. Scope of the 
 - **Masking and screens**: the GitHub layer masks secrets in the excerpts (and removes timestamps and colour codes) before anything else; check names and links are masked too, a link kept only when it is one. The run page shows no excerpt in G1b; the run log's entry of a `ci_status` call is plain text, masked again and cut to **Longest stored log entry**. Check names are shown as plain text, their links through ADR 0024's allow-list.
 - **The run page's words** (accepted as proposed): the status line "Waiting for CI"; the CI card's sentences for waiting normally, the pull request not opened yet, nothing appeared yet, GitHub still working out a conflict, a conflict, the GitHub problem line with each reason; each check "<name> · workflow" or "<name> · status" with **Not finished**, **Passed** or **Failed** and "on GitHub". **Help says in one sentence each what a workflow run and a status are**, where it describes the CI card (owner's addition 3). **A words test** of the CI card, as `check-text.test.ts` in F4: every state's sentence and every reason of the GitHub-problem line, no internal name (`pending_ci`, `waiting_ci`, `ci_timeout`, `no_ci`, `head_sha`, `mergeable` and the like), and the labels present in Help (owner's addition 4).
 - **Screenshots**, desktop and phone, in `apps/web/e2e-screenshots/`: `run-waiting-for-ci` (the normal wait, a workflow not finished with a long name to show how it wraps on a phone, and a passed status), `run-waiting-for-ci-github-problem` (the request limit with its time), `run-waiting-for-ci-conflict` (the conflict) (owner's addition 6).
+
+*Done 2026-10-09.* Choices made in the step (specs 02, 03, 04 and 06 updated):
+
+- **Where it lives**: `apps/server/src/runs/ci-status.ts` (`CiStatusReader`, created by the run service and called by the MCP backend; `jobsWithLogs`, `ciOutput`, `fitAnswer`), the template `agents/templates/ci-status.md`, `apps/web/src/runs/ci-text.ts` and `ci-card.tsx`. The protocol's `CiResult` keeps facts (`failed_jobs` with each job's log read, unavailable or not read, `jobs_read`, `jobs_problem`; each check's `run_id`); `ci_status`'s output is its own schema, `McpCiStatus`, with the agent's sentences. The log reader gives a reason code (`CiLogFallback`) beside its words, which the owner's smoke script keeps.
+- **Storage**: a read for an ended run updates its `ci_result` and `ci_checked_at` without an event (the run's state does not change); the wait's events are unchanged.
+- **The request limit**: `ci_status` holds while any run's last CI check met GitHub's limit (its `retryAt`), or while its own read met it.
+- **Masking**: workflow names, status contexts and their links are masked when read (`ciChecks`), with a test that failed first.
+- **Found by the run page's end-to-end test**, with a stream test that failed first: a CI check that wrote no event (CI not finished, a newer check time) did not reach the realtime stream, so an open run page kept its earlier checks. Every recorded check now notifies the run.
+- **The GitHub-problem line for an unreadable answer** names GitHub's own fields as the layer gives them (for example `sha: expected the submitted commit, …`): GitHub's words, not the Orchestrator's names. Flagged to the owner.
+- **Expectations changed** for the new output, each because the owner's answers change it: `tools.test.ts` (the `ci_status` example and the no-work answer), `mcp.test.ts` (the no-work answer), `files.test.ts` (the template list), `job-log.test.ts` (the reason code added beside the words).
+- **The end-to-end control** `POST /ci/check` gives GitHub's answers for the run's made-up commit for one check only (the owner's rule of G1a).
 
 ### [ ] G2. CI failures, limits and screens
 

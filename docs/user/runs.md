@@ -50,12 +50,28 @@ The screens update on their own while you look at them: you never need to reload
   - the time spent **working**, and **waiting** for you or for the usage limit;
   - the **estimated usage**: what the run would cost in US dollars, as Claude Code estimates it. With a Pro or Max plan you pay nothing more: it only helps compare runs;
   - the agent's latest progress line, and its outcome at the end;
+  - from version 0.4.0, while the agent's accepted work waits for CI on GitHub, the status **Waiting for CI** and a **CI** card (see [Waiting for CI](#waiting-for-ci) below);
   - from version 0.4.0, the **Latest refused submission**: when the checks refused the agent's work in this run, each check's result and why, in plain words (see [The checks](tickets.md#the-checks)). An agent refused again and again shows here what it keeps getting wrong. The latest refusal stays on the page after the work is accepted: the card then says "The agent then handed its work in again, and it was accepted on …", so it is never the run's outcome, which the run's status gives;
   - the **log**: what the agent writes, each tool it uses with a short input, the results (long ones shortened, see **Longest stored log entry** in [Settings](settings.md#runs)), and the messages sent to it. Passwords and tokens are hidden.
 
 The agent sends a progress line when it moves to another part of the work. A new one is shown at most once per **Progress update interval** (60 seconds by default).
 
 The **Runs** list of the ticket page shows every run of the ticket, newest first, with its result, and **Failed attempts**: the runs that failed in a way that counts (see [When a run ends](#when-a-run-ends)).
+
+### Waiting for CI
+
+From version 0.4.0, once the checks accept the agent's work, the run waits for CI: GitHub's automatic checks of the pull request (what the Orchestrator decides then is in [Tickets > Waiting for CI](tickets.md#waiting-for-ci)). The run's status reads **Waiting for CI**, on the run page, in Activity and on the board's card ("Waiting for CI on Laptop"). The run page's **CI** card says:
+
+- which commit it waits for, with the pull request's number, since when, and the time after which the run stops without counting as a failed attempt (**CI wait at submission**); then when GitHub was last checked;
+- while the pull request is not opened yet, that CI cannot start, and the time after which the run stops; the ticket page says why it is not opened;
+- while nothing has appeared on GitHub, the time after which the work passes as "No CI found" (**Wait for CI to start**), unless the pull request conflicts with the default branch; after that time, that GitHub is still working out whether it conflicts;
+- when the pull request conflicts with the default branch, that GitHub started no CI and the work cannot be accepted;
+- when GitHub could not be checked at the latest check, since when and why: GitHub could not be reached, its request limit (with the time it allows requests again, when GitHub says), an answer that could not be read, the token, a permission missing, or GitHub's own words. The run keeps waiting and the Orchestrator asks again;
+- each check of the commit on its own line, with **Not finished**, **Passed** or **Failed**, and a link "on GitHub" when GitHub gives one:
+  - "CI · workflow": a workflow run is one run of a GitHub Actions workflow, a file in the project's `.github/workflows/` folder, named as the workflow names itself;
+  - "deploy/preview · status": a status is a result another service reports on the commit, such as a deployment preview, named as that service names it.
+
+Names and links come from GitHub, so they are shown as plain text, with tokens hidden. The agent can read the same result, with the part of the log of each failed step, through the Orchestrator's `ci_status` tool; it says which commit the result is for and when it was read.
 
 ## Questions
 
