@@ -238,3 +238,95 @@ test("a run page shows its latest refused submission, why in plain words and the
   await expectFitsScreen(page);
   await screenshot(page, testInfo, 'run-refused-submission');
 });
+
+test('a refused submission followed by an accepted one says the work was accepted afterwards', async ({
+  page,
+  gitHubCommit,
+}, testInfo) => {
+  const { runId, runToken } = await working(page, gitHubCommit);
+  const refusedAnswer = await daemonRequest(page, 'mcp.call', {
+    tool: 'ticket_submit',
+    runToken,
+    input: {
+      ...REPORT,
+      criteria: [{ index: 0, status: 'not_met', justification: 'The phone field is missing.' }],
+    },
+    workspace: workspace({ listed: CHANGED, count: CHANGED.length }),
+  });
+  expect(refusedAnswer.payload).toMatchObject({ ok: false });
+  const answer = await callTool(
+    page,
+    runToken,
+    'ticket_submit',
+    REPORT,
+    workspace({ listed: CHANGED, count: CHANGED.length }),
+  );
+  expect(answer).toMatchObject({ result: 'accepted' });
+  await reportState(page, runId, 'ended');
+
+  await page.goto(`/activity/runs/${runId}`);
+  await expect(page.getByLabel('Run status')).toHaveText('Finished');
+  await expect(page.getByLabel('Accepted afterwards')).toHaveText(
+    /^The agent then handed its work in again, and it was accepted on .+\. The results below are those of the earlier, refused submission\.$/,
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'run-refused-then-accepted');
+});
+
+test('an open pull request a later submission could not update says "Pull request not updated"', async ({
+  page,
+  gitHubCommit,
+  failNextGitHubRequest,
+}, testInfo) => {
+  const { ticketPage, runId, runToken } = await working(page, gitHubCommit);
+  const facts = workspace({ listed: CHANGED, count: CHANGED.length });
+  expect(await callTool(page, runToken, 'ticket_submit', REPORT, facts)).toMatchObject({
+    result: 'accepted',
+  });
+  await reportState(page, runId, 'ended');
+  await page.goto(ticketPage);
+  await expect(page.getByRole('link', { name: 'Pull request #1' })).toBeVisible();
+
+  // Sent back, a second run, and GitHub unreachable when the server updates the pull request.
+  const changes = await page.request.post('/api/projects/WEB/tickets/1/request-changes', {
+    data: { comment: 'Also ask for a phone number.' },
+  });
+  expect(changes.status()).toBe(200);
+  await page.reload();
+  const next = await runNow(page);
+  const nextToken = await startRun(page, next);
+  await failNextGitHubRequest('GET', '/pulls', 502);
+  expect(
+    await callTool(
+      page,
+      nextToken,
+      'ticket_submit',
+      { ...REPORT, summary: 'Adds the phone number too.' },
+      facts,
+    ),
+  ).toMatchObject({ result: 'accepted' });
+  await reportState(page, next, 'ended');
+
+  await page.goto(ticketPage);
+  await expect(page.getByLabel('Pull request', { exact: true })).toHaveText(
+    'Pull request #1 · Open',
+  );
+  const notUpdated = page.getByLabel('Pull request not updated');
+  await expect(notUpdated).toContainText('Pull request not updated: GitHub could not be reached');
+  await expect(notUpdated).toContainText(
+    'could not update its pull request #1: its description still shows the report of the earlier submission. The new commits are on GitHub, in the pull request.',
+  );
+  await expect(page.getByLabel('Pull request not opened')).toHaveCount(0);
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'ticket-pull-request-not-updated');
+
+  await page.goto('/');
+  await expect(
+    page.getByRole('heading', {
+      name: 'Pull request not updated for WEB-1: GitHub could not be reached',
+    }),
+  ).toBeVisible();
+  await page.goto(ticketPage);
+  await notUpdated.getByRole('button', { name: 'Try again' }).click();
+  await expect(notUpdated).toBeHidden();
+});

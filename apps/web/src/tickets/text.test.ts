@@ -1,6 +1,6 @@
 import type { NeedsYouItem } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { pullRequestNotOpenedText, pushFailedText } from './text';
+import { pullRequestFailureText, pullRequestNotOpenedText, pushFailedText } from './text';
 
 type PushFailed = Extract<NeedsYouItem, { type: 'push_failed' }>;
 
@@ -49,7 +49,10 @@ describe('pushFailedText (04, section 5)', () => {
 
 type NotOpened = Extract<NeedsYouItem, { type: 'pull_request_not_opened' }>;
 
-const notOpened = (failure: Partial<NotOpened['failure']>): NotOpened => ({
+const notOpened = (
+  failure: Partial<NotOpened['failure']>,
+  openPullRequest: number | null = null,
+): NotOpened => ({
   type: 'pull_request_not_opened',
   ticket: { projectKey: 'WEB', number: 4, title: 'Contact form' },
   failure: {
@@ -60,6 +63,7 @@ const notOpened = (failure: Partial<NotOpened['failure']>): NotOpened => ({
     at: '2026-10-08T10:00:00.000Z',
     ...failure,
   },
+  openPullRequest,
   since: '2026-10-08T10:00:00.000Z',
 });
 
@@ -72,7 +76,7 @@ describe('pullRequestNotOpenedText (04, section 3.1)', () => {
     ).toEqual({
       title: 'Pull request not opened for WEB-4: the token needs Pull requests (Read and write)',
       detail:
-        "The work of WEB-4 is on GitHub, but the Orchestrator could not open or update its pull request. On GitHub's list of your tokens, open the Orchestrator's token, set Pull requests (Read and write), and save it; do not regenerate it. Then press Try again.",
+        "The work of WEB-4 is on GitHub, but the Orchestrator could not open its pull request. On GitHub's list of your tokens, open the Orchestrator's token, set Pull requests (Read and write), and save it; do not regenerate it. Then press Try again.",
       where: 'tokens',
       showMessage: false,
     });
@@ -107,5 +111,24 @@ describe('pullRequestNotOpenedText (04, section 3.1)', () => {
     expect(pullRequestNotOpenedText(notOpened({ reason: 'unreadable' })).detail).toContain(
       'never opens a second one',
     );
+  });
+});
+
+describe("a pull request not updated (owner's correction, step F4)", () => {
+  it('says the open pull request was not updated, and what is out of date', () => {
+    const text = pullRequestNotOpenedText(notOpened({ reason: 'unreachable' }, 12));
+    expect(text.title).toBe('Pull request not updated for WEB-4: GitHub could not be reached');
+    expect(text.detail).toMatch(
+      /^The work of WEB-4 is on GitHub, but the Orchestrator could not update its pull request #12: its description still shows the report of the earlier submission\. The new commits are on GitHub, in the pull request\./,
+    );
+    expect(pullRequestNotOpenedText(notOpened({}, 12)).title).toBe(
+      'GitHub refused to update the pull request of WEB-4',
+    );
+  });
+
+  it('gives the heading of the ticket page', () => {
+    const failure = notOpened({ reason: 'unreachable' }).failure;
+    expect(pullRequestFailureText('WEB-4', failure, 12).heading).toBe('Pull request not updated');
+    expect(pullRequestFailureText('WEB-4', failure, null).heading).toBe('Pull request not opened');
   });
 });

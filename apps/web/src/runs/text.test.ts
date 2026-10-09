@@ -1,6 +1,6 @@
 import { RunRefusal, type MachineUnavailable } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { runRefusalText, unavailableText } from './text';
+import { acceptedAfterText, runRefusalText, unavailableText } from './text';
 
 const account = { id: '3f1e0e8c-1111-4000-8000-000000000000', label: 'Personal' };
 const machine = { id: '3f1e0e8c-2222-4000-8000-000000000000', name: 'Laptop' };
@@ -67,5 +67,21 @@ describe('run refusals in plain words (07, section 3)', () => {
     expect(runRefusalText(refusals.blocked)).toBe(
       'This ticket waits for WEB-3, WEB-4, which are not done yet.',
     );
+  });
+});
+
+describe("acceptedAfterText (owner's correction, step F4)", () => {
+  const refusedSubmission = { at: '2026-10-09T10:00:00.000Z' };
+  it('says the work was accepted after the refused submission, with its date', () => {
+    expect(
+      acceptedAfterText({ refusedSubmission, acceptedSubmissionAt: '2026-10-09T10:05:00.000Z' }),
+    ).toMatch(/^The agent then handed its work in again, and it was accepted on .+\.$/);
+  });
+
+  it('says nothing when the work was not accepted after it', () => {
+    expect(acceptedAfterText({ refusedSubmission, acceptedSubmissionAt: null })).toBeNull();
+    expect(
+      acceptedAfterText({ refusedSubmission, acceptedSubmissionAt: '2026-10-09T09:00:00.000Z' }),
+    ).toBeNull();
   });
 });

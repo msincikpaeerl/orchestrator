@@ -173,13 +173,15 @@ export function registerRunRoutes(
     const id = runId(request.params.id);
     const run = await runs.view(id);
     const [row] = await db
-      .select({ refused: schema.runs.refusedSubmission })
+      .select({ refused: schema.runs.refusedSubmission, accepted: schema.runs.submission })
       .from(schema.runs)
       .where(eq(schema.runs.id, id));
     const refused = row?.refused ?? null;
+    const accepted = row?.accepted ?? null;
     return {
       ...run,
       refusedSubmission: refused === null ? null : maskStrings(SubmissionRecord.parse(refused)),
+      acceptedSubmissionAt: accepted === null ? null : SubmissionRecord.parse(accepted).at,
     } satisfies RunDetail;
   });
 

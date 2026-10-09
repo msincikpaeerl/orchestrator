@@ -50,7 +50,7 @@ The screens update on their own while you look at them: you never need to reload
   - the time spent **working**, and **waiting** for you or for the usage limit;
   - the **estimated usage**: what the run would cost in US dollars, as Claude Code estimates it. With a Pro or Max plan you pay nothing more: it only helps compare runs;
   - the agent's latest progress line, and its outcome at the end;
-  - from version 0.4.0, the **Latest refused submission**: when the checks refused the agent's work in this run, each check's result and why, in plain words (see [The checks](tickets.md#the-checks)). An agent refused again and again shows here what it keeps getting wrong;
+  - from version 0.4.0, the **Latest refused submission**: when the checks refused the agent's work in this run, each check's result and why, in plain words (see [The checks](tickets.md#the-checks)). An agent refused again and again shows here what it keeps getting wrong. The latest refusal stays on the page after the work is accepted: the card then says "The agent then handed its work in again, and it was accepted on …", so it is never the run's outcome, which the run's status gives;
   - the **log**: what the agent writes, each tool it uses with a short input, the results (long ones shortened, see **Longest stored log entry** in [Settings](settings.md#runs)), and the messages sent to it. Passwords and tokens are hidden.
 
 The agent sends a progress line when it moves to another part of the work. A new one is shown at most once per **Progress update interval** (60 seconds by default).
