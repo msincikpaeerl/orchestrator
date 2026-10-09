@@ -713,7 +713,7 @@ export function ciOutput(
 }
 
 /** The end of `text` with the cut marker first, at most about `max` characters. */
-function keepEnd(t: Template, text: string, max: number): string {
+export function keepEnd(t: Template, text: string, max: number): string {
   if (text.length <= max) return text;
   const marker = (count: number) => part(t, 'log-cut-to-fit', { count: String(count) });
   const room = Math.max(0, max - marker(text.length).length - 1);

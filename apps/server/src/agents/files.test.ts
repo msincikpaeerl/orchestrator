@@ -86,6 +86,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'submit-checks',
       'pull-request',
       'ci-status',
+      'ci-failed',
     ]);
   });
 });
