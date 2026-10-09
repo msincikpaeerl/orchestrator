@@ -19,6 +19,7 @@ export async function implementTicket(
     attempt: number;
     earlierWorkBase: string | null;
     notPushed: ImplementTicket['notPushed'];
+    previousCi: ImplementTicket['previousCi'];
   },
 ): Promise<ImplementTicket> {
   const { ticket, projectKey } = input;
@@ -65,5 +66,6 @@ export async function implementTicket(
     attempt: input.attempt,
     earlierWorkBase: input.earlierWorkBase,
     notPushed: input.notPushed,
+    previousCi: input.previousCi,
   };
 }

@@ -36,7 +36,9 @@ const advance = (minutes: number) => {
   clock = new Date(clock.getTime() + minutes * MINUTE);
 };
 
-async function working(settings: { githubPollSeconds?: number } = {}) {
+async function working(
+  settings: { githubPollSeconds?: number; maxCiFailuresPerRun?: number } = {},
+) {
   clock = new Date('2026-10-09T10:00:00.000Z');
   await h.start({ now: () => clock, ci: 'queued', settings });
   const repo = h.github.repository('octo-owner', 'bakery');
@@ -92,9 +94,24 @@ function failBoth(repo: FakeRepository, commit: string) {
   }
 }
 
-/** The run fails on CI (G1a's interim end), then the ticket's next run starts. */
+/**
+ * The run ends `ci_failed`: with **Most CI failures per run** at 1, its first failure goes back to
+ * the agent (lot 3 step G2b), which hands in again, and CI fails again. Then the next run starts.
+ */
 async function failedThenNextRun(settings: { githubPollSeconds?: number } = {}) {
-  const first = await working(settings);
+  const first = await working({ maxCiFailuresPerRun: 1, ...settings });
+  const sent = await submitted(first.daemon, first.runId, first.runToken);
+  failBoth(first.repo, sent);
+  await h.t.ciTick();
+  const round = await first.daemon.find(
+    (message) => message.type === 'run.input' && message.payload.runId === first.runId,
+    'the CI round',
+  );
+  first.daemon.send({ type: 'ack', id: round.id, payload: { ok: true } });
+  await eventually('the round confirmed', async () => {
+    expect(await h.events('run.ci_round_sent')).toHaveLength(1);
+  });
+  await h.report(first.daemon, state(first.runId, { state: 'working' }));
   const commit = await submitted(first.daemon, first.runId, first.runToken);
   failBoth(first.repo, commit);
   const decidedAt = clock.toISOString();

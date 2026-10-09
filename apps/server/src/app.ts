@@ -119,6 +119,7 @@ export function buildApp(dependencies: AppDependencies) {
       recorded: (runId, commit, found) => runs.ciRecorded(runId, commit, found),
       decided: (runId, commit, decided) => runs.ciDecided(runId, commit, decided),
       timedOut: (runId, commit, detail) => runs.ciTimedOut(runId, commit, detail),
+      roundDue: (runId) => runs.ciRoundDue(runId),
     },
     retryPullRequest: (ticketId) => pullRequests.request(ticketId),
     now: dependencies.now,

@@ -16,6 +16,8 @@ import {
   claudeCodeSupport,
   maskSecrets,
   CLAUDE_CODE_MIN_VERSION,
+  SESSION_ALIVE_REFUSAL,
+  SESSION_CLOSED_REFUSAL,
   type BranchReport,
   type DaemonRunState,
   type HookAnswer,
@@ -923,7 +925,7 @@ export class Run {
   private inputRefused(): string | null {
     if (this.ended || this.ending) return 'The run has ended.';
     if (!this.sessionAlive && CLOSED_STATES.includes(this.data.state)) {
-      return 'session closed: use run.resume';
+      return SESSION_CLOSED_REFUSAL;
     }
     return null;
   }
@@ -931,7 +933,7 @@ export class Run {
   /** Why a `run.resume` cannot be taken now; null when it can. */
   private resumeRefused(): string | null {
     if (this.ended || this.ending) return 'The run has ended.';
-    if (this.sessionAlive) return 'The session is still running.';
+    if (this.sessionAlive) return SESSION_ALIVE_REFUSAL;
     if (!this.data.worktree) return "The run's workspace is not on this machine any more.";
     return null;
   }

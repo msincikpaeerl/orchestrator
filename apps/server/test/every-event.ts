@@ -54,6 +54,16 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     expect(response.statusCode, `${method} ${url}: ${response.body}`).toBeLessThan(300);
     return response;
   }
+  /** Waits until the event of a round's answer is written: the answer is handled meanwhile. */
+  async function settledRound(type: 'run.ci_round_not_taken' | 'run.ci_round_sent') {
+    for (let tries = 0; tries < 250; tries++) {
+      const rows = await t.db.select().from(schema.events).where(eq(schema.events.type, type));
+      if (rows.length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`${type} not written`);
+  }
+
   async function settled(key: string) {
     for (let i = 0; i < 200; i++) {
       const project = Project.parse((await call('GET', `/api/projects/${key}`)).json());
@@ -265,7 +275,8 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   // The run waits for CI since its pull request opened (`run.ci_waiting`). As if Wait for CI to
   // start were over: GitHub unreachable at one check (`run.ci_check_failed`), then answering at
   // the next (`run.ci_check_recovered`) with no run and a conflicting pull request
-  // (`run.ci_result`, a conflict: the run keeps waiting).
+  // (`run.ci_result`, a conflict, sent back to the agent as a CI round: the machine cannot take
+  // it at first, `run.ci_round_not_taken`, then takes it at the next check, `run.ci_round_sent`).
   await t.db
     .update(schema.runs)
     .set({ ciWaitStartedAt: new Date(Date.now() - 10 * 60_000) })
@@ -288,6 +299,25 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     return reply;
   };
   await t.ciTick();
+  const isRound = (message: { type: string; payload: unknown }) =>
+    message.type === 'run.input' && (message.payload as { runId: string }).runId === created.id;
+  const notTaken = await daemon.find(isRound, 'the CI round');
+  daemon.send({
+    type: 'ack',
+    id: notTaken.id,
+    payload: {
+      ok: false,
+      message: 'Downloading main from GitHub failed: GitHub could not be reached',
+    },
+  });
+  await settledRound('run.ci_round_not_taken');
+  await t.ciTick();
+  const taken = await daemon.find(
+    (message) => isRound(message) && message.id !== notTaken.id,
+    'the CI round again',
+  );
+  daemon.send({ type: 'ack', id: taken.id, payload: { ok: true } });
+  await settledRound('run.ci_round_sent');
   github.alter = undefined;
   await daemon.request({
     type: 'run.quota_limited',

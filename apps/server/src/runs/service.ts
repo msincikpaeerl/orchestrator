@@ -9,7 +9,13 @@ import {
   PUSH_PERMISSION_WORDS,
   CiCheckFailure,
   CiResult,
+  CiRound,
+  CiRoundRefusal,
   PushResult,
+  SESSION_ALIVE_REFUSAL,
+  SESSION_CLOSED_REFUSAL,
+  TEXT_CEILING,
+  cutText,
   RunStatus,
   SubmissionRecord,
   TicketStatus,
@@ -91,7 +97,10 @@ import {
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket } from './first-message.js';
 import { CiStatusReader } from './ci-status.js';
+import { ciFailedMessage } from './ci-failed.js';
+import type { CiDecision } from './ci-wait.js';
 import {
+  ciDeadlines,
   endOfReason,
   failureWords,
   isCounted,
@@ -172,6 +181,7 @@ export class RunService {
   private agentFiles:
     Promise<{ templates: Templates; commonRules: string; allowlist: Template }> | undefined;
   private readonly mcp: McpBackend;
+  private readonly ciStatus: CiStatusReader;
 
   constructor(private readonly options: RunServiceOptions) {
     this.db = options.db;
@@ -185,6 +195,7 @@ export class RunService {
       now: () => this.now(),
       templates: async () => (await this.files()).templates,
     });
+    this.ciStatus = ciStatus;
     this.mcp = new McpBackend({
       db: options.db,
       log: options.log,
@@ -738,12 +749,21 @@ export class RunService {
       if (!profile) throw new Error(`profile ${ticket.assigneeProfileId} not found`);
       const required = z.array(Capability).parse(profile.requiredCapabilities);
       // Kept for the whole run: a later change of the setting applies to later runs (04, 8).
-      const { maxAgentTicketsPerRun, ciStartWaitMinutes, ciWaitTimeoutMinutes } =
-        await resolveSettings(
-          tx,
-          ['maxAgentTicketsPerRun', 'ciStartWaitMinutes', 'ciWaitTimeoutMinutes'],
-          project.id,
-        );
+      const {
+        maxAgentTicketsPerRun,
+        ciStartWaitMinutes,
+        ciWaitTimeoutMinutes,
+        maxCiFailuresPerRun,
+      } = await resolveSettings(
+        tx,
+        [
+          'maxAgentTicketsPerRun',
+          'ciStartWaitMinutes',
+          'ciWaitTimeoutMinutes',
+          'maxCiFailuresPerRun',
+        ],
+        project.id,
+      );
 
       // The ticket's earlier runs, newest first, and the machine holding its commits not on
       // GitHub (07, section 3): once pushed, any machine can take the branch from GitHub.
@@ -857,6 +877,21 @@ export class RunService {
         failure === null || failure.machineId !== machine.id
           ? null
           : { branch: branchName, diverged: failure.reason === 'diverged' };
+      // The previous run ended on CI: one sentence says so (owner's answer 8 and addition 4, G2b).
+      const previous = worked[0];
+      const previousResult =
+        previous?.ciResult === null || previous === undefined
+          ? null
+          : CiResult.parse(previous.ciResult).state;
+      const previousCi =
+        previous === undefined
+          ? null
+          : (previous.failureReason === 'ci_failed' || previous.failureReason === 'ci_timeout') &&
+              previousResult === 'conflict'
+            ? { kind: 'conflict' as const, base: previous.baseBranch }
+            : previous.failureReason === 'ci_failed'
+              ? { kind: 'failed' as const }
+              : null;
       let initialPrompt: string;
       try {
         initialPrompt = implementFirstMessage(
@@ -868,6 +903,7 @@ export class RunService {
             attempt,
             earlierWorkBase,
             notPushed,
+            previousCi,
           }),
         );
       } catch (error) {
@@ -899,6 +935,7 @@ export class RunService {
           maxAgentTickets: maxAgentTicketsPerRun,
           ciStartWaitMinutes,
           ciWaitTimeoutMinutes,
+          maxCiFailures: maxCiFailuresPerRun,
           runTokenHash: hashCredential(runToken),
           dispatchMessageId,
           dispatchKind: 'start',
@@ -1526,9 +1563,12 @@ export class RunService {
   // ---------------------------------------------------------------------------------------------
   // The wait for CI (04, section 3.1; lot 3 step G1a): what `CiWatcher` found
 
-  /** The run still waits for CI of `commit`: running, with that commit (a later one replaces it). */
+  /**
+   * The run still waits for CI of `commit`: active, with that commit (a later submission replaces
+   * it, a confirmed CI round removes it). Starting is possible while a round resumes the session.
+   */
   private waitsFor(locked: Locked, commit: string): boolean {
-    return locked.run.status === 'running' && locked.run.ciCommit === commit;
+    return ACTIVE.has(locked.run.status) && locked.run.ciCommit === commit;
   }
 
   private ciFacts(locked: Locked) {
@@ -1582,20 +1622,11 @@ export class RunService {
         }
         return;
       }
-      const before =
-        locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult).state;
       await tx
         .update(schema.runs)
         .set({ ciResult: found.result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
         .where(eq(schema.runs.id, runId));
       if (previous !== null) await event('run.ci_check_recovered', {});
-      // A conflict keeps the submission from passing: said once, when it is found.
-      if (found.result.state === 'conflict' && before !== 'conflict') {
-        await event('run.ci_result', {
-          ...this.ciResultFacts(locked, commit, found.result, null),
-          state: 'conflict',
-        });
-      }
     });
   }
 
@@ -1621,61 +1652,75 @@ export class RunService {
   }
 
   /**
-   * A result that decides. Passed or "No CI found": the run succeeds and the ticket moves to
-   * `in_review` in one transaction, then `run.stop` `completed` ends the session (a machine
-   * offline gets its stop at its reconnection). Failed: until step G2 sends it back, the run ends
-   * with `ci_failed`, a failed attempt (owner's point 2, step G1).
+   * The result read, kept on the run with its events: `ci_check_recovered` when a failed check
+   * came before, `ci_result` when the state is new to the run (a conflict tried again after the
+   * machine could not take its round writes nothing more).
    */
-  async ciDecided(
-    runId: string,
+  private async recordDecision(
+    tx: Executor,
+    locked: Locked,
     commit: string,
-    decided: {
-      result: CiResult & { state: 'passed' | 'no_ci' | 'failed' };
-      pullRequestHead: string | null;
-    },
+    result: CiResult,
+    pullRequestHead: string | null,
   ): Promise<void> {
-    const ended = await this.withRun(runId, async (tx, locked) => {
-      if (!this.waitsFor(locked, commit)) return null;
-      const now = this.now();
-      const { result } = decided;
-      await tx
-        .update(schema.runs)
-        .set({ ciResult: result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
-        .where(eq(schema.runs.id, runId));
-      if (locked.run.ciCheckFailure !== null) {
-        await recordEvent(tx, {
-          actor: 'system',
-          entityType: 'run',
-          entityId: runId,
-          projectId: locked.project.id,
-          type: 'run.ci_check_recovered',
-          payload: this.ciFacts(locked),
-          at: now,
-        });
-      }
-      locked.run = { ...locked.run, ciResult: result, ciCheckedAt: now, ciCheckFailure: null };
+    const now = this.now();
+    const before = locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult).state;
+    await tx
+      .update(schema.runs)
+      .set({ ciResult: result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
+      .where(eq(schema.runs.id, locked.run.id));
+    await notifyChange(tx, { entity: 'run', id: locked.run.id, projectId: locked.project.id });
+    if (locked.run.ciCheckFailure !== null) {
       await recordEvent(tx, {
         actor: 'system',
         entityType: 'run',
-        entityId: runId,
+        entityId: locked.run.id,
         projectId: locked.project.id,
-        type: 'run.ci_result',
-        payload: {
-          ...this.ciFacts(locked),
-          ...this.ciResultFacts(locked, commit, result, decided.pullRequestHead),
-          state: result.state,
-        },
+        type: 'run.ci_check_recovered',
+        payload: this.ciFacts(locked),
         at: now,
       });
-      if (result.state === 'failed') {
-        const failed = result.checks.filter((check) => check.state === 'failed');
-        const names = failed.map((check) => check.name).join(', ');
-        await this.fail(tx, locked, 'ci_failed', 'ci_result', {
-          detail: `CI failed on GitHub: ${names}`,
-          comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: CI failed on GitHub for the submitted commit ${commit.slice(0, 7)} (${names}). It counts as a failed attempt. The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
-        });
-        return { machineId: locked.machine.id, reason: 'not_active' as const };
+    }
+    locked.run = { ...locked.run, ciResult: result, ciCheckedAt: now, ciCheckFailure: null };
+    if (before === result.state || result.state === 'pending') return;
+    await recordEvent(tx, {
+      actor: 'system',
+      entityType: 'run',
+      entityId: locked.run.id,
+      projectId: locked.project.id,
+      type: 'run.ci_result',
+      payload: {
+        ...this.ciFacts(locked),
+        ...this.ciResultFacts(locked, commit, result, pullRequestHead),
+        state: result.state,
+      },
+      at: now,
+    });
+  }
+
+  /**
+   * A result that decides (04, section 3.1). Passed or "No CI found": the run succeeds and the
+   * ticket moves to `in_review` in one transaction, then `run.stop` `completed` ends the session
+   * (a machine offline gets its stop at its reconnection); it wins over a deadline passed
+   * meanwhile. A failure or a conflict is a CI round (`ciRound`); a failure whose runs GitHub
+   * cancelled because the branch moved ends the run `ci_cancelled`, not counted (lot 3 step G2b).
+   */
+  async ciDecided(runId: string, commit: string, decided: CiDecision): Promise<void> {
+    const { result } = decided;
+    if (result.state === 'failed' || result.state === 'conflict') {
+      if (result.state === 'failed' && decided.branchMoved === true) {
+        await this.ciCancelled(runId, commit, decided);
+        return;
       }
+      await this.ciRound(runId, commit, {
+        result: { ...result, state: result.state },
+        pullRequestHead: decided.pullRequestHead,
+      });
+      return;
+    }
+    const ended = await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit) || locked.run.ciRoundMessageId !== null) return null;
+      await this.recordDecision(tx, locked, commit, result, decided.pullRequestHead);
       await this.setStatus(tx, locked, 'succeeded', 'ci_result');
       if (locked.ticket) {
         await applyRunAction(tx, {
@@ -1684,26 +1729,341 @@ export class RunService {
           action: 'run_submitted',
           actor: 'system',
           runId,
-          now,
+          now: this.now(),
         });
       }
-      return { machineId: locked.machine.id, reason: 'completed' as const };
+      return locked.machine.id;
     });
-    if (ended) await this.sendStop(ended.machineId, runId, ended.reason);
+    if (ended) await this.sendStop(ended, runId, 'completed');
+  }
+
+  /**
+   * Every failed check of the submitted commit is a workflow run GitHub cancelled, and the pull
+   * request's head is another commit: the branch moved on GitHub, not the agent's failure. The
+   * run ends at once, not counted; the next run takes GitHub's branch (owner's answer 2, step G2b).
+   */
+  private async ciCancelled(runId: string, commit: string, decided: CiDecision): Promise<void> {
+    const ended = await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit) || locked.run.ciRoundMessageId !== null) return null;
+      await this.recordDecision(tx, locked, commit, decided.result, decided.pullRequestHead);
+      const head = (decided.pullRequestHead ?? '').slice(0, 7);
+      const words = failureWords('ci_cancelled');
+      await this.fail(tx, locked, 'ci_cancelled', 'ci_result', {
+        detail: `${words}: the pull request's head is now ${head}, not the submitted commit ${commit.slice(0, 7)}`,
+        comment: `The run on machine ${locked.machine.name} ended: ${words} (the pull request's head is now ${head}, not the submitted commit ${commit.slice(0, 7)}). It does not count as a failed attempt. Run now starts the next run from the branch as it is on GitHub.`,
+      });
+      return locked.machine.id;
+    });
+    if (ended) await this.sendStop(ended, runId, 'not_active');
+  }
+
+  /** **Most CI failures per run** as the run keeps it; today's value for a run started before. */
+  private async maxCiFailures(executor: Executor, run: RunRow): Promise<number> {
+    if (run.maxCiFailures !== null) return run.maxCiFailures;
+    const { maxCiFailuresPerRun } = await resolveSettings(
+      executor,
+      ['maxCiFailuresPerRun'],
+      run.projectId,
+    );
+    return maxCiFailuresPerRun;
+  }
+
+  /**
+   * A failed result or a conflict (owner's answers 1 to 4, lot 3 step G2b). One more than **Most
+   * CI failures per run** confirmed rounds ends the run `ci_failed`, counted; past **CI wait at
+   * submission**, `ci_timeout`; otherwise it becomes the run's unanswered round, with its message
+   * id, and is sent. A failure's jobs and excerpts are read first, outside the run's lock.
+   */
+  private async ciRound(
+    runId: string,
+    commit: string,
+    decided: {
+      result: CiResult & { state: 'failed' | 'conflict' };
+      pullRequestHead: string | null;
+    },
+  ): Promise<void> {
+    const kind = decided.result.state;
+    let result: CiResult = decided.result;
+    const [row] = await this.db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (!row || row.ciCommit !== commit || row.ciRoundMessageId !== null) return;
+    if (kind === 'failed') {
+      const [project] = await this.db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, row.projectId));
+      const counted = z.array(CiRound).parse(row.ciRounds).length;
+      if (project && counted < (await this.maxCiFailures(this.db, row))) {
+        result = await this.ciStatus.withFailedJobs(row, project, commit, result);
+      }
+    }
+    const outcome = await this.withRun(runId, async (tx, locked) => {
+      if (!this.waitsFor(locked, commit) || locked.run.ciRoundMessageId !== null) return null;
+      const now = this.now();
+      const done = z
+        .array(CiRound)
+        .parse(locked.run.ciRounds)
+        .filter((round) => round.confirmedAt !== null);
+      const max = await this.maxCiFailures(tx, locked.run);
+      await this.recordDecision(tx, locked, commit, result, decided.pullRequestHead);
+      if (done.length >= max) {
+        await this.ciTooMany(tx, locked, commit, kind, result, done.length, max);
+        return { machineId: locked.machine.id, send: false };
+      }
+      const deadlines = ciDeadlines(locked.run);
+      if (deadlines !== null && now >= deadlines.deadline) {
+        await this.ciTimeout(tx, locked, this.ciTimeoutDetail(locked, 'CI had not finished'));
+        return { machineId: locked.machine.id, send: false };
+      }
+      const round: CiRound = {
+        round: done.length + 1,
+        kind,
+        commit,
+        messageId: randomUUID(),
+        via: locked.run.sessionAlive || locked.run.claudeSessionId === null ? 'input' : 'resume',
+        decidedAt: now.toISOString(),
+        sentAt: null,
+        confirmedAt: null,
+        result,
+        readAt: (locked.run.ciCheckedAt ?? now).toISOString(),
+      };
+      await tx
+        .update(schema.runs)
+        .set({ ciRounds: [...done, round], ciRoundMessageId: round.messageId, updatedAt: now })
+        .where(eq(schema.runs.id, runId));
+      return { machineId: locked.machine.id, send: true };
+    });
+    if (outcome === null) return;
+    if (outcome.send) await this.sendRound(runId);
+    else await this.sendStop(outcome.machineId, runId, 'not_active');
+  }
+
+  /** One failure more than **Most CI failures per run**: the run ends `ci_failed`, counted. */
+  private async ciTooMany(
+    tx: Executor,
+    locked: Locked,
+    commit: string,
+    kind: 'failed' | 'conflict',
+    result: CiResult,
+    rounds: number,
+    max: number,
+  ): Promise<void> {
+    const sent = `after ${String(rounds)} CI round${rounds === 1 ? '' : 's'} sent back to the agent, the most this run allows (Most CI failures per run: ${String(max)})`;
+    const names = result.checks
+      .filter((check) => check.state === 'failed')
+      .map((check) => check.name)
+      .join(', ');
+    const what =
+      kind === 'conflict'
+        ? `the pull request of the submitted commit ${commit.slice(0, 7)} conflicts with ${locked.run.baseBranch}`
+        : `CI failed on GitHub for the submitted commit ${commit.slice(0, 7)} (${names})`;
+    await this.fail(tx, locked, 'ci_failed', 'ci_result', {
+      detail: `${what.charAt(0).toUpperCase()}${what.slice(1)} ${sent}`,
+      comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${what} ${sent}. It counts as a failed attempt. The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
+    });
+  }
+
+  /** Sends the run's unanswered CI round, the same message each time; when sent, its time. */
+  private async sendRound(runId: string): Promise<void> {
+    const { templates } = await this.files();
+    const settings = await resolveSettings(this.db, ['githubPollSeconds', 'ciLogReadMaxMegabytes']);
+    const prepared = await this.withRun(runId, async (tx, locked) => {
+      const id = locked.run.ciRoundMessageId;
+      const round = z.array(CiRound).parse(locked.run.ciRounds).at(-1);
+      if (id === null || round?.messageId !== id || !ACTIVE.has(locked.run.status)) return null;
+      const text = ciFailedMessage(templates, {
+        kind: round.kind,
+        round: round.round,
+        max: await this.maxCiFailures(tx, locked.run),
+        commit: round.commit,
+        base: locked.run.baseBranch,
+        result: round.result,
+        settings,
+      });
+      const fetchBase = round.kind === 'conflict' ? { fetchBase: true } : {};
+      const sessionId = locked.run.claudeSessionId;
+      const message: ServerMessage =
+        round.via === 'resume' && sessionId !== null
+          ? {
+              type: 'run.resume',
+              id,
+              payload: { runId, claudeSessionId: sessionId, message: text, ...fetchBase },
+            }
+          : { type: 'run.input', id, payload: { runId, text, ...fetchBase } };
+      return { machineId: locked.machine.id, message };
+    });
+    if (prepared === null || !this.send(prepared.machineId, prepared.message)) return;
+    await this.withRun(runId, async (tx, locked) => {
+      if (locked.run.ciRoundMessageId !== prepared.message.id) return;
+      const rounds = z.array(CiRound).parse(locked.run.ciRounds);
+      const last = rounds.at(-1);
+      if (!last) return;
+      await tx
+        .update(schema.runs)
+        .set({ ciRounds: [...rounds.slice(0, -1), { ...last, sentAt: this.now().toISOString() }] })
+        .where(eq(schema.runs.id, runId));
+    });
+  }
+
+  /** The watcher's turn for an unanswered round: sent again, the same message. */
+  async ciRoundDue(runId: string): Promise<void> {
+    await this.sendRound(runId);
+  }
+
+  /**
+   * The daemon's answer to a CI round (owner's answer 1 of step G2b, point 2). Confirmed: the
+   * round counts, the run's wait and decision go, and the agent works on. The session closed (or
+   * still alive): the round goes the other way, a new message. Any other refusal (the base
+   * branch not downloaded): not counted, and the next check decides again.
+   */
+  private async ciRoundAnswered(runId: string, ack: Ack): Promise<void> {
+    const again = await this.withRun(runId, async (tx, locked) => {
+      if (locked.run.ciRoundMessageId !== ack.id || !ACTIVE.has(locked.run.status)) return false;
+      const rounds = z.array(CiRound).parse(locked.run.ciRounds);
+      const pending = rounds.at(-1);
+      if (pending?.messageId !== ack.id) return false;
+      const now = this.now();
+      const earlier = rounds.slice(0, -1);
+      if (ack.payload.ok) {
+        await tx
+          .update(schema.runs)
+          .set({
+            ciRounds: [...earlier, { ...pending, confirmedAt: now.toISOString() }],
+            ciRoundMessageId: null,
+            ciRoundRefusal: null,
+            // The wait and the decision go with the round (owner's answer 3): the agent hands in
+            // again, and a later result of this commit finds nothing to decide.
+            ciCommit: null,
+            ciWaitStartedAt: null,
+            ciResult: null,
+            ciCheckedAt: null,
+            ciCheckFailure: null,
+            decision: null,
+            updatedAt: now,
+          })
+          .where(eq(schema.runs.id, runId));
+        await recordEvent(tx, {
+          actor: 'system',
+          entityType: 'run',
+          entityId: runId,
+          projectId: locked.project.id,
+          type: 'run.ci_round_sent',
+          payload: {
+            ...this.ciFacts(locked),
+            commit: pending.commit,
+            kind: pending.kind,
+            round: pending.round,
+            of: await this.maxCiFailures(tx, locked.run),
+          },
+          at: now,
+        });
+        await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project.id });
+        return false;
+      }
+      const { message } = ack.payload;
+      const via =
+        message === SESSION_CLOSED_REFUSAL && pending.via === 'input'
+          ? 'resume'
+          : message === SESSION_ALIVE_REFUSAL && pending.via === 'resume'
+            ? 'input'
+            : null;
+      if (via !== null && (via === 'input' || locked.run.claudeSessionId !== null)) {
+        // Not delivered: a new message id is safe, and the daemon never gave the first one.
+        const switched: CiRound = { ...pending, via, messageId: randomUUID(), sentAt: null };
+        await tx
+          .update(schema.runs)
+          .set({ ciRounds: [...earlier, switched], ciRoundMessageId: switched.messageId })
+          .where(eq(schema.runs.id, runId));
+        return true;
+      }
+      const refusal: CiRoundRefusal = {
+        kind: pending.kind,
+        message: cutText(maskSecrets(message), TEXT_CEILING, 'end'),
+        at: now.toISOString(),
+      };
+      const previous =
+        locked.run.ciRoundRefusal === null ? null : CiRoundRefusal.parse(locked.run.ciRoundRefusal);
+      await tx
+        .update(schema.runs)
+        .set({ ciRounds: earlier, ciRoundMessageId: null, ciRoundRefusal: refusal, updatedAt: now })
+        .where(eq(schema.runs.id, runId));
+      if (previous?.message !== refusal.message || previous.kind !== refusal.kind) {
+        await recordEvent(tx, {
+          actor: 'system',
+          entityType: 'run',
+          entityId: runId,
+          projectId: locked.project.id,
+          type: 'run.ci_round_not_taken',
+          payload: {
+            ...this.ciFacts(locked),
+            commit: pending.commit,
+            kind: pending.kind,
+            message: refusal.message,
+          },
+          at: now,
+        });
+      }
+      return false;
+    });
+    if (again === true) await this.sendRound(runId);
+  }
+
+  /**
+   * Why **CI wait at submission** ended the run, saying a round the machine did not confirm or
+   * could not take (owner's answer 2 of step G2b: "The pull request conflicts with <base>, and the
+   * machine could not download <base> from GitHub: <reason>.").
+   */
+  private ciTimeoutDetail(locked: Locked, fallback: string): string {
+    const base = locked.run.baseBranch;
+    const machine = locked.machine.name;
+    const pending =
+      locked.run.ciRoundMessageId === null
+        ? undefined
+        : z.array(CiRound).parse(locked.run.ciRounds).at(-1);
+    if (pending !== undefined) {
+      return pending.kind === 'conflict'
+        ? `The pull request conflicts with ${base}, and machine ${machine} did not confirm it received the message telling the agent to merge it.`
+        : `CI failed on GitHub, and machine ${machine} did not confirm it received the result.`;
+    }
+    const refusal =
+      locked.run.ciRoundRefusal === null ? null : CiRoundRefusal.parse(locked.run.ciRoundRefusal);
+    if (refusal !== null) {
+      const prefix = `Downloading ${base} from GitHub failed: `;
+      const reason = refusal.message.startsWith(prefix)
+        ? refusal.message.slice(prefix.length)
+        : refusal.message;
+      const ended = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+      return refusal.kind === 'conflict'
+        ? `The pull request conflicts with ${base}, and the machine could not download ${base} from GitHub: ${ended}`
+        : `CI failed on GitHub, and machine ${machine} could not take the result: ${ended}`;
+    }
+    const result = locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult);
+    if (result?.state === 'conflict') {
+      return `the pull request conflicts with ${base}, so GitHub started no CI`;
+    }
+    return fallback;
+  }
+
+  /** The run fails with `ci_timeout`, not counted, and the ticket returns to `todo`. */
+  private async ciTimeout(tx: Executor, locked: Locked, detail: string): Promise<void> {
+    const minutes = locked.run.ciWaitTimeoutMinutes ?? 0;
+    await tx
+      .update(schema.runs)
+      .set({ ciRoundMessageId: null })
+      .where(eq(schema.runs.id, locked.run.id));
+    await this.fail(tx, locked, 'ci_timeout', 'ci_timeout', {
+      detail: `CI wait at submission (${String(minutes)} minutes) reached: ${detail}`,
+    });
   }
 
   /**
    * **CI wait at submission** reached without a result that decides: the run fails with
-   * `ci_timeout`, not counted, and the ticket returns to `todo` (04, sections 3.1 and 5). Step G2
+   * `ci_timeout`, not counted, and the ticket returns to `todo` (04, sections 3.1 and 5). Step G2c
    * adds "CI did not finish" and **Check CI again**.
    */
   async ciTimedOut(runId: string, commit: string, detail: string): Promise<void> {
     const ended = await this.withRun(runId, async (tx, locked) => {
       if (!this.waitsFor(locked, commit)) return null;
-      const minutes = locked.run.ciWaitTimeoutMinutes ?? 0;
-      await this.fail(tx, locked, 'ci_timeout', 'ci_timeout', {
-        detail: `CI wait at submission (${String(minutes)} minutes) reached: ${detail}`,
-      });
+      await this.ciTimeout(tx, locked, this.ciTimeoutDetail(locked, detail));
       return locked.machine.id;
     });
     if (ended) await this.sendStop(ended, runId, 'not_active');
@@ -1791,6 +2151,14 @@ export class RunService {
 
   /** The daemon acknowledged a command: a `run.start` or `run.resume` is then dispatched. */
   async acknowledged(machineId: string, ack: Ack): Promise<void> {
+    const [round] = await this.db
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(and(eq(schema.runs.ciRoundMessageId, ack.id), eq(schema.runs.machineId, machineId)));
+    if (round) {
+      await this.ciRoundAnswered(round.id, ack);
+      return;
+    }
     const [answered] = await this.db
       .select({ id: schema.runs.id })
       .from(schema.runs)

@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   ACTIVE_RUN_STATUSES,
+  CiRound,
   CiCheckFailure,
   CiResult,
   MCP_OUTPUT_MAX_CHARACTERS,
@@ -13,6 +14,7 @@ import {
   type McpCiStatus,
 } from '@orchestrator/protocol';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Templates } from '../agents/files.js';
 import { fill, part } from '../agents/messages.js';
@@ -135,6 +137,25 @@ function withLimitTime<T extends Omit<CiReadProblem, 'at'>>(
   return { ...problem, retry_at: new Date(now.getTime() + holdMs).toISOString() };
 }
 
+/**
+ * The run as its latest confirmed CI round left it: the round's commit and the result it sent,
+ * read when the round was decided; null without a round, or once the agent handed in again.
+ */
+function latestRound(run: RunRow): RunRow | null {
+  const round = z
+    .array(CiRound)
+    .parse(run.ciRounds)
+    .findLast((each) => each.confirmedAt !== null);
+  if (round === undefined || run.submission === null) return null;
+  return {
+    ...run,
+    ciCommit: round.commit,
+    ciResult: round.result,
+    ciCheckedAt: new Date(round.readAt),
+    ciWaitStartedAt: new Date(round.decidedAt),
+  };
+}
+
 /** A problem after which GitHub is asked again, once the interval or the limit is over. */
 function passing(problem: CiReadProblem | null): boolean {
   return (
@@ -174,7 +195,10 @@ export class CiStatusReader {
     const t = templates['ci-status'];
     const notes: string[] = [];
     const refused = call.run.refusedSubmission !== null && call.run.ciCommit === null;
-    let source = await this.source(call.run, call.ticket.id);
+    // After a CI round, before the agent hands in again: the result the round sent, as kept on
+    // the run, never read again (owner's addition 2 of step G2b).
+    const round = call.run.ciCommit === null ? latestRound(call.run) : null;
+    let source = round === null ? await this.source(call.run, call.ticket.id) : round;
     if (source === null) {
       if (refused) notes.push(part(t, 'refused'));
       notes.push(part(t, 'no-submission'));
@@ -222,10 +246,12 @@ export class CiStatusReader {
       return { ...answer, read_at: null, note: notes.join(' '), ci: null };
     }
 
-    const held = await this.heldUntil();
+    const held = round === null ? await this.heldUntil() : null;
     const problem =
-      held === null ? await this.refresh(source, call.project, waiting, settings) : null;
-    source = (await this.run(source.id)) ?? source;
+      held === null && round === null
+        ? await this.refresh(source, call.project, waiting, settings)
+        : null;
+    if (round === null) source = (await this.run(source.id)) ?? source;
     const result = source.ciResult === null ? null : CiResult.parse(source.ciResult);
     const readAt = source.ciCheckedAt?.toISOString() ?? null;
 
@@ -264,6 +290,48 @@ export class CiStatusReader {
       notes.push(part(t, 'logs-not-read', { count: String(ci.logs_not_read.count) }));
     }
     return fitAnswer(t, { ...answer, read_at: readAt, note: notes.join(' '), ci });
+  }
+
+  /**
+   * A failed result with its failed jobs and their excerpts, for a CI round's message (lot 3 step
+   * G2b): what the run already holds for `commit` when its jobs were listed, else read now
+   * (1 request per failed workflow run, 1 per failed job's log). A problem reading them is kept in
+   * the result (`jobs_problem`, or the job's log `unavailable`): the message says it.
+   */
+  async withFailedJobs(
+    run: RunRow,
+    project: ProjectRow,
+    commit: string,
+    result: CiResult,
+  ): Promise<CiResult> {
+    if (result.state !== 'failed') return result;
+    const stored =
+      run.ciCommit === commit && run.ciResult !== null ? CiResult.parse(run.ciResult) : null;
+    if (stored?.state === 'failed' && stored.jobs_read) {
+      return { ...result, failed_jobs: stored.failed_jobs, jobs_read: true, jobs_problem: null };
+    }
+    const settings = await resolveSettings(this.options.db, [
+      'githubPollSeconds',
+      'ciLogExcerptMaxLength',
+      'ciLogReadMaxMegabytes',
+    ]);
+    const now = this.now();
+    const repo = { owner: project.repoOwner, name: project.repoName };
+    let read: CiResult = result;
+    try {
+      const client = await this.client();
+      await this.withClient(async () => {
+        read = await this.readJobs(client, repo, result, settings, now);
+      });
+    } catch (error) {
+      if (!(error instanceof ReadStopped)) throw error;
+      const problem = {
+        ...withLimitTime(error.problem, now, settings.githubPollSeconds),
+        at: now.toISOString(),
+      };
+      return { ...result, jobs_problem: problem };
+    }
+    return read;
   }
 
   private problemText(problem: CiReadProblem): string {

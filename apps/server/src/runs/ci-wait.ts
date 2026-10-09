@@ -1,11 +1,14 @@
 import { schema } from '@orchestrator/db';
 import {
+  ACTIVE_RUN_STATUSES,
+  CiRound,
   maskSecrets,
   type CiCheckFailure,
   type CiResult,
   type CiState,
 } from '@orchestrator/protocol';
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { z } from 'zod';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -20,13 +23,16 @@ import { ticketReference } from '../tickets/model.js';
 import { ciChecks, ciChecksState } from './ci-result.js';
 import { ciDeadlines, type RunRow } from './model.js';
 
-// The wait for CI after an accepted submission (04, section 3.1; lot 3 step G1a). The run keeps
-// its session open and stays `running`; the server polls GitHub at **GitHub check interval** for
-// the commit pushed at the submission, and decides: passed or "No CI found" accept the
-// submission, a conflict never does, a failure ends the run (until step G2 sends it back), and
-// **CI wait at submission** ends a wait without a result. GitHub unreachable, its request limit
-// or an answer that cannot be read never end a wait: only the deadline does. Everything the loop
-// needs is stored on the run, so a restarted server goes on where it stopped.
+// The wait for CI after an accepted submission (04, section 3.1; lot 3 steps G1a and G2b). The
+// run keeps its session open and stays `running`; the server polls GitHub at **GitHub check
+// interval** for the commit pushed at the submission, and decides: passed or "No CI found" accept
+// the submission; a failure or a conflict is sent back to the agent as a CI round (the run
+// service's `ciDecided`), unless the branch moved on GitHub and cancelled the runs; and **CI wait
+// at submission** ends a wait without a result. A round the machine has not confirmed yet is sent
+// again, the same message, after **Machine answer timeout** plus **Longest push**; GitHub is not
+// read for it meanwhile. GitHub unreachable, its request limit or an answer that cannot be read
+// never end a wait: only the deadline does. Everything the loop needs is stored on the run, so a
+// restarted server goes on where it stopped.
 
 /**
  * The wait begins (owner's point 1, step G1): at the submission when the ticket's pull request
@@ -96,17 +102,22 @@ export interface CiOutcomes {
     commit: string,
     found: { result: CiResult } | { failure: Omit<CiCheckFailure, 'since' | 'at'> },
   ): Promise<void>;
-  /** A result that decides: `passed` or `no_ci` accept the submission, `failed` ends the run. */
-  decided(
-    runId: string,
-    commit: string,
-    decided: {
-      result: CiResult & { state: 'passed' | 'no_ci' | 'failed' };
-      pullRequestHead: string | null;
-    },
-  ): Promise<void>;
+  /**
+   * A result that decides: `passed` or `no_ci` accept the submission; `failed` or `conflict` is
+   * a CI round, or ends the run when it is one too many; `branchMoved` (every failed check a
+   * cancelled workflow run, the pull request's head another commit) ends it `ci_cancelled`.
+   */
+  decided(runId: string, commit: string, decided: CiDecision): Promise<void>;
   /** **CI wait at submission** reached without a result that decides. */
   timedOut(runId: string, commit: string, detail: string): Promise<void>;
+  /** The run's unanswered CI round, sent again: the same message. */
+  roundDue(runId: string): Promise<void>;
+}
+
+export interface CiDecision {
+  result: CiResult & { state: 'passed' | 'no_ci' | 'failed' | 'conflict' };
+  pullRequestHead: string | null;
+  branchMoved?: boolean;
 }
 
 export interface CiWatcherOptions {
@@ -123,7 +134,7 @@ export interface CiWatcherOptions {
 }
 
 type Check =
-  | { ok: true; result: CiResult; pullRequestHead: string | null }
+  | { ok: true; result: CiResult; pullRequestHead: string | null; branchMoved: boolean }
   | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
 
 /** A refusal of GitHub's as a failed check: its words masked, never a value of an answer. */
@@ -233,6 +244,11 @@ export class PollLoop {
 export class CiWatcher {
   private readonly loop: PollLoop;
 
+  /** What the loop's findings do; also for a test delivering a late result (lot 3 step G2b). */
+  get outcomes(): CiOutcomes {
+    return this.options.outcomes;
+  }
+
   constructor(private readonly options: CiWatcherOptions) {
     this.loop = new PollLoop({
       intervalMs: async () =>
@@ -272,7 +288,16 @@ export class CiWatcher {
       .from(schema.runs)
       .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
       .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
-      .where(and(eq(schema.runs.status, 'running'), isNotNull(schema.runs.ciCommit)));
+      .where(
+        or(
+          and(eq(schema.runs.status, 'running'), isNotNull(schema.runs.ciCommit)),
+          // A round not confirmed yet: the session may be starting again with `run.resume`.
+          and(
+            inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+            isNotNull(schema.runs.ciRoundMessageId),
+          ),
+        ),
+      );
     for (const row of waiting) {
       const limited = await this.checkRun(row);
       if (limited !== null) {
@@ -294,6 +319,27 @@ export class CiWatcher {
     if (commit === null || deadlines === null) return null;
     const now = this.now();
     const { outcomes } = this.options;
+    if (run.ciRoundMessageId !== null) {
+      // An unanswered round: nothing is read on GitHub until the machine answered it.
+      if (now >= deadlines.deadline) {
+        await outcomes.timedOut(run.id, commit, 'CI round not confirmed');
+        return null;
+      }
+      const pending = z.array(CiRound).parse(run.ciRounds).at(-1);
+      const { dispatchAckTimeoutSeconds, pushTimeoutSeconds } = await resolveSettings(
+        this.options.db,
+        ['dispatchAckTimeoutSeconds', 'pushTimeoutSeconds'],
+      );
+      const waitMs = (dispatchAckTimeoutSeconds + pushTimeoutSeconds) * 1000;
+      if (
+        pending?.sentAt === null ||
+        pending === undefined ||
+        now.getTime() - new Date(pending.sentAt).getTime() >= waitMs
+      ) {
+        await outcomes.roundDue(run.id);
+      }
+      return null;
+    }
     if (run.ciWaitStartedAt === null) {
       if (now >= deadlines.deadline) {
         await outcomes.timedOut(run.id, commit, 'the pull request could not be opened');
@@ -321,11 +367,17 @@ export class CiWatcher {
       return check.retryAt ?? null;
     }
     const { result } = check;
-    if (result.state === 'passed' || result.state === 'no_ci' || result.state === 'failed') {
-      // A result that decides wins over a deadline passed meanwhile (owner's answer 4, step G1).
+    if (
+      result.state === 'passed' ||
+      result.state === 'no_ci' ||
+      result.state === 'failed' ||
+      result.state === 'conflict'
+    ) {
+      // The run service weighs the deadline: only an accepting result wins over it.
       await outcomes.decided(run.id, commit, {
         result: { ...result, state: result.state },
         pullRequestHead: check.pullRequestHead,
+        ...(check.branchMoved ? { branchMoved: true } : {}),
       });
       return null;
     }
@@ -334,11 +386,7 @@ export class CiWatcher {
       await outcomes.timedOut(
         run.id,
         commit,
-        result.state === 'conflict'
-          ? `the pull request conflicts with ${project.defaultBranch ?? 'its base branch'}, so GitHub started no CI`
-          : result.checks.length === 0
-            ? 'no CI run or status appeared yet'
-            : 'CI had not finished',
+        result.checks.length === 0 ? 'no CI run or status appeared yet' : 'CI had not finished',
       );
     }
     return null;
@@ -455,12 +503,32 @@ export class CiWatcher {
       }
     } else {
       decided = state;
+      const failed = checks.filter((check) => check.state === 'failed');
+      if (
+        state === 'failed' &&
+        pullRequest !== null &&
+        failed.every((check) => check.kind === 'workflow_run' && check.cancelled)
+      ) {
+        // Cancelled runs: the agent's failure, or the branch moving on GitHub (a workflow
+        // cancelling the run in progress)? Only the pull request's head tells; while it cannot
+        // be read, nothing is decided (owner's answer 4, lot 3 step G2b).
+        const read = await readPullRequest(client, repo, pullRequest);
+        if (!read.ok) return refused(read.refusal);
+        if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
+        return {
+          ok: true,
+          result: { state, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
+          pullRequestHead,
+          branchMoved: pullRequestHead !== null,
+        };
+      }
       if (state !== 'pending') await head().catch(() => undefined);
     }
     return {
       ok: true,
       result: { state: decided, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
       pullRequestHead,
+      branchMoved: false,
     };
   }
 }

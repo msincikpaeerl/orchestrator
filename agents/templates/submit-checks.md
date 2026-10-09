@@ -15,6 +15,10 @@ Criterion {{index}} is reported not_met: "{{text}}". Meet it, or use ticket_ask 
 The worktree has uncommitted changes or untracked files: commit your work first.
 <!-- part: no-commits -->
 The branch {{branch}} has no commits ahead of the base branch {{base}}: commit your work on it.
+<!-- part: same-commit-failed -->
+Commit {{commit}} is the one CI failed for in this run: commit your fix on the branch {{branch}}, then submit again.
+<!-- part: same-commit-conflict -->
+Commit {{commit}} is the one whose pull request conflicts with {{base}}: run `git merge origin/{{base}}`, resolve the conflicts, commit the merge, then submit again.
 <!-- part: push-diverged -->
 GitHub's copy of the branch {{branch}} has commits this machine does not have, so your commits could not be pushed.
 <!-- part: push-refused -->
