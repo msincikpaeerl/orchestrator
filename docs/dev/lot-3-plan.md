@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a and G1b done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b and G2a done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -710,12 +710,19 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 - **`ci-failed.md`'s round sentence**: a round that is not the last never says "one more ends the run"; G2b's summary shows the three variants (first, middle, last).
 - **Step N** measures what a CI failure round costs after a wait longer than the prompt cache lifetime.
 
-### [ ] G2a. Failures and conflicts sent back: daemon and protocol
+### [x] G2a. Failures and conflicts sent back: daemon and protocol
 
 - `run.input` accepted while the run waits for CI (pasted into the live session, the run back to `working`), refused with "session closed: use run.resume" when its session is closed; `run.resume` accepted for a run waiting for CI.
 - `fetchBase` on `run.input` and `run.resume`: the base branch downloaded first (answer 2), acknowledged only after the download; a failed download refused with its masked reason and nothing sent.
 
 **Done when** daemon tests show a failure pasted into a live waiting session, a closed session resumed with it, the base branch downloaded before the message with no token anywhere (the leak checks reused), a failed download refused with nothing sent, and the waiting test's margin kept.
+
+*Done 2026-10-10.* Choices made in the step (spec 05 updated):
+
+- **Where it lives**: `Run.input` and `Run.resume` (`apps/daemon/src/run.ts`) take `fetchBase`; `Workspaces.fetchBase` runs `isolatedFetch` with a branch (`only`), which fetches that one branch and sets only its remote ref (no ref deleted). The protocol's `fetchBase` is an optional boolean of `run.input` and `run.resume`.
+- **Refusals**: a closed session waiting for CI refuses `run.input` ("session closed: use run.resume"), as for a waiting or paused run; both commands look again after the download, so a run ended or a session closed meanwhile refuses the message instead of queueing it. A failed download refuses with "Downloading <base> from GitHub failed: …", the credential refused by the Orchestrator said in those words, masked and cut to the protocol's text ceiling.
+- **Tests**: `ci-rounds.test.ts` (4 tests, failing before the change); `credential-leaks.test.ts` downloads the base branch after the push in each of its planted ways (the credential asked for `push`, `fetch`, `fetch`).
+- **Nothing user-visible yet**: the server sends no CI result before G2b, so no Help or CHANGELOG change in this step.
 
 ### [ ] G2b. The server's rounds and limits
 
