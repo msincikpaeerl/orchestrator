@@ -18,6 +18,7 @@ import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
+import { ReviewDecisionKind } from './api/reviews.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
@@ -117,6 +118,8 @@ export const EventType = z.enum([
   'run.ci_check_recovered',
   'run.ci_round_sent',
   'run.ci_round_not_taken',
+  'run.review_decided',
+  'run.review_discarded',
 ]);
 export type EventType = z.infer<typeof EventType>;
 
@@ -496,6 +499,29 @@ export const EventPayloads = {
     commit: z.string(),
     kind: z.enum(['failed', 'conflict']),
     message: z.string(),
+  }),
+  /**
+   * Quality's decision stored on its review run at the tool's call, applied at the run's end (06,
+   * section 4.5; lot 3 step H2). `headChecked` false: GitHub could not be read at the call.
+   */
+  'run.review_decided': z.object({
+    ...TicketFacts,
+    ...AgentFacts,
+    decision: ReviewDecisionKind,
+    commit: z.string(),
+    points: z.int().min(0),
+    headChecked: z.boolean(),
+  }),
+  /**
+   * A decision stored on a review run that ended without applying it (the head moved on the
+   * machine, **Stop run**, the machine lost, ...): `failureReason` says why (lot 3 step H2).
+   */
+  'run.review_discarded': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    decision: ReviewDecisionKind,
+    commit: z.string(),
+    failureReason: FailureReason.nullable(),
   }),
 } satisfies Record<EventType, z.ZodType>;
 

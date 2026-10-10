@@ -92,6 +92,8 @@ export const ApiErrorCode = z.enum([
    * `ciRefusal` says why.
    */
   'ci_check_refused',
+  /** Request changes or Skip review while a review run is active (lot 3 step H2). */
+  'review_active',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

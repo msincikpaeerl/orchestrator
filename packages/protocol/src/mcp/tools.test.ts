@@ -175,8 +175,10 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
   review_approve: {
     input: { summary: 'The form validates the email and the tests cover it.' },
     output: {
-      comment: { ...comment, author: { agent: 'quality' }, kind: 'review' },
-      ticket: { ...ticket, status: 'awaiting_merge' },
+      decision: 'approved',
+      commit: 'a'.repeat(40),
+      head_checked: true,
+      note: 'Your approval of commit aaaaaaa is recorded: end your turn now.',
     },
   },
   review_request_changes: {
@@ -187,8 +189,10 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
       ],
     },
     output: {
-      comments: [{ ...comment, author: { agent: 'quality' }, kind: 'review' }],
-      ticket: { ...ticket, status: 'todo' },
+      decision: 'changes_requested',
+      commit: 'a'.repeat(40),
+      head_checked: false,
+      note: 'Your request for changes on commit aaaaaaa is recorded: end your turn now.',
     },
   },
 };
@@ -232,6 +236,11 @@ describe('MCP_TOOLS', () => {
       ['ticket_give_up', 'Never give up because a command was refused'],
       ['review_approve', 'otherwise use review_request_changes'],
       ['review_request_changes', 'never change the branch yourself'],
+      // Recorded at the call, applied at the end of the turn (lot 3 step H2).
+      ['review_approve', 'applied when your turn ends'],
+      ['review_request_changes', 'applied when your turn ends'],
+      ['review_approve', 'One decision per review'],
+      ['review_request_changes', 'One decision per review'],
       ['ci_status', 'you receive the same result as a message without asking'],
     ];
     for (const [name, text] of guidance) expect(MCP_TOOLS[name].description).toContain(text);

@@ -48,6 +48,7 @@ export const OwnerTicketAction = z.enum([
   'accept',
   'reject',
   'request_changes',
+  'skip_review',
 ]);
 export type OwnerTicketAction = z.infer<typeof OwnerTicketAction>;
 
@@ -77,6 +78,11 @@ export const OWNER_TRANSITIONS: Readonly<
    * decision, lot 2 step L2). From `awaiting_merge` it comes with lot 3.
    */
   request_changes: { label: 'Request changes', from: ['in_review'], to: 'todo' },
+  /**
+   * The owner moves work on without Quality's review, while no review run is active (04, section
+   * 2; owner's decision, lot 3 step A; lot 3 step H2).
+   */
+  skip_review: { label: 'Skip review', from: ['in_review'], to: 'awaiting_merge' },
 };
 
 /** The agent that created a ticket or wrote a comment, with its run. */
