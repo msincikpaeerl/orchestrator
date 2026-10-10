@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b and G2c done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H4)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b, G2c and H1 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -840,11 +840,20 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers bel
    - f. "Work finished: check it" stays only for 0.3.0 tickets in `in_review` without a pull request; the others get "Ready for review".
    - g. The reviewer is checked against every profile that ran an `implement` or `fix_review` run of the ticket, tested with a custom profile.
 
-### [ ] H1. Starting a review run
+### [x] H1. Starting a review run
 
 - `agents/quality.md` and its allowlist (answer 6b), `agents/templates/review.md` (answers 4 and 5); **Start review** in the API (purpose `review`, the `quality` profile, any machine) with the commit fixed at its start (answer 2a), carried in `run.start` and checked out detached by the daemon (answer 2b); the relay's tool list (answer 1); the allowlist smoke test covers `quality`, checking that an edit, a commit and one Git command of each kind removed are refused.
 
 **Done when** server tests show `run.start` for a review (purpose, profile, commit, tools, the first message in each CI case, both CI variants of answer 4) and each refusal of **Start review** (wrong state, no pull request, review already running, head on GitHub not the commit checked, GitHub unreachable); daemon tests show the worktree at that commit and a preparation failing when GitHub's branch moved; a relay test shows each purpose's list; the smoke script's dry run passes for `quality`.
+
+*Done 2026-10-10.* Choices made in the step (flagged to the owner):
+
+- **Where it lives**: `agents/quality.md`, `agents/templates/review.md` (built by `apps/server/src/agents/review-message.ts`: when too long, the oldest comments go first, then the report is cut, then the description), the nudge's part `review`, two lines of the common rules for a review run (every default profile's version goes up); `runMcpTools` in `packages/protocol` and `run.start`'s `mcpTools` and `reviewCommit`; the run socket request `tools` the relay asks at its start (a daemon that cannot be reached gives no list: every tool is listed, and every call fails); `ReviewCommitMoved` at preparation; `RunService.startReview` (`POST /api/projects/<key>/tickets/<n>/review`), sharing `chooseMachine`, `startMessage` and `dispatch` with Run now; the refusals `ticket_not_in_review`, `no_pull_request`, `review_active`, `review_head_moved`, `pull_request_not_open`, `github_problem`, worded by the UI.
+- **Quality's allowlist** (answer 6b): kept `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `ToolSearch`, `npm`, `npx`, `pnpm`, `yarn`, `node`, `git status`, `diff`, `log`, `show`, `rev-parse`, the listing forms of `git branch`, `ls`, `cat`, `head`, `tail`, `wc`, `grep`. Removed: `Edit`, `Write`, `git add`, `commit`, `rm`, `mv`, `restore`, `merge origin/*`, `merge --no-edit origin/*`, `merge --abort`, `mkdir`, `mv`, `cp`, `rm`, and also `find` (`-delete`) and `sort` (`-o`), which can write files (Glob and Grep search without them). Never listed: `checkout`, `switch`, `reset`, `stash`, `pull`, `rebase`, `cherry-pick`, `revert`, `apply`, `am`, `clean` (a test keeps them out). **Known limit**: an allowlist cannot refuse an option, so `git diff --output=<file>`, `git log --output=<file>` and `node` can still write a file; the worktree is never pushed and is removed at the end, and a moved HEAD fails the review.
+- **The smoke test** checks Quality with its own list: nine commands allowed, then the Write tool, `mkdir`, `rm`, `find`, `sort` and one Git command of each kind refused, then the four refusals every profile gets; one INFO line records what Claude Code answers for `mcp__orchestrator__ticket_submit`, a tool the smoke's MCP server does not list (answer 1: in the same session, never a verdict).
+- **Quality is never a ticket's assignee** (found in the step, 03 section 4): once seeded, the ticket form and the API would have let a reviewer be assigned a ticket it cannot implement. The API refuses it (`agent_not_assignable`), `ticket_create` too (`VALIDATION_FAILED`), and the form lists only builders and writers. Help (Agents > Quality, Tickets > Assignee) says so, and that nothing starts a review from the screens before H4.
+- **A review run's attempt** is the attempt it reviews (the CI source run's); the ticket page's CI line stays on the reviewed work while a review runs (`ciSourceRun` passes over review runs).
+- **For H2**: Run now's attempt number counts every acknowledged run, review runs included, so the run after a review would state one attempt too many; answer 6g's check of the reviewer against the implementers is done with the decisions.
 
 ### [ ] H2. Decisions, questions, failures and Skip review
 
