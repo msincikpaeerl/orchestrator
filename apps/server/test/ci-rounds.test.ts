@@ -605,7 +605,7 @@ describe('ci_status after a round (owner addition 2)', () => {
     expect(status.ci?.state).toBe('conflict');
     expect(status.note).not.toMatch(/read again at most every/);
     expect(status.note).toContain(
-      'This result was sent back to the agent as CI round 1 of its run: it is not read again, except failed jobs or logs that could not be read then.',
+      'This result was sent back to you as CI round 1 of this run: it is not read again, except failed jobs or logs that could not be read then.',
     );
     expect(status.note).toContain('The pull request conflicts with main');
   });
@@ -643,7 +643,9 @@ describe('ci_status in the next run, after a run ended following a confirmed rou
     expect(status.commit).toMatchObject({ hash: sent, by: 'earlier_run', attempt: 2 });
     expect(status.ci?.state).toBe('failed');
     expect(status.ci?.failed_jobs[0]?.failed_steps[0]?.log).toContain('Broken link');
-    expect(status.note).toContain('CI round 1 of its run');
+    expect(status.note).toContain(
+      "This result was sent back to that run's agent as CI round 1: it is not read again, except failed jobs or logs that could not be read then.",
+    );
     expect(olderLast).not.toBe(sent);
   });
 });
@@ -695,7 +697,7 @@ describe("the next run's first sentence (owner answer 8 and addition 4)", () => 
         message.type === 'run.start' && message.payload.runId === next.runId,
     );
     expect(start?.payload.initialPrompt).toContain(
-      'The previous attempt ended before a failed CI result on GitHub reached it: call ci_status to read that result before you start.',
+      "CI failed on GitHub for the previous attempt's work, and that attempt ended before it received the result: call ci_status to read it before you start.",
     );
     const status = McpCiStatus.parse(await h.ok(daemon, next.runToken, 'ci_status'));
     expect(status.commit).toMatchObject({ hash: commit, by: 'earlier_run' });

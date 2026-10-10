@@ -297,8 +297,10 @@ export class CiStatusReader {
     const readAt = source.ciCheckedAt?.toISOString() ?? null;
 
     notes.push(readAt === null ? part(t, 'not-read-yet') : part(t, 'read-at', { at: readAt }));
-    if (round !== null) notes.push(part(t, 'round', { round: String(round.round) }));
-    else if (result !== null && FINISHED.has(result.state)) notes.push(part(t, 'finished'));
+    if (round !== null) {
+      const said = byThisRun ? 'round' : 'round-earlier-run';
+      notes.push(part(t, said, { round: String(round.round) }));
+    } else if (result !== null && FINISHED.has(result.state)) notes.push(part(t, 'finished'));
     else notes.push(part(t, 'not-finished', { seconds: String(settings.githubPollSeconds) }));
     if (held !== null) {
       notes.push(part(t, 'limited', { at: held.toISOString() }));
