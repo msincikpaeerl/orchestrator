@@ -6,6 +6,7 @@ import {
   ciCheck,
   expect,
   expectFitsScreen,
+  holdDaemonInput,
   readyForRuns,
   reportState,
   runNow,
@@ -140,6 +141,9 @@ test('a run waiting for CI says when the pull request conflicts with the default
   await expect(ciCard(page)).toContainText(
     'the work is accepted as “No CI found”, unless the pull request conflicts with main.',
   );
+  // The daemon has not confirmed the round yet: the run still waits. Its confirmation ends the
+  // wait (lot 3 step G2b), which came 32 ms later in a CI run that then failed here.
+  await holdDaemonInput(page, true);
   await ciCheck(page, runId, { startedMinutesAgo: 6, mergeable: false });
   await expect(ciCard(page)).toContainText(
     'The pull request conflicts with main, so GitHub started no CI and the work cannot be accepted: the agent is told to merge main and resolve the conflict, then hand its work in again.',
@@ -148,4 +152,8 @@ test('a run waiting for CI says when the pull request conflicts with the default
   await expect(page.getByRole('list', { name: 'CI checks' })).toBeHidden();
   await expectFitsScreen(page);
   await screenshot(page, testInfo, 'run-waiting-for-ci-conflict');
+  // Confirmed: the agent works on the conflict, the run no longer waits for CI.
+  await holdDaemonInput(page, false);
+  await expect(page.getByLabel('Run status')).toHaveText('Running');
+  await expect(ciCard(page)).toBeHidden();
 });

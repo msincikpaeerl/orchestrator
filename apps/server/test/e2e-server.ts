@@ -98,7 +98,9 @@ const server = await startServer(
 // daemon (apps/server/test/daemon-client.ts) with the code shown on the screen, connects it and
 // says `hello`, with the `hello` fields to change: `{"code":"…","hello":{"claudeCodeVersion":null}}`;
 // it sends heartbeats until POST /daemon/disconnect or the next reset. Like a real daemon, it
-// acknowledges each command at once (`run.start`, `run.resume`, `run.input`, `run.stop`). POST
+// acknowledges each command at once (`run.start`, `run.resume`, `run.input`, `run.stop`), except
+// while POST /daemon/hold-input `{"hold":true}` holds its answers to `run.input` and `run.resume`
+// (a daemon that has not answered yet), sent by `{"hold":false}` or dropped at the reset. POST
 // /daemon/run `{"runId":"…"}` waits for the run's `run.start` or `run.resume` and answers
 // `{"type":"run.start","runToken":"…"}`; POST /daemon/request `{"message":{…}}` sends a report or a
 // tool call of the latest daemon and answers the server's reply (`ack`, `mcp.result`).
@@ -122,6 +124,8 @@ const server = await startServer(
 const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
+/** The answers held while POST /daemon/hold-input holds them; null when they go at once. */
+let heldInputs: { daemon: ScriptedDaemon; id: string }[] | null = null;
 
 /**
  * Closes the scripted daemons and waits until the server has recorded each of them offline:
@@ -188,6 +192,7 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+const HoldInput = z.object({ hold: z.boolean() });
 const FailNext = z.object({
   method: z.string(),
   path: z.string(),
@@ -206,6 +211,18 @@ async function handle(
     await disconnectDaemons();
     await pool.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
     resetGitHub();
+    heldInputs = null;
+    return 204;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/hold-input') {
+    const { hold } = HoldInput.parse(await readJson(request));
+    if (hold) {
+      heldInputs ??= [];
+    } else {
+      const held = heldInputs ?? [];
+      heldInputs = null;
+      for (const { daemon, id } of held) daemon.send({ type: 'ack', id, payload: { ok: true } });
+    }
     return 204;
   }
   if (request.method === 'POST' && request.url === '/github/fail-next') {
@@ -227,7 +244,9 @@ async function handle(
     const serverUrl = `http://127.0.0.1:${String(port)}`;
     const daemon = await ScriptedDaemon.connect(serverUrl, await enrollToken(serverUrl, code));
     daemon.onMessage = (message) => {
-      if (['run.start', 'run.resume', 'run.input', 'run.stop'].includes(message.type)) {
+      if (heldInputs !== null && ['run.resume', 'run.input'].includes(message.type)) {
+        heldInputs.push({ daemon, id: message.id });
+      } else if (['run.start', 'run.resume', 'run.input', 'run.stop'].includes(message.type)) {
         daemon.send({ type: 'ack', id: message.id, payload: { ok: true } });
       }
     };

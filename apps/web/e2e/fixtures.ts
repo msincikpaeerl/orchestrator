@@ -232,6 +232,16 @@ export async function ciPasses(page: Page, runId: string) {
 }
 
 /**
+ * The scripted daemon holds its answers to `run.input` and `run.resume` (`true`), as a daemon that
+ * has not answered yet, or sends them (`false`). A CI round is then shown before the daemon
+ * confirms it, which ends the wait (lot 3 step G2b).
+ */
+export async function holdDaemonInput(page: Page, hold: boolean) {
+  const response = await page.request.post(`${controlUrl}/daemon/hold-input`, { data: { hold } });
+  expect(response.status()).toBe(204);
+}
+
+/**
  * One CI check of the run's submission with GitHub's answers given for it (lot 3 step G1b): its
  * workflow runs and statuses, GitHub's request limit, a conflict, the start wait over.
  */
