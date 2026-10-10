@@ -640,6 +640,17 @@ export const runs = pgTable(
     reviewDecision: jsonb('review_decision'),
     reviewAppliedAt: timestamp('review_applied_at', { withTimezone: true }),
     /**
+     * The decision's comment review on GitHub (06, section 4.5; lot 3 step H3), posted at most
+     * once: wanted from the transaction applying the decision (with the pull request's number),
+     * started in a transaction of its own before the request, and its outcome (`ReviewPost`),
+     * which clears the wanted mark. A start finding it wanted posts it, or, when it was started,
+     * first looks for it among the pull request's reviews.
+     */
+    reviewPostWantedAt: timestamp('review_post_wanted_at', { withTimezone: true }),
+    reviewPostPullRequest: integer('review_post_pull_request'),
+    reviewPostStartedAt: timestamp('review_post_started_at', { withTimezone: true }),
+    reviewPost: jsonb('review_post'),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */

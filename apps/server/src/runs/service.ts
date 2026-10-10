@@ -146,6 +146,8 @@ export interface RunServiceOptions {
   secondMs?: number;
   /** After an accepted submission: open or update its pull request (lot 3 step F3). */
   pullRequestWanted?: (ticketId: string) => void;
+  /** After Quality's decision is applied: post its comment review (lot 3 step H3). */
+  reviewPostWanted?: (runId: string) => void;
 }
 
 /** Everything about one run, locked for the rest of the transaction. */
@@ -524,15 +526,16 @@ export class RunService {
   /**
    * Quality's decision applied when its run ended `submitted` (06, section 4.5; owner's answer
    * 2d, lot 3 step H2): the `review` comments, the ticket's status and their events, with the
-   * agent as actor; `review_applied_at` set. A decision the ticket no longer allows is thrown away.
+   * agent as actor; `review_applied_at` set, and its comment review wanted (true then). A decision
+   * the ticket no longer allows is thrown away.
    */
-  private async applyReview(tx: Executor, locked: Locked): Promise<void> {
+  private async applyReview(tx: Executor, locked: Locked): Promise<boolean> {
     const { run, ticket } = locked;
     const decision = pendingDecision(run);
-    if (!ticket || decision === null) return;
+    if (!ticket || decision === null) return false;
     if (ticket.status !== 'in_review') {
       await this.reviewDiscarded(tx, locked, decision);
-      return;
+      return false;
     }
     const [profile] = await tx
       .select()
@@ -585,7 +588,19 @@ export class RunService {
       commentId: ids[0],
       now,
     });
-    await tx.update(schema.runs).set({ reviewAppliedAt: now }).where(eq(schema.runs.id, run.id));
+    // Its comment review is wanted on the pull request reviewed, from this transaction on, so a
+    // stop right after it still posts it at the next start (owner's answer 1, lot 3 step H3).
+    const pullRequest = ticket.pullRequestNumber;
+    await tx
+      .update(schema.runs)
+      .set({
+        reviewAppliedAt: now,
+        ...(pullRequest === null
+          ? {}
+          : { reviewPostWantedAt: now, reviewPostPullRequest: pullRequest }),
+      })
+      .where(eq(schema.runs.id, run.id));
+    return pullRequest !== null;
   }
 
   /** A decision of a review run that ended without applying it: kept, with its event (H2). */
@@ -2920,7 +2935,12 @@ export class RunService {
             endReason: payload.reason,
             detail: payload.detail ?? undefined,
           });
-          await this.applyReview(tx, locked);
+          if (await this.applyReview(tx, locked)) {
+            after.push(() => {
+              this.options.reviewPostWanted?.(run.id);
+              return Promise.resolve();
+            });
+          }
           return true;
         }
         const end = endOfReason(

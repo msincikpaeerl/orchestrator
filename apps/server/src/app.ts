@@ -27,6 +27,7 @@ import { CiCheckAgain } from './runs/ci-again.js';
 import { CiWatcher } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
+import { ReviewPoster } from './runs/review-post.js';
 import { loadTemplates } from './agents/files.js';
 import { deriveSecretKey } from './secrets.js';
 import { registerSettingRoutes } from './settings/routes.js';
@@ -97,6 +98,15 @@ export function buildApp(dependencies: AppDependencies) {
     templates: () => (templates ??= loadTemplates()),
     now: dependencies.now,
   });
+  const reviewPosts = new ReviewPoster({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    publicUrl: dependencies.publicUrl,
+    templates: () => (templates ??= loadTemplates()),
+    now: dependencies.now,
+  });
   const runs = new RunService({
     db,
     log: logger,
@@ -106,6 +116,7 @@ export function buildApp(dependencies: AppDependencies) {
     now: dependencies.now,
     secondMs: dependencies.daemonSecondMs,
     pullRequestWanted: (ticketId) => void pullRequests.request(ticketId),
+    reviewPostWanted: (runId) => void reviewPosts.request(runId),
   });
   runs.attach(gateway);
   gateway.attachRuns(runs);
@@ -159,11 +170,19 @@ export function buildApp(dependencies: AppDependencies) {
       logger.error({ err: error }, 'pull requests still wanted not tried again');
     });
   });
+  // Quality's comment reviews still wanted when the server stopped: posted, or found on GitHub,
+  // at most once (06, section 4.5; lot 3 step H3). Not awaited, as above.
+  app.addHook('onReady', () => {
+    void reviewPosts.retryWanted().catch((error: unknown) => {
+      logger.error({ err: error }, 'comment reviews still wanted not posted');
+    });
+  });
   app.addHook('onClose', async () => {
     await ci.close();
     runs.close();
     feed.close();
     await pullRequests.idle();
+    await reviewPosts.idle();
   });
 
   // Polled by Docker every few seconds: only failures are logged.
