@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a and G2b done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b and G2c done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -750,7 +750,7 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 3. **A failure read after CI wait at submission** ends the run `ci_timeout` with "CI failed on GitHub (failed: <checks>), and the result was read only after the wait had ended."; the next run's first message tells the agent to read it with `ci_status` (part `after-ci-failed-unsent` of `implement.md`).
 4. **`ci_status` in the next run** after a run that ended following a confirmed round answers with that round (the ticket's latest run holding a wait or a confirmed round).
 
-### [ ] G2c. Check CI again, screens and Help
+### [x] G2c. Check CI again, screens and Help
 
 - **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition (as changed at the start of G2b: after `ci_timeout` and `ci_failed` only, **Run now** said instead after a conflict or a cancellation because the branch moved); the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
 
@@ -773,6 +773,16 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
    - e. A pull request never opened: **Check CI again** refuses with "<ticket> has no pull request on GitHub yet: Try again in "Pull request not opened" opens it."
    - f. Each press writes `ticket.ci_checked_again` with its outcome; an acceptance also writes the ticket's status event.
    - g. The ticket page's CI line follows the ticket's latest run that had a CI wait, hidden while a later run works without having handed work in. A run that ended after a confirmed round without handing in again counts as one (as `ci_status` since G2b's review): its line says CI failed (or the pull request conflicted) for that commit, that the result was sent back as round N and the run then ended with its reason, and offers **Run now** only (tested on the server).
+
+*Done 2026-10-10.* Choices made in the step (specs 01, 02 and 04 updated):
+
+- **Where it lives**: `apps/server/src/runs/ci-outcome.ts` (what a run's CI came to, from the run's wait, rounds, refusal, end and acceptance later; the ticket's source run), `apps/server/src/runs/ci-again.ts` (`POST /api/projects/<key>/tickets/<n>/ci/check-again` with the run id, reading the pull request then `CiWatcher.readCommit`), the Needs you item `ci_timeout`; migration 0023 (`runs.ci_pull_request_head`, `runs.ci_accepted_later`). Screens' words in `apps/web/src/runs/ci-outcome-text.ts`; refusals carry their facts (`ciRefusal`) and the UI makes their words, as for every refusal.
+- **Accepted later keeps what the run came to**: the run card still shows the failure that ended the run, then "Accepted later · …".
+- **The last result of a run ended `ci_failed`** reads "Not sent back · … · the run ended: one failure more than Most CI failures per run (2)", not "Round 3" as drafted at the start of G2, since a round is a result sent back (owner's answer 3a). Flagged to the owner.
+- **The `ci_timeout` comment and failure words** said "CI did not finish in time" also when CI had failed: the comment now says "ended when CI wait at submission (20 minutes) was reached: <what was found>", and the failure reason's words are "CI wait at submission was reached". Flagged to the owner.
+- **A pull request opened after the timeout** by **Try again**: Check CI again uses the ticket's pull request now, and the item and the CI line say "Pull request #12 is open now". Found while building answer 3e.
+- **Words not fixed by the owner** (flagged): the line of a run that ended while it waited for another reason ("The run ended while it waited for CI on GitHub for commit …: <reason>. Run now starts the next run."), the run card's lines for a passed, no-CI, not finished or cancelled end, "Not confirmed yet" while a round waits for the machine, the `not_offered` refusal, and the setting text of **CI wait at submission**, which adds "or Run now when CI had failed or the pull request conflicts".
+
 
 ### [ ] H. Quality and review runs
 
