@@ -742,6 +742,9 @@ export class Run {
     if (decision === 'waiting_ci') {
       // No reminder, no working time, no idle timeout: the server ends the wait (05, section 4.9).
       this.setState('waiting_ci');
+      // A CI round may have come during the turn that handed the work in: queued and
+      // acknowledged then, it is sent now (owner's review, lot 3 step G2b).
+      await this.sendQueued();
       return;
     }
     if (await this.sendQueued()) return;
