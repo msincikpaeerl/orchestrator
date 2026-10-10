@@ -135,6 +135,11 @@ export interface FakeGitHub {
     ref: string,
     status: Pick<FakeStatus, 'context' | 'state'> & { description?: string },
   ): void;
+  /**
+   * Stops (`false`) or restarts (`true`) accepting connections on the same address: a request
+   * then never reaches GitHub, as when it cannot be reached at all (lot 3 step H3).
+   */
+  setReachable(reachable: boolean): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -650,6 +655,10 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
         console.error(error);
         reply = { status: 500, body: { message: String(error) } };
       }
+      if (reply.cut === true) {
+        response.socket?.destroy();
+        return;
+      }
       const json = reply.status !== 204 && reply.status !== 302;
       response.writeHead(reply.status, {
         ...(json ? { 'content-type': 'application/json' } : {}),
@@ -680,7 +689,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
   url = await listen(server);
   logUrl = await listen(logServer);
 
-  const controls: Omit<FakeGitHub, keyof typeof fake | 'url' | 'close'> = {
+  const controls: Omit<FakeGitHub, keyof typeof fake | 'url' | 'setReachable' | 'close'> = {
     repository(owner, name) {
       for (const account of accounts.values()) {
         const repo = account.repositories.find((candidate) => candidate.name === name);
@@ -733,10 +742,19 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     },
   };
 
+  const port = Number(new URL(url).port);
   return Object.assign(fake, controls, {
     url,
+    setReachable: async (reachable: boolean) => {
+      if (reachable === server.listening) return;
+      if (!reachable) {
+        await closeServer(server);
+        return;
+      }
+      await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+    },
     close: async () => {
-      await closeServer(server);
+      if (server.listening) await closeServer(server);
       await git.close();
       await closeServer(logServer);
       rmSync(root, { recursive: true, force: true });

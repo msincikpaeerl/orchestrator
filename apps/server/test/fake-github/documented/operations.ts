@@ -37,5 +37,6 @@ export const OPERATIONS: [string, string][] = [
   ['POST /repos/{owner}/{repo}/pulls', '403'],
   ['PATCH /repos/{owner}/{repo}/pulls/{pull_number}', '422'],
   ['POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '422'],
+  ['POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '403'],
   ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch', '422'],
 ];
