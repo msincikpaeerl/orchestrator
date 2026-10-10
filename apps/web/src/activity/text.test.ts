@@ -268,6 +268,24 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     reason: 'unreachable',
     message: 'GitHub could not be reached',
   },
+  'ticket.review_posted': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    runId: '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21',
+    commit: 'c'.repeat(40),
+    pullRequest: 12,
+    url: 'https://github.com/o/r/pull/12#pullrequestreview-7',
+  },
+  'ticket.review_not_posted': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    runId: '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21',
+    commit: 'c'.repeat(40),
+    pullRequest: 12,
+    outcome: 'not_posted',
+    reason: 'refused',
+    message: 'Validation Failed',
+  },
   'ticket.ci_checked_again': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -337,6 +355,30 @@ describe('eventText', () => {
     // Written before step F4: either.
     expect(text(failed)).toBe(
       'WEB-12: the pull request could not be opened or updated on GitHub — Gone',
+    );
+  });
+
+  it('says what is known of Quality\'s review on GitHub, never a flat "not posted" (step H3)', () => {
+    const base = examples['ticket.review_not_posted'];
+    const text = (payload: Record<string, unknown>) =>
+      plainText(eventText(entry('ticket.review_not_posted', { payload: { ...base, ...payload } })));
+    expect(text({})).toBe(
+      "WEB-12: Quality's review of commit ccccccc not posted on pull request #12; the decision stands — Validation Failed",
+    );
+    expect(text({ outcome: 'not_found', reason: null, message: null })).toBe(
+      "WEB-12: GitHub did not answer the post of Quality's review of commit ccccccc, and it was not on pull request #12 when checked; the decision stands",
+    );
+    expect(
+      text({
+        outcome: 'not_checked',
+        reason: 'unreachable',
+        message: 'GitHub could not be reached',
+      }),
+    ).toBe(
+      "WEB-12: GitHub did not answer the post of Quality's review of commit ccccccc, and pull request #12 could not be checked; the decision stands — GitHub could not be reached",
+    );
+    expect(plainText(eventText(entry('ticket.review_posted')))).toBe(
+      "WEB-12: Quality's review of commit ccccccc posted on pull request #12 on GitHub",
     );
   });
 

@@ -76,6 +76,55 @@ describe('harmless', () => {
   });
 });
 
+/** Page addresses and paths elsewhere on the machine: never rewritten (answer 4b, narrowed). */
+const OTHER_PATHS = [
+  'The route /home/dashboard is not protected.',
+  'GET /home/feed/latest returns 500.',
+  'Opening /Users/42 shows another account.',
+  'Hardcoded /home/alice/data/file.csv in src/config.ts',
+  'in C:\\Users\\ana\\x.md, /mnt/c/Users/ana/x.md and /root/x.md',
+];
+
+describe('harmless: local paths (owner answer 4b, narrowed on 2026-10-10; step H3)', () => {
+  const RUN = '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21';
+
+  it.each([
+    [
+      'a worktree path',
+      `see /home/ana/.orchestrator/worktrees/${RUN}/src/contact.ts:42`,
+      'see src/contact.ts:42',
+    ],
+    ['the worktree itself', `ran in /home/ana/.orchestrator/worktrees/${RUN}`, 'ran in .'],
+    ['a worktree under any home', `(/srv/od/.orchestrator/worktrees/${RUN}/a.ts)`, '(a.ts)'],
+    ['a Windows worktree', `C:\\Users\\Ana\\.orchestrator\\worktrees\\${RUN}\\a.ts`, 'a.ts'],
+    [
+      'a run file',
+      `read /home/ana/.orchestrator/runs/${RUN}/mcp.json`,
+      `read ~/.orchestrator/runs/${RUN}/mcp.json`,
+    ],
+    ['a WSL worktree', `/mnt/c/Users/Ana/.orchestrator/worktrees/${RUN}/a.ts`, 'a.ts'],
+    [
+      'the daemon folder on Windows',
+      `C:\\Users\\Ana\\.orchestrator\\logs\\daemon.log`,
+      '~/.orchestrator/logs\\daemon.log',
+    ],
+    ['the daemon folder on WSL', '/mnt/c/Users/Ana/.orchestrator/runs/x', '~/.orchestrator/runs/x'],
+  ])('%s', (_name, text, expected) => {
+    expect(harmless(text)).toBe(expected);
+  });
+
+  // Owner's answer 4b narrowed on 2026-10-10: a home-folder rule also rewrote page addresses and
+  // the absolute paths a review must quote. A path outside the daemon's folder stays as written.
+  it.each(OTHER_PATHS)('leaves a path elsewhere as written: %s', (text) => {
+    expect(harmless(text)).toBe(text);
+  });
+
+  it('leaves relative paths and links alone', () => {
+    const text = 'src/home/ana.ts, docs/Users/x.md, https://example.com/home/ana and /homework/a';
+    expect(harmless(text)).toBe(text);
+  });
+});
+
 describe('pullRequestTitle', () => {
   it('is <number>: <title>, made harmless', () => {
     expect(pullRequestTitle(template, { number: 'WEB-12', title: 'Fix #3 for @bob <b>' })).toBe(
@@ -101,6 +150,26 @@ describe('pullRequestTitle', () => {
 });
 
 describe('pullRequestBody', () => {
+  it('holds no run token and no local path (step H3)', () => {
+    const run = '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21';
+    const token = `ort_${'Zx_-'.repeat(10)}abc`;
+    const text = body({
+      report: {
+        ...report,
+        summary: `Used ${token} in /home/ana/.orchestrator/worktrees/${run}/src/Form.ts`,
+      },
+    });
+    expect(text).toContain('Used [hidden] in src/Form.ts');
+    expect(text).not.toContain(token);
+    expect(text).not.toContain('/home/');
+  });
+
+  it('keeps page addresses and paths elsewhere as written (answer 4b, narrowed)', () => {
+    for (const path of OTHER_PATHS) {
+      expect(body({ report: { ...report, summary: path } })).toContain(path);
+    }
+  });
+
   it('holds the summary, criteria in order, tests, documentation, ADRs and the link', () => {
     const text = body();
     expect(text).toContain('Adds a contact form.');

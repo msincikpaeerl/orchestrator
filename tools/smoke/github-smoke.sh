@@ -44,11 +44,12 @@
 #
 # What it does in the repository: a branch orchestrator-smoke-<time> with a few commits to
 # docs/orchestrator-smoke.md and its pull request, 3 CI runs (about 2 minutes each), reviews
-# (one comment review stays), then asks you to merge it (a 4th CI run starts on the default
-# branch; the script does not wait for it). Then a second branch from the default branch as it
-# was before, whose pull request conflicts (no CI run): the script asks you to close it. At the
-# end it deletes its branches. What stays: the merge on the default branch (with
-# docs/orchestrator-smoke.md), the two closed pull requests and the workflow runs. If it stops
+# (four comment reviews stay: GitHub never deletes a posted review), then asks you to merge it
+# (a 4th CI run starts on the default branch; the script does not wait for it). Then a second
+# branch from the default branch as it was before, whose pull request conflicts (no CI run): the
+# script asks you to close it, then posts one comment review on it. At the end it deletes its
+# branches. What stays: the merge on the default branch (with docs/orchestrator-smoke.md), the
+# two closed pull requests with their comment reviews, and the workflow runs. If it stops
 # early, it says what it left. You act on GitHub twice (three times with the second token); each
 # time the script says what to click, with the link.
 #
@@ -82,7 +83,7 @@ while (($# > 0)); do
     --restricted-token) RESTRICTED=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --github-url) GITHUB_URL="${2:?--github-url needs a value}"; shift ;;
-    -h | --help) sed -n '2,57p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,58p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift

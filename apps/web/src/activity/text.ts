@@ -56,6 +56,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_reopened': 'Pull request reopened',
   'ticket.pull_request_updated': 'Pull request updated',
   'ticket.pull_request_not_opened': 'Pull request not opened or updated',
+  'ticket.review_posted': "Quality's review posted on GitHub",
+  'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
@@ -373,6 +375,29 @@ const describe: { [T in EventType]: Describe<T> } = {
         ? `: the pull request could not be opened on GitHub — ${shorten(p.message)}`
         : `: pull request #${String(p.openPullRequest)} could not be updated on GitHub — ${shorten(p.message)}`,
   ],
+  'ticket.review_posted': (p, c) => [
+    c.ticket,
+    `: Quality's review of commit ${p.commit.slice(0, 7)} posted on pull request #${String(p.pullRequest)} on GitHub`,
+  ],
+  'ticket.review_not_posted': (p, c) => {
+    const review = `Quality's review of commit ${p.commit.slice(0, 7)}`;
+    const pull = `pull request #${String(p.pullRequest)}`;
+    const why = p.message === null ? '' : ` — ${shorten(p.message)}`;
+    switch (p.outcome) {
+      case 'not_posted':
+        return [c.ticket, `: ${review} not posted on ${pull}; the decision stands${why}`];
+      case 'not_found':
+        return [
+          c.ticket,
+          `: GitHub did not answer the post of ${review}, and it was not on ${pull} when checked; the decision stands`,
+        ];
+      case 'not_checked':
+        return [
+          c.ticket,
+          `: GitHub did not answer the post of ${review}, and ${pull} could not be checked; the decision stands${why}`,
+        ];
+    }
+  },
   'ticket.ci_checked_again': (p, c) => {
     const commit = p.commit === '' ? '' : ` for commit ${p.commit.slice(0, 7)}`;
     switch (p.outcome) {

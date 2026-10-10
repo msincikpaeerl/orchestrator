@@ -18,7 +18,7 @@ import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
-import { ReviewDecisionKind } from './api/reviews.js';
+import { ReviewDecisionKind, ReviewPostProblem } from './api/reviews.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
@@ -84,6 +84,8 @@ export const EventType = z.enum([
   'ticket.pull_request_reopened',
   'ticket.pull_request_updated',
   'ticket.pull_request_not_opened',
+  'ticket.review_posted',
+  'ticket.review_not_posted',
   'ticket.ci_checked_again',
   'setting.changed',
   'setting.reset',
@@ -281,6 +283,28 @@ export const EventPayloads = {
      * one (lot 3 step F4); null otherwise, missing in events written before.
      */
     openPullRequest: z.int().positive().nullable().optional(),
+  }),
+  /** Quality's decision posted on the pull request as a comment review (lot 3 step H3). */
+  'ticket.review_posted': z.object({
+    ...TicketFacts,
+    runId: z.uuid(),
+    commit: z.string(),
+    pullRequest: z.int().positive(),
+    url: z.string(),
+  }),
+  /**
+   * Quality's comment review not known to be on GitHub (06, section 4.5; lot 3 step H3): refused
+   * or never sent (`not_posted`), no answer and not found when checked (`not_found`), or no answer
+   * and the check failed too (`not_checked`). The decision stands in the Orchestrator.
+   */
+  'ticket.review_not_posted': z.object({
+    ...TicketFacts,
+    runId: z.uuid(),
+    commit: z.string(),
+    pullRequest: z.int().positive(),
+    outcome: z.enum(['not_posted', 'not_found', 'not_checked']),
+    reason: ReviewPostProblem.nullable(),
+    message: z.string().nullable(),
   }),
   /**
    * The owner's **Check CI again** (04, section 3.1; lot 3 step G2c): what it found, or why it was

@@ -195,6 +195,11 @@ export interface FakeReply {
   status: number;
   body?: unknown;
   headers?: Record<string, string>;
+  /**
+   * The connection is cut instead of answering, once GitHub's action is done: an answer lost on
+   * the way back (lot 3 step H3).
+   */
+  cut?: boolean;
 }
 
 export type Json = Record<string, unknown>;

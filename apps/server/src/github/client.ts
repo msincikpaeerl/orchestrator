@@ -6,9 +6,46 @@ export const GITHUB_API_URL = 'https://api.github.com';
 export const GITHUB_WEB_URL = 'https://github.com';
 const API_VERSION = '2026-03-10';
 
-/** GitHub could not be reached, timed out or answered with a server error. */
+/**
+ * GitHub could not be reached, timed out or answered with a server error. `sent` (true unless
+ * said) is false only when the request surely never reached GitHub (no connection could be made),
+ * so that a post's answer lost after it left is told apart (lot 3 step H3).
+ */
 export class GitHubUnreachableError extends Error {
   override name = 'GitHubUnreachableError';
+
+  constructor(message: string, options: { cause?: unknown; sent?: boolean } = {}) {
+    super(message, { cause: options.cause });
+    this.sent = options.sent ?? true;
+  }
+
+  readonly sent: boolean;
+}
+
+/** The connection errors that leave a request unsent: nothing reached GitHub. */
+const NOT_SENT = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'CERT_HAS_EXPIRED',
+]);
+
+/**
+ * Whether a request fetch failed for may have reached GitHub: anything but a connection never
+ * made (a timeout or a connection cut may come after GitHub received it).
+ */
+export function mayHaveArrived(error: unknown): boolean {
+  const cause: unknown = error instanceof Error ? error.cause : undefined;
+  const code =
+    typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : undefined;
+  return !(typeof code === 'string' && NOT_SENT.has(code));
 }
 
 export interface GitHubResponse {
@@ -100,12 +137,22 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       // The cause is a network or timeout error from fetch; it never contains the headers.
       throw new GitHubUnreachableError(`${request.method} ${request.path}: no answer from GitHub`, {
         cause: error,
+        sent: mayHaveArrived(error),
       });
     }
   }
 
   async function finish(request: GitHubRequest, response: Response): Promise<GitHubResponse> {
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      // The answer began but was cut: GitHub received the request.
+      throw new GitHubUnreachableError(
+        `${request.method} ${request.path}: GitHub's answer was cut`,
+        { cause: error, sent: true },
+      );
+    }
     let body: unknown;
     try {
       body = text === '' ? null : JSON.parse(text);
@@ -116,6 +163,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
     if (response.status >= 500) {
       throw new GitHubUnreachableError(
         `${request.method} ${request.path}: GitHub answered HTTP ${String(response.status)}`,
+        { sent: true },
       );
     }
     await options.onResponse?.(request, result);

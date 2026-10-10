@@ -222,6 +222,9 @@ const Review = z.object({
   id: z.int().positive(),
   state: z.string(),
   html_url: z.string(),
+  body: z.string(),
+  // Nullable in GitHub's description ("pull-request-review").
+  commit_id: z.string().nullable(),
 });
 
 export interface PullRequestReview {
@@ -229,30 +232,76 @@ export interface PullRequestReview {
   /** `COMMENTED` for a comment review. */
   state: string;
   url: string;
+  body: string;
+  /** The commit the review is about; null when GitHub gives none. */
+  commitId: string | null;
+}
+
+function review(body: z.infer<typeof Review>): PullRequestReview {
+  return {
+    id: body.id,
+    state: body.state,
+    url: body.html_url,
+    body: body.body,
+    commitId: body.commit_id,
+  };
 }
 
 /**
  * Posts a review. The Orchestrator posts comment reviews: GitHub refuses approval and request
  * changes on your own pull request, and every pull request is the owner's (A11). The other
- * events exist for the owner's smoke script, which checks those refusals.
+ * events exist for the owner's smoke script, which checks those refusals. `commit_id` is the
+ * commit reviewed; GitHub "Defaults to the most recent commit in the pull request" without it.
  */
 export async function postReview(
   client: GitHubClient,
   repo: RepositoryRef,
   number: number,
-  review: { event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'; body: string },
+  posted: { event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'; body: string; commitId?: string },
 ): Promise<GitHubResult<PullRequestReview>> {
-  const posted = await ask(
+  const result = await ask(
     client,
-    { method: 'POST', path: `${pullPath(repo, number)}/reviews`, body: review },
+    {
+      method: 'POST',
+      path: `${pullPath(repo, number)}/reviews`,
+      body: {
+        event: posted.event,
+        body: posted.body,
+        ...(posted.commitId === undefined ? {} : { commit_id: posted.commitId }),
+      },
+    },
     200,
     Review,
   );
-  return mapped(posted, (body) => ({
-    id: body.id,
-    state: body.state,
-    url: body.html_url,
-  }));
+  return mapped(result, review);
+}
+
+/**
+ * The first review `wanted` accepts, reading the pull request's reviews page after page ("in
+ * chronological order", at most 100 a page) until one does or the list ends (owner's answer 1,
+ * lot 3 step H3: more than 100 reviews never hide ours); null when none does.
+ */
+export async function findReview(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  number: number,
+  wanted: (review: PullRequestReview) => boolean,
+): Promise<GitHubResult<PullRequestReview | null>> {
+  for (let page = 1; ; page++) {
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${pullPath(repo, number)}/reviews?per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.array(Review),
+    );
+    if (!batch.ok) return batch;
+    const found = batch.value.map(review).find(wanted);
+    if (found) return { ok: true, value: found };
+    if (batch.value.length < PAGE_SIZE) return { ok: true, value: null };
+  }
 }
 
 /**
