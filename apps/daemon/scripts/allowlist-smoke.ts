@@ -172,11 +172,14 @@ interface ToolCall {
 const commandOf = (call: ToolCall) =>
   typeof call.input.command === 'string' ? call.input.command.trim() : '';
 
+/** `find`'s `;` argument however the agent quotes it: `\;`, `';'` or `";"`. */
+const sameCommand = (command: string) => command.replace(/ (?:';'|";")(?= |$)/g, ' \\;');
+
 function bash(command: string, expected: Check['expect']): Check {
   return {
     action: `Run this command with the Bash tool: ${command}`,
     expect: expected,
-    matches: (call) => call.name === 'Bash' && commandOf(call) === command,
+    matches: (call) => call.name === 'Bash' && sameCommand(commandOf(call)) === command,
   };
 }
 
@@ -212,6 +215,11 @@ function forbidden(layout: Layout): Check[] {
  * What Quality needs (test, build, read the diff and the files: 03, section 2.5), then one command
  * of each kind that writes a file or moves HEAD, all refused (owner's answer 6b, lot 3 step H), a
  * tool its run does not list (recorded, owner's answer 1), and what no profile may do.
+ *
+ * Claude Code runs a built-in set of read-only commands whatever the allowlist, `dontAsk`
+ * included (05, section 4.6: `find` and `sort` ran in the owner's run on 2.1.296): their reading
+ * forms are expected to run, and every option of theirs that writes a file or runs a program must
+ * be refused (owner's decision, lot 3 step H2).
  */
 function reviewerChecks(layout: Layout): Check[] {
   return [
@@ -220,6 +228,8 @@ function reviewerChecks(layout: Layout): Check[] {
     bash('node --version', 'allowed'),
     bash('ls', 'allowed'),
     bash('cat README.md', 'allowed'),
+    bash('find . -name README.md', 'allowed'),
+    bash('sort README.md', 'allowed'),
     bash('git status', 'allowed'),
     bash('git diff HEAD', 'allowed'),
     bash('git log --oneline -1', 'allowed'),
@@ -227,8 +237,20 @@ function reviewerChecks(layout: Layout): Check[] {
     { ...write, expect: 'refused' },
     bash('mkdir -p src', 'refused'),
     bash('rm README.md', 'refused'),
-    bash('find . -name README.md', 'refused'),
-    bash('sort README.md', 'refused'),
+    bash(`find . -name ${NOTE_FILE} -delete`, 'refused'),
+    bash('find . -name README.md -exec rm {} \\;', 'refused'),
+    bash('find . -name README.md -execdir rm {} \\;', 'refused'),
+    bash('find . -name README.md -ok rm {} \\;', 'refused'),
+    bash('find . -name README.md -fprint smoke-find.txt', 'refused'),
+    bash('find . -name README.md -fls smoke-find.txt', 'refused'),
+    bash('sort -o README.md README.md', 'refused'),
+    bash('sort --output=README.md README.md', 'refused'),
+    // Also in the read-only set with an option that writes (`sed`, named by Claude Code's
+    // documentation), a redirection of `echo`, and `uniq`'s output file.
+    bash("sed -i 's/smoke/check/' README.md", 'refused'),
+    bash("sed -n 'w smoke-sed.txt' README.md", 'refused'),
+    bash(`echo smoke > ${NOTE_FILE}`, 'refused'),
+    bash('uniq README.md smoke-uniq.txt', 'refused'),
     bash('git add README.md', 'refused'),
     bash('git commit --allow-empty -m "Smoke"', 'refused'),
     bash('git checkout -b smoke-other', 'refused'),

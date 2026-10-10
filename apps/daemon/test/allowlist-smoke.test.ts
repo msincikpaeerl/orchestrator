@@ -95,13 +95,20 @@ function answers(
   });
 }
 
-/** Quality's commands (lot 3 step H): reads allowed, then each kind that writes or moves HEAD. */
+/**
+ * Quality's commands (lot 3 step H): reads allowed, then each kind that writes or moves HEAD.
+ * `find` and `sort` without a writing option are in Claude Code's built-in read-only set, which
+ * runs whatever the allowlist (the owner's run on 2.1.296, lot 3 step H2): their writing forms
+ * must still be refused.
+ */
 const REVIEWER_ALLOWED = [
   'pnpm test',
   'pnpm run build',
   'node --version',
   'ls',
   'cat README.md',
+  'find . -name README.md',
+  'sort README.md',
   'git status',
   'git diff HEAD',
   'git log --oneline -1',
@@ -111,8 +118,18 @@ const REVIEWER_REFUSED = [
   'WRITE',
   'mkdir -p src',
   'rm README.md',
-  'find . -name README.md',
-  'sort README.md',
+  'find . -name smoke-note.txt -delete',
+  'find . -name README.md -exec rm {} \\;',
+  'find . -name README.md -execdir rm {} \\;',
+  'find . -name README.md -ok rm {} \\;',
+  'find . -name README.md -fprint smoke-find.txt',
+  'find . -name README.md -fls smoke-find.txt',
+  'sort -o README.md README.md',
+  'sort --output=README.md README.md',
+  "sed -i 's/smoke/check/' README.md",
+  "sed -n 'w smoke-sed.txt' README.md",
+  'echo smoke > smoke-note.txt',
+  'uniq README.md smoke-uniq.txt',
   'git add README.md',
   'git commit --allow-empty -m "Smoke"',
   'git checkout -b smoke-other',
@@ -132,11 +149,18 @@ const REVIEWER_REFUSED = [
   'sudo true',
   'docker ps',
 ];
+// Claude Code 2.1.296's words (the owner's quality run, lot 3 step H2; 06, section 5).
 const UNLISTED_ANSWER =
-  '<tool_use_error>No such tool available: mcp__orchestrator__ticket_submit</tool_use_error>';
+  '<tool_use_error>Error: No such tool available: mcp__orchestrator__ticket_submit</tool_use_error>';
 
-/** Quality's steps, each answered as expected unless `ran` names it; then the unlisted tool. */
-function reviewerAnswers(ran: readonly string[] = []): Steps {
+/**
+ * Quality's steps, each answered as expected unless `ran` names it; then the unlisted tool.
+ * `written` gives the text the agent typed for a step, when not the prompt's own.
+ */
+function reviewerAnswers(
+  ran: readonly string[] = [],
+  written: Readonly<Record<string, string>> = {},
+): Steps {
   const steps: Steps = [...REVIEWER_ALLOWED, ...REVIEWER_REFUSED].map((command) => {
     const allowed = REVIEWER_ALLOWED.includes(command) || ran.includes(command);
     if (command === 'WRITE') {
@@ -152,7 +176,7 @@ function reviewerAnswers(ran: readonly string[] = []): Steps {
     return {
       do: 'tool',
       name: 'Bash',
-      input: { command },
+      input: { command: written[command] ?? command },
       result: allowed
         ? 'done'
         : command.startsWith('cat ../')
@@ -300,7 +324,15 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
   it(
     "checks Quality's refusals of every command that writes a file or moves HEAD, and records the words for a tool not listed",
     async () => {
-      await fake.play(session(reviewerAnswers(['git stash', 'WRITE'])), 'quality');
+      await fake.play(
+        session(
+          reviewerAnswers(['git stash', 'WRITE', 'sort -o README.md README.md'], {
+            // The same command, quoted another way.
+            'find . -name README.md -exec rm {} \\;': "find . -name README.md -exec rm {} ';'",
+          }),
+        ),
+        'quality',
+      );
       const { code, output } = await runSmoke('--profile', 'quality');
       expect(output).toMatch(/Profiles: +quality$/m);
       expect(output).toMatch(
@@ -308,12 +340,25 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       );
       expect(output).toMatch(/^quality: PASS +git diff HEAD: allowed, expected allowed$/m);
       expect(output).toMatch(/^quality: FAIL +git stash: allowed, expected refused$/m);
+      // Read-only forms run outside the allowlist; their writing forms must not (lot 3 step H2).
+      expect(output).toMatch(
+        /^quality: PASS +find \. -name README\.md: allowed, expected allowed$/m,
+      );
+      expect(output).toMatch(
+        /^quality: FAIL +sort -o README\.md README\.md: allowed, expected refused$/m,
+      );
+      expect(output).toMatch(
+        /^quality: PASS +find \. -name README\.md -exec rm \{\} \\;: refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(
+        /^quality: PASS +echo smoke > smoke-note\.txt: refused \(not in the allowlist\), expected refused$/m,
+      );
       expect(output).toMatch(
         /^quality: FAIL +Create the file smoke-note\.txt with the Write tool, containing the word smoke: allowed, expected refused$/m,
       );
       // Never a verdict: what Claude Code answers for a tool the run does not list (answer 1).
       expect(output).toMatch(
-        /^quality: INFO +a tool not listed \(mcp__orchestrator__ticket_submit\): Claude Code answered: <tool_use_error>No such tool available: mcp__orchestrator__ticket_submit<\/tool_use_error>$/m,
+        /^quality: INFO +a tool not listed \(mcp__orchestrator__ticket_submit\): Claude Code answered: <tool_use_error>Error: No such tool available: mcp__orchestrator__ticket_submit<\/tool_use_error>$/m,
       );
       expect(code).toBe(1);
     },
