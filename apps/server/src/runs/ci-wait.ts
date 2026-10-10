@@ -133,7 +133,8 @@ export interface CiWatcherOptions {
   timers?: boolean;
 }
 
-type Check =
+/** One reading of a commit's CI on GitHub: its result, or why GitHub could not be read. */
+export type CiRead =
   | { ok: true; result: CiResult; pullRequestHead: string | null; branchMoved: boolean }
   | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
 
@@ -277,6 +278,19 @@ export class CiWatcher {
     return this.loop.close();
   }
 
+  /**
+   * One reading of `commit` for the owner's **Check CI again** (lot 3 step G2c), as a check after
+   * **Wait for CI to start**: with nothing on GitHub, the pull request's `mergeable` decides
+   * between "No CI found" and a conflict.
+   */
+  readCommit(
+    repo: { owner: string; name: string },
+    commit: string,
+    pullRequest: number,
+  ): Promise<CiRead> {
+    return this.check(repo, commit, pullRequest, true);
+  }
+
   /** Every run waiting for CI, one after another; the request limit stops the tick. */
   private async checkAll(): Promise<void> {
     const waiting = await this.options.db
@@ -398,7 +412,7 @@ export class CiWatcher {
     commit: string,
     pullRequest: number | null,
     startWaitOver: boolean,
-  ): Promise<Check & { retryAt?: Date }> {
+  ): Promise<CiRead & { retryAt?: Date }> {
     let client: GitHubClient | null;
     try {
       client = await storedTokenClient({ ...this.options, log: this.options.log });
@@ -448,8 +462,8 @@ export class CiWatcher {
     commit: string,
     pullRequest: number | null,
     startWaitOver: boolean,
-  ): Promise<Check & { retryAt?: Date }> {
-    const refused = (refusal: GitHubRefusal): Check & { retryAt?: Date } => {
+  ): Promise<CiRead & { retryAt?: Date }> {
+    const refused = (refusal: GitHubRefusal): CiRead & { retryAt?: Date } => {
       const at = retryAt(refusal, this.now());
       return {
         ok: false,

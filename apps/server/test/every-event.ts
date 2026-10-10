@@ -348,6 +348,15 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     gitConfigRestored:
       'Found changed when the run ended (by this run or an earlier one of the project on this machine), and restored. Settings added, removed: core.hookspath.',
   });
+  // **Check CI again** on that run, which ended after its round without handing in again: refused,
+  // not offered (`ticket.ci_checked_again`, lot 3 step G2c).
+  const again = await t.app.inject({
+    method: 'POST',
+    url: '/api/projects/SHOP/tickets/2/ci/check-again',
+    headers: { cookie },
+    payload: { runId: created.id },
+  });
+  expect(again.statusCode, again.body).toBe(409);
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

@@ -137,6 +137,8 @@ describe('events of every type', () => {
       'ticket.pull_request_updated',
       'ticket.pull_request_opened',
       'ticket.status_changed',
+      // Check CI again on the ended run, refused (lot 3 step G2c).
+      'ticket.ci_checked_again',
     ]);
 
     const settings = await readAll(t, cookie, 'entity=setting');

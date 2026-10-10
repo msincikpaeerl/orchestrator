@@ -160,6 +160,7 @@ const RUN_TRANSITIONS: Readonly<
   run_ended: { from: ['in_progress', 'waiting_human'], to: 'todo' },
   question_asked: { from: ['in_progress'], to: 'waiting_human' },
   answered: { from: ['waiting_human'], to: 'in_progress' },
+  ci_checked_again: { from: ['todo'], to: 'in_review' },
 };
 
 export interface RunAction {
@@ -175,6 +176,11 @@ export interface RunAction {
   /** For `run_ended`: why, and whether it counts as a failed attempt (04, section 5). */
   failureReason?: FailureReason;
   attemptCounted?: boolean;
+  /**
+   * For `ci_checked_again` after `ci_failed`: that run's failed attempt no longer counts, one
+   * taken off `attempt_count`, never below 0 (owner's answer 3d, lot 3 step G2c).
+   */
+  attemptTakenBack?: boolean;
   /** Posted by the system as a `status_change` comment, in the same transaction. */
   comment?: string;
   now: Date;
@@ -216,6 +222,9 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
       updatedAt: now,
       ...endsPullRequestWish(transition.to),
       ...(counted ? { attemptCount: ticket.attemptCount + 1 } : {}),
+      ...(input.attemptTakenBack === true
+        ? { attemptCount: Math.max(0, ticket.attemptCount - 1) }
+        : {}),
     })
     .where(and(eq(schema.tickets.id, ticket.id), eq(schema.tickets.status, from)))
     .returning();

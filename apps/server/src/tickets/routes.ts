@@ -3,6 +3,7 @@ import {
   AddCommentRequest,
   AddDependencyRequest,
   AnswerRequest,
+  CheckCiAgainRequest,
   DodCheckResult,
   DodReport,
   CreateTicketRequest,
@@ -36,6 +37,8 @@ import { maskStrings } from '../event-log.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
+import type { CiCheckAgain } from '../runs/ci-again.js';
+import { ticketCi } from '../runs/ci-outcome.js';
 import type { RunService } from '../runs/service.js';
 import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
@@ -77,6 +80,8 @@ export interface TicketRoutesOptions {
   runs: RunService;
   /** **Try again** of a pull request not opened (lot 3 step F3). */
   pullRequests: PullRequestOpener;
+  /** **Check CI again** (lot 3 step G2c). */
+  ciAgain: CiCheckAgain;
   now?: () => Date;
 }
 
@@ -358,6 +363,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           : WorkflowReason.parse(ticket.workflowReason)
         : null,
       pullRequest: ticketPullRequest(ticket),
+      ci: await ticketCi(executor, ticket),
     };
   }
 
@@ -800,6 +806,21 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       } satisfies PullRequestTryAgainResponse;
     },
   );
+
+  // **Check CI again** (04, section 3.1; lot 3 step G2c): one reading of the run's commit on
+  // GitHub, starting no session; a refusal is `ci_check_refused` with the owner's words.
+  app.post<TicketParams>('/api/projects/:key/tickets/:number/ci/check-again', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(CheckCiAgainRequest, request.body);
+    const number = parseNumber(request.params.number);
+    if (number === null) throw ticketNotFound();
+    const answer = await options.ciAgain.check(request.params.key, number, input.runId);
+    request.log.info(
+      { project: request.params.key, ticket: number, run: input.runId, outcome: answer.outcome },
+      'CI checked again by the owner',
+    );
+    return answer;
+  });
 
   // The owner's answer to the open question (04, section 6): the waiting run receives it live, or
   // resumes on its machine; with that machine offline, the run fails with `machine_offline`.

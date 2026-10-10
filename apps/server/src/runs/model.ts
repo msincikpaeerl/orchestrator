@@ -19,6 +19,7 @@ import {
   SubmissionRecord,
 } from '@orchestrator/protocol';
 import { z } from 'zod';
+import { ciHistory } from './ci-outcome.js';
 
 export type RunRow = typeof schema.runs.$inferSelect;
 export type AccountRow = typeof schema.claudeAccounts.$inferSelect;
@@ -197,6 +198,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
         : { text: row.progressShown, at: row.progressShownAt.toISOString() },
     outcome: row.outcome,
     ci: ciWait(row, context),
+    ciHistory: ciHistory(row),
     workingMs: row.workingMs,
     waitingMs: row.waitingMs,
     statusSince: row.statusSince.toISOString(),

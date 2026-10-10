@@ -1669,7 +1669,13 @@ export class RunService {
     const before = locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult).state;
     await tx
       .update(schema.runs)
-      .set({ ciResult: result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
+      .set({
+        ciResult: result,
+        ciCheckedAt: now,
+        ciCheckFailure: null,
+        ciPullRequestHead: pullRequestHead,
+        updatedAt: now,
+      })
       .where(eq(schema.runs.id, locked.run.id));
     await notifyChange(tx, { entity: 'run', id: locked.run.id, projectId: locked.project.id });
     if (locked.run.ciCheckFailure !== null) {
