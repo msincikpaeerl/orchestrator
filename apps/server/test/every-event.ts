@@ -410,6 +410,81 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   github.alter = undefined;
   await call('POST', `/api/runs/${review?.id ?? ''}/stop`);
 
+  // Two more review runs approving, applied at their end: the comment review posted on pull
+  // request #1 of online-shop (`ticket.review_posted`), and refused for a pull request GitHub
+  // does not have (`ticket.review_not_posted`; lot 3 step H3).
+  for (const [title, pullRequest] of [
+    ['Cart', 1],
+    ['Checkout', 999],
+  ] as const) {
+    const ticket = TicketDetail.parse(
+      (
+        await call('POST', '/api/projects/SHOP/tickets', {
+          type: 'feature',
+          title,
+          assignee: 'web_dev',
+        })
+      ).json(),
+    );
+    await t.db
+      .update(schema.tickets)
+      .set({
+        status: 'in_review',
+        pullRequestNumber: pullRequest,
+        pullRequestUrl: 'https://github.com/x/1',
+      })
+      .where(eq(schema.tickets.id, ticket.id));
+    const token = `ort_every_event_review_${String(pullRequest)}`;
+    const [run] = await t.db
+      .insert(schema.runs)
+      .values({
+        projectId: shop3Row?.projectId ?? '',
+        ticketId: ticket.id,
+        profileId: quality?.id ?? '',
+        profileVersion: 1,
+        purpose: 'review',
+        machineId: machine.id,
+        accountId: account.id,
+        status: 'running',
+        attempt: 1,
+        runTokenHash: hashCredential(token),
+        branchName: `t/${String(ticket.number)}-review`,
+        baseBranch: 'main',
+        reviewCommit: 'e'.repeat(40),
+        acknowledgedAt: new Date(),
+      })
+      .returning();
+    github.alter = (request, reply) =>
+      request.method === 'GET' && /\/pulls\/\d+$/.test(request.path) ? { status: 502 } : reply;
+    await tool({ tool: 'review_approve', runToken: token, input: { summary: 'Good to merge.' } });
+    github.alter = undefined;
+    await daemon.request({
+      type: 'run.state',
+      id: randomUUID(),
+      payload: {
+        runId: run?.id ?? '',
+        at: new Date().toISOString(),
+        claudeSessionId: null,
+        sessionAlive: false,
+        state: 'ended',
+        reason: 'submitted',
+        detail: null,
+        branch: null,
+        push: null,
+        headMoved: false,
+        gitConfigRestored: null,
+      },
+    });
+  }
+  for (const type of ['ticket.review_posted', 'ticket.review_not_posted'] as const) {
+    for (let tries = 0; ; tries++) {
+      const written = await t.db.select().from(schema.events).where(eq(schema.events.type, type));
+      if (written.length > 0) break;
+      if (tries > 100) throw new Error(`no ${type} event`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({
     type: 'machine.doctor',
