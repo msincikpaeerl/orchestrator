@@ -72,6 +72,16 @@ export const CheckReason = z.discriminatedUnion('kind', [
     unchecked: z.int().min(0),
   }),
   z.object({ kind: z.literal('files_not_sent') }),
+  /**
+   * The commit handed in is one a CI round of this run sent back: CI failed for it, or its pull
+   * request conflicted with the base branch (lot 3 step G2b).
+   */
+  z.object({
+    kind: z.literal('same_commit'),
+    commit: z.string(),
+    ci: z.enum(['failed', 'conflict']),
+    base: z.string(),
+  }),
 ]);
 export type CheckReason = z.infer<typeof CheckReason>;
 export type CheckReasonKind = CheckReason['kind'];

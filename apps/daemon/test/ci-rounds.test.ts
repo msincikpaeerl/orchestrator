@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DodReport, GitCredentialRequest, RunStart } from '@orchestrator/protocol';
+import {
+  SESSION_ALIVE_REFUSAL,
+  type DodReport,
+  type GitCredentialRequest,
+  type RunStart,
+} from '@orchestrator/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CredentialAnswer } from '../src/credentials.js';
 import type { RunManager } from '../src/runs.js';
@@ -21,6 +26,7 @@ import {
   messagesReceived,
   start,
   states,
+  toolCalls,
   tmux,
   useRunnerHarness,
 } from './runner-harness.js';
@@ -126,10 +132,16 @@ function isAncestor(ancestor: string, of: string): boolean {
   }
 }
 
-function input(manager: RunManager, runId: string, text: string, fetchBase?: boolean) {
+function input(
+  manager: RunManager,
+  runId: string,
+  text: string,
+  fetchBase?: boolean,
+  id: string = randomUUID(),
+) {
   return manager.handle({
     type: 'run.input',
-    id: randomUUID(),
+    id,
     payload: { runId, text, ...(fetchBase === undefined ? {} : { fetchBase }) },
   });
 }
@@ -206,6 +218,72 @@ describe('a CI result sent back to a run waiting for CI', () => {
       expect(await stop(manager, run.runId)).toEqual({ ok: true });
       expect((await ended(run.runId)).reason).toBe('submitted');
       // The first message and the failure: no reminder in either wait.
+      expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.', FAILURE]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'pastes a failure sent after the accepted ticket_submit but before that turn ended, once, when the turn ends (owner review, step G2b)',
+    async () => {
+      pendingCi();
+      // The margin of the first test: one minute lasts 4.8 s, the idle timeout far from the hold.
+      const manager = daemon({ secondMs: 80 });
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'bash', command: COMMIT },
+              submitStep,
+              // The turn goes on after the answer until the test lets it end.
+              {
+                do: 'bash',
+                // Shell built-ins only: the test home's PATH has git and tmux.
+                command: ': > submit-answered && while [ ! -e turn-may-end ]; do :; done',
+              },
+            ],
+          },
+          { steps: [{ do: 'bash', command: FIX }, submitStep] },
+        ],
+      });
+      const run = await start(manager, {
+        limits: { idleTimeoutMinutes: 1, sessionStartTimeoutSeconds: 600 },
+      });
+      // Inside the worktree: the daemon refuses commands on paths outside it.
+      const worktree = () =>
+        (
+          JSON.parse(readFileSync(stateFilePath(home.paths, run.runId), 'utf8')) as {
+            worktree: string | null;
+          }
+        ).worktree;
+      await waitFor(
+        () => existsSync(join(worktree() ?? '/nowhere', 'submit-answered')),
+        30_000,
+        'ticket_submit answered pending_ci',
+      );
+      expect(states(run.runId).at(-1)?.state).toBe('working');
+
+      // The server's round reaches the machine while the agent's turn still runs.
+      expect(await input(manager, run.runId, FAILURE)).toEqual({ ok: true });
+      // run.resume cannot reach this window: the session is alive.
+      expect(
+        await manager.handle({
+          type: 'run.resume',
+          id: randomUUID(),
+          payload: { runId: run.runId, claudeSessionId: randomUUID(), message: FAILURE },
+        }),
+      ).toEqual({ ok: false, message: SESSION_ALIVE_REFUSAL });
+      await writeFile(join(worktree() ?? '', 'turn-may-end'), '');
+
+      // The turn ends: the queued failure is pasted, the agent works, and hands in again.
+      await waitingCi(run.runId, 2);
+      expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.', FAILURE]);
+      const after = states(run.runId);
+      const firstWait = after.findIndex((state) => state.state === 'waiting_ci');
+      expect(after.slice(firstWait).some((state) => state.state === 'working')).toBe(true);
+      expect(toolCalls.filter((call) => call.tool === 'ticket_submit')).toHaveLength(2);
+      expect(await stop(manager, run.runId)).toEqual({ ok: true });
+      expect((await ended(run.runId)).reason).toBe('submitted');
       expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.', FAILURE]);
     },
     TIMEOUT,
@@ -333,6 +411,116 @@ describe('a CI result sent back to a run waiting for CI', () => {
       expect(states(run.runId).at(-1)?.state).toBe('waiting_ci');
       expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.']);
       expect(await stop(manager, run.runId)).toEqual({ ok: true });
+      expect((await ended(run.runId)).reason).toBe('submitted');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'refuses fetchBase outside the wait for CI: nothing downloaded, nothing sent, live or resumed',
+    async () => {
+      const cloneUrl = await serve();
+      // One minute lasts 1.2 s: the waiting run lifetime closes the session soon.
+      const manager = credentialedDaemon({ secondMs: 20 });
+      await fake.play({
+        turns: [{ steps: [{ do: 'mcp', tool: 'ticket_ask', arguments: { question: 'Which?' } }] }],
+      });
+      const run = await start(manager, {
+        repository: { cloneUrl },
+        limits: { waitingRunLifetimeMinutes: 1, sessionStartTimeoutSeconds: 600 },
+      });
+      await waitFor(
+        () => states(run.runId).some((state) => state.state === 'waiting_human'),
+        30_000,
+        'the run waiting for the owner',
+      );
+      await commitOnGitHub('main', 'base.md');
+      const before = bareRef(run, 'refs/remotes/origin/main');
+      const preparation = asked.length;
+      const refusal = {
+        ok: false,
+        message: 'Only a run waiting for CI downloads its base branch.',
+      };
+
+      // Live session waiting for the owner.
+      expect(await input(manager, run.runId, CONFLICT, true)).toEqual(refusal);
+
+      // The session closed after the waiting run lifetime: run.resume is refused the same way.
+      await waitFor(
+        () =>
+          states(run.runId).some((state) => state.state === 'waiting_human' && !state.sessionAlive),
+        30_000,
+        'the session closed',
+      );
+      const sessionId = states(run.runId).at(-1)?.claudeSessionId ?? '';
+      expect(
+        await manager.handle({
+          type: 'run.resume',
+          id: randomUUID(),
+          payload: {
+            runId: run.runId,
+            claudeSessionId: sessionId,
+            message: CONFLICT,
+            fetchBase: true,
+          },
+        }),
+      ).toEqual(refusal);
+
+      expect(asked.length).toBe(preparation);
+      expect(bareRef(run, 'refs/remotes/origin/main')).toBe(before);
+      expect(await tmux.hasSession(sessionName(run.runId))).toBe(false);
+      expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.']);
+      expect(await stop(manager, run.runId)).toEqual({ ok: true });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'delivers one message id once: a copy sent during the download, and one after a daemon restart',
+    async () => {
+      pendingCi();
+      const cloneUrl = await serve();
+      // The download's credential waits until the test lets it go: a slow GitHub.
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const credentials = async (request: GitCredentialRequest['payload']) => {
+        asked.push(request);
+        if (request.command === 'fetch' && asked.length > 1) await held;
+        return { ok: true as const, ...CREDENTIAL };
+      };
+      const first = daemon({ credentials });
+      await fake.play({
+        turns: [
+          { steps: [{ do: 'bash', command: COMMIT }, submitStep] },
+          { steps: [{ do: 'bash', command: MERGE }, submitStep] },
+        ],
+      });
+      const run = await start(first, { repository: { cloneUrl } });
+      await waitingCi(run.runId);
+      await commitOnGitHub('main', 'base.md');
+      asked.length = 0;
+
+      const id = randomUUID();
+      const sending = input(first, run.runId, CONFLICT, true, id);
+      await waitFor(() => asked.length === 1, 30_000, 'the download asking for its credential');
+      // The server's wait ended: the same message comes again while the first is downloading.
+      const again = input(first, run.runId, CONFLICT, true, id);
+      release();
+      expect(await sending).toEqual({ ok: true });
+      expect(await again).toEqual({ ok: true });
+      await waitingCi(run.runId, 2);
+      expect(asked.map((request) => request.command)).toEqual(['fetch', 'push']);
+
+      // The answer was lost, and the daemon restarted: the same id is recognised, not pasted.
+      await first.shutdown();
+      const second = daemon({ credentials });
+      await second.recover();
+      expect(await input(second, run.runId, CONFLICT, true, id)).toEqual({ ok: true });
+      expect(asked.map((request) => request.command)).toEqual(['fetch', 'push']);
+      expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.', CONFLICT]);
+      expect(await stop(second, run.runId)).toEqual({ ok: true });
       expect((await ended(run.runId)).reason).toBe('submitted');
     },
     TIMEOUT,

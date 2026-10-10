@@ -26,6 +26,11 @@ export class RunManager {
   private stopping = false;
   /** Ids of commands already handled: a duplicate is acknowledged again and changes nothing. */
   private readonly handled = new Set<string>();
+  /**
+   * Commands being handled, by id: a copy arriving meanwhile (the server's wait for the answer
+   * ended during a slow download) shares the first one's work and answer (lot 3 step G2b).
+   */
+  private readonly inFlight = new Map<string, Promise<Ack['payload']>>();
   readonly outbox: Outbox;
   private readonly context: RunContext;
 
@@ -72,11 +77,18 @@ export class RunManager {
   /** Handles a command of the server; resolves with its `ack` payload. */
   async handle(command: RunCommand): Promise<Ack['payload']> {
     if (this.handled.has(command.id)) return { ok: true };
+    const running = this.inFlight.get(command.id);
+    if (running) return running;
     // Its runs are no longer watched: a session started now would be left to itself.
     if (this.stopping) return { ok: false, message: 'The daemon is stopping.' };
-    const answer = await this.apply(command);
-    if (answer.ok) this.handled.add(command.id);
-    return answer;
+    const handling = this.apply(command)
+      .then((answer) => {
+        if (answer.ok) this.handled.add(command.id);
+        return answer;
+      })
+      .finally(() => this.inFlight.delete(command.id));
+    this.inFlight.set(command.id, handling);
+    return handling;
   }
 
   private async apply(command: RunCommand): Promise<Ack['payload']> {
@@ -95,14 +107,22 @@ export class RunManager {
       }
       case 'run.input': {
         if (!run) return { ok: false, message: 'No such run on this machine.' };
-        const refused = await run.input(command.payload.text, command.payload.fetchBase);
+        // Delivered before a daemon restart, its answer lost: acknowledged again, not pasted.
+        if (run.delivered(command.id)) return { ok: true };
+        const refused = await run.input(
+          command.id,
+          command.payload.text,
+          command.payload.fetchBase,
+        );
         return refused ? { ok: false, message: refused } : { ok: true };
       }
       case 'run.resume': {
         const problem = this.context.scopes.problem;
         if (problem !== null) return { ok: false, message: problem };
         if (!run) return { ok: false, message: 'No such run on this machine.' };
+        if (run.delivered(command.id)) return { ok: true };
         const refused = await run.resume(
+          command.id,
           command.payload.claudeSessionId,
           command.payload.message,
           command.payload.fetchBase,

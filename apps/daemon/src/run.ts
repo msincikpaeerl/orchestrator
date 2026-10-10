@@ -16,6 +16,8 @@ import {
   claudeCodeSupport,
   maskSecrets,
   CLAUDE_CODE_MIN_VERSION,
+  SESSION_ALIVE_REFUSAL,
+  SESSION_CLOSED_REFUSAL,
   type BranchReport,
   type DaemonRunState,
   type HookAnswer,
@@ -33,6 +35,7 @@ import { findExecutable, runCommand } from './exec.js';
 import type { Outbox } from './outbox.js';
 import type { DaemonPaths } from './paths.js';
 import {
+  DELIVERED_IDS_KEPT,
   RunStateFile,
   claudeArguments,
   createRunFolder,
@@ -165,6 +168,7 @@ export class Run {
       statusLine: null,
       transcriptApiError: null,
       transcriptCostUsd: null,
+      deliveredIds: [],
     });
     run.save();
     return run;
@@ -738,6 +742,9 @@ export class Run {
     if (decision === 'waiting_ci') {
       // No reminder, no working time, no idle timeout: the server ends the wait (05, section 4.9).
       this.setState('waiting_ci');
+      // A CI round may have come during the turn that handed the work in: queued and
+      // acknowledged then, it is sent now (owner's review, lot 3 step G2b).
+      await this.sendQueued();
       return;
     }
     if (await this.sendQueued()) return;
@@ -851,8 +858,8 @@ export class Run {
    * closed (05, section 4.4). With `fetchBase`, the base branch is downloaded first, and a failed
    * download refuses the message, which never reaches the agent.
    */
-  async input(text: string, fetchBase = false): Promise<string | null> {
-    const refused = this.inputRefused();
+  async input(id: string, text: string, fetchBase = false): Promise<string | null> {
+    const refused = this.inputRefused() ?? this.fetchBaseRefused(fetchBase);
     if (refused !== null) return refused;
     if (fetchBase) {
       const failed = await this.fetchBase();
@@ -862,6 +869,7 @@ export class Run {
       if (meanwhile !== null) return meanwhile;
     }
     this.data.pendingInputs.push(text);
+    this.remember(id);
     this.save();
     // Between a turn's end and `afterTurn`, the queue waits: `afterTurn` sends it first.
     if (['waiting_human', 'waiting_ci'].includes(this.data.state) || !this.turnEnding) {
@@ -877,11 +885,12 @@ export class Run {
    * 4.3). Refused while the session is alive.
    */
   async resume(
+    id: string,
     claudeSessionId: string,
     message: string,
     fetchBase = false,
   ): Promise<string | null> {
-    const refused = this.resumeRefused();
+    const refused = this.resumeRefused() ?? this.fetchBaseRefused(fetchBase);
     if (refused !== null) return refused;
     if (fetchBase) {
       const failed = await this.fetchBase();
@@ -890,15 +899,36 @@ export class Run {
       if (meanwhile !== null) return meanwhile;
     }
     this.data.claudeSessionId = claudeSessionId;
+    this.remember(id);
+    this.save();
     await this.launch(message, claudeSessionId);
     return null;
+  }
+
+  /** Whether the `run.input` or `run.resume` of this id was given already (lot 3 step G2b). */
+  delivered(id: string): boolean {
+    return this.data.deliveredIds.includes(id);
+  }
+
+  /** Keeps a delivered message's id, saved by the caller with what it delivers. */
+  private remember(id: string): void {
+    this.data.deliveredIds = [...this.data.deliveredIds, id].slice(-DELIVERED_IDS_KEPT);
+  }
+
+  /**
+   * Only a run waiting for CI takes `fetchBase` (05, section 4.9): a credentialed download runs
+   * only where a conflict's message needs it, never for another message (lot 3 step G2b).
+   */
+  private fetchBaseRefused(fetchBase: boolean): string | null {
+    if (!fetchBase || this.data.state === 'waiting_ci') return null;
+    return 'Only a run waiting for CI downloads its base branch.';
   }
 
   /** Why a `run.input` cannot be taken now; null when it can. */
   private inputRefused(): string | null {
     if (this.ended || this.ending) return 'The run has ended.';
     if (!this.sessionAlive && CLOSED_STATES.includes(this.data.state)) {
-      return 'session closed: use run.resume';
+      return SESSION_CLOSED_REFUSAL;
     }
     return null;
   }
@@ -906,7 +936,7 @@ export class Run {
   /** Why a `run.resume` cannot be taken now; null when it can. */
   private resumeRefused(): string | null {
     if (this.ended || this.ending) return 'The run has ended.';
-    if (this.sessionAlive) return 'The session is still running.';
+    if (this.sessionAlive) return SESSION_ALIVE_REFUSAL;
     if (!this.data.worktree) return "The run's workspace is not on this machine any more.";
     return null;
   }

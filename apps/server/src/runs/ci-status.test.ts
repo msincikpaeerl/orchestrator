@@ -23,8 +23,15 @@ function failed(jobs: CiResult['failed_jobs']): CiResult {
   return {
     state: 'failed',
     checks: [
-      { kind: 'workflow_run', name: 'CI', state: 'failed', url: null, run_id: 7 },
-      { kind: 'status', name: 'deploy', state: 'passed', url: null, run_id: null },
+      { kind: 'workflow_run', name: 'CI', state: 'failed', url: null, run_id: 7, cancelled: false },
+      {
+        kind: 'status',
+        name: 'deploy',
+        state: 'passed',
+        url: null,
+        run_id: null,
+        cancelled: false,
+      },
     ],
     failed_jobs: jobs,
     jobs_read: true,

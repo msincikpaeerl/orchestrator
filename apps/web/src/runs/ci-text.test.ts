@@ -50,6 +50,7 @@ const pending = (checks: number): NonNullable<RunCiWait['result']> => ({
     state: 'pending' as const,
     url: null,
     run_id: index + 1,
+    cancelled: false,
   })),
   failed_jobs: [],
   jobs_read: false,

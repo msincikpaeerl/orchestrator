@@ -15,12 +15,12 @@ This result was read on GitHub on {{at}}.
 No result has been read on GitHub yet.
 <!-- part: finished -->
 It is finished, so it is not read again.
+<!-- part: round -->
+This result was sent back to the agent as CI round {{round}} of its run: it is not read again, except failed jobs or logs that could not be read then.
 <!-- part: not-finished -->
 It is not finished: it is read again at most every {{seconds}} seconds.
 <!-- part: limited -->
 GitHub's request limit is reached: nothing is asked of GitHub before {{at}}.
-<!-- part: limited-unknown -->
-GitHub's request limit is reached, and GitHub did not say until when: nothing is asked of GitHub for now.
 <!-- part: read-failed -->
 GitHub could not be read just now ({{problem}}): this is the latest result read.
 <!-- part: nothing-yet -->

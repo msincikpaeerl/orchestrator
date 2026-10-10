@@ -10,6 +10,7 @@ import {
 import {
   actionsApi,
   addStatus,
+  cancelRun,
   completeRun,
   resolveRef,
   startRun,
@@ -126,6 +127,8 @@ export interface FakeGitHub {
   startRun(run: FakeRun): void;
   /** Completes a run: successful, or with the given steps failing. */
   completeRun(run: FakeRun, failures?: CiFailure[]): void;
+  /** Cancels a run, as a workflow cancelling the run in progress when the branch moves. */
+  cancelRun(run: FakeRun): void;
   /** A commit status set by an external service. */
   setStatus(
     repo: FakeRepository,
@@ -718,6 +721,9 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     },
     completeRun: (run, failures = []) => {
       completeRun(ctx, run, failures);
+    },
+    cancelRun: (run) => {
+      cancelRun(ctx, run);
     },
     setStatus(repo, ref, status) {
       const state = control(repo);

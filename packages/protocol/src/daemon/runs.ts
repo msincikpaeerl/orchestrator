@@ -170,6 +170,14 @@ const RUN_INPUT_CEILING = 2 * settingCeiling('commentMaxLength') + 10_000;
  */
 const FetchBase = z.boolean().optional();
 
+/**
+ * The daemon's refusal of a `run.input` whose session is closed (05, section 4.4), and of a
+ * `run.resume` whose session is still alive: the server then sends the other one (a CI round,
+ * lot 3 step G2b; an answer, lot 2 step K).
+ */
+export const SESSION_CLOSED_REFUSAL = 'session closed: use run.resume';
+export const SESSION_ALIVE_REFUSAL = 'The session is still running.';
+
 export const RunInput = message(
   'run.input',
   z.object({ runId: RunId, text: requiredText(RUN_INPUT_CEILING), fetchBase: FetchBase }),

@@ -263,18 +263,21 @@ describe('the wait for CI', () => {
     expect((await h.ticket()).status).toBe('in_review');
   });
 
-  it('ends the run as a failed attempt when CI failed, until step G2 sends it back', async () => {
+  it('sends a failed CI result back to the agent instead of ending the run (step G2b)', async () => {
     const { daemon, runId, runToken, repo } = await working('queued');
     const commit = await submitted(daemon, runId, runToken);
     completeAll(repo, commit, true);
     await h.t.ciTick();
+    // The rounds themselves are tested in ci-rounds.test.ts.
+    await daemon.find(
+      (message) => message.type === 'run.input' && message.payload.runId === runId,
+      'the CI round',
+    );
     const run = await h.run(runId);
-    expect(run).toMatchObject({ status: 'failed', failureReason: 'ci_failed' });
+    expect(run).toMatchObject({ status: 'running', failureReason: null });
     expect(run.ci?.result?.state).toBe('failed');
-    expect((await h.ticket()).attemptCount).toBe(1);
-    const comment = (await h.ticket()).timeline.findLast((entry) => entry.type === 'comment');
-    expect(JSON.stringify(comment)).toMatch(/CI failed on GitHub for the submitted commit/);
-    expect(stops(daemon, runId).map((stop) => stop.payload.reason)).toEqual(['not_active']);
+    expect((await h.ticket()).attemptCount).toBe(0);
+    expect(stops(daemon, runId)).toEqual([]);
   });
 
   it('keeps waiting while GitHub is unreachable, limited or unreadable, then goes on', async () => {

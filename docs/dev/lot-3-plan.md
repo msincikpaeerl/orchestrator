@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b and G2a done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a and G2b done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -706,7 +706,7 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 
 - **A correction of G1b**, in G2b (`ci-status.ts`), tests first: a request limit without a time held nothing (`new Date(Number.MAX_SAFE_INTEGER)` is an invalid date, so the "limited-unknown" sentence was never reached), and a failed read kept no time, so each `ci_status` call asked GitHub again at once. A failed read is not tried again before one **GitHub check interval**, and a limit without a time holds for a stated time (the choice said in G2b's summary).
 - **`ci_status` after a round sent back** answers for the run's latest round (its commit, its result and excerpts), never for an earlier run's commit; tested in G2b.
-- **Check CI again offered more widely** (G2c): also on the ticket page whenever the ticket's latest accepted work was not accepted because of CI (failed after the last allowed failure, a conflict, cancelled because the branch moved) and no run is active; same refusals. The Needs you item stays for "CI did not finish" only.
+- **Check CI again offered more widely** (G2c): also on the ticket page whenever the ticket's latest accepted work was not accepted because of CI and no run is active; same refusals. The Needs you item stays for "CI did not finish" only. **Changed by the owner at the start of G2b** (2026-10-10): **Check CI again** is offered only for "CI did not finish" (`ci_timeout`) and for CI failed after the last allowed failure (`ci_failed`); not for a conflict, nor for runs cancelled because the branch moved, where it would nearly always refuse: the ticket page says to use **Run now** instead.
 - **`ci-failed.md`'s round sentence**: a round that is not the last never says "one more ends the run"; G2b's summary shows the three variants (first, middle, last).
 - **Step N** measures what a CI failure round costs after a wait longer than the prompt cache lifetime.
 
@@ -724,15 +724,35 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 - **Tests**: `ci-rounds.test.ts` (4 tests, failing before the change); `credential-leaks.test.ts` downloads the base branch after the push in each of its planted ways (the credential asked for `push`, `fetch`, `fetch`).
 - **Nothing user-visible yet**: the server sends no CI result before G2b, so no Help or CHANGELOG change in this step.
 
-### [ ] G2b. The server's rounds and limits
+### [x] G2b. The server's rounds and limits
 
 - `ci-failed.md` and the conflict text, **Most CI failures per run** (kept on the run at its start), the rounds kept on the run (migration), a late result never deciding, the same commit refused, cancelled because the branch moved, a round not yet taken tried again at each check, the next run's sentences (answers 8), `ci_status` for the latest round, the G1b correction.
 
 **Done when** server tests with the fake GitHub and a clock the test controls show CI failing once then passing in the same session, a conflict then the merge then CI passing, one failure too many, a late result of the earlier commit ignored, the same commit refused, cancellations after the branch moved not counted, the message's ceiling and quoted excerpts, `ci_status` after a round, and the G1b correction.
 
+**The owner's answers (2026-10-10, start of the step)**, all A, written into specs 01, 03, 04, 05 and 06: (1) one round delivered once by both sides, as below; (2) `ci-failed.md` and the conflict text as drafted, with, in every failure round, the sentence for a failure that is not the agent's (`ticket_give_up`, never the same work again), and a test that an excerpt cannot close its fence (owner's addition); (3) a conflict after the last allowed round ends the run `ci_failed`, counted, and the next run gets the conflict sentence; (4) a pull request that cannot be read at a failed result whose runs were all cancelled: nothing decided, read again at the next check; (5) the failure reason `ci_cancelled`, no Needs you item in 0.4.0; (6) a request limit without a time held for the longer of one minute and **GitHub check interval**, the time said. Also: `fetchBase` refused outside `waiting_ci` (owner's point 1); the server's run stays `running` while a round is unanswered; **Most CI failures per run** kept on the run at its start.
+
+*Done 2026-10-10.* Choices made in the step (specs 01, 03, 04, 05 and 06 updated):
+
+- **The owner's two points on G2a's daemon code**, tests first (`ci-rounds.test.ts` of the daemon): `fetchBase` outside `waiting_ci` is refused with "Only a run waiting for CI downloads its base branch.", nothing downloaded, live or resumed; a copy of a command arriving while the first is handled shares its work and answer, and the ids of delivered `run.input` and `run.resume` are kept in `state.json` (the newest 50) with the queued text, so a copy after a daemon restart is acknowledged and not pasted.
+- **Exactly once**: the run's one unanswered round has a fixed message id (`runs.ci_round_message_id`); the watcher reads nothing on GitHub for that run and sends the same message again at the first check after **Machine answer timeout** plus **Longest push**, or after the machine reconnects; the first confirmation counts (`run.ci_round_sent`), a second changes nothing. A refusal is not counted: "session closed" switches to `run.resume` at once with a new id (never given), any other drops the round, keeps the refusal (`runs.ci_round_refusal`, `run.ci_round_not_taken` when it starts or its words change), and the next check decides again with a new id. The daemon's two session refusals are protocol constants (`SESSION_CLOSED_REFUSAL`, `SESSION_ALIVE_REFUSAL`).
+- **Where it lives**: `apps/server/src/runs/ci-failed.ts` (the message, `fence`), the run service's `ciDecided`, `ciRound`, `sendRound`, `ciRoundAnswered`, `ciTimeoutDetail`; `CiStatusReader.withFailedJobs` reads a failure's jobs and excerpts for the round, reusing what the run holds; migration 0022 (`max_ci_failures`, `ci_rounds`, `ci_round_message_id`, `ci_round_refusal`, the reason `ci_cancelled`). A check keeps whether GitHub cancelled its workflow run (`CiCheck.cancelled`).
+- **The deadline**: only a passed result or "No CI found" wins over **CI wait at submission** passed meanwhile; a failure or a conflict after it ends the run `ci_timeout` (`ci_failed` when it is one too many), so a conflict refused at every check ends at the deadline.
+- **The same commit**: refused under the check `commits_ahead` with the reason `same_commit` (its words in `check-text.ts` for the owner, `submit-checks.md` for the agent).
+- **The rounds-left sentence** says "CI round (a CI failure or a conflict)", since conflicts count too: the drafts said "CI failures". Flagged to the owner.
+- **Changed expectations**, each because G2b replaces G1a's interim end at the first failure: `ci-wait.test.ts` sees the failure sent back; `ci-status.test.ts` reaches `ci_failed` through one round with **Most CI failures per run** at 1; the every-event scenario's conflict goes back as a round (refused once, then taken); the template list gains `ci-failed`.
+- **Help and CHANGELOG** stay for G2c, as planned: until then Help > Tickets still says a failed CI ends the run.
+
+**The owner's review (2026-10-10, before the merge)**, four fixes on this branch, each with a test that failed before it:
+
+1. **Daemon**: a `run.input` arriving between the accepted `ticket_submit` (`pending_ci`) and that turn's `Stop` was queued and acknowledged, then never sent (the turn's end entered `waiting_ci` and returned). The queue is sent right after the run enters `waiting_ci`. `run.resume` cannot reach that window: the session is alive, so it is refused.
+2. **`ci_status` after a round** reads again only what the round misses (failed jobs not listed, a log unavailable for a passing reason), at most once per **GitHub check interval**, never while the request limit holds, and keeps it on the round; a complete round asks GitHub nothing. A round's answer says it is that round's result (template part `round`), never "read again at most every".
+3. **A failure read after CI wait at submission** ends the run `ci_timeout` with "CI failed on GitHub (failed: <checks>), and the result was read only after the wait had ended."; the next run's first message tells the agent to read it with `ci_status` (part `after-ci-failed-unsent` of `implement.md`).
+4. **`ci_status` in the next run** after a run that ended following a confirmed round answers with that round (the ticket's latest run holding a wait or a confirmed round).
+
 ### [ ] G2c. Check CI again, screens and Help
 
-- **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition; the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
+- **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition (as changed at the start of G2b: after `ci_timeout` and `ci_failed` only, **Run now** said instead after a conflict or a cancellation because the branch moved); the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
 
 **Done when** server tests show **Check CI again** accepting, finding CI still not finished (nothing changes) and each refusal; Playwright on both viewports takes `ticket-waiting-for-ci`, `ticket-in-review-ci`, `run-ci-failed-too-many` and `needs-you-ci-did-not-finish` in `apps/web/e2e-screenshots/`.
 

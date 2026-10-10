@@ -31,6 +31,12 @@ The ticket's branch already has commits from an earlier attempt. Start by readin
 The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub refused the push or could not be reached, and the owner has been told. Start by reading `CLAUDE.md`, then see what was done: `git log {{base}}..HEAD` lists those commits and `git diff {{base}}...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 <!-- part: start-diverged -->
 The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub's copy of the branch has commits this machine does not have, so the push was refused. Start by reading `CLAUDE.md`, then bring GitHub's commits in before anything else: run `git merge origin/{{branch}}` (the Orchestrator downloaded it before your run started), resolve any conflict with your file tools, then `git add` and `git commit`. Never rebase. Then see what was done: `git log {{base}}..HEAD` lists the branch's commits and `git diff {{base}}...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+<!-- part: after-ci-failed -->
+The previous attempt ended after CI failed on GitHub more times than its run allows: call ci_status to read that result before you start.
+<!-- part: after-ci-failed-unsent -->
+The previous attempt ended before a failed CI result on GitHub reached it: call ci_status to read that result before you start.
+<!-- part: after-conflict -->
+The pull request conflicts with {{base}}: run `git merge origin/{{base}}` and resolve the conflicts before anything else.
 <!-- part: empty-description -->
 (No description: the title and the acceptance criteria say what to do.)
 <!-- part: description-cut -->

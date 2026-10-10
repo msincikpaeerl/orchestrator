@@ -87,6 +87,13 @@ export interface ImplementTicket {
    * machine lacks, which the agent merges first. Null otherwise.
    */
   notPushed: { branch: string; diverged: boolean } | null;
+  /**
+   * How the ticket's previous run ended on CI (owner's answer 8 and addition 4, lot 3 step G2b):
+   * `ci_failed`, or a conflict with the base branch left unresolved (`ci_failed` or `ci_timeout`
+   * on a conflict). Null otherwise.
+   */
+  previousCi?:
+    { kind: 'failed' } | { kind: 'failed_unsent' } | { kind: 'conflict'; base: string } | null;
 }
 
 /** The ticket alone does not fit, even with its description cut to nothing (03, section 3.2). */
@@ -136,7 +143,7 @@ export function implementFirstMessage(
           )
           .join('\n');
   const base = ticket.earlierWorkBase;
-  const start =
+  const opening =
     base === null
       ? part(template, 'start')
       : ticket.notPushed === null
@@ -145,6 +152,17 @@ export function implementFirstMessage(
             base,
             branch: ticket.notPushed.branch,
           });
+  const previous = ticket.previousCi ?? null;
+  const start =
+    previous === null
+      ? opening
+      : `${opening}\n\n${
+          previous.kind === 'failed'
+            ? part(template, 'after-ci-failed')
+            : previous.kind === 'failed_unsent'
+              ? part(template, 'after-ci-failed-unsent')
+              : part(template, 'after-conflict', { base: previous.base })
+        }`;
   const renderedComments = ticket.comments.map((comment) =>
     part(template, 'comment', {
       author:

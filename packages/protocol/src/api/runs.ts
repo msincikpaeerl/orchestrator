@@ -34,6 +34,11 @@ export const FailureReason = z.enum([
   'review_branch_moved',
   /** The push at a submission failed: refused, diverged or GitHub unreachable (lot 3 step F). */
   'push_failed',
+  /**
+   * Every failed check of the submitted commit is a workflow run GitHub cancelled, and the pull
+   * request's head is another commit: the branch moved on GitHub (lot 3 step G2b).
+   */
+  'ci_cancelled',
 ]);
 export type FailureReason = z.infer<typeof FailureReason>;
 
@@ -47,6 +52,7 @@ export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
   'ci_timeout',
   'review_branch_moved',
   'push_failed',
+  'ci_cancelled',
 ];
 
 /** What made a run change status, for its events and the run page. */

@@ -1,5 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
+  CiRound,
   ACTIVE_RUN_STATUSES,
   AgentRole,
   CommentKind,
@@ -1080,7 +1081,13 @@ export class McpBackend {
     const criteria = acceptanceCriteria(call.ticket);
     const outOfRange = criteriaOutOfRange(texts, criteria, report);
     if (outOfRange) throw new Refusal(outOfRange);
+    const roundCommits = z
+      .array(CiRound)
+      .parse(call.run.ciRounds)
+      .filter((round) => round.confirmedAt !== null)
+      .map((round) => ({ commit: round.commit, kind: round.kind }));
     const checked = checkSubmission(texts, {
+      roundCommits,
       ticketType: TicketType.parse(call.ticket.type),
       criteria,
       report,
@@ -1133,6 +1140,7 @@ export class McpBackend {
         ciResult: null,
         ciCheckedAt: null,
         ciCheckFailure: null,
+        ciRoundRefusal: null,
         updatedAt: at,
       })
       .where(eq(schema.runs.id, call.run.id));

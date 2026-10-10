@@ -46,6 +46,7 @@ describe('SETTINGS', () => {
       'maxFailedAttempts',
       'ciWaitTimeoutMinutes',
       'ciStartWaitMinutes',
+      'maxCiFailuresPerRun',
     ]);
   });
 

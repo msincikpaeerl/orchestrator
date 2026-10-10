@@ -73,6 +73,10 @@ export function reasonText(reason: CheckReason): string {
       return `The machine could send only ${reason.listed.toLocaleString('en-US')} of the ${plural(reason.count, 'file', 'files')} the branch changed, so ${plural(reason.unchecked, 'file the agent listed', 'files the agent listed')} could not be compared. This never refuses the work.`;
     case 'files_not_sent':
       return 'The machine did not send the list of files the branch changed (its daemon is older than 0.4.0), so the files the agent listed could not be compared. This never refuses the work.';
+    case 'same_commit':
+      return reason.ci === 'failed'
+        ? `The agent handed in commit ${reason.commit.slice(0, 7)} again, the one CI failed for in this run: it must commit a fix first.`
+        : `The agent handed in commit ${reason.commit.slice(0, 7)} again, whose pull request conflicted with ${reason.base} in this run: it must merge ${reason.base} first.`;
   }
 }
 

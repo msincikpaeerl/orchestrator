@@ -315,6 +315,34 @@ export function completeRun(ctx: FakeContext, run: FakeRun, failures: CiFailure[
   run.updatedAt = now;
 }
 
+/**
+ * Cancels a run, as GitHub does for a workflow whose `concurrency` cancels the run in progress
+ * when a newer one of its group starts (a push to the pull request's branch): the run and its
+ * unfinished jobs completed with the conclusion `cancelled` ("Control the concurrency of workflows
+ * and jobs", https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency;
+ * `cancelled` among the conclusions of "About status checks"). A test control only: the fake's
+ * workflows declare no concurrency.
+ */
+export function cancelRun(ctx: FakeContext, run: FakeRun): void {
+  if (run.status === 'queued') startRun(ctx, run);
+  const now = ctx.now();
+  for (const job of run.jobs) {
+    if (job.status === 'completed') continue;
+    for (const step of job.steps) {
+      if (step.status === 'completed') continue;
+      step.status = 'completed';
+      step.conclusion = 'cancelled';
+    }
+    job.status = 'completed';
+    job.conclusion = 'cancelled';
+    job.completedAt = now;
+    job.log = '';
+  }
+  run.status = 'completed';
+  run.conclusion = 'cancelled';
+  run.updatedAt = now;
+}
+
 /** Records a commit status, as an external service would with `POST .../statuses/{sha}`. */
 export function addStatus(
   ctx: FakeContext,

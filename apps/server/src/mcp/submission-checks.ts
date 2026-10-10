@@ -54,6 +54,11 @@ export function workflowReason(changedFiles: ChangedFiles | null): WorkflowReaso
 }
 
 export interface SubmissionFacts {
+  /**
+   * The commits a confirmed CI round of this run sent back (lot 3 step G2b): handed in again,
+   * they are refused, since CI would give the same result.
+   */
+  roundCommits?: readonly { commit: string; kind: 'failed' | 'conflict' }[];
   ticketType: TicketType;
   /** The ticket's acceptance criteria, by index. */
   criteria: readonly string[];
@@ -140,6 +145,17 @@ export function checkSubmission(texts: Template, facts: SubmissionFacts): Checke
             reason: { kind: 'no_commits', base: facts.baseBranch },
           },
         ];
+  // The commit handed in: the one pushed, else the branch head the machine read.
+  const handedIn =
+    workspace.push?.status === 'pushed' ? workspace.push.head : workspace.branch.head;
+  const again = facts.roundCommits?.find((round) => round.commit === handedIn);
+  if (again !== undefined) {
+    const base = facts.baseBranch;
+    ahead.push({
+      message: part(texts, `same-commit-${again.kind}`, { commit: again.commit, branch, base }),
+      reason: { kind: 'same_commit', commit: again.commit, ci: again.kind, base },
+    });
+  }
 
   // The daemon pushes only a clean worktree with commits ahead (05, section 4.9).
   const push = workspace.push;

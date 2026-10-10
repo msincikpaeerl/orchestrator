@@ -266,6 +266,8 @@ export {
   RunStart,
   RunState,
   RunStop,
+  SESSION_ALIVE_REFUSAL,
+  SESSION_CLOSED_REFUSAL,
   StopFailureError,
 } from './daemon/runs.js';
 export {
@@ -327,6 +329,8 @@ export {
   CiJobLog,
   CiLogFallback,
   CiReadProblem,
+  CiRound,
+  CiRoundRefusal,
   McpCiStatus,
   CiResult,
   CiState,

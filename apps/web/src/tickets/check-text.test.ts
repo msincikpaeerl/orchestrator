@@ -40,6 +40,7 @@ const SAMPLES: Record<CheckReasonKind, CheckReason> = {
   path_not_changed: { kind: 'path_not_changed', list: 'adrs', path: 'docs/adr/0002-queue.md' },
   files_cut: { kind: 'files_cut', listed: 1200, count: 4000, unchecked: 3 },
   files_not_sent: { kind: 'files_not_sent' },
+  same_commit: { kind: 'same_commit', commit: 'c'.repeat(40), ci: 'conflict', base: 'main' },
 };
 
 /**

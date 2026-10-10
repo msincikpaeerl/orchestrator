@@ -254,6 +254,18 @@ const definitions = {
     perProject: true,
     usedFrom: '0.4.0',
   },
+  maxCiFailuresPerRun: {
+    group: 'tickets',
+    label: 'Most CI failures per run',
+    description:
+      'How many times in one run a failed CI result, or a conflict with the base branch, is sent back to the agent to fix. One more ends the run as a failed attempt.',
+    unit: 'failures',
+    min: 1,
+    max: 10,
+    default: 2,
+    perProject: true,
+    usedFrom: '0.4.0',
+  },
   ciLogExcerptMaxLength: {
     group: 'tickets',
     label: 'Longest CI log excerpt',
