@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   ACTIVE_RUN_STATUSES,
+  CiAcceptedLater,
   CiRound,
   CiCheckFailure,
   CiResult,
@@ -35,7 +36,7 @@ import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { resolveSettings } from '../settings/store.js';
 import type { TicketRow } from '../tickets/model.js';
 import { jsonLength } from '../mcp/output.js';
-import { ciChecks, ciChecksState } from './ci-result.js';
+import { ciChecks, ciChecksState, failedChecks } from './ci-result.js';
 import type { RunRow } from './model.js';
 
 // `ci_status` (06, section 4.1; owner's answers, lot 3 step G1b): the CI result of one accepted
@@ -267,6 +268,33 @@ export class CiStatusReader {
     };
     if (pullRequest !== null && pullRequest.head !== commit) {
       notes.push(part(t, 'head-moved', { head: pullRequest.head }));
+    }
+    // Work the owner's **Check CI again** accepted after the run ended: what it found, never the
+    // result read before it (owner's review of step H1). A finished result is not read again.
+    if (round === null && source.ciAcceptedLater !== null) {
+      const later = CiAcceptedLater.parse(source.ciAcceptedLater);
+      notes.push(
+        part(t, later.state === 'passed' ? 'accepted-later' : 'accepted-later-no-ci', {
+          at: later.at,
+        }),
+      );
+      const before = source.ciResult === null ? null : CiResult.parse(source.ciResult);
+      if (before?.state === 'failed') {
+        notes.push(part(t, 'before-again', { checks: failedChecks(before) }));
+      }
+      const accepted: CiResult = {
+        state: later.state,
+        checks: [],
+        failed_jobs: [],
+        jobs_read: false,
+        jobs_problem: null,
+      };
+      return {
+        ...answer,
+        read_at: later.at,
+        note: notes.join(' '),
+        ci: ciOutput(t, accepted, settings),
+      };
     }
     const waiting = ACTIVE.has(source.status);
     if (pullRequest === null || (waiting && source.ciWaitStartedAt === null)) {

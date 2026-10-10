@@ -19,6 +19,12 @@ It is finished, so it is not read again.
 This result was sent back to you as CI round {{round}} of this run: it is not read again, except failed jobs or logs that could not be read then.
 <!-- part: round-earlier-run -->
 This result was sent back to that run's agent as CI round {{round}}: it is not read again, except failed jobs or logs that could not be read then.
+<!-- part: accepted-later -->
+The owner had CI read again on {{at}}, after the run that handed this work in had ended: CI passed for this commit then, and the work was accepted. It is not read again.
+<!-- part: accepted-later-no-ci -->
+The owner had CI read again on {{at}}, after the run that handed this work in had ended: no CI run or status had appeared on GitHub for this commit, so the work passed as "No CI found" and was accepted. Nothing on GitHub tested this work. It is not read again.
+<!-- part: before-again -->
+Before that re-reading, the result read on GitHub was: CI failed ({{checks}}). It no longer applies.
 <!-- part: not-finished -->
 It is not finished: it is read again at most every {{seconds}} seconds.
 <!-- part: limited -->

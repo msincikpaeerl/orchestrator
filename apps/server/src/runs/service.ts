@@ -105,6 +105,7 @@ import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
 import { storedTokenClient } from '../github/connection.js';
 import { readPullRequest } from '../github/pull-requests.js';
 import { CiStatusReader } from './ci-status.js';
+import { failedChecks } from './ci-result.js';
 import { ciFailedMessage } from './ci-failed.js';
 import type { CiDecision } from './ci-wait.js';
 import {
@@ -2989,11 +2990,3 @@ function stopMessage(
 }
 
 export const runNotFound = () => new HttpError(404, 'run_not_found', 'No run with this id');
-
-/** The failed checks of a result, named for the owner: `workflow run "CI", status "deploy"`. */
-function failedChecks(result: CiResult): string {
-  return result.checks
-    .filter((check) => check.state === 'failed')
-    .map((check) => `${check.kind === 'workflow_run' ? 'workflow run' : 'status'} "${check.name}"`)
-    .join(', ');
-}
