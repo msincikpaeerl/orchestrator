@@ -95,6 +95,77 @@ function answers(
   });
 }
 
+/** Quality's commands (lot 3 step H): reads allowed, then each kind that writes or moves HEAD. */
+const REVIEWER_ALLOWED = [
+  'pnpm test',
+  'pnpm run build',
+  'node --version',
+  'ls',
+  'cat README.md',
+  'git status',
+  'git diff HEAD',
+  'git log --oneline -1',
+  'git show --stat HEAD',
+];
+const REVIEWER_REFUSED = [
+  'WRITE',
+  'mkdir -p src',
+  'rm README.md',
+  'find . -name README.md',
+  'sort README.md',
+  'git add README.md',
+  'git commit --allow-empty -m "Smoke"',
+  'git checkout -b smoke-other',
+  'git switch -c smoke-switched',
+  'git reset --hard HEAD',
+  'git stash',
+  'git pull',
+  'git rebase main',
+  'git cherry-pick HEAD',
+  'git revert --no-edit HEAD',
+  'git apply smoke.patch',
+  'git am smoke.patch',
+  'git clean -n',
+  'git merge origin/main',
+  'cat ../../config.json',
+  'curl -sI https://example.com',
+  'sudo true',
+  'docker ps',
+];
+const UNLISTED_ANSWER =
+  '<tool_use_error>No such tool available: mcp__orchestrator__ticket_submit</tool_use_error>';
+
+/** Quality's steps, each answered as expected unless `ran` names it; then the unlisted tool. */
+function reviewerAnswers(ran: readonly string[] = []): Steps {
+  const steps: Steps = [...REVIEWER_ALLOWED, ...REVIEWER_REFUSED].map((command) => {
+    const allowed = REVIEWER_ALLOWED.includes(command) || ran.includes(command);
+    if (command === 'WRITE') {
+      return {
+        do: 'tool',
+        name: 'Write',
+        input: { file_path: 'smoke-note.txt', content: 'smoke' },
+        result: allowed
+          ? 'File created successfully at: smoke-note.txt'
+          : "Permission to use Write has been denied because Claude Code is running in don't ask mode.",
+      };
+    }
+    return {
+      do: 'tool',
+      name: 'Bash',
+      input: { command },
+      result: allowed
+        ? 'done'
+        : command.startsWith('cat ../')
+          ? ruleRefusal(command)
+          : dontAskRefusal,
+    };
+  });
+  return [
+    ...steps,
+    { do: 'tool', name: 'mcp__orchestrator__ticket_submit', input: {}, result: UNLISTED_ANSWER },
+  ];
+}
+
 const session = (steps: Steps): ScenarioInput => ({
   turns: [{ steps: [...steps, { do: 'text', text: 'DONE' }] }, { steps: [{ do: 'exit' }] }],
 });
@@ -156,13 +227,20 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
     async () => {
       await fake.play(session(answers()), 'architect');
       await fake.play(session(answers()), 'web_dev');
+      await fake.play(session(reviewerAnswers()), 'quality');
       const { code, output } = await runSmoke();
-      // The shipped profiles share one allowlist and the same deny rules (03, section 2.2).
-      expect(output).toMatch(/Profiles: +architect$/m);
+      // The builders share one allowlist and the same deny rules (03, section 2.2); Quality's
+      // differ (03, section 2.5).
+      expect(output).toMatch(/Profiles: +architect quality$/m);
       expect(output).toMatch(
         /^Not run again: +web_dev \(same allowlist and deny rules as architect\)$/m,
       );
-      expect(resultLines(output, 'PASS')).toHaveLength(17);
+      expect(
+        resultLines(output, 'PASS').filter((line) => line.startsWith('architect:')),
+      ).toHaveLength(17);
+      expect(
+        resultLines(output, 'PASS').filter((line) => line.startsWith('quality:')),
+      ).toHaveLength(REVIEWER_ALLOWED.length + REVIEWER_REFUSED.length);
       expect(output).toMatch(
         /^architect: PASS +git commit -m "Allowlist smoke test": allowed, expected allowed$/m,
       );
@@ -174,7 +252,9 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       );
       // The machine's key is checked before the other refusals: `haiku` skipped the last step in
       // the owner's run (lot 2 step N).
-      const commands = resultLines(output, 'PASS').map((line) => line.split(/ {2,}/)[1] ?? '');
+      const commands = resultLines(output, 'PASS')
+        .filter((line) => line.startsWith('architect:'))
+        .map((line) => line.split(/ {2,}/)[1] ?? '');
       expect(commands.slice(-4).map((command) => command.split(':')[0])).toEqual([
         'cat <probe>/home/.orchestrator/config.json',
         'curl -sI https',
@@ -193,7 +273,10 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
 
       // The session is launched with the daemon's argument list, on haiku.
       const launches = (await fake.log()).filter((entry) => entry.event === 'start');
-      expect(launches.map((entry) => entry.cwd.split('/').at(-1))).toEqual(['architect']);
+      expect(launches.map((entry) => entry.cwd.split('/').at(-1))).toEqual([
+        'architect',
+        'quality',
+      ]);
       for (const launch of launches) {
         expect(launch.args.slice(0, 11)).toEqual([
           '--mcp-config',
@@ -210,6 +293,29 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
         ]);
       }
       expect((await fake.log()).some((entry) => entry.event === 'arguments_refused')).toBe(false);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "checks Quality's refusals of every command that writes a file or moves HEAD, and records the words for a tool not listed",
+    async () => {
+      await fake.play(session(reviewerAnswers(['git stash', 'WRITE'])), 'quality');
+      const { code, output } = await runSmoke('--profile', 'quality');
+      expect(output).toMatch(/Profiles: +quality$/m);
+      expect(output).toMatch(
+        /^quality: PASS +git merge origin\/main: refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(/^quality: PASS +git diff HEAD: allowed, expected allowed$/m);
+      expect(output).toMatch(/^quality: FAIL +git stash: allowed, expected refused$/m);
+      expect(output).toMatch(
+        /^quality: FAIL +Create the file smoke-note\.txt with the Write tool, containing the word smoke: allowed, expected refused$/m,
+      );
+      // Never a verdict: what Claude Code answers for a tool the run does not list (answer 1).
+      expect(output).toMatch(
+        /^quality: INFO +a tool not listed \(mcp__orchestrator__ticket_submit\): Claude Code answered: <tool_use_error>No such tool available: mcp__orchestrator__ticket_submit<\/tool_use_error>$/m,
+      );
+      expect(code).toBe(1);
     },
     TIMEOUT,
   );
@@ -294,7 +400,9 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
 
   it('refuses an unknown profile', async () => {
     const { code, output } = await runSmoke('--profile', 'designer');
-    expect(output).toMatch(/STOPPED: no default profile designer \(profiles: architect web_dev\)/);
+    expect(output).toMatch(
+      /STOPPED: no default profile designer \(profiles: architect quality web_dev\)/,
+    );
     expect(code).toBe(3);
   });
 });
