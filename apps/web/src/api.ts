@@ -22,6 +22,8 @@ export class ApiRequestError extends Error {
     readonly runRefusal?: ApiError['error']['runRefusal'],
     /** The three settings of a sum too large, for `setting_sum_invalid`. */
     readonly settingSum?: ApiError['error']['settingSum'],
+    /** Why **Check CI again** was refused, with its facts, for `ci_check_refused`. */
+    readonly ciRefusal?: ApiError['error']['ciRefusal'],
   ) {
     super(message);
   }
@@ -70,6 +72,7 @@ export async function api<T>(
       settingProduct,
       runRefusal,
       settingSum,
+      ciRefusal,
     } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
     throw new ApiRequestError(
@@ -84,6 +87,7 @@ export async function api<T>(
       settingProduct,
       runRefusal,
       settingSum,
+      ciRefusal,
     );
   }
   if (schema === null) return undefined as T;

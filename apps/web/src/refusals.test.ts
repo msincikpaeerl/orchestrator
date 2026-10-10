@@ -1,4 +1,4 @@
-import { ApiErrorCode } from '@orchestrator/protocol';
+import { ApiErrorCode, CheckCiAgainRefusal } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from './api';
 import { refusalText, UNEXPECTED_TEXT } from './refusals';
@@ -11,6 +11,30 @@ describe('refusalText', () => {
     expect(text).not.toContain(code);
     expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
     expect(text).toMatch(/^[A-Z].*[.!?]$/);
+  });
+
+  it('says why Check CI again was refused, with its facts (lot 3 step G2c)', () => {
+    const refused = (ciRefusal: NonNullable<ApiRequestError['ciRefusal']>) =>
+      refusalText(
+        // prettier-ignore
+        new ApiRequestError(409, 'ci_check_refused', 'x', undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ciRefusal),
+      );
+    for (const reason of CheckCiAgainRefusal.options) {
+      const text = refused({
+        reason,
+        commit: 'a'.repeat(40),
+        head: 'b'.repeat(40),
+        pullRequest: 12,
+      });
+      expect(text).toMatch(/^[A-Z].*[.!?]$/);
+      expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
+    }
+    expect(refused({ reason: 'branch_moved', commit: 'a'.repeat(40), head: 'b'.repeat(40) })).toBe(
+      'The branch changed on GitHub after commit aaaaaaa (it is now bbbbbbb), so this result would not be about the latest work. Run now hands the work in again.',
+    );
+    expect(refused({ reason: 'pull_request_merged', pullRequest: 12 })).toBe(
+      'Pull request #12 was merged on GitHub. Use Mark as done manually.',
+    );
   });
 
   it('says when the Orchestrator cannot be reached, without a code', () => {

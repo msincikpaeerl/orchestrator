@@ -56,6 +56,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_reopened': 'Pull request reopened',
   'ticket.pull_request_updated': 'Pull request updated',
   'ticket.pull_request_not_opened': 'Pull request not opened or updated',
+  'ticket.ci_checked_again': 'CI checked again',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -308,6 +309,8 @@ const describe: { [T in EventType]: Describe<T> } = {
         ];
       case 'answered':
         return [c.ticket, ' in progress again: you answered the question'];
+      case 'ci_checked_again':
+        return [c.ticket, ' in review: Check CI again found the work accepted on GitHub'];
     }
   },
   'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
@@ -358,6 +361,32 @@ const describe: { [T in EventType]: Describe<T> } = {
         ? `: the pull request could not be opened on GitHub — ${shorten(p.message)}`
         : `: pull request #${String(p.openPullRequest)} could not be updated on GitHub — ${shorten(p.message)}`,
   ],
+  'ticket.ci_checked_again': (p, c) => {
+    const commit = p.commit === '' ? '' : ` for commit ${p.commit.slice(0, 7)}`;
+    switch (p.outcome) {
+      case 'accepted':
+        return [
+          c.ticket,
+          `: you checked CI again${commit}; ${p.state === 'no_ci' ? 'no CI found' : 'CI passed'}, the work accepted without a session${p.attemptTakenBack === true ? ' and its failed attempt taken back' : ''}`,
+        ];
+      case 'not_finished':
+        return [c.ticket, `: you checked CI again${commit}; it had still not finished`];
+      case 'failed':
+        return [c.ticket, `: you checked CI again${commit}; it had failed, nothing changed`];
+      case 'conflict':
+        return [
+          c.ticket,
+          `: you checked CI again${commit}; the pull request conflicts with its base branch`,
+        ];
+      case 'github_problem':
+        return [
+          c.ticket,
+          `: you checked CI again${commit}; GitHub could not be checked — ${shorten(p.message ?? '')}`,
+        ];
+      case 'refused':
+        return [c.ticket, `: Check CI again refused — ${shorten(p.message ?? '')}`];
+    }
+  },
   'setting.changed': (p, c) => {
     const { label } = SETTINGS[p.name];
     if (p.scope === 'project') {

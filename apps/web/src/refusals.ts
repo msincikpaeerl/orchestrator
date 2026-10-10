@@ -1,5 +1,11 @@
-import { SETTINGS, type ApiErrorCode, type LimitExceeded } from '@orchestrator/protocol';
+import {
+  SETTINGS,
+  type ApiErrorCode,
+  type CheckCiAgainRefused,
+  type LimitExceeded,
+} from '@orchestrator/protocol';
 import { ApiRequestError } from './api';
+import { formatDateTime } from './github/text';
 import { runRefusalText } from './runs/text';
 import { amount } from './settings/text';
 
@@ -160,7 +166,30 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'This ticket has no question waiting for an answer: it may have been answered already. Reload the page.',
   no_pull_request_wanted: () =>
     'This ticket no longer waits for its pull request: it was opened already, or the ticket is done or cancelled. Reload the page.',
+  ci_check_refused: ({ ciRefusal }) => checkCiAgainRefusalText(ciRefusal),
 };
+
+/** Why **Check CI again** was refused, in the words of the owner's table (lot 3 step G2c). */
+export function checkCiAgainRefusalText(refused: CheckCiAgainRefused | undefined): string {
+  switch (refused?.reason) {
+    case 'run_active':
+      return 'A run is working on this ticket: its own submission will be checked.';
+    case 'newer_work':
+      return `This ticket has newer work${refused.acceptedAt === undefined ? '' : `, accepted on ${formatDateTime(refused.acceptedAt)}`}: its own CI decides.`;
+    case 'not_offered':
+      return 'Check CI again is not offered for this ticket now: its latest work was accepted, or Run now continues it. Reload the page.';
+    case 'no_pull_request':
+      return 'This ticket has no pull request on GitHub yet: Try again in “Pull request not opened” opens it.';
+    case 'branch_moved':
+      return `The branch changed on GitHub after commit ${(refused.commit ?? '').slice(0, 7)} (it is now ${(refused.head ?? '').slice(0, 7)}), so this result would not be about the latest work. Run now hands the work in again.`;
+    case 'pull_request_closed':
+      return `Pull request #${String(refused.pullRequest ?? '')} is closed on GitHub, so the work cannot be accepted.`;
+    case 'pull_request_merged':
+      return `Pull request #${String(refused.pullRequest ?? '')} was merged on GitHub. Use Mark as done manually.`;
+    case undefined:
+      return 'Check CI again was refused. Reload the page.';
+  }
+}
 
 /** A refusal of the API in plain words. Never shows the code. */
 export function refusalText(error: unknown): string {
