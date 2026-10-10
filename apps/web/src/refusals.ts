@@ -169,6 +169,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   no_pull_request_wanted: () =>
     'This ticket no longer waits for its pull request: it was opened already, or the ticket is done or cancelled. Reload the page.',
   ci_check_refused: ({ ciRefusal }) => checkCiAgainRefusalText(ciRefusal),
+  review_active: () =>
+    'Quality is reviewing this ticket now: wait for the review to end, or stop its run first.',
 };
 
 /** Why **Check CI again** was refused, in the words of the owner's table (lot 3 step G2c). */

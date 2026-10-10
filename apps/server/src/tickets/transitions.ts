@@ -123,6 +123,21 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
     if (!comment) throw new Error('comment not inserted');
     commentId = comment.id;
   }
+  if (action === 'skip_review') {
+    // Says who skipped it, for the ticket page and "Needs you" (owner's answer 5, lot 3 step H).
+    const [comment] = await tx
+      .insert(schema.comments)
+      .values({
+        ticketId: ticket.id,
+        author: 'system',
+        kind: 'status_change',
+        body: 'The owner skipped the review.',
+        createdAt: now,
+      })
+      .returning({ id: schema.comments.id });
+    if (!comment) throw new Error('comment not inserted');
+    commentId = comment.id;
+  }
 
   // The status is checked again in the update: the caller's lock makes a mismatch a bug.
   const [updated] = await tx
@@ -158,9 +173,14 @@ const RUN_TRANSITIONS: Readonly<
   stop_run: { from: ['in_progress', 'waiting_human'], to: 'todo' },
   run_submitted: { from: ['in_progress'], to: 'in_review' },
   run_ended: { from: ['in_progress', 'waiting_human'], to: 'todo' },
-  question_asked: { from: ['in_progress'], to: 'waiting_human' },
+  question_asked: { from: ['in_progress', 'in_review'], to: 'waiting_human' },
   answered: { from: ['waiting_human'], to: 'in_progress' },
   ci_checked_again: { from: ['todo'], to: 'in_review' },
+  // A review run never moves its ticket out of review by itself (owner's answer 6c, lot 3 H2).
+  review_answered: { from: ['waiting_human'], to: 'in_review' },
+  review_ended: { from: ['waiting_human'], to: 'in_review' },
+  review_approved: { from: ['in_review'], to: 'awaiting_merge' },
+  review_changes_requested: { from: ['in_review'], to: 'todo' },
 };
 
 export interface RunAction {

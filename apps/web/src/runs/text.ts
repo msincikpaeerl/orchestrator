@@ -73,6 +73,7 @@ export const causeText: Record<RunChangeCause, string> = {
   answer: 'you answered its question',
   ci_result: 'its CI result on GitHub',
   ci_timeout: '"CI wait at submission" was reached',
+  review_decision: "the pull request changed on GitHub before Quality's decision",
 };
 
 /** Why one machine cannot take a run, for the refusal of **Run now** or **Resume**. */

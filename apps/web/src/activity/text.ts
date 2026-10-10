@@ -90,6 +90,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'run.ci_check_recovered': 'CI checked on GitHub again',
   'run.ci_round_sent': 'CI result sent to the agent',
   'run.ci_round_not_taken': 'CI result not taken by the machine',
+  'run.review_decided': "Quality's decision recorded",
+  'run.review_discarded': "Quality's decision not applied",
 };
 
 /** Kinds of entity, for the filter. */
@@ -311,6 +313,16 @@ const describe: { [T in EventType]: Describe<T> } = {
         return [c.ticket, ' in progress again: you answered the question'];
       case 'ci_checked_again':
         return [c.ticket, ' in review: Check CI again found the work accepted on GitHub'];
+      case 'skip_review':
+        return [c.ticket, ' awaiting merge: you skipped the review'];
+      case 'review_answered':
+        return [c.ticket, ' in review again: you answered the question'];
+      case 'review_ended':
+        return [c.ticket, ' in review again: its review run ended without a decision applied'];
+      case 'review_approved':
+        return [c.ticket, ' awaiting merge: Quality approved it'];
+      case 'review_changes_requested':
+        return [c.ticket, ' back to to do: Quality requested changes'];
     }
   },
   'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
@@ -596,6 +608,17 @@ const describe: { [T in EventType]: Describe<T> } = {
     p.kind === 'failed'
       ? `: CI failed on GitHub for the submitted commit ${p.commit.slice(0, 7)}; the failure was sent to the agent to fix (${String(p.round)} of ${String(p.of)} allowed in this run)`
       : `: the pull request of the submitted commit ${p.commit.slice(0, 7)} conflicts with the default branch; the agent was told to merge it (${String(p.round)} of ${String(p.of)} allowed in this run)`,
+  ],
+  'run.review_decided': (p, c) => [
+    'Run of ',
+    c.ticket,
+    `: Quality ${p.decision === 'approved' ? 'approved' : `requested changes (${String(p.points)} point${p.points === 1 ? '' : 's'}) on`} commit ${p.commit.slice(0, 7)}; it applies when the review run ends`,
+    ...(p.headChecked ? [] : [" (the pull request's head could not be checked on GitHub)"]),
+  ],
+  'run.review_discarded': (p, c) => [
+    'Run of ',
+    c.ticket,
+    ` on ${p.machine}: Quality's ${p.decision === 'approved' ? 'approval' : 'request for changes'} of commit ${p.commit.slice(0, 7)} was not applied, because the review run ended first${p.failureReason ? ` (${failureText[p.failureReason]})` : ''}`,
   ],
   'run.ci_round_not_taken': (p, c) => [
     'Run of ',

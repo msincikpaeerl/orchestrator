@@ -12,6 +12,7 @@ import {
   McpPermission,
   SETTINGS,
   ProjectKind,
+  ReviewDecision,
   TicketPriority,
   TicketStatus,
   TicketType,
@@ -147,6 +148,16 @@ export interface McpBackendOptions {
   pullRequestWanted: (ticketId: string) => void;
   /** `ci_status`'s answer for the call's run (lot 3 step G1b). */
   ciStatus: (call: { run: RunRow; ticket: TicketRow; project: ProjectRow }) => Promise<McpCiStatus>;
+  /**
+   * A review decision's check (06, section 4.5; lot 3 step H2): the pull request's head on GitHub,
+   * or, when it could not be read, why in GitHub's masked words.
+   */
+  pullRequestHead: (
+    project: ProjectRow,
+    number: number,
+  ) => Promise<{ read: true; head: string } | { read: false; why: string }>;
+  /** The head moved on GitHub at a decision: the review run stops with `review_branch_moved`. */
+  reviewHeadMoved: (runId: string, head: string) => Promise<void>;
 }
 
 export class McpBackend {
@@ -198,13 +209,14 @@ export class McpBackend {
           })),
         );
       }
+      const known = (call: Call) => {
+        reference = ticketReference(call.project.key, call.ticket.number);
+      };
       const output = READING.has(tool)
-        ? await this.read(tool, found.id, machineId, parsed.data, (call) => {
-            reference = ticketReference(call.project.key, call.ticket.number);
-          })
-        : await this.write(tool, found.id, machineId, message, parsed.data, (call) => {
-            reference = ticketReference(call.project.key, call.ticket.number);
-          });
+        ? await this.read(tool, found.id, machineId, parsed.data, known)
+        : tool === 'review_approve' || tool === 'review_request_changes'
+          ? await this.review(tool, found.id, machineId, parsed.data, known)
+          : await this.write(tool, found.id, machineId, message, parsed.data, known);
       return { ok: true, output: definition.output.parse(output) };
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
@@ -597,16 +609,6 @@ export class McpBackend {
               maxAgentTicketsPerRun:
                 call.run.maxAgentTickets ?? agentTicketsSetting.maxAgentTicketsPerRun,
             });
-          case 'review_approve':
-          case 'review_request_changes':
-            // Only a review run of a ticket in review (06, section 4.5); the server starts none yet.
-            if (call.run.purpose !== 'review') {
-              throw refuse(
-                'INVALID_TRANSITION',
-                `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
-              );
-            }
-            throw new Error(`${tool} in a review run is not implemented yet`);
           case 'ticket_submit':
             if (message.payload.tool !== 'ticket_submit') throw new Error('no worktree facts');
             return this.submit(
@@ -625,6 +627,159 @@ export class McpBackend {
       });
     if (result.after) result.after();
     return result.output;
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Review decisions (06, section 4.5; owner's answers 2c to 2e and 6g, lot 3 step H2): checked
+  // without a lock, the pull request's head read on GitHub outside any transaction, then checked
+  // again and stored on the run under the locks. Applied when the run ends (runs/service.ts).
+
+  private async review(
+    tool: 'review_approve' | 'review_request_changes',
+    runId: string,
+    machineId: string,
+    input: unknown,
+    known: (call: Call) => void,
+  ): Promise<unknown> {
+    const { commentMaxLength } = await resolveSettings(this.db, ['commentMaxLength']);
+    const first = await this.load(this.db, runId, machineId, false);
+    known(first);
+    await this.reviewAllowed(this.db, first, tool, input, commentMaxLength);
+    const commit = first.run.reviewCommit;
+    if (commit === null) throw new Error(`review run ${runId} has no commit under review`);
+    const number = first.ticket.pullRequestNumber;
+    const read =
+      number === null
+        ? ({ read: false, why: 'the ticket has no pull request' } as const)
+        : await this.options.pullRequestHead(first.project, number);
+    if (read.read && read.head !== commit) {
+      // Read and found moved: refused, and the run stopped (owner's answer 2c).
+      await this.options.reviewHeadMoved(runId, read.head);
+      throw refuse(
+        'INVALID_TRANSITION',
+        `The pull request changed on GitHub during your review, now ${read.head.slice(0, 7)}: your review of ${commit.slice(0, 7)} no longer applies. End your turn.`,
+      );
+    }
+    const headChecked = read.read;
+
+    return this.db.transaction(async (tx) => {
+      // The project's row lock first, then the run's: the order of every ticket change.
+      await tx
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, first.project.id))
+        .for('no key update');
+      const call = await this.load(tx, runId, machineId, true);
+      // Checked again: the run, the ticket or an earlier decision may have changed meanwhile.
+      await this.reviewAllowed(tx, call, tool, input, commentMaxLength);
+      const at = this.now();
+      const decision: ReviewDecision =
+        tool === 'review_approve'
+          ? {
+              kind: 'approved',
+              commit,
+              summary: (input as McpToolInput<'review_approve'>).summary,
+              points: [],
+              headChecked,
+              at: at.toISOString(),
+            }
+          : {
+              kind: 'changes_requested',
+              commit,
+              summary: null,
+              points: (input as McpToolInput<'review_request_changes'>).points.map((point) => ({
+                body: point.body,
+                file: point.file ?? null,
+                line: point.line ?? null,
+              })),
+              headChecked,
+              at: at.toISOString(),
+            };
+      await tx
+        .update(schema.runs)
+        .set({ reviewDecision: decision, updatedAt: at })
+        .where(eq(schema.runs.id, runId));
+      await recordEvent(tx, {
+        actor: 'agent',
+        entityType: 'run',
+        entityId: runId,
+        projectId: call.project.id,
+        type: 'run.review_decided',
+        payload: {
+          ...this.agentFacts(call),
+          decision: decision.kind,
+          commit,
+          points: decision.points.length,
+          headChecked,
+        },
+        at,
+      });
+      const count = decision.points.length;
+      const what =
+        decision.kind === 'approved'
+          ? `Your approval of commit ${commit.slice(0, 7)} is recorded.`
+          : `Your request for changes on commit ${commit.slice(0, 7)} (${String(count)} point${count === 1 ? '' : 's'}) is recorded.`;
+      const unchecked = read.read
+        ? ''
+        : ` GitHub could not be read to check the pull request's head (${read.why}): the owner is told to check it before merging.`;
+      return {
+        decision: decision.kind,
+        commit,
+        head_checked: headChecked,
+        note: `${what} It is applied when your turn ends: end your turn now, without another tool call.${unchecked}`,
+      } satisfies McpToolOutput<'review_approve'>;
+    });
+  }
+
+  /**
+   * Whether `call` may decide: the role, an active review run of a ticket in review with nothing
+   * decided yet, the texts' lengths, and a reviewer that never implemented the ticket (06,
+   * section 4.5; owner's answer 6g: every profile of an `implement` or `fix_review` run).
+   */
+  private async reviewAllowed(
+    executor: Executor,
+    call: Call,
+    tool: McpToolName,
+    input: unknown,
+    commentMaxLength: number,
+  ): Promise<void> {
+    this.permit(call, tool);
+    if (!ACTIVE.has(call.run.status)) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+    if (call.run.purpose !== 'review') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
+      );
+    }
+    this.requireReviewing(call, tool);
+    if (tool === 'review_approve') {
+      const { summary } = input as McpToolInput<'review_approve'>;
+      this.tooLongRefusal([this.checkComment('summary', summary, commentMaxLength)]);
+    } else {
+      const { points } = input as McpToolInput<'review_request_changes'>;
+      this.tooLongRefusal(
+        points.map((point, index) =>
+          this.checkComment(`points.${String(index)}.body`, point.body, commentMaxLength),
+        ),
+      );
+    }
+    const [implemented] = await executor
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.ticketId, call.ticket.id),
+          eq(schema.runs.profileId, call.profile.id),
+          inArray(schema.runs.purpose, ['implement', 'fix_review']),
+        ),
+      )
+      .limit(1);
+    if (implemented) {
+      throw refuse(
+        'FORBIDDEN',
+        `${call.profile.name} implemented this ticket in an earlier run, so it cannot review it: end your turn without a decision.`,
+      );
+    }
   }
 
   /** The actor and payload facts of an agent's event (01, section 3.10). */
@@ -688,6 +843,42 @@ export class McpBackend {
         `The ticket is ${call.ticket.status}: ${tool} needs it in_progress.`,
       );
     }
+  }
+
+  /**
+   * A review run's ticket must be `in_review`, with no decision recorded and no give-up yet in
+   * this run (06, section 4.5; owner's answer 2e, lot 3 step H2).
+   */
+  private requireReviewing(call: Call, tool: McpToolName): void {
+    if (call.run.reviewDecision !== null) {
+      throw refuse(
+        'INVALID_TRANSITION',
+        ReviewDecision.parse(call.run.reviewDecision).kind === 'approved'
+          ? 'You already approved this ticket in this run: end your turn.'
+          : 'You already asked for changes on this ticket in this run: end your turn.',
+      );
+    }
+    if (call.run.decision === 'gave_up') {
+      throw refuse('INVALID_TRANSITION', 'You already gave up this review: end your turn now.');
+    }
+    if (call.ticket.status === 'waiting_human') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        `You asked the owner a question and the ticket waits for the answer: ${tool} is not possible now. End your turn; the answer arrives as your next message.`,
+      );
+    }
+    if (call.ticket.status !== 'in_review') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        `The ticket is ${call.ticket.status}: ${tool} needs it in_review.`,
+      );
+    }
+  }
+
+  /** The checks of `ticket_ask` and `ticket_give_up`: a review run's, or a working run's. */
+  private requireDeciding(call: Call, tool: McpToolName): void {
+    if (call.run.purpose === 'review') this.requireReviewing(call, tool);
+    else this.requireWorking(call, tool);
   }
 
   /**
@@ -839,7 +1030,7 @@ export class McpBackend {
     input: McpToolInput<'ticket_ask'>,
     settings: { commentMaxLength: number },
   ) {
-    this.requireWorking(call, 'ticket_ask');
+    this.requireDeciding(call, 'ticket_ask');
     this.tooLongRefusal([this.checkComment('question', input.question, settings.commentMaxLength)]);
     const row = await this.insertComment(tx, call, 'question', input.question);
     const updated = await applyRunAction(tx, {
@@ -852,7 +1043,7 @@ export class McpBackend {
       commentId: row.id,
       now: this.now(),
     });
-    if (!updated) throw new Error('ticket left in_progress during ticket_ask');
+    if (!updated) throw new Error('ticket changed status during ticket_ask');
     const keys = await this.profileKeys(tx);
     return {
       output: {
@@ -873,7 +1064,7 @@ export class McpBackend {
     input: McpToolInput<'ticket_give_up'>,
     settings: { commentMaxLength: number },
   ) {
-    this.requireWorking(call, 'ticket_give_up');
+    this.requireDeciding(call, 'ticket_give_up');
     this.tooLongRefusal([
       this.checkComment('reason', input.reason, settings.commentMaxLength),
       this.checkComment('tried', input.tried, settings.commentMaxLength),
