@@ -174,8 +174,7 @@ function jobsDue(result: CiResult | null, now: Date, intervalMs: number): boolea
   if (result?.state !== 'failed') return false;
   if (!result.jobs_read) return result.jobs_problem === null || due(result.jobs_problem.at);
   return result.failed_jobs.some(
-    (job) =>
-      job.log.state === 'unavailable' && passing(job.log.problem) && due(job.log.problem.at),
+    (job) => job.log.state === 'unavailable' && passing(job.log.problem) && due(job.log.problem.at),
   );
 }
 
@@ -278,11 +277,7 @@ export class CiStatusReader {
     // A round asks GitHub only for what it misses (owner's review, step G2b).
     const asks =
       round === null ||
-      jobsDue(
-        CiResult.parse(source.ciResult),
-        this.now(),
-        settings.githubPollSeconds * 1000,
-      ) ||
+      jobsDue(CiResult.parse(source.ciResult), this.now(), settings.githubPollSeconds * 1000) ||
       this.failedReads.has(roundKey(source.id, round.messageId));
     const held = asks ? await this.heldUntil() : null;
     let problem: CiReadProblem | null = null;
@@ -294,7 +289,8 @@ export class CiStatusReader {
     if (round === null) source = (await this.run(source.id)) ?? source;
     else {
       const reread = await this.run(source.id);
-      const kept = reread === undefined ? null : z.array(CiRound).parse(reread.ciRounds)[round.index];
+      const kept =
+        reread === undefined ? null : z.array(CiRound).parse(reread.ciRounds)[round.index];
       if (kept?.messageId === round.messageId) source = { ...source, ciResult: kept.result };
     }
     const result = source.ciResult === null ? null : CiResult.parse(source.ciResult);

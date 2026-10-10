@@ -93,10 +93,7 @@ export interface ImplementTicket {
    * on a conflict). Null otherwise.
    */
   previousCi?:
-    | { kind: 'failed' }
-    | { kind: 'failed_unsent' }
-    | { kind: 'conflict'; base: string }
-    | null;
+    { kind: 'failed' } | { kind: 'failed_unsent' } | { kind: 'conflict'; base: string } | null;
 }
 
 /** The ticket alone does not fit, even with its description cut to nothing (03, section 3.2). */

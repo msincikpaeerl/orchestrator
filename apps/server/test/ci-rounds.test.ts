@@ -611,7 +611,7 @@ describe('ci_status after a round (owner addition 2)', () => {
   });
 });
 
-describe("ci_status in the next run, after a run ended following a confirmed round (owner review, step G2b)", () => {
+describe('ci_status in the next run, after a run ended following a confirmed round (owner review, step G2b)', () => {
   it("answers with that run's latest round, not an older run's commit, asking GitHub nothing", async () => {
     const { daemon, runId, runToken, repo } = await working('queued', { maxCiFailuresPerRun: 1 });
     // The first run ends ci_failed: its wait keeps its last commit.

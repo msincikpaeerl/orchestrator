@@ -251,9 +251,11 @@ describe('a CI result sent back to a run waiting for CI', () => {
       });
       // Inside the worktree: the daemon refuses commands on paths outside it.
       const worktree = () =>
-        (JSON.parse(readFileSync(stateFilePath(home.paths, run.runId), 'utf8')) as {
-          worktree: string | null;
-        }).worktree;
+        (
+          JSON.parse(readFileSync(stateFilePath(home.paths, run.runId), 'utf8')) as {
+            worktree: string | null;
+          }
+        ).worktree;
       await waitFor(
         () => existsSync(join(worktree() ?? '/nowhere', 'submit-answered')),
         30_000,
