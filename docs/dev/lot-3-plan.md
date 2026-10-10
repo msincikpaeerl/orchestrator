@@ -743,6 +743,13 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 - **Changed expectations**, each because G2b replaces G1a's interim end at the first failure: `ci-wait.test.ts` sees the failure sent back; `ci-status.test.ts` reaches `ci_failed` through one round with **Most CI failures per run** at 1; the every-event scenario's conflict goes back as a round (refused once, then taken); the template list gains `ci-failed`.
 - **Help and CHANGELOG** stay for G2c, as planned: until then Help > Tickets still says a failed CI ends the run.
 
+**The owner's review (2026-10-10, before the merge)**, four fixes on this branch, each with a test that failed before it:
+
+1. **Daemon**: a `run.input` arriving between the accepted `ticket_submit` (`pending_ci`) and that turn's `Stop` was queued and acknowledged, then never sent (the turn's end entered `waiting_ci` and returned). The queue is sent right after the run enters `waiting_ci`. `run.resume` cannot reach that window: the session is alive, so it is refused.
+2. **`ci_status` after a round** reads again only what the round misses (failed jobs not listed, a log unavailable for a passing reason), at most once per **GitHub check interval**, never while the request limit holds, and keeps it on the round; a complete round asks GitHub nothing. A round's answer says it is that round's result (template part `round`), never "read again at most every".
+3. **A failure read after CI wait at submission** ends the run `ci_timeout` with "CI failed on GitHub (failed: <checks>), and the result was read only after the wait had ended."; the next run's first message tells the agent to read it with `ci_status` (part `after-ci-failed-unsent` of `implement.md`).
+4. **`ci_status` in the next run** after a run that ended following a confirmed round answers with that round (the ticket's latest run holding a wait or a confirmed round).
+
 ### [ ] G2c. Check CI again, screens and Help
 
 - **Check CI again** and its refusals, "CI did not finish" in Needs you, offered on the ticket page as in the owner's addition (as changed at the start of G2b: after `ci_timeout` and `ci_failed` only, **Run now** said instead after a conflict or a cancellation because the branch moved); the ticket page's CI line; the ended run's CI card with its rounds; the settings' texts; Help (the two rows, a re-run by hand); CHANGELOG.
