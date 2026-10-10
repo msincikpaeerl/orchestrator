@@ -788,9 +788,9 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 **The owner's fix before the merge (2026-10-10)**, tests first: **Check CI again** read GitHub as after **Wait for CI to start** in every case, so after a timeout from a pull request never opened, a press just after **Try again** opened it accepted "No CI found" before any CI could appear. "No CI found" now needs the pull request open for **Wait for CI to start** (the run's kept value) since the later of the run's wait start and the pull request's opening; before, the answer is "not finished" and nothing changes. When the pull request was opened is kept by the server: `tickets.pull_request_opened_at` (migration 0024), set when it opens or reopens it, or first finds it open when updating (the later side); GitHub gives no reopen time. Tests in `ci-check-again.test.ts`: at once and later still nothing (not finished), after the wait "No CI found", a run passed before the wait accepted at once; and two presses at the same moment after `ci_failed` accept once, the attempt taken back once (the project's row lock already serialises them: this test passed before the fix).
 
 
-### Step H: Quality and review runs, split in four (rule 15)
+### Step H: Quality and review runs, split in five (rule 15)
 
-Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers below. Scope of the whole step (as planned):
+Split approved by the owner on 2026-10-10 (H1 to H4 below; H5 added at the start of H4), with the answers below. Scope of the whole step (as planned):
 
 - `agents/quality.md` (03 section 2.5, with the instruction on not running the tests again), the template `review.md` and the review's place in the common rules; the allowlist smoke test covers `quality` (different rules from `architect`).
 - **Start review** (Run now with purpose `review`, the `quality` profile, any machine, the branch from GitHub) and **Skip review**; "Ready for review" in "Needs you".
@@ -908,7 +908,28 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers bel
 
 - "Ready for review" and "Review did not finish" in "Needs you" ("Work finished: check it" kept for 0.3.0 tickets only); **Start review** and **Skip review** on the ticket page and in "Needs you"; the ticket page's review section; the run page's review card; the **Awaiting merge** line and Help row (answer 5); Help: Quality, what a review costs, **Skip review**, workflow changes, the states table; CHANGELOG.
 
-**Done when** Playwright on both viewports shows **Start review**, **Skip review** and the review summary, with the screenshots `needs-you-ready-for-review`, `ticket-review-approved`, `ticket-review-changes`, `ticket-review-not-posted` and `run-review` in `apps/web/e2e-screenshots/`.
+**Done when** Playwright on both viewports shows **Start review**, **Skip review** and the review summary, with the screenshots `needs-you-ready-for-review`, `ticket-review-approved`, `ticket-review-changes`, `ticket-review-not-posted` and `run-review` in `apps/web/e2e-screenshots/`, and `needs-you-review-not-finished` (a decision that was not applied); on the phone viewport nothing scrolls sideways (owner's addition).
+
+**The owner's answers (2026-10-10, start of H4)**, written into spec 02 (sections 4 and 6.4) and Help:
+
+1. **Rules of their own for review runs** (A): step H5 below, right after H4.
+2. **A decision thrown away** (A): "Review did not finish for BAK-12: Contact form", then "Quality approved commit abc1234 at 14:52, but the approval was not applied: <why>. It does not count as a failed attempt." or "Quality requested changes on commit abc1234 (3 points) at 14:52, but the request was not applied: <why>. It does not count as a failed attempt."; the reasons "you stopped the run before it ended", "the branch changed on the machine before the run ended", "machine laptop went offline before the run ended", and Runs' words for a timeout or a crash followed by "before the run ended". The points are not listed in the item, which links to the run page; the run page's "Decision not applied: <why>" uses the same reasons.
+3. **A head moved before the review started** (A; the daemon's check at preparation, no session): "the pull request changed on GitHub before the review started (now def5678)", in "Needs you", on the run page and in the ticket's comment ("during the review" stays for a head found moved at the decision).
+4. **The ticket page's review section** (A, with the owner's change): "Posting on GitHub…" while the post waits; after a review run that ended without a decision while the ticket is **In review**, "Review did not finish: <reason>" with a link to the run, next to **Start review** and **Skip review**; only the latest review (or skip) is shown, earlier ones staying in the timeline as `review` comments. **Owner's change**: when that latest review is about an earlier submission than the work now in review (after a request for changes, the agent fixed it and the ticket is back **In review** with a new commit nobody reviewed), the section says so: "Changes requested by Quality · commit abc1234 · 14:52, on an earlier submission. The work now in review is commit def5678 and has not been reviewed yet.", with **Start review** and **Skip review**; the same for an approval or a skip made out of date by the owner's **Request changes**. Tested.
+5. **The run page's review card without a decision** (A): "Decision: none yet" while the run is active, "Decision: none, the run ended without one" after.
+6. **Start review's refusals** (A): kept as written in H1, and **Skip review**'s "Quality is reviewing this ticket now: wait for the review to end, or stop its run first."
+7. **Help > Tickets, the In review row** (A, with the owner's change, keeping the nuance the row had): "The agent finished its work and the checks accepted it; its pull request is on GitHub, and CI passed or found nothing to run. Start review asks Quality to review it, which uses one Claude Code session from your Claude plan; Skip review moves it to Awaiting merge without a review and uses none. A review that does not finish never counts as a failed attempt."
+- **Choices agreed**: "Ready for review" is ordered by when the ticket entered **In review**, "Review did not finish" by when the review run ended; **Start review** is the main button and **Skip review** the secondary one, on the ticket page and in "Needs you"; the extra screenshot `needs-you-review-not-finished` with the phone check.
+
+### [ ] H5. Rules of their own for review runs
+
+Approved by the owner on 2026-10-10 (answer 1 of H4), from the H2 summary (about half a session, no protocol change).
+
+- `agents/common-rules.md` split in three parts: shared rules; builder rules (`ticket_submit`, committing, `git merge`, `Edit` and `Write`); reviewer rules. The server picks them by run purpose: `implement` and `fix_review` get shared and builder rules, `review` shared and reviewer rules.
+- Quality is no longer told to end with `ticket_submit`, to commit, to merge or to use `Edit` and `Write`. Every default profile's version goes up once.
+
+**Done when** a test shows which rules each purpose receives, and the snapshot of the review messages shows the result for the owner to read.
+
 
 ### [ ] I. Changes after a review
 
