@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CheckCiAgainRefusal } from './ci.js';
+import { CheckCiAgainRefused } from './ci.js';
 import { RunRefusal } from './runs.js';
 import { SettingName } from './settings.js';
 
@@ -125,7 +125,7 @@ export const ApiError = z.object({
     /** `dependency_cycle`: the tickets of the cycle, each waiting for the next (`WEB-1`, ...). */
     cycle: z.array(z.string()).optional(),
     /** `ci_check_refused`: why **Check CI again** was refused. */
-    ciRefusal: CheckCiAgainRefusal.optional(),
+    ciRefusal: CheckCiAgainRefused.optional(),
     /** `setting_order_invalid`: the two settings and the values they would have. */
     settingOrder: z
       .object({

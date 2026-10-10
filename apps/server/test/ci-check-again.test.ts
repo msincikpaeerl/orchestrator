@@ -243,7 +243,7 @@ describe('Check CI again after CI did not finish', () => {
     // Accepted: offered no more.
     expect(await refused(runId)).toMatchObject({
       code: 'ci_check_refused',
-      ciRefusal: 'not_offered',
+      ciRefusal: { reason: 'not_offered' },
     });
   });
 
@@ -290,7 +290,7 @@ describe('Check CI again refused', () => {
     const { daemon, runId } = await timedOut();
     const next = await h.running(daemon);
     expect(await refused(runId)).toMatchObject({
-      ciRefusal: 'run_active',
+      ciRefusal: { reason: 'run_active' },
       message: 'A run is working on WEB-1: its own submission will be checked.',
     });
     // The later run's line is hidden while it works without having handed in.
@@ -306,7 +306,7 @@ describe('Check CI again refused', () => {
     });
     // That run's session stopped while it waited: its work stays newer than the first run's.
     await h.report(daemon, state(next.runId, { state: 'ended', reason: 'stopped' }));
-    expect((await refused(runId)).ciRefusal).toBe('newer_work');
+    expect((await refused(runId)).ciRefusal?.reason).toBe('newer_work');
   });
 
   it('when newer work was accepted since', async () => {
@@ -321,7 +321,8 @@ describe('Check CI again refused', () => {
     });
     expect(runToken).not.toBe(next.runToken);
     const refusal = await refused(runId);
-    expect(refusal.ciRefusal).toBe('newer_work');
+    expect(refusal.ciRefusal).toMatchObject({ reason: 'newer_work' });
+    expect(refusal.ciRefusal?.acceptedAt).toBeTruthy();
     expect(refusal.message).toMatch(/^WEB-1 has newer work, accepted on .*: its own CI decides\.$/);
   });
 
@@ -330,7 +331,7 @@ describe('Check CI again refused', () => {
     const head = h.github.commit(repo, BRANCH, { 'src/other.ts': 'export {};\n' }, 'By hand');
     const refusal = await refused(runId);
     expect(refusal).toMatchObject({
-      ciRefusal: 'branch_moved',
+      ciRefusal: { reason: 'branch_moved', commit, head },
       message: `The branch changed on GitHub after commit ${commit.slice(0, 7)} (it is now ${head.slice(0, 7)}), so this result would not be about the latest work. Run now hands the work in again.`,
     });
     expect(await checkedEvents()).toEqual([
@@ -342,7 +343,7 @@ describe('Check CI again refused', () => {
     const { runId, repo } = await timedOut();
     h.github.closePullRequest(repo, 1);
     expect(await refused(runId)).toMatchObject({
-      ciRefusal: 'pull_request_closed',
+      ciRefusal: { reason: 'pull_request_closed', pullRequest: 1 },
       message: 'Pull request #1 is closed on GitHub, so the work cannot be accepted.',
     });
   });
@@ -351,13 +352,13 @@ describe('Check CI again refused', () => {
     const { runId, repo } = await timedOut();
     h.github.mergePullRequest(repo, 1);
     expect(await refused(runId)).toMatchObject({
-      ciRefusal: 'pull_request_merged',
+      ciRefusal: { reason: 'pull_request_merged', pullRequest: 1 },
       message: 'Pull request #1 was merged on GitHub. Use Mark as done manually.',
     });
   });
 
   it('when the pull request was never opened, and its item says the order', async () => {
-    const { daemon, runId, runToken } = await working();
+    const { daemon, runId, runToken, repo } = await working();
     // GitHub refuses to open the pull request until the deadline.
     h.github.override = (request) =>
       request.method === 'POST' && request.path.endsWith('/pulls')
@@ -378,10 +379,19 @@ describe('Check CI again refused', () => {
       }),
     ]);
     expect(await refused(runId)).toMatchObject({
-      ciRefusal: 'no_pull_request',
+      ciRefusal: { reason: 'no_pull_request' },
       message:
         'WEB-1 has no pull request on GitHub yet: Try again in "Pull request not opened" opens it.',
     });
+
+    // Try again opens it; CI then runs and passes: Check CI again accepts the work (owner 3e).
+    h.github.override = undefined;
+    const opened = await h.call('POST', '/api/projects/WEB/tickets/1/pull-request/try-again');
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect((await h.ticket()).pullRequest.opened?.state).toBe('open');
+    expect(await ciItems()).toEqual([expect.objectContaining({ pullRequest: 1 })]);
+    passAll(repo, h.lastPushed ?? '');
+    expect(await checked(runId)).toMatchObject({ outcome: 'accepted', state: 'passed' });
   });
 });
 
@@ -450,7 +460,7 @@ describe('after ci_failed (owner answers 3c and 3d)', () => {
       checkCiAgain: false,
       outcome: { kind: 'too_many', conflict: true, failures: 2 },
     });
-    expect(await refused(runId)).toMatchObject({ ciRefusal: 'not_offered' });
+    expect(await refused(runId)).toMatchObject({ ciRefusal: { reason: 'not_offered' } });
   });
 });
 
@@ -545,7 +555,7 @@ describe('the ticket page and "Needs you" after other ends (owner answers 1, 2 a
     });
     expect(ticket.ci?.failureReason).not.toBeNull();
     expect(await ciItems()).toEqual([]);
-    expect(await refused(runId)).toMatchObject({ ciRefusal: 'not_offered' });
+    expect(await refused(runId)).toMatchObject({ ciRefusal: { reason: 'not_offered' } });
   });
 
   it('cancelled because the branch changed: the head read then', async () => {

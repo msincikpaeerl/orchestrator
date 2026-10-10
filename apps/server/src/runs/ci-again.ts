@@ -5,6 +5,7 @@ import {
   SubmissionRecord,
   maskSecrets,
   type CheckCiAgainRefusal,
+  type CheckCiAgainRefused,
   type CheckCiAgainResponse,
   type EventPayload,
 } from '@orchestrator/protocol';
@@ -54,6 +55,7 @@ class Refused extends Error {
   constructor(
     readonly refusal: CheckCiAgainRefusal,
     message: string,
+    readonly facts: Omit<CheckCiAgainRefused, 'reason'> = {},
   ) {
     super(message);
   }
@@ -112,7 +114,9 @@ export class CiCheckAgain {
         refusal: error.refusal,
         message: error.message,
       });
-      throw new HttpError(409, 'ci_check_refused', error.message, { ciRefusal: error.refusal });
+      throw new HttpError(409, 'ci_check_refused', error.message, {
+        ciRefusal: { reason: error.refusal, ...error.facts },
+      });
     }
   }
 
@@ -141,6 +145,7 @@ export class CiCheckAgain {
         throw new Refused(
           'newer_work',
           `${name} has newer work, accepted on ${timestamp(new Date(at))}: its own CI decides.`,
+          { acceptedAt: at },
         );
       }
     }
@@ -156,7 +161,8 @@ export class CiCheckAgain {
         `Check CI again is offered only when CI did not finish or failed for ${name}'s latest work, not accepted since: Run now continues the work.`,
       );
     }
-    if (ticket.pullRequestNumber === null || run.ciWaitStartedAt === null) {
+    // Try again may have opened it after the run ended: the ticket's pull request now counts.
+    if (ticket.pullRequestNumber === null) {
       throw new Refused(
         'no_pull_request',
         `${name} has no pull request on GitHub yet: Try again in "Pull request not opened" opens it.`,
@@ -206,18 +212,21 @@ export class CiCheckAgain {
       throw new Refused(
         'pull_request_merged',
         `Pull request #${String(pullRequest)} was merged on GitHub. Use Mark as done manually.`,
+        { pullRequest },
       );
     }
     if (pull.value.state === 'closed') {
       throw new Refused(
         'pull_request_closed',
         `Pull request #${String(pullRequest)} is closed on GitHub, so the work cannot be accepted.`,
+        { pullRequest },
       );
     }
     if (pull.value.headSha !== commit) {
       throw new Refused(
         'branch_moved',
         `The branch changed on GitHub after commit ${commit.slice(0, 7)} (it is now ${pull.value.headSha.slice(0, 7)}), so this result would not be about the latest work. Run now hands the work in again.`,
+        { commit, head: pull.value.headSha },
       );
     }
     const read = await this.options.readCommit(repo, commit, pullRequest);

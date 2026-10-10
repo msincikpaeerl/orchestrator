@@ -261,7 +261,8 @@ async function ciTimeoutItems(db: Database): Promise<Items> {
       runId: run.id,
       machine,
       submittedAt: run.submission === null ? null : SubmissionRecord.parse(run.submission).at,
-      pullRequest: outcome.pullRequestOpened ? ticket.pullRequestNumber : null,
+      // The ticket's pull request now: Try again may have opened it since (owner's answer 3e).
+      pullRequest: ticket.pullRequestNumber,
       waitMinutes: run.ciWaitTimeoutMinutes,
       base: run.baseBranch,
       outcome,

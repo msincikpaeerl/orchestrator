@@ -145,3 +145,16 @@ export const CheckCiAgainRefusal = z.enum([
   'pull_request_merged',
 ]);
 export type CheckCiAgainRefusal = z.infer<typeof CheckCiAgainRefusal>;
+
+/**
+ * A refusal of **Check CI again** with the facts its words need (`ci_check_refused`): the commit
+ * and the branch's head for `branch_moved`, the pull request's number, the newer work's date.
+ */
+export const CheckCiAgainRefused = z.object({
+  reason: CheckCiAgainRefusal,
+  commit: z.string().optional(),
+  head: z.string().optional(),
+  pullRequest: z.int().positive().optional(),
+  acceptedAt: z.iso.datetime().optional(),
+});
+export type CheckCiAgainRefused = z.infer<typeof CheckCiAgainRefused>;

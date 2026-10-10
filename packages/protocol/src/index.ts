@@ -122,6 +122,7 @@ export {
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
 export {
   CheckCiAgainRefusal,
+  CheckCiAgainRefused,
   CheckCiAgainRequest,
   CheckCiAgainResponse,
   CiAcceptedLater,
