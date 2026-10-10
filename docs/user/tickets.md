@@ -111,7 +111,7 @@ The ticket moves to **Done**, and tickets waiting for it are no longer blocked b
 
 ## Request changes
 
-Use **Request changes** on a ticket **In review** when the agent's work is not right yet.
+Use **Request changes** on a ticket **In review** when the agent's work is not right yet. It is not offered while Quality is reviewing the ticket: wait for the review to end, or stop its run first.
 
 1. Open the ticket, or find it in [Needs you](needs-you.md#agents-work), and click **Request changes**.
 2. Write **what should change**. This comment is required; it is added to the timeline and the next agent reads it.
@@ -232,7 +232,7 @@ It is refused while a run is working on the ticket, when newer work was accepted
 
 ### Workflow files
 
-Workflows are the files of `.github/workflows/`: the automatic checks GitHub runs on the pull request. A workflow runs on GitHub before anyone reads it, and an agent changing one could weaken the checks that judge its own work. So the ticket page warns you under **Pull request**, and the pull request's description says the same:
+Workflows are the files of `.github/workflows/`: the automatic checks GitHub runs on the pull request. A workflow runs on GitHub before anyone reads it, and an agent changing one could weaken the checks that judge its own work. So the ticket page warns you under **Pull request**, and the pull request's description, **Ready for review** in Needs you and Quality's instructions for its review say the same:
 
 | Warning | Why | What to do |
 |---|---|---|
@@ -257,6 +257,40 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 
 **Run now** starts the next run on the machine that holds the work, and tells the agent that its work is committed but was not pushed. The item disappears as soon as a push of the ticket's branch succeeds, including the push a machine makes when a run ends, or when the ticket is cancelled or marked as done, or the machine is revoked (its work not on GitHub is then lost, see [Runs](runs.md#where-the-work-is)). It stays while the next run works.
 
+## Review by Quality
+
+When a ticket's work is accepted and CI has passed (or found nothing to run), the ticket is **In review** and [Needs you](needs-you.md#agents-work) lists it as **Ready for review**, with its pull request, the CI result and a line when the work changed workflow files. You choose:
+
+- **Start review**: Quality, the reviewing agent (see [Agents](agents.md#quality)), reads the work and approves it or asks for changes. It starts at once, without a confirmation, like **Run now**, and the run page opens.
+- **Skip review**: you check the pull request yourself. After a confirmation, the ticket moves to **Awaiting merge** with the comment "The owner skipped the review.".
+
+Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it.
+
+### What a review costs
+
+A review by Quality uses one Claude Code session, from the usage of your Claude plan, like a run of an agent. **Skip review** uses none. Quality reviews one commit: the one CI checked. When CI passed on GitHub, Quality does not run the tests again unless the changes or the CI result give it a reason, which keeps the session short. With **No CI found**, nothing on GitHub tested the work, so Quality runs the project's tests and build itself when there are any, and says what it ran.
+
+### The result
+
+- **Approved**: the ticket moves to **Awaiting merge**. Merge the pull request on GitHub, then use [Mark as done manually](#mark-as-done-manually): this version does not notice the merge yet.
+- **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. **Run now** starts the next run of its assignee, which reads the points. Quality's request never counts as a failed attempt.
+
+The ticket page's **Review** shows the latest review: "Approved by Quality · commit abc1234 · <time>" with Quality's summary, or "Changes requested by Quality · commit abc1234 · 3 points" with each point and the file it is about, "Review skipped by you on <date>", or "Review in progress on <machine>". When that review is about an earlier submission (the agent changed the work since), it says so, with the commit now in review, which nobody has reviewed yet. Earlier reviews stay in the timeline. The review's run page shows the commit reviewed and the decision.
+
+Quality's text is shown as plain text: it is an agent's writing, not the Orchestrator's.
+
+### The review on GitHub
+
+The Orchestrator also posts the review on the pull request, as a comment review, so you see it next to the changes: "**Quality review: approved**" or "**Quality review: changes requested**" with the points. GitHub does not let anyone approve or request changes on their own pull request, and every pull request is yours, so it is a comment. Nothing in it can notify anyone or close an issue, and secrets are hidden. The ticket page shows **Posted on GitHub** with a link, **Posting on GitHub…** for a moment, or a note when it is not known to be there, such as "Not posted on GitHub: the token needs Pull requests (Read and write). The decision stands in the Orchestrator.". A post that failed is not tried again: the decision stands either way, and the ticket page holds the whole review.
+
+When GitHub could not be read as Quality decided, the ticket page says "The pull request's head could not be checked on GitHub when Quality decided: check it is still abc1234 before merging." Open the pull request and check its latest commit before merging.
+
+### When the review did not finish
+
+A review run can end without a decision applied: Quality gave up, its time ran out, its session stopped, its machine went offline, you stopped it, or the work changed during the review (the pull request changed on GitHub, before or during the review, or the branch changed on the machine). The ticket stays **In review**, nothing counts as a failed attempt, and [Needs you](needs-you.md#agents-work) shows **Review did not finish**, saying why, or which decision Quality had made and why it was not applied. Use **Start review** to review again, or **Skip review**. When you stop a review before Quality decided anything, the item is plain **Ready for review** again.
+
+**Start review** is refused when it cannot start, saying why, for example when the pull request's latest commit on GitHub is not the one CI checked (someone pushed to it, or used **Update branch**): use **Skip review** and check it yourself, or **Request changes** so the agent continues.
+
 ## Ticket states
 
 | State | Meaning |
@@ -265,12 +299,12 @@ From version 0.4.0, when an agent submits its work, its machine first pushes the
 | **To do** | Waiting for work. |
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
-| **In review** | The agent finished its work and the checks accepted it. From version 0.4.0 the work is on GitHub, with its pull request, and CI passed or found nothing to run (see [Submission and the pull request](#submission-and-the-pull-request)); it waits for you to check it. |
-| **Awaiting merge** | The review approved the work: you merge the pull request on GitHub. Not used yet in this version. |
+| **In review** | The agent finished its work and the checks accepted it; its pull request is on GitHub, and CI passed or found nothing to run (see [Submission and the pull request](#submission-and-the-pull-request)). **Start review** asks Quality to review it, which uses one Claude Code session from your Claude plan; **Skip review** moves it to **Awaiting merge** without a review and uses none. A review that does not finish never counts as a failed attempt (see [Review by Quality](#review-by-quality)). |
+| **Awaiting merge** | The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. This version does not notice the merge yet: after merging, use [Mark as done manually](#mark-as-done-manually). |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 
-In this version, agents move tickets through **In progress**, **Waiting for you** and **In review**. When you have checked the work of a ticket **In review**, on its pull request, use [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not. Nothing moves a ticket to **Awaiting merge** yet.
+Agents move tickets through **In progress**, **Waiting for you** and **In review**; Quality's approval, or your **Skip review**, moves them to **Awaiting merge**, and Quality's request for changes back to **To do**. A ticket left **In review** by version 0.3.0, without a pull request, is checked by you as before: [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not.
 
 ## If an action is refused
 

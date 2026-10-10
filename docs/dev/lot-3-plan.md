@@ -904,7 +904,7 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below; H5 added at the start
 
 **Done when** fake GitHub tests show one comment review per decision on the right commit, a mention and an issue reference that do not work, a planted secret masked, a review too long cut with its marker, a 403 for a missing permission and GitHub unreachable each keeping the decision with the note and the event, and a server restart during the post never posting twice.
 
-### [ ] H4. Screens and Help
+### [x] H4. Screens and Help
 
 - "Ready for review" and "Review did not finish" in "Needs you" ("Work finished: check it" kept for 0.3.0 tickets only); **Start review** and **Skip review** on the ticket page and in "Needs you"; the ticket page's review section; the run page's review card; the **Awaiting merge** line and Help row (answer 5); Help: Quality, what a review costs, **Skip review**, workflow changes, the states table; CHANGELOG.
 
@@ -920,6 +920,15 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below; H5 added at the start
 6. **Start review's refusals** (A): kept as written in H1, and **Skip review**'s "Quality is reviewing this ticket now: wait for the review to end, or stop its run first."
 7. **Help > Tickets, the In review row** (A, with the owner's change, keeping the nuance the row had): "The agent finished its work and the checks accepted it; its pull request is on GitHub, and CI passed or found nothing to run. Start review asks Quality to review it, which uses one Claude Code session from your Claude plan; Skip review moves it to Awaiting merge without a review and uses none. A review that does not finish never counts as a failed attempt."
 - **Choices agreed**: "Ready for review" is ordered by when the ticket entered **In review**, "Review did not finish" by when the review run ended; **Start review** is the main button and **Skip review** the secondary one, on the ticket page and in "Needs you"; the extra screenshot `needs-you-review-not-finished` with the phone check.
+
+*Done 2026-10-10.* Choices made in the step (flagged to the owner):
+
+- **Where it lives**: the facts in `apps/server/src/runs/review-view.ts` (`ticketReview`, `runReview`, `reviewEnd`, `reviewCiOf`, shared with **Start review**); `TicketDetail.review` (`TicketReview`: the latest review, the work in review with `earlier`, `offered`), `Run.review` (`RunReview`), the "Needs you" items `ready_for_review` and `review_not_finished` (`ReviewEnd`: `gave_up`, `moved_before_start`, `moved_on_github`, `moved_on_machine`, `stopped`, `failed`). The words in `apps/web/src/tickets/review-text.ts`, the components in `apps/web/src/tickets/review.tsx` (**Start review** and **Skip review** in `actions.tsx`). Tests: `apps/server/test/review-screens.test.ts`, `apps/web/src/tickets/review-text.test.ts`, `apps/web/e2e/reviews.e2e.ts`.
+- **Where a review found the head moved** is kept on the run (`review_moved`, `review_moved_head`, migration 0027): at a decision (GitHub, with its head), at the end on the machine, or at preparation, for which the daemon's end report gained `movedHead` (GitHub's head; an optional field of the unreleased protocol 2, no version change). Answer 3's words are also the ticket's comment.
+- **"Ready for review"** is shown only for a ticket in review with a pull request, work CI checked, and no run active; its "Since" is the work's acceptance (the run's end, or **Check CI again**). A review run that did not finish counts as the latest review only while it is about the work in review; one the owner stopped before any decision is passed over (plain "Ready for review").
+- **"Earlier submission"**: a decision whose commit is not the one in review, or a skip older than the work's acceptance. Until step I, **Request changes** is not offered on **Awaiting merge**, so a skip or an approval can only be made out of date by a later step's actions: the server test puts the ticket back to **To do** to show it.
+- **Words not in the approved list**, written by me: the workflow line of "Ready for review" ("Workflow files changed: this work changes files under .github/workflows/, which decide what CI checks on GitHub. Look at them on the pull request before reviewing or merging." and the "may have changed" form); "Not reviewed yet." in the ticket page's section; the changes heading carries its time ("Changes requested by Quality · commit abc1234 · 3 points · 14:52"); "Open the review run"; Help's new section **Review by Quality** (Tickets) with "What a review costs", "The result", "The review on GitHub", "When the review did not finish".
+- **Not in H4**: the rules of their own for review runs (H5).
 
 ### [ ] H5. Rules of their own for review runs
 
