@@ -116,7 +116,9 @@ describe('Needs you (02, section 4)', () => {
     expect(items.map((item) => item.type)).toEqual([
       'question',
       'ticket_proposed',
-      'work_to_check',
+      // Finished work with its pull request is ready for review (owner's answer 6f, lot 3 step
+      // H); "Work finished: check it" stays for 0.3.0 tickets without one (review-screens.test).
+      'ready_for_review',
       'run_paused',
     ]);
     const since = items.map((item) => ('since' in item ? item.since : ''));
@@ -132,8 +134,8 @@ describe('Needs you (02, section 4)', () => {
       },
       {
         ticket: { number: 2, title: 'Opening hours' },
-        summary: 'Adds the contact form.',
-        runId: two.runId,
+        pullRequest: { number: 1 },
+        ci: 'passed',
       },
       {
         ticket: { number: 3, title: 'Menu page' },

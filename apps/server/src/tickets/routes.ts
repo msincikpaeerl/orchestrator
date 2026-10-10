@@ -40,6 +40,7 @@ import { HttpError, parseInput } from '../http.js';
 import type { ProjectRow } from '../projects/model.js';
 import type { CiCheckAgain } from '../runs/ci-again.js';
 import { ticketCi } from '../runs/ci-outcome.js';
+import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
 import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
@@ -377,6 +378,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         : null,
       pullRequest: ticketPullRequest(ticket),
       ci: await ticketCi(executor, ticket),
+      review: (await ticketReview(executor, ticket)).review,
     };
   }
 

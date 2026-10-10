@@ -13,6 +13,7 @@ import {
   CiRoundRefusal,
   PushResult,
   ReviewDecision,
+  type ReviewMoved,
   SESSION_ALIVE_REFUSAL,
   SESSION_CLOSED_REFUSAL,
   TEXT_CEILING,
@@ -102,6 +103,7 @@ import {
 import { applyRunAction } from '../tickets/transitions.js';
 import { implementTicket, reviewTicket } from './first-message.js';
 import { ciOutcome, ciSourceRun } from './ci-outcome.js';
+import { reviewCiOf } from './review-view.js';
 import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
 import { storedTokenClient } from '../github/connection.js';
 import { readPullRequest } from '../github/pull-requests.js';
@@ -412,9 +414,19 @@ export class RunService {
       onGitHub?: boolean;
       /** A review run's end, in words, when the failure reason does not say it all (lot 3 H2). */
       reviewWhy?: string;
+      /** Where a review run found the head moved, and GitHub's head then (lot 3 step H4). */
+      reviewMoved?: { where: ReviewMoved; head: string | null };
     } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
+    if (facts.reviewMoved) {
+      const moved = {
+        reviewMoved: facts.reviewMoved.where,
+        reviewMovedHead: facts.reviewMoved.head,
+      };
+      await tx.update(schema.runs).set(moved).where(eq(schema.runs.id, locked.run.id));
+      locked.run = { ...locked.run, ...moved };
+    }
     await this.setStatus(tx, locked, status, cause, {
       failureReason,
       endReason: facts.endReason,
@@ -636,6 +648,7 @@ export class RunService {
       await this.fail(tx, locked, 'review_branch_moved', 'review_decision', {
         detail: `The pull request's head on GitHub is now ${head.slice(0, 7)}, not the commit under review ${commit.slice(0, 7)}`,
         reviewWhy: `the pull request changed on GitHub during the review (now ${head.slice(0, 7)})`,
+        reviewMoved: { where: 'github', head },
       });
       return locked.machine.id;
     });
@@ -1378,18 +1391,7 @@ export class RunService {
     if (active.length > 0) throw refuse({ reason: 'review_active' }, 'A review is already running');
     const source = await ciSourceRun(executor, ticket.id);
     const outcome = source === null ? null : ciOutcome(source);
-    const ci: ReviewCi | null =
-      outcome === null
-        ? null
-        : outcome.acceptedLater !== null
-          ? outcome.acceptedLater.state === 'passed'
-            ? 'passed_later'
-            : 'no_ci'
-          : outcome.kind === 'passed'
-            ? 'passed'
-            : outcome.kind === 'no_ci'
-              ? 'no_ci'
-              : null;
+    const ci = reviewCiOf(outcome);
     // A ticket left in review by 0.3.0 has neither a pull request nor work CI checked.
     if (
       source === null ||
@@ -2973,9 +2975,23 @@ export class RunService {
               locked.machine.claudeCodeVersion,
             );
           }
+          // Where a review found the head moved (owner's answer 3, lot 3 step H4): at the end on
+          // the machine, or at preparation, before any session, with GitHub's head then.
+          const moved =
+            run.purpose === 'review' && end.failureReason === 'review_branch_moved'
+              ? payload.headMoved === true
+                ? { where: 'machine' as const, head: null }
+                : { where: 'before_start' as const, head: payload.movedHead }
+              : undefined;
           await this.fail(tx, locked, end.failureReason, 'daemon', {
             endReason: payload.reason,
             detail,
+            reviewMoved: moved,
+            ...(moved?.where === 'before_start'
+              ? {
+                  reviewWhy: `the pull request changed on GitHub before the review started${moved.head === null ? '' : ` (now ${moved.head.slice(0, 7)})`}`,
+                }
+              : {}),
             onGitHub:
               payload.branch !== null &&
               locked.ticket !== null &&

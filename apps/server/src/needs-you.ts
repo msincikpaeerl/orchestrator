@@ -6,6 +6,7 @@ import {
   DodReport,
   PullRequestFailure,
   SubmissionRecord,
+  WorkflowReason,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
 import {
@@ -29,6 +30,7 @@ import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome } from './runs/ci-outcome.js';
+import { ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
 import { profileLinks, toComment } from './tickets/model.js';
@@ -81,7 +83,40 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
         question: toComment(question, profiles),
         since: question.createdAt.toISOString(),
       });
+    } else if (ticket.pullRequestNumber !== null && ticket.pullRequestUrl !== null) {
+      // "Ready for review", or "Review did not finish" (owner's answers 2 to 5, lot 3 steps H and
+      // H4); nothing while a run works on it.
+      const { review, ready } = await ticketReview(db, ticket);
+      if (!review.offered || ready === null) continue;
+      const latest = review.latest;
+      if (latest?.kind === 'not_finished') {
+        items.push({
+          type: 'review_not_finished',
+          ticket: ref,
+          runId: latest.runId,
+          machine: latest.machine,
+          decision: latest.decision,
+          end: latest.end,
+          since: latest.endedAt,
+        });
+        continue;
+      }
+      items.push({
+        type: 'ready_for_review',
+        ticket: ref,
+        pullRequest: { number: ticket.pullRequestNumber, url: ticket.pullRequestUrl },
+        commit: ready.commit,
+        ci: ready.ci,
+        checkedAgainAt: ready.checkedAgainAt,
+        workflowFlag: ticket.workflowChanges
+          ? ticket.workflowReason === null
+            ? 'not_kept'
+            : WorkflowReason.parse(ticket.workflowReason)
+          : null,
+        since: ready.since,
+      });
     } else {
+      // Left in review by 0.3.0, without a pull request: the owner checks it (answer 6f).
       // Submitted when its run succeeded; a ticket moved there otherwise shows its last change.
       const [run] = await db
         .select({ id: schema.runs.id, endedAt: schema.runs.endedAt })

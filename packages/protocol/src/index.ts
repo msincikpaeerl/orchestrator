@@ -137,8 +137,14 @@ export {
   ReviewDecision,
   ReviewDecisionKind,
   ReviewPointRecord,
+  ReviewEnd,
+  ReviewMoved,
   ReviewPost,
   ReviewPostProblem,
+  ReviewPostView,
+  RunReview,
+  TicketReview,
+  TicketReviewLatest,
 } from './api/reviews.js';
 export {
   LiveRun,

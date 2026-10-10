@@ -20,6 +20,7 @@ import {
 } from '@orchestrator/protocol';
 import { z } from 'zod';
 import { ciHistory } from './ci-outcome.js';
+import { runReview } from './review-view.js';
 
 export type RunRow = typeof schema.runs.$inferSelect;
 export type AccountRow = typeof schema.claudeAccounts.$inferSelect;
@@ -199,6 +200,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     outcome: row.outcome,
     ci: ciWait(row, context),
     ciHistory: ciHistory(row),
+    review: runReview(row, context.pullRequest?.number ?? null),
     workingMs: row.workingMs,
     waitingMs: row.waitingMs,
     statusSince: row.statusSince.toISOString(),

@@ -6,8 +6,10 @@ import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
 import { PullRequestFailure } from './pull-requests.js';
+import { ReviewDecision, ReviewEnd } from './reviews.js';
 import { Run } from './runs.js';
-import { Comment } from './tickets.js';
+import { Comment, WorkflowFlag } from './tickets.js';
+import { GitHash } from '../daemon/git.js';
 
 const MachineRef = z.object({ id: z.uuid(), name: z.string() });
 
@@ -126,8 +128,9 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     since: z.iso.datetime(),
   }),
   /**
-   * Work finished by an agent (`in_review` in lot 2, 04 section 1): **Mark as done manually** or
-   * **Request changes**, judged from the run's summary.
+   * Work finished by an agent and left in review by 0.3.0, without a pull request (04 section 1;
+   * from lot 3 step H4 only those): **Mark as done manually** or **Request changes**, judged from
+   * the run's summary.
    */
   z.object({
     type: z.literal('work_to_check'),
@@ -137,6 +140,40 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** The run that submitted it. */
     runId: z.uuid().nullable(),
     /** When it was submitted. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * "Ready for review" (02, section 4; owner's answers 4 and 5, lot 3 step H): a ticket in review
+   * with a pull request and no run active, **Start review** (one session) or **Skip review**.
+   */
+  z.object({
+    type: z.literal('ready_for_review'),
+    ticket: TicketRef,
+    pullRequest: z.object({ number: z.int().positive(), url: z.url() }),
+    /** The commit CI checked for the accepted submission: the one a review reviews. */
+    commit: GitHash,
+    /** CI passed in the run, passed when **Check CI again** read it, or "No CI found". */
+    ci: z.enum(['passed', 'passed_later', 'no_ci']),
+    /** When **Check CI again** accepted the work; null when the run's own CI did. */
+    checkedAgainAt: z.iso.datetime().nullable(),
+    workflowFlag: WorkflowFlag.nullable(),
+    /** When the work entered review: its acceptance. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * "Review did not finish" (02, section 4; owner's answers 2, 3 and 5, lot 3 steps H and H4): the
+   * latest review run of the work in review ended without a decision, or its decision was thrown
+   * away. **Start review** or **Skip review**.
+   */
+  z.object({
+    type: z.literal('review_not_finished'),
+    ticket: TicketRef,
+    runId: z.uuid(),
+    machine: MachineRef,
+    /** The decision thrown away, agent text masked; null when none was made. */
+    decision: ReviewDecision.nullable(),
+    end: ReviewEnd,
+    /** When the run ended. */
     since: z.iso.datetime(),
   }),
   /**
