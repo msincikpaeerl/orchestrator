@@ -166,7 +166,7 @@ The decision is applied only when the run ends `submitted` with no head moved on
 | `request.ask`, `plan.propose` | ✓ | — | — | — |
 | `review.approve`, `review.request_changes` | — | — | ✓ | — |
 
-**The tools a run sees** (owner's answer 1, lot 3 step H). `run.start` carries the tools the run may call: the profile's permissions without those its purpose cannot use (`ticket.submit` in a `review` run; `review.approve` and `review.request_changes` in any other run). The daemon keeps the list with the run and the relay lists only those tools to Claude Code, so an agent never sees a tool it cannot use; the server still refuses each call by role and purpose.
+**The tools a run sees** (owner's answer 1, lot 3 step H). `run.start` carries the tools the run may call: the profile's permissions without those its purpose cannot use (`ticket.submit` in a `review` run; `review.approve` and `review.request_changes` in any other run). The daemon keeps the list with the run and the relay lists only those tools to Claude Code, so an agent never sees a tool it cannot use; the server still refuses each call by role and purpose. An agent that calls a tool its run does not list gets Claude Code's own answer, never the server's: "<tool_use_error>Error: No such tool available: mcp__orchestrator__ticket_submit</tool_use_error>" (Claude Code 2.1.296, `haiku`, the owner's `quality` smoke run of 2026-10-10, lot 3 step H2; the smoke test records it as an INFO line, never a verdict).
 
 Custom agents take the permissions of the role chosen at creation. The owner can remove permissions from a profile but cannot grant a permission its role does not have; this keeps the review and planning boundaries intact.
 
