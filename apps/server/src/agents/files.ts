@@ -67,6 +67,7 @@ export const TEMPLATE_NAMES = [
   'nudge',
   'submit-checks',
   'pull-request',
+  'review-comment',
   'ci-status',
   'ci-failed',
 ] as const;
