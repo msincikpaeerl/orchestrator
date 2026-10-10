@@ -616,8 +616,8 @@ describe('the dry run of the GitHub smoke script', () => {
       );
       expect(output).toContain('Step 9: CI runs started on the second pull request: none.');
       expect(output).toMatch(/Nothing of this run is left on GitHub\.\nStays on GitHub by design:/);
-      expect(output).toMatch(/- pull request #1, merged, with the comment review of step 6: /);
-      expect(output).toMatch(/- pull request #2, closed: /);
+      expect(output).toMatch(/- pull request #1, merged, with the comment reviews of step 6: /);
+      expect(output).toMatch(/- pull request #2, closed, with the comment review of step 9: /);
       expect(output).toMatch(
         /- the merge of pull request #1 into main \(a merge commit\), with docs\/orchestrator-smoke\.md: /,
       );
@@ -630,10 +630,26 @@ describe('the dry run of the GitHub smoke script', () => {
 
       // What GitHub holds afterwards.
       expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: true });
-      expect(github.pullRequest(repo, 1).reviews.map((review) => review.state)).toEqual([
+      // Step 6: without commit_id, then on the head, an older commit and a commit not in it (A11,
+      // A30); step 9: on the closed pull request (A31). Lot 3 step H3.
+      const reviews = github.pullRequest(repo, 1).reviews;
+      expect(reviews.map((review) => review.state)).toEqual([
+        'COMMENTED',
+        'COMMENTED',
+        'COMMENTED',
         'COMMENTED',
       ]);
+      expect(new Set(reviews.map((review) => review.commitId)).size).toBe(3);
       expect(github.pullRequest(repo, 2)).toMatchObject({ state: 'closed', merged: false });
+      expect(github.pullRequest(repo, 2).reviews.map((review) => review.state)).toEqual([
+        'COMMENTED',
+      ]);
+      for (const assumption of ['A11', 'A30', 'A31']) {
+        expect(output).toMatch(new RegExp(`^${assumption}: PASS$`, 'm'));
+      }
+      expect(output).toMatch(
+        /GitHub's answer for a commit not in the pull request \([0-9a-f]{7}\): accepted/,
+      );
       expect([...github.branches(repo).keys()]).toEqual(['main']);
       expect(github.runs(repo).map((each) => each.event)).toEqual([
         'pull_request',
@@ -982,6 +998,14 @@ describe('the dry run of the GitHub smoke script', () => {
         /FAIL {2}post a comment review: GitHub answered HTTP 200, but the answer cannot be read/,
       );
       expect(output).toContain('state: expected string, received null');
+      // The reviews with commit_id of step H3 too, without a verdict on A11, A30 or A31.
+      expect(output).toMatch(
+        /FAIL {2}post a comment review on the head commit: GitHub answered HTTP 200, but the answer cannot be read/,
+      );
+      expect(output).toMatch(
+        /FAIL {2}post a comment review on the closed pull request: GitHub answered HTTP 200, but the answer cannot be read/,
+      );
+      expect(output).not.toMatch(/^A3[01]: FAIL/m);
       expect(output).toMatch(
         /FAIL {2}read pull request #1: GitHub answered HTTP 200, but the answer cannot be read/,
       );
@@ -989,7 +1013,8 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/^Step 6: FAIL/m);
       expect(output).toMatch(/^Step 8: FAIL/m);
       expect(output).toMatch(/^Step 8: merged by a merge commit/m);
-      expect(output).toContain('Step 9: PASS');
+      // Step 9's comment review on the closed pull request is unreadable too (step H3).
+      expect(output).toMatch(/^Step 9: FAIL/m);
       expect(output).toMatch(/Nothing of this run is left on GitHub\./);
       expect(code).toBe(1);
       expect([...github.branches(repo).keys()]).toEqual(['main']);

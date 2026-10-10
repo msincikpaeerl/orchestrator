@@ -141,6 +141,7 @@ const STEPS: [number, string][] = [
 const ASSUMPTIONS = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13',
   'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26',
+  'A30', 'A31',
 ]; // prettier-ignore
 
 const stepVerdicts = new Map<number, { verdict: Verdict; failures: string[] }>();
@@ -1194,7 +1195,90 @@ async function stepSix(context: Context): Promise<void> {
       posted.ok ? `accepted, state ${posted.value.state}` : refusalText(posted.refusal),
     );
   }
+  await reviewsOnCommits(context, number);
   endStep();
+}
+
+/**
+ * Comment reviews with `commit_id`, as the Orchestrator posts them (lot 3 step H3): on the pull
+ * request's head (A11), on an older commit of it, and on a commit that is not in it (A30). GitHub
+ * documents only that `commit_id` defaults to the most recent commit; its answers are printed.
+ */
+async function reviewsOnCommits(context: Context, number: number): Promise<void> {
+  const pull = readable(
+    await readPullRequest(context.client, REPO, number),
+    'read the pull request for its head',
+  );
+  if (pull === null) {
+    notAttempted('A11', "the pull request's head could not be read");
+    notAttempted('A30', "the pull request's head could not be read");
+    return;
+  }
+  const onHead = await postReview(context.client, REPO, number, {
+    event: 'COMMENT',
+    body: "A comment review on the pull request's head commit, by the Orchestrator's smoke script (A11).",
+    commitId: pull.headSha,
+  });
+  if (!onHead.ok && unreadable(onHead.refusal)) {
+    readable(onHead, 'post a comment review on the head commit');
+  } else {
+    check(
+      'A11',
+      onHead.ok && onHead.value.state === 'COMMENTED' && onHead.value.commitId === pull.headSha,
+      `a comment review with commit_id the head ${pull.headSha.slice(0, 7)}: accepted, its commit_id read back`,
+      onHead.ok
+        ? `state ${onHead.value.state}, commit_id ${String(onHead.value.commitId)}`
+        : refusalText(onHead.refusal),
+    );
+  }
+  const older = context.stepOneHead;
+  if (older === undefined || older === pull.headSha) {
+    notAttempted('A30', 'no older commit of the pull request is known');
+  } else {
+    const onOlder = await postReview(context.client, REPO, number, {
+      event: 'COMMENT',
+      body: "A comment review on an older commit of the pull request, by the Orchestrator's smoke script (A30).",
+      commitId: older,
+    });
+    if (!onOlder.ok && unreadable(onOlder.refusal)) {
+      readable(onOlder, 'post a comment review on an older commit');
+    } else
+      check(
+        'A30',
+        onOlder.ok && onOlder.value.commitId === older,
+        `a comment review with commit_id an older commit of the pull request (${older.slice(0, 7)}): accepted, its commit_id read back`,
+        onOlder.ok
+          ? `state ${onOlder.value.state}, commit_id ${String(onOlder.value.commitId)}`
+          : refusalText(onOlder.refusal),
+      );
+  }
+  const first = context.first;
+  if (first === undefined) {
+    notAttempted('A30', 'no commit outside the pull request is known');
+    return;
+  }
+  const outside = await baseAtStepOne(context, first);
+  const onOutside = await postReview(context.client, REPO, number, {
+    event: 'COMMENT',
+    body: "A comment review on a commit that is not in the pull request, by the Orchestrator's smoke script (A30).",
+    commitId: outside,
+  });
+  if (!onOutside.ok && unreadable(onOutside.refusal)) {
+    readable(onOutside, 'post a comment review on a commit not in the pull request');
+    return;
+  }
+  const answer = onOutside.ok
+    ? `accepted: state ${onOutside.value.state}, commit_id ${String(onOutside.value.commitId)}`
+    : refusalText(onOutside.refusal);
+  say(`  GitHub's answer for a commit not in the pull request (${outside.slice(0, 7)}): ${answer}`);
+  // Either is read by the Orchestrator: accepted is posted, a 422 refused (owner's answer 2).
+  check(
+    'A30',
+    onOutside.ok || onOutside.refusal.kind === 'invalid',
+    'a comment review with commit_id a commit not in the pull request: accepted, or refused with 422 (the answer above)',
+    answer,
+  );
+  notes.push(`Step 6: a comment review on a commit not in the pull request: ${answer}.`);
 }
 
 async function stepSeven(context: Context): Promise<void> {
@@ -1255,7 +1339,7 @@ async function stepEight(context: Context): Promise<void> {
   }
   closedNow(number);
   stays.push(
-    `pull request #${String(number)}, ${seen.merged ? 'merged' : 'closed'}${context.reviewed ? ', with the comment review of step 6' : ''}: ${link}`,
+    `pull request #${String(number)}, ${seen.merged ? 'merged' : 'closed'}${context.reviewed ? ', with the comment reviews of step 6' : ''}: ${link}`,
   );
   await checkClosed(context, number, seen.pull, seen.merged);
   if (!seen.merged) {
@@ -1498,7 +1582,30 @@ async function stepNine(context: Context): Promise<void> {
       notes.push(`Step 9: pull request #${String(number)} was merged instead of closed.`);
     }
   }
-  stays.push(`pull request #${String(number)}, closed: ${link}`);
+  // A comment review on the closed pull request (A31, lot 3 step H3): GitHub documents nothing.
+  const onClosed = await postReview(context.client, REPO, number, {
+    event: 'COMMENT',
+    body: "A comment review on a closed pull request, by the Orchestrator's smoke script (A31).",
+    commitId: head,
+  });
+  if (!onClosed.ok && unreadable(onClosed.refusal)) {
+    readable(onClosed, 'post a comment review on the closed pull request');
+  }
+  const closedAnswer = onClosed.ok
+    ? `accepted: state ${onClosed.value.state}`
+    : refusalText(onClosed.refusal);
+  say(`  GitHub's answer for a comment review on the closed pull request: ${closedAnswer}`);
+  if (onClosed.ok || !unreadable(onClosed.refusal))
+    check(
+      'A31',
+      onClosed.ok || onClosed.refusal.kind === 'invalid',
+      'a comment review on a closed pull request: accepted, or refused with 422 (the answer above)',
+      closedAnswer,
+    );
+  notes.push(`Step 9: a comment review on the closed pull request: ${closedAnswer}.`);
+  stays.push(
+    `pull request #${String(number)}, closed${onClosed.ok ? ', with the comment review of step 9' : ''}: ${link}`,
+  );
 
   // Found with state=all (A8).
   const all = readable(
