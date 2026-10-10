@@ -44,6 +44,8 @@ import {
   type ServerMessage,
   McpPermission,
   runMcpTools,
+  type RunPurpose,
+  type SettingValues,
 } from '@orchestrator/protocol';
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
@@ -159,6 +161,19 @@ const FETCHING = new Set<string>(['dispatched', 'starting', 'running']);
  * at an end the daemon decided, and "ending" runs (`isEnding`). A review run never pushes.
  */
 const PUSHING = new Set<string>(['running']);
+
+/** The settings a run's start resolves (04, section 8; 05, section 5). */
+const RUN_START_SETTINGS = [
+  'maxRunDurationMinutes',
+  'idleTimeoutMinutes',
+  'maxNudgesPerRun',
+  'waitingRunLifetimeMinutes',
+  'sessionStartTimeoutSeconds',
+  'mcpCallTimeoutSeconds',
+  'claudeCodeMcpToolTimeoutSeconds',
+  'pushTimeoutSeconds',
+  'dispatchAckTimeoutSeconds',
+] as const;
 
 const refuse = (refusal: RunRefusal, message: string) =>
   new HttpError(409, 'run_not_possible', message, { runRefusal: refusal });
@@ -695,17 +710,7 @@ export class RunService {
   async runNow(projectKey: string, ticketNumber: number): Promise<Run> {
     const github = await this.githubIdentity();
     const { templates, commonRules, allowlist } = await this.files();
-    const settings = await resolveSettings(this.db, [
-      'maxRunDurationMinutes',
-      'idleTimeoutMinutes',
-      'maxNudgesPerRun',
-      'waitingRunLifetimeMinutes',
-      'sessionStartTimeoutSeconds',
-      'mcpCallTimeoutSeconds',
-      'claudeCodeMcpToolTimeoutSeconds',
-      'pushTimeoutSeconds',
-      'dispatchAckTimeoutSeconds',
-    ]);
+    const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
 
     const prepared = await this.db.transaction(async (tx) => {
       const now = this.now();
@@ -787,78 +792,13 @@ export class RunService {
           ? withCommits
           : undefined;
 
-      const machines = await tx.select().from(schema.machines);
-      const accounts = new Map(
-        (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
-      );
-      const busy = await this.busyRuns(tx);
-      const verdict = (machine: MachineRow) => {
-        const account = accounts.get(machine.accountId);
-        if (!account) throw new Error(`account of machine ${machine.id} not found`);
-        return this.unavailable(machine, account, busy.get(account.id) ?? 0, required, now);
-      };
-
-      let chosen: MachineRow | undefined;
-      let lostWork: { machine: MachineRow; commits: number } | undefined;
-      const holder = holding && machines.find((machine) => machine.id === holding.machineId);
-      if (holding && holder && !holder.revokedAt) {
-        const unavailable = verdict(holder);
-        const commits = held;
-        if (unavailable) {
-          throw refuse(
-            {
-              reason: 'machine_unavailable',
-              machine: { id: holder.id, name: holder.name },
-              commits,
-              unavailable,
-            },
-            `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
-          );
-        }
-        chosen = holder;
-      } else {
-        if (holding && holder) {
-          lostWork = { machine: holder, commits: held };
-        }
-        const candidates = machines.filter((machine) => !machine.revokedAt);
-        const available = candidates.filter((machine) => verdict(machine) === null);
-        if (available.length === 0) {
-          const listed = candidates
-            .map((machine) => ({
-              machine: { id: machine.id, name: machine.name },
-              unavailable: verdict(machine) as MachineUnavailable,
-            }))
-            .sort((a, b) => a.machine.name.localeCompare(b.machine.name));
-          throw refuse({ reason: 'no_machine', machines: listed }, 'No machine can take the run');
-        }
-        chosen = await this.preferred(tx, project.id, earlier, available);
-      }
-
-      // The account is locked, so two starts cannot both take its last place (01, invariant 3).
-      const [lockedAccount] = await tx
-        .select()
-        .from(schema.claudeAccounts)
-        .where(eq(schema.claudeAccounts.id, chosen.accountId))
-        .for('update');
-      if (!lockedAccount) throw new Error('account not found');
-      const account = await this.releaseAccount(tx, lockedAccount);
-      const [machine] = await tx
-        .select()
-        .from(schema.machines)
-        .where(eq(schema.machines.id, chosen.id))
-        .for('share');
-      if (!machine) throw new Error('machine not found');
-      const recount = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
-      const unavailable = this.unavailable(machine, account, recount, required, now);
-      if (unavailable) {
-        throw refuse(
-          {
-            reason: 'no_machine',
-            machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
-          },
-          'No machine can take the run',
-        );
-      }
+      const { machine, account, lostWork } = await this.chooseMachine(tx, {
+        projectId: project.id,
+        earlier,
+        required,
+        now,
+        holding: holding ? { machineId: holding.machineId, commits: held } : null,
+      });
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
       const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
@@ -1002,57 +942,35 @@ export class RunService {
         });
       }
 
-      const allowedTools = z.array(z.string()).parse(profile.allowedTools);
-      const start: RunStart = {
-        type: 'run.start',
-        id: dispatchMessageId,
-        payload: {
-          runId: run.id,
-          purpose: 'implement',
-          subject: { kind: 'ticket', id: ticket.id, number: reference },
-          repository: {
-            owner: project.repoOwner,
-            name: project.repoName,
-            cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
-            baseBranch,
-            ticketBranch: branchName,
-          },
-          commitAuthor: {
-            name: `${profile.name} (Orchestrator)`,
-            email: `${String(github.id)}+${github.login}@users.noreply.github.com`,
-          },
-          profile: {
-            key: profile.key,
-            version: profile.version,
-            instructions: runInstructions(
-              commonRules,
-              profile.instructions,
-              allowlist,
-              allowedTools,
-            ),
-            model: profile.model,
-            allowedTools,
-          },
-          runToken,
-          initialPrompt,
-          nudgeMessage: nudgeMessage(templates),
-          limits: {
-            maxRunDurationMinutes: settings.maxRunDurationMinutes,
-            idleTimeoutMinutes: settings.idleTimeoutMinutes,
-            maxNudgesPerRun: settings.maxNudgesPerRun,
-            waitingRunLifetimeMinutes: settings.waitingRunLifetimeMinutes,
-            sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
-            mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
-            claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
-            pushTimeoutSeconds: settings.pushTimeoutSeconds,
-          },
-          resumeSessionId: null,
-          mcpTools: runMcpTools(z.array(McpPermission).parse(profile.mcpPermissions), 'implement'),
-        },
-      };
+      const start = this.startMessage({
+        messageId: dispatchMessageId,
+        runId: run.id,
+        purpose: 'implement',
+        project,
+        ticket: { id: ticket.id, reference },
+        baseBranch,
+        branchName,
+        profile,
+        github,
+        files: { templates, commonRules, allowlist },
+        runToken,
+        initialPrompt,
+        settings,
+      });
       return { run, start, machine, reference, ackDeadline };
     });
 
+    return this.dispatch(prepared);
+  }
+
+  /** Sends a run's `run.start` once its transaction is committed: `dispatched`, or cancelled. */
+  private async dispatch(prepared: {
+    run: RunRow;
+    start: RunStart;
+    machine: MachineRow;
+    reference: string;
+    ackDeadline: Date;
+  }): Promise<Run> {
     const { run, start, machine, reference, ackDeadline } = prepared;
     this.armTimer(run.id, start.id, ackDeadline);
     const sent = this.send(machine.id, start);
@@ -1066,6 +984,170 @@ export class RunService {
       sent ? 'run dispatched' : 'run cancelled: machine offline at dispatch',
     );
     return this.view(run.id);
+  }
+
+  /** A run's `run.start` (05, section 4.1), for Run now and Start review. */
+  private startMessage(input: {
+    messageId: string;
+    runId: string;
+    purpose: RunPurpose;
+    project: ProjectRow;
+    ticket: { id: string; reference: string };
+    baseBranch: string;
+    branchName: string;
+    profile: typeof schema.agentProfiles.$inferSelect;
+    github: { login: string; id: number };
+    files: { templates: Templates; commonRules: string; allowlist: Template };
+    runToken: string;
+    initialPrompt: string;
+    settings: Pick<SettingValues, (typeof RUN_START_SETTINGS)[number]>;
+    reviewCommit?: string;
+  }): RunStart {
+    const { project, profile, github, settings, files } = input;
+    const allowedTools = z.array(z.string()).parse(profile.allowedTools);
+    return {
+      type: 'run.start',
+      id: input.messageId,
+      payload: {
+        runId: input.runId,
+        purpose: input.purpose,
+        subject: { kind: 'ticket', id: input.ticket.id, number: input.ticket.reference },
+        repository: {
+          owner: project.repoOwner,
+          name: project.repoName,
+          cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
+          baseBranch: input.baseBranch,
+          ticketBranch: input.branchName,
+        },
+        commitAuthor: {
+          name: `${profile.name} (Orchestrator)`,
+          email: `${String(github.id)}+${github.login}@users.noreply.github.com`,
+        },
+        profile: {
+          key: profile.key,
+          version: profile.version,
+          instructions: runInstructions(
+            files.commonRules,
+            profile.instructions,
+            files.allowlist,
+            allowedTools,
+          ),
+          model: profile.model,
+          allowedTools,
+        },
+        runToken: input.runToken,
+        initialPrompt: input.initialPrompt,
+        nudgeMessage: nudgeMessage(files.templates, input.purpose),
+        limits: {
+          maxRunDurationMinutes: settings.maxRunDurationMinutes,
+          idleTimeoutMinutes: settings.idleTimeoutMinutes,
+          maxNudgesPerRun: settings.maxNudgesPerRun,
+          waitingRunLifetimeMinutes: settings.waitingRunLifetimeMinutes,
+          sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
+          mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
+          claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
+          pushTimeoutSeconds: settings.pushTimeoutSeconds,
+        },
+        resumeSessionId: null,
+        mcpTools: runMcpTools(z.array(McpPermission).parse(profile.mcpPermissions), input.purpose),
+        ...(input.reviewCommit === undefined ? {} : { reviewCommit: input.reviewCommit }),
+      },
+    };
+  }
+
+  /**
+   * The machine a run starts on (07, sections 3 and 4) and its account, locked: the machine
+   * holding the ticket's commits not on GitHub when there is one (`holding`), else the preferred
+   * machine that can take it. A holder revoked gives `lostWork`.
+   */
+  private async chooseMachine(
+    tx: Executor,
+    input: {
+      projectId: string;
+      earlier: readonly RunRow[];
+      required: Capability[];
+      now: Date;
+      holding: { machineId: string; commits: number } | null;
+    },
+  ): Promise<{
+    machine: MachineRow;
+    account: AccountRow;
+    lostWork: { machine: MachineRow; commits: number } | undefined;
+  }> {
+    const { projectId, earlier, required, now, holding } = input;
+    const machines = await tx.select().from(schema.machines);
+    const accounts = new Map(
+      (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
+    );
+    const busy = await this.busyRuns(tx);
+    const verdict = (machine: MachineRow) => {
+      const account = accounts.get(machine.accountId);
+      if (!account) throw new Error(`account of machine ${machine.id} not found`);
+      return this.unavailable(machine, account, busy.get(account.id) ?? 0, required, now);
+    };
+
+    let chosen: MachineRow | undefined;
+    let lostWork: { machine: MachineRow; commits: number } | undefined;
+    const holder = holding && machines.find((machine) => machine.id === holding.machineId);
+    if (holding && holder && !holder.revokedAt) {
+      const unavailable = verdict(holder);
+      const { commits } = holding;
+      if (unavailable) {
+        throw refuse(
+          {
+            reason: 'machine_unavailable',
+            machine: { id: holder.id, name: holder.name },
+            commits,
+            unavailable,
+          },
+          `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
+        );
+      }
+      chosen = holder;
+    } else {
+      if (holding && holder) {
+        lostWork = { machine: holder, commits: holding.commits };
+      }
+      const candidates = machines.filter((machine) => !machine.revokedAt);
+      const available = candidates.filter((machine) => verdict(machine) === null);
+      if (available.length === 0) {
+        const listed = candidates
+          .map((machine) => ({
+            machine: { id: machine.id, name: machine.name },
+            unavailable: verdict(machine) as MachineUnavailable,
+          }))
+          .sort((a, b) => a.machine.name.localeCompare(b.machine.name));
+        throw refuse({ reason: 'no_machine', machines: listed }, 'No machine can take the run');
+      }
+      chosen = await this.preferred(tx, projectId, earlier, available);
+    }
+
+    // The account is locked, so two starts cannot both take its last place (01, invariant 3).
+    const [lockedAccount] = await tx
+      .select()
+      .from(schema.claudeAccounts)
+      .where(eq(schema.claudeAccounts.id, chosen.accountId))
+      .for('update');
+    if (!lockedAccount) throw new Error('account not found');
+    const account = await this.releaseAccount(tx, lockedAccount);
+    const [machine] = await tx
+      .select()
+      .from(schema.machines)
+      .where(eq(schema.machines.id, chosen.id))
+      .for('share');
+    if (!machine) throw new Error('machine not found');
+    const recount = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
+    const unavailable = this.unavailable(machine, account, recount, required, now);
+    if (unavailable) {
+      throw refuse(
+        {
+          reason: 'no_machine',
+          machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
+        },
+        'No machine can take the run',
+      );
+    }
+    return { machine, account, lostWork };
   }
 
   /**
