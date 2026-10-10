@@ -47,6 +47,12 @@ const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason
   run_not_paused: { reason: 'run_not_paused', status: 'running' },
   account_limited: { reason: 'account_limited', account, until },
   account_busy: { reason: 'account_busy', account, maxConcurrentRuns: 1 },
+  ticket_not_in_review: { reason: 'ticket_not_in_review', status: 'todo' },
+  no_pull_request: { reason: 'no_pull_request' },
+  review_active: { reason: 'review_active' },
+  review_head_moved: { reason: 'review_head_moved', commit: 'a'.repeat(40), head: 'b'.repeat(40) },
+  pull_request_not_open: { reason: 'pull_request_not_open', pullRequest: 12, merged: false },
+  github_problem: { reason: 'github_problem', message: 'GitHub could not be reached' },
 };
 
 describe('run refusals in plain words (07, section 3)', () => {

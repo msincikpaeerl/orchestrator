@@ -5,7 +5,8 @@ import { TicketReference } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
 import { message } from './envelope.js';
 import { END_REPORT_TEXT_MAX_CHARACTERS, cutText } from './budgets.js';
-import { BranchReport, GitBranchName, PushResult, RepositoryOwner } from './git.js';
+import { McpToolName } from '../mcp/tools.js';
+import { BranchReport, GitBranchName, GitHash, PushResult, RepositoryOwner } from './git.js';
 
 export const RunId = z.uuid();
 export type RunId = z.infer<typeof RunId>;
@@ -104,50 +105,66 @@ export type RunLimits = z.infer<typeof RunLimits>;
 /** `run.start`, server to daemon (05, section 4.1). */
 export const RunStart = message(
   'run.start',
-  z.object({
-    runId: RunId,
-    purpose: RunPurpose,
-    /** A ticket, or a request for planning runs. */
-    subject: z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('ticket'), id: z.uuid(), number: TicketReference }),
-      z.object({ kind: z.literal('request'), id: z.uuid() }),
-    ]),
-    repository: z.object({
-      owner: RepositoryOwner,
-      name: RepositoryName,
-      cloneUrl: CloneUrl,
-      baseBranch: GitBranchName,
-      ticketBranch: GitBranchName,
+  z
+    .object({
+      runId: RunId,
+      purpose: RunPurpose,
+      /** A ticket, or a request for planning runs. */
+      subject: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('ticket'), id: z.uuid(), number: TicketReference }),
+        z.object({ kind: z.literal('request'), id: z.uuid() }),
+      ]),
+      repository: z.object({
+        owner: RepositoryOwner,
+        name: RepositoryName,
+        cloneUrl: CloneUrl,
+        baseBranch: GitBranchName,
+        ticketBranch: GitBranchName,
+      }),
+      /** Set for the worktree (04, section 4). */
+      commitAuthor: z.object({ name: requiredText(), email: z.email() }),
+      profile: z.object({
+        key: AgentKey,
+        version: z.int().positive(),
+        instructions: requiredText(),
+        model: requiredText(),
+        /** Claude Code permission rules, such as `Bash(pnpm test *)`. */
+        allowedTools: z.array(requiredText()),
+      }),
+      /** Scoped to this run; carried by every `mcp.call` (06, section 2). */
+      runToken: requiredText(),
+      /**
+       * First message, built by the server (06, section 6). Passed as one command-line argument, so
+       * it fits `FIRST_MESSAGE_MAX_BYTES` (03, section 3.2).
+       */
+      initialPrompt: requiredText().refine(
+        (text) => new TextEncoder().encode(text).length <= FIRST_MESSAGE_MAX_BYTES,
+        `at most ${String(FIRST_MESSAGE_MAX_BYTES)} bytes`,
+      ),
+      /**
+       * Sent by the daemon when a turn ends without a decision (05, section 4.8). Filled in by the
+       * server from its run message template: the daemon holds no agent-facing text (03, section 3.2).
+       */
+      nudgeMessage: requiredText(),
+      limits: RunLimits,
+      /** A Claude session to resume instead of starting a new one. */
+      resumeSessionId: ClaudeSessionId.nullable(),
+      /**
+       * The MCP tools this run may call, the only ones the relay lists to Claude Code (06, section 5;
+       * lot 3 step H). Protocol 2 is not released yet: no version change.
+       */
+      mcpTools: z.array(McpToolName),
+      /**
+       * A review run's commit under review, fixed by the server at **Start review** (04, section
+       * 3.2): the daemon detaches the worktree at it and fails the preparation when GitHub's head of
+       * the ticket branch is another commit. Only for a review run.
+       */
+      reviewCommit: GitHash.optional(),
+    })
+    .refine((payload) => (payload.purpose === 'review') === (payload.reviewCommit !== undefined), {
+      message: 'a review run, and only a review run, carries the commit under review',
+      path: ['reviewCommit'],
     }),
-    /** Set for the worktree (04, section 4). */
-    commitAuthor: z.object({ name: requiredText(), email: z.email() }),
-    profile: z.object({
-      key: AgentKey,
-      version: z.int().positive(),
-      instructions: requiredText(),
-      model: requiredText(),
-      /** Claude Code permission rules, such as `Bash(pnpm test *)`. */
-      allowedTools: z.array(requiredText()),
-    }),
-    /** Scoped to this run; carried by every `mcp.call` (06, section 2). */
-    runToken: requiredText(),
-    /**
-     * First message, built by the server (06, section 6). Passed as one command-line argument, so
-     * it fits `FIRST_MESSAGE_MAX_BYTES` (03, section 3.2).
-     */
-    initialPrompt: requiredText().refine(
-      (text) => new TextEncoder().encode(text).length <= FIRST_MESSAGE_MAX_BYTES,
-      `at most ${String(FIRST_MESSAGE_MAX_BYTES)} bytes`,
-    ),
-    /**
-     * Sent by the daemon when a turn ends without a decision (05, section 4.8). Filled in by the
-     * server from its run message template: the daemon holds no agent-facing text (03, section 3.2).
-     */
-    nudgeMessage: requiredText(),
-    limits: RunLimits,
-    /** A Claude session to resume instead of starting a new one. */
-    resumeSessionId: ClaudeSessionId.nullable(),
-  }),
 );
 export type RunStart = z.infer<typeof RunStart>;
 

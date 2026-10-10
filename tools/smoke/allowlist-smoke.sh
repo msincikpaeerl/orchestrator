@@ -2,7 +2,9 @@
 # Allowlist smoke test (03, section 6; lot 2 plan, step I): checks, with the real Claude Code, that
 # each default agent profile's allowlist lets the agent run what its role needs (install, test,
 # lint, build, an edit, a commit) and refuses what it must not (curl, sudo, docker, the daemon's
-# folder). For the owner only (working rule 10): sessions never run it; CI runs its dry run.
+# folder). Quality (lot 3 step H) is checked for reading and testing, and for refusing every
+# command that writes a file or moves HEAD (an edit, a commit, checkout, reset, stash, merge, ...).
+# For the owner only (working rule 10): sessions never run it; CI runs its dry run.
 #
 # One session per default profile, in a scratch Node.js project whose scripts only print a line.
 # The settings and the argument list come from the daemon's own code
@@ -24,7 +26,8 @@
 #   --dry-run    skip the login; only with the tests' fake claude given with --claude
 #
 # The report prints PASS, FAIL or NOT ATTEMPTED (a command the agent never tried) per profile and
-# command. It and the files it records are sanitised: paths, e-mail addresses and credentials are
+# command, and for Quality one INFO line: what Claude Code answers for a tool its run does not
+# list (never a verdict). It and the files it records are sanitised: paths, e-mail addresses and credentials are
 # masked, and if your e-mail, Git user, organisation id or home folder still appears, nothing is
 # shown and the recorded files are deleted.
 #

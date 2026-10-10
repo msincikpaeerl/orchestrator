@@ -92,7 +92,11 @@ describe('a review run', () => {
       const { github, local, cloneUrl } = await branchAheadOfGitHub();
       const manager = daemon({ credentials: () => Promise.resolve({ ok: true, ...CREDENTIAL }) });
       await fake.play({ turns: [{ steps: [{ do: 'hang' }] }] });
-      const run = await start(manager, { purpose: 'review', repository: { cloneUrl } });
+      const run = await start(manager, {
+        purpose: 'review',
+        reviewCommit: github,
+        repository: { cloneUrl },
+      });
       await waitFor(
         () => states(run.runId).some((state) => state.state === 'working'),
         20_000,
@@ -148,7 +152,11 @@ describe('a review run', () => {
             },
           ],
         });
-        const run = await start(manager, { purpose: 'review', repository: { cloneUrl } });
+        const run = await start(manager, {
+          purpose: 'review',
+          reviewCommit: github,
+          repository: { cloneUrl },
+        });
         const end = await ended(run.runId);
         expect(end).toMatchObject({ reason: 'review_branch_moved', headMoved: true, push: null });
         expect(end.detail).toMatch(/head moved during the review/);
@@ -160,10 +168,34 @@ describe('a review run', () => {
   }
 
   it(
+    "fails with review_branch_moved when GitHub's head is not the commit under review",
+    async () => {
+      const { github, local, cloneUrl } = await branchAheadOfGitHub();
+      const manager = daemon({ credentials: () => Promise.resolve({ ok: true, ...CREDENTIAL }) });
+      await fake.play({ turns: [{ steps: [{ do: 'hang' }] }] });
+      // The server fixed another commit at Start review: GitHub's head moved since (answer 2b).
+      const run = await start(manager, {
+        purpose: 'review',
+        reviewCommit: local,
+        repository: { cloneUrl },
+      });
+      const end = await ended(run.runId);
+      expect(end).toMatchObject({ reason: 'review_branch_moved', push: null });
+      expect(end.detail).toBe(
+        `The ticket branch on GitHub moved since the review was started: it is now ${github.slice(0, 7)}, not ${local.slice(0, 7)}.`,
+      );
+      // No session was started for it.
+      expect(states(run.runId).some((state) => state.state === 'starting')).toBe(false);
+      expect(pushRequests()).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'fails at preparation when the ticket branch is not on GitHub',
     async () => {
       const manager = daemon();
-      const run = await start(manager, { purpose: 'review' });
+      const run = await start(manager, { purpose: 'review', reviewCommit: 'a'.repeat(40) });
       const end = await ended(run.runId);
       expect(end).toMatchObject({ reason: 'crashed', headMoved: null, push: null });
       expect(end.detail).toBe(

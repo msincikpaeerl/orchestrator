@@ -360,6 +360,11 @@ describe('Run now', () => {
     expect(payload.initialPrompt).toContain('This is attempt 1 at this ticket.');
     expect(payload.initialPrompt).not.toContain('earlier attempt');
     expect(payload.nudgeMessage).toContain('Your turn ended without');
+    // The run's tools (owner's answer 1, lot 3 step H): a builder has no review tool.
+    expect(payload.mcpTools).toContain('ticket_submit');
+    expect(payload.mcpTools).not.toContain('review_approve');
+    expect(payload.mcpTools).not.toContain('review_request_changes');
+    expect(payload.reviewCommit).toBeUndefined();
     expect(payload.limits).toMatchObject({ maxRunDurationMinutes: 45, maxNudgesPerRun: 3 });
     expect(payload.resumeSessionId).toBeNull();
     expect(payload.runToken).toMatch(/^ort_/);

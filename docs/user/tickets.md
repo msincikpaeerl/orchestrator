@@ -42,7 +42,7 @@ The tickets it waits for are not in this form: change them on the ticket's page 
 
 The assignee is the agent expected to do the work of a ticket: the **Architect** for the project's structure and tools, the **Web Developer** for features and fixes of a web app or website (see [Agents](agents.md)). The ticket page shows it under **Assignee**, and each card of the board shows it too.
 
-Choose it when you create the ticket, or later with **Edit**, while the ticket is **To do** (or **Proposed**). Choose **No assignee** to remove it. Any agent can be assigned to any ticket in this version; the Orchestrator will check that an agent suits the ticket in a later version.
+Choose it when you create the ticket, or later with **Edit**, while the ticket is **To do** (or **Proposed**). Choose **No assignee** to remove it. Any agent that does the work can be assigned to any ticket in this version; the Orchestrator will check that an agent suits the ticket in a later version. **Quality** is never an assignee: it reviews the work of the others, so the list does not offer it.
 
 A run starts only on a ticket that has an assignee (see [Start a run](runs.md#start-a-run)).
 

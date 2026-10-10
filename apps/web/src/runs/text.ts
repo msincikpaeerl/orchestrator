@@ -138,6 +138,20 @@ export function runRefusalText(refusal: RunRefusal): string {
       return `The Claude account ${refusal.account.label} reached its usage limit. You can resume after ${formatDateTime(refusal.until)}.`;
     case 'account_busy':
       return `The Claude account ${refusal.account.label} already runs its maximum of ${String(refusal.maxConcurrentRuns)} run${refusal.maxConcurrentRuns === 1 ? '' : 's'} at a time. Try again when one finishes.`;
+    case 'ticket_not_in_review':
+      return `Start review is for a ticket In review; this one is ${statusLabel[refusal.status]}.`;
+    case 'no_pull_request':
+      return 'This ticket has no pull request to review: check its work yourself, then use Mark as done manually or Request changes.';
+    case 'review_active':
+      return 'A review of this ticket is already running.';
+    case 'review_head_moved':
+      return `The pull request's head on GitHub (${refusal.head.slice(0, 7)}) is not the commit CI checked (${refusal.commit.slice(0, 7)}): the branch was changed on GitHub. Use Skip review and check it yourself, or Request changes.`;
+    case 'pull_request_not_open':
+      return refusal.merged
+        ? `Pull request #${String(refusal.pullRequest)} was merged on GitHub. Use Mark as done manually.`
+        : `Pull request #${String(refusal.pullRequest)} is closed on GitHub, so there is nothing to review.`;
+    case 'github_problem':
+      return `GitHub could not be read to check the pull request (${refusal.message.replace(/\.$/, '')}). Try again in a moment.`;
   }
 }
 

@@ -42,6 +42,10 @@ import {
   type RunStart,
   type RunState,
   type ServerMessage,
+  McpPermission,
+  runMcpTools,
+  type RunPurpose,
+  type SettingValues,
 } from '@orchestrator/protocol';
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
@@ -95,7 +99,11 @@ import {
   runReport,
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
-import { implementTicket } from './first-message.js';
+import { implementTicket, reviewTicket } from './first-message.js';
+import { ciOutcome, ciSourceRun } from './ci-outcome.js';
+import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
+import { storedTokenClient } from '../github/connection.js';
+import { readPullRequest } from '../github/pull-requests.js';
 import { CiStatusReader } from './ci-status.js';
 import { ciFailedMessage } from './ci-failed.js';
 import type { CiDecision } from './ci-wait.js';
@@ -157,6 +165,19 @@ const FETCHING = new Set<string>(['dispatched', 'starting', 'running']);
  * at an end the daemon decided, and "ending" runs (`isEnding`). A review run never pushes.
  */
 const PUSHING = new Set<string>(['running']);
+
+/** The settings a run's start resolves (04, section 8; 05, section 5). */
+const RUN_START_SETTINGS = [
+  'maxRunDurationMinutes',
+  'idleTimeoutMinutes',
+  'maxNudgesPerRun',
+  'waitingRunLifetimeMinutes',
+  'sessionStartTimeoutSeconds',
+  'mcpCallTimeoutSeconds',
+  'claudeCodeMcpToolTimeoutSeconds',
+  'pushTimeoutSeconds',
+  'dispatchAckTimeoutSeconds',
+] as const;
 
 const refuse = (refusal: RunRefusal, message: string) =>
   new HttpError(409, 'run_not_possible', message, { runRefusal: refusal });
@@ -693,17 +714,7 @@ export class RunService {
   async runNow(projectKey: string, ticketNumber: number): Promise<Run> {
     const github = await this.githubIdentity();
     const { templates, commonRules, allowlist } = await this.files();
-    const settings = await resolveSettings(this.db, [
-      'maxRunDurationMinutes',
-      'idleTimeoutMinutes',
-      'maxNudgesPerRun',
-      'waitingRunLifetimeMinutes',
-      'sessionStartTimeoutSeconds',
-      'mcpCallTimeoutSeconds',
-      'claudeCodeMcpToolTimeoutSeconds',
-      'pushTimeoutSeconds',
-      'dispatchAckTimeoutSeconds',
-    ]);
+    const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
 
     const prepared = await this.db.transaction(async (tx) => {
       const now = this.now();
@@ -785,78 +796,13 @@ export class RunService {
           ? withCommits
           : undefined;
 
-      const machines = await tx.select().from(schema.machines);
-      const accounts = new Map(
-        (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
-      );
-      const busy = await this.busyRuns(tx);
-      const verdict = (machine: MachineRow) => {
-        const account = accounts.get(machine.accountId);
-        if (!account) throw new Error(`account of machine ${machine.id} not found`);
-        return this.unavailable(machine, account, busy.get(account.id) ?? 0, required, now);
-      };
-
-      let chosen: MachineRow | undefined;
-      let lostWork: { machine: MachineRow; commits: number } | undefined;
-      const holder = holding && machines.find((machine) => machine.id === holding.machineId);
-      if (holding && holder && !holder.revokedAt) {
-        const unavailable = verdict(holder);
-        const commits = held;
-        if (unavailable) {
-          throw refuse(
-            {
-              reason: 'machine_unavailable',
-              machine: { id: holder.id, name: holder.name },
-              commits,
-              unavailable,
-            },
-            `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
-          );
-        }
-        chosen = holder;
-      } else {
-        if (holding && holder) {
-          lostWork = { machine: holder, commits: held };
-        }
-        const candidates = machines.filter((machine) => !machine.revokedAt);
-        const available = candidates.filter((machine) => verdict(machine) === null);
-        if (available.length === 0) {
-          const listed = candidates
-            .map((machine) => ({
-              machine: { id: machine.id, name: machine.name },
-              unavailable: verdict(machine) as MachineUnavailable,
-            }))
-            .sort((a, b) => a.machine.name.localeCompare(b.machine.name));
-          throw refuse({ reason: 'no_machine', machines: listed }, 'No machine can take the run');
-        }
-        chosen = await this.preferred(tx, project.id, earlier, available);
-      }
-
-      // The account is locked, so two starts cannot both take its last place (01, invariant 3).
-      const [lockedAccount] = await tx
-        .select()
-        .from(schema.claudeAccounts)
-        .where(eq(schema.claudeAccounts.id, chosen.accountId))
-        .for('update');
-      if (!lockedAccount) throw new Error('account not found');
-      const account = await this.releaseAccount(tx, lockedAccount);
-      const [machine] = await tx
-        .select()
-        .from(schema.machines)
-        .where(eq(schema.machines.id, chosen.id))
-        .for('share');
-      if (!machine) throw new Error('machine not found');
-      const recount = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
-      const unavailable = this.unavailable(machine, account, recount, required, now);
-      if (unavailable) {
-        throw refuse(
-          {
-            reason: 'no_machine',
-            machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
-          },
-          'No machine can take the run',
-        );
-      }
+      const { machine, account, lostWork } = await this.chooseMachine(tx, {
+        projectId: project.id,
+        earlier,
+        required,
+        now,
+        holding: holding ? { machineId: holding.machineId, commits: held } : null,
+      });
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
       const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
@@ -1000,56 +946,302 @@ export class RunService {
         });
       }
 
-      const allowedTools = z.array(z.string()).parse(profile.allowedTools);
-      const start: RunStart = {
-        type: 'run.start',
-        id: dispatchMessageId,
-        payload: {
-          runId: run.id,
-          purpose: 'implement',
-          subject: { kind: 'ticket', id: ticket.id, number: reference },
-          repository: {
-            owner: project.repoOwner,
-            name: project.repoName,
-            cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
-            baseBranch,
-            ticketBranch: branchName,
-          },
-          commitAuthor: {
-            name: `${profile.name} (Orchestrator)`,
-            email: `${String(github.id)}+${github.login}@users.noreply.github.com`,
-          },
-          profile: {
-            key: profile.key,
-            version: profile.version,
-            instructions: runInstructions(
-              commonRules,
-              profile.instructions,
-              allowlist,
-              allowedTools,
-            ),
-            model: profile.model,
-            allowedTools,
-          },
-          runToken,
-          initialPrompt,
-          nudgeMessage: nudgeMessage(templates),
-          limits: {
-            maxRunDurationMinutes: settings.maxRunDurationMinutes,
-            idleTimeoutMinutes: settings.idleTimeoutMinutes,
-            maxNudgesPerRun: settings.maxNudgesPerRun,
-            waitingRunLifetimeMinutes: settings.waitingRunLifetimeMinutes,
-            sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
-            mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
-            claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
-            pushTimeoutSeconds: settings.pushTimeoutSeconds,
-          },
-          resumeSessionId: null,
-        },
-      };
+      const start = this.startMessage({
+        messageId: dispatchMessageId,
+        runId: run.id,
+        purpose: 'implement',
+        project,
+        ticket: { id: ticket.id, reference },
+        baseBranch,
+        branchName,
+        profile,
+        github,
+        files: { templates, commonRules, allowlist },
+        runToken,
+        initialPrompt,
+        settings,
+      });
       return { run, start, machine, reference, ackDeadline };
     });
 
+    return this.dispatch(prepared);
+  }
+
+  /**
+   * **Start review** (04, sections 2 and 3.2; owner's answers 2a and 4, lot 3 step H1): a `review`
+   * run with the `quality` profile on any machine, for the commit CI checked for the accepted
+   * submission. The pull request is read on GitHub first, outside the transaction: its head must
+   * still be that commit. The ticket stays `in_review`.
+   */
+  async startReview(projectKey: string, ticketNumber: number): Promise<Run> {
+    const github = await this.githubIdentity();
+    const files = await this.files();
+    const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
+    const before = await this.reviewSubject(this.db, projectKey, ticketNumber);
+    const head = await this.pullRequestHead(before.project, before.pullRequest.number);
+    if (head !== before.commit) {
+      throw refuse(
+        { reason: 'review_head_moved', commit: before.commit, head },
+        `The pull request's head on GitHub (${head.slice(0, 7)}) is not the commit CI checked (${before.commit.slice(0, 7)})`,
+      );
+    }
+
+    const prepared = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      await this.lockProject(tx, eq(schema.projects.id, before.project.id));
+      // Checked again under the lock: nothing changed since GitHub was read.
+      const subject = await this.reviewSubject(tx, projectKey, ticketNumber, true);
+      if (subject.commit !== before.commit) {
+        throw refuse(
+          { reason: 'review_head_moved', commit: subject.commit, head },
+          'The work changed while the review was being started',
+        );
+      }
+      const { project, ticket, source } = subject;
+      const [profile] = await tx
+        .select()
+        .from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.key, 'quality'));
+      if (!profile) throw new Error('the quality profile is not seeded');
+      const required = z.array(Capability).parse(profile.requiredCapabilities);
+      const earlier = await tx
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.ticketId, ticket.id))
+        .orderBy(desc(schema.runs.createdAt));
+      const { machine, account } = await this.chooseMachine(tx, {
+        projectId: project.id,
+        earlier,
+        required,
+        now,
+        holding: null,
+      });
+      const reference = ticketReference(project.key, ticket.number);
+      const baseBranch = source.baseBranch;
+      const branchName = ticket.branchName ?? source.branchName;
+      let initialPrompt: string;
+      try {
+        initialPrompt = reviewFirstMessage(
+          files.templates.review,
+          await reviewTicket(tx, {
+            projectKey: project.key,
+            projectName: project.name,
+            ticket,
+            commit: subject.commit,
+            pullRequest: subject.pullRequest,
+            base: baseBranch,
+            ci: subject.ci,
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof FirstMessageTooLarge)) throw error;
+        throw refuse(
+          { reason: 'first_message_too_large', maxBytes: FIRST_MESSAGE_MAX_BYTES },
+          error.message,
+        );
+      }
+      const runToken = newRunToken();
+      const dispatchMessageId = randomUUID();
+      const ackDeadline = new Date(Date.now() + settings.dispatchAckTimeoutSeconds * this.secondMs);
+      const [run] = await tx
+        .insert(schema.runs)
+        .values({
+          projectId: project.id,
+          ticketId: ticket.id,
+          profileId: profile.id,
+          profileVersion: profile.version,
+          purpose: 'review',
+          machineId: machine.id,
+          accountId: account.id,
+          status: 'queued',
+          // The attempt reviewed: a review is never an attempt of its own (04, section 3.2).
+          attempt: source.attempt,
+          runTokenHash: hashCredential(runToken),
+          dispatchMessageId,
+          dispatchKind: 'start',
+          ackDeadline,
+          branchName,
+          baseBranch,
+          statusSince: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      if (!run) throw new Error('run not inserted');
+      await recordEvent(tx, {
+        actor: 'owner',
+        entityType: 'run',
+        entityId: run.id,
+        projectId: project.id,
+        type: 'run.created',
+        payload: {
+          project: project.key,
+          ticket: reference,
+          purpose: 'review',
+          machine: machine.name,
+          account: account.label,
+          profile: profile.key,
+          profileName: profile.name,
+          profileVersion: profile.version,
+          attempt: source.attempt,
+        },
+        at: now,
+      });
+      const start = this.startMessage({
+        messageId: dispatchMessageId,
+        runId: run.id,
+        purpose: 'review',
+        project,
+        ticket: { id: ticket.id, reference },
+        baseBranch,
+        branchName,
+        profile,
+        github,
+        files,
+        runToken,
+        initialPrompt,
+        settings,
+        reviewCommit: subject.commit,
+      });
+      return { run, start, machine, reference, ackDeadline };
+    });
+    return this.dispatch(prepared);
+  }
+
+  /**
+   * What **Start review** reviews, or its refusal: a ticket in review, with a pull request, no run
+   * active, and the commit CI checked for its accepted submission (passed, or "No CI found", in its
+   * run or by **Check CI again** since).
+   */
+  private async reviewSubject(
+    executor: Executor,
+    projectKey: string,
+    ticketNumber: number,
+    lock = false,
+  ): Promise<{
+    project: ProjectRow;
+    ticket: TicketRow;
+    source: RunRow;
+    commit: string;
+    ci: ReviewCi;
+    pullRequest: { number: number; url: string };
+  }> {
+    const [project] = await executor
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.key, projectKey));
+    if (!project) throw new HttpError(404, 'project_not_found', 'No project with this key');
+    if (project.status === 'archived') {
+      throw refuse({ reason: 'project_archived' }, 'The project is archived');
+    }
+    if (project.setupStatus !== 'ready') {
+      throw refuse({ reason: 'project_not_ready' }, 'The repository setup is not finished');
+    }
+    const query = executor
+      .select()
+      .from(schema.tickets)
+      .where(
+        and(eq(schema.tickets.projectId, project.id), eq(schema.tickets.number, ticketNumber)),
+      );
+    const [ticket] = lock ? await query.for('update') : await query;
+    if (!ticket) throw new HttpError(404, 'ticket_not_found', 'No ticket with this number');
+    if (ticket.status !== 'in_review') {
+      throw refuse(
+        { reason: 'ticket_not_in_review', status: TicketStatus.parse(ticket.status) },
+        `Start review needs a ticket in in_review; it is ${ticket.status}`,
+      );
+    }
+    const active = await executor
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.ticketId, ticket.id),
+          inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      );
+    if (active.length > 0) throw refuse({ reason: 'review_active' }, 'A review is already running');
+    const source = await ciSourceRun(executor, ticket.id);
+    const outcome = source === null ? null : ciOutcome(source);
+    const ci: ReviewCi | null =
+      outcome === null
+        ? null
+        : outcome.acceptedLater !== null
+          ? outcome.acceptedLater.state === 'passed'
+            ? 'passed_later'
+            : 'no_ci'
+          : outcome.kind === 'passed'
+            ? 'passed'
+            : outcome.kind === 'no_ci'
+              ? 'no_ci'
+              : null;
+    // A ticket left in review by 0.3.0 has neither a pull request nor work CI checked.
+    if (
+      source === null ||
+      outcome === null ||
+      ci === null ||
+      ticket.pullRequestNumber === null ||
+      ticket.pullRequestUrl === null
+    ) {
+      throw refuse({ reason: 'no_pull_request' }, 'The ticket has no pull request to review');
+    }
+    return {
+      project,
+      ticket,
+      source,
+      commit: outcome.commit,
+      ci,
+      pullRequest: { number: ticket.pullRequestNumber, url: ticket.pullRequestUrl },
+    };
+  }
+
+  /** The pull request's head on GitHub; a refusal when it cannot be read or is not open. */
+  private async pullRequestHead(project: ProjectRow, number: number): Promise<string> {
+    const problem = (message: string) =>
+      refuse({ reason: 'github_problem', message }, `GitHub could not be read: ${message}`);
+    let client;
+    try {
+      client = await storedTokenClient({
+        db: this.db,
+        key: this.options.key,
+        apiUrl: this.options.githubApiUrl,
+        log: this.log,
+      });
+    } catch (error) {
+      if (!(error instanceof SecretUnreadableError)) throw error;
+      throw refuse({ reason: 'github_token_unreadable' }, 'The saved GitHub token cannot be read');
+    }
+    if (client === null)
+      throw refuse({ reason: 'github_not_connected' }, 'GitHub is not connected');
+    let pull;
+    try {
+      pull = await readPullRequest(
+        client,
+        { owner: project.repoOwner, name: project.repoName },
+        number,
+      );
+    } catch (error) {
+      if (!(error instanceof GitHubUnreachableError)) throw error;
+      throw problem('GitHub could not be reached, or answered with a server error.');
+    }
+    if (!pull.ok) throw problem(maskSecrets(pull.refusal.message));
+    if (pull.value.merged || pull.value.state !== 'open') {
+      throw refuse(
+        { reason: 'pull_request_not_open', pullRequest: number, merged: pull.value.merged },
+        `Pull request #${String(number)} is not open on GitHub`,
+      );
+    }
+    return pull.value.headSha;
+  }
+
+  /** Sends a run's `run.start` once its transaction is committed: `dispatched`, or cancelled. */
+  private async dispatch(prepared: {
+    run: RunRow;
+    start: RunStart;
+    machine: MachineRow;
+    reference: string;
+    ackDeadline: Date;
+  }): Promise<Run> {
     const { run, start, machine, reference, ackDeadline } = prepared;
     this.armTimer(run.id, start.id, ackDeadline);
     const sent = this.send(machine.id, start);
@@ -1063,6 +1255,170 @@ export class RunService {
       sent ? 'run dispatched' : 'run cancelled: machine offline at dispatch',
     );
     return this.view(run.id);
+  }
+
+  /** A run's `run.start` (05, section 4.1), for Run now and Start review. */
+  private startMessage(input: {
+    messageId: string;
+    runId: string;
+    purpose: RunPurpose;
+    project: ProjectRow;
+    ticket: { id: string; reference: string };
+    baseBranch: string;
+    branchName: string;
+    profile: typeof schema.agentProfiles.$inferSelect;
+    github: { login: string; id: number };
+    files: { templates: Templates; commonRules: string; allowlist: Template };
+    runToken: string;
+    initialPrompt: string;
+    settings: Pick<SettingValues, (typeof RUN_START_SETTINGS)[number]>;
+    reviewCommit?: string;
+  }): RunStart {
+    const { project, profile, github, settings, files } = input;
+    const allowedTools = z.array(z.string()).parse(profile.allowedTools);
+    return {
+      type: 'run.start',
+      id: input.messageId,
+      payload: {
+        runId: input.runId,
+        purpose: input.purpose,
+        subject: { kind: 'ticket', id: input.ticket.id, number: input.ticket.reference },
+        repository: {
+          owner: project.repoOwner,
+          name: project.repoName,
+          cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
+          baseBranch: input.baseBranch,
+          ticketBranch: input.branchName,
+        },
+        commitAuthor: {
+          name: `${profile.name} (Orchestrator)`,
+          email: `${String(github.id)}+${github.login}@users.noreply.github.com`,
+        },
+        profile: {
+          key: profile.key,
+          version: profile.version,
+          instructions: runInstructions(
+            files.commonRules,
+            profile.instructions,
+            files.allowlist,
+            allowedTools,
+          ),
+          model: profile.model,
+          allowedTools,
+        },
+        runToken: input.runToken,
+        initialPrompt: input.initialPrompt,
+        nudgeMessage: nudgeMessage(files.templates, input.purpose),
+        limits: {
+          maxRunDurationMinutes: settings.maxRunDurationMinutes,
+          idleTimeoutMinutes: settings.idleTimeoutMinutes,
+          maxNudgesPerRun: settings.maxNudgesPerRun,
+          waitingRunLifetimeMinutes: settings.waitingRunLifetimeMinutes,
+          sessionStartTimeoutSeconds: settings.sessionStartTimeoutSeconds,
+          mcpCallTimeoutSeconds: settings.mcpCallTimeoutSeconds,
+          claudeCodeMcpToolTimeoutSeconds: settings.claudeCodeMcpToolTimeoutSeconds,
+          pushTimeoutSeconds: settings.pushTimeoutSeconds,
+        },
+        resumeSessionId: null,
+        mcpTools: runMcpTools(z.array(McpPermission).parse(profile.mcpPermissions), input.purpose),
+        ...(input.reviewCommit === undefined ? {} : { reviewCommit: input.reviewCommit }),
+      },
+    };
+  }
+
+  /**
+   * The machine a run starts on (07, sections 3 and 4) and its account, locked: the machine
+   * holding the ticket's commits not on GitHub when there is one (`holding`), else the preferred
+   * machine that can take it. A holder revoked gives `lostWork`.
+   */
+  private async chooseMachine(
+    tx: Executor,
+    input: {
+      projectId: string;
+      earlier: readonly RunRow[];
+      required: Capability[];
+      now: Date;
+      holding: { machineId: string; commits: number } | null;
+    },
+  ): Promise<{
+    machine: MachineRow;
+    account: AccountRow;
+    lostWork: { machine: MachineRow; commits: number } | undefined;
+  }> {
+    const { projectId, earlier, required, now, holding } = input;
+    const machines = await tx.select().from(schema.machines);
+    const accounts = new Map(
+      (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
+    );
+    const busy = await this.busyRuns(tx);
+    const verdict = (machine: MachineRow) => {
+      const account = accounts.get(machine.accountId);
+      if (!account) throw new Error(`account of machine ${machine.id} not found`);
+      return this.unavailable(machine, account, busy.get(account.id) ?? 0, required, now);
+    };
+
+    let chosen: MachineRow | undefined;
+    let lostWork: { machine: MachineRow; commits: number } | undefined;
+    const holder = holding && machines.find((machine) => machine.id === holding.machineId);
+    if (holding && holder && !holder.revokedAt) {
+      const unavailable = verdict(holder);
+      const { commits } = holding;
+      if (unavailable) {
+        throw refuse(
+          {
+            reason: 'machine_unavailable',
+            machine: { id: holder.id, name: holder.name },
+            commits,
+            unavailable,
+          },
+          `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
+        );
+      }
+      chosen = holder;
+    } else {
+      if (holding && holder) {
+        lostWork = { machine: holder, commits: holding.commits };
+      }
+      const candidates = machines.filter((machine) => !machine.revokedAt);
+      const available = candidates.filter((machine) => verdict(machine) === null);
+      if (available.length === 0) {
+        const listed = candidates
+          .map((machine) => ({
+            machine: { id: machine.id, name: machine.name },
+            unavailable: verdict(machine) as MachineUnavailable,
+          }))
+          .sort((a, b) => a.machine.name.localeCompare(b.machine.name));
+        throw refuse({ reason: 'no_machine', machines: listed }, 'No machine can take the run');
+      }
+      chosen = await this.preferred(tx, projectId, earlier, available);
+    }
+
+    // The account is locked, so two starts cannot both take its last place (01, invariant 3).
+    const [lockedAccount] = await tx
+      .select()
+      .from(schema.claudeAccounts)
+      .where(eq(schema.claudeAccounts.id, chosen.accountId))
+      .for('update');
+    if (!lockedAccount) throw new Error('account not found');
+    const account = await this.releaseAccount(tx, lockedAccount);
+    const [machine] = await tx
+      .select()
+      .from(schema.machines)
+      .where(eq(schema.machines.id, chosen.id))
+      .for('share');
+    if (!machine) throw new Error('machine not found');
+    const recount = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
+    const unavailable = this.unavailable(machine, account, recount, required, now);
+    if (unavailable) {
+      throw refuse(
+        {
+          reason: 'no_machine',
+          machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
+        },
+        'No machine can take the run',
+      );
+    }
+    return { machine, account, lostWork };
   }
 
   /**

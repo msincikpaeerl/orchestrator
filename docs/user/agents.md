@@ -2,7 +2,7 @@
 
 Agents are the AI workers of the Orchestrator. Each one is Claude Code, running on one of your machines, with a role: what it is for, the instructions it follows, and the commands it may use. You choose which agent should do a ticket with its **Assignee** (see [Tickets](tickets.md#assignee)).
 
-This version has two agents. More agents, and a screen to read and change them, come in a later version.
+This version has three agents: two that do the work of tickets, and **Quality**, which reviews it. More agents, and a screen to read and change them, come in a later version.
 
 ## Architect
 
@@ -22,6 +22,12 @@ Builds features and fixes bugs on web apps and websites. Assign it **Feature** a
 - writes tests, and for a bug, first a test that shows the bug;
 - updates the user documentation of the project when something visible changes;
 - asks you rather than making a new technical decision alone, and proposes a new ticket for a problem it finds outside its ticket.
+
+## Quality
+
+Reviews the work another agent submitted for a ticket, as a demanding reviewer would if they read code: does the change do what the acceptance criteria say, and nothing unrelated; do the tests really test it; does the user documentation describe the change for someone who never reads code; does the code follow the project's `CLAUDE.md`. It then approves the work or asks for changes, with points the agent can act on.
+
+Quality never changes the work: it may read the project, see the changes, and run its tests and build, but not edit a file, commit, or move the branch. It is never a ticket's assignee. In this version nothing starts a review from the screens yet.
 
 ## What every agent follows
 

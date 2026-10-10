@@ -166,8 +166,12 @@ describe('tool calls through the relay', () => {
 
       const log = await fake.log();
       const listed = log.find((entry) => entry.event === 'mcp_tools');
+      // Only the run's tools (owner's answer 1, lot 3 step H): an implement run has no review tool.
       expect(listed?.event === 'mcp_tools' && listed.tools.map((tool) => tool.name)).toEqual(
-        McpToolName.options,
+        run.mcpTools,
+      );
+      expect(run.mcpTools).toEqual(
+        McpToolName.options.filter((name) => !name.startsWith('review_')),
       );
       const create =
         listed?.event === 'mcp_tools' ? listed.tools.find((t) => t.name === 'ticket_create') : null;
@@ -196,6 +200,35 @@ describe('tool calls through the relay', () => {
       });
       expect(results[2]).toMatchObject({ isError: true });
       expect(JSON.stringify(results[2])).toContain('Unknown tool');
+    },
+    TIMEOUT,
+  );
+});
+
+describe("the run's tool list", () => {
+  it(
+    'lists only the tools run.start names, and still passes any call on to the server',
+    async () => {
+      const manager = daemon();
+      answerTools(() => ({ ok: false, error: { code: 'FORBIDDEN', message: 'not yours' } }));
+      await fake.play({
+        turns: [{ steps: [{ do: 'mcp', tool: 'review_approve', arguments: { summary: 'x' } }] }],
+      });
+      const run = await start(manager, {
+        mcpTools: ['ticket_get', 'ticket_give_up'],
+        limits: { maxNudgesPerRun: 0 },
+      });
+      await ended(run.runId);
+
+      const listed = (await fake.log()).find((entry) => entry.event === 'mcp_tools');
+      expect(listed?.event === 'mcp_tools' && listed.tools.map((tool) => tool.name)).toEqual([
+        'ticket_get',
+        'ticket_give_up',
+      ]);
+      // The server decides: a tool the run does not list still reaches it, and it refuses.
+      expect(toolCalls).toEqual([
+        { tool: 'review_approve', runToken: run.runToken, input: { summary: 'x' } },
+      ]);
     },
     TIMEOUT,
   );

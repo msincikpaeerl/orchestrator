@@ -268,6 +268,28 @@ export const RunRefusal = z.discriminatedUnion('reason', [
     account: AccountRef,
     maxConcurrentRuns: z.int().positive(),
   }),
+  /** **Start review** (lot 3 step H1): the ticket is not in review. */
+  z.object({ reason: z.literal('ticket_not_in_review'), status: TicketStatus }),
+  /** **Start review**: no pull request (a ticket left in review by 0.3.0). */
+  z.object({ reason: z.literal('no_pull_request') }),
+  /** **Start review**: a review run is already active. */
+  z.object({ reason: z.literal('review_active') }),
+  /**
+   * **Start review**: the pull request's head on GitHub (`head`) is not the commit CI checked
+   * (`commit`): someone changed the branch on GitHub (04, section 3.2; owner's answer 2a).
+   */
+  z.object({ reason: z.literal('review_head_moved'), commit: GitHash, head: GitHash }),
+  /** **Start review**: the pull request is closed or merged on GitHub. */
+  z.object({
+    reason: z.literal('pull_request_not_open'),
+    pullRequest: z.int().positive(),
+    merged: z.boolean(),
+  }),
+  /**
+   * **Start review**: GitHub could not be read (unreachable, a refusal in GitHub's masked words,
+   * no token): try again.
+   */
+  z.object({ reason: z.literal('github_problem'), message: z.string() }),
 ]);
 export type RunRefusal = z.infer<typeof RunRefusal>;
 

@@ -65,7 +65,7 @@ import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
 import { assessTurn, type Assessment, type TurnEnd } from './usage-limit.js';
-import type { Workspaces } from './workspace.js';
+import { ReviewCommitMoved, type Workspaces } from './workspace.js';
 
 // One run on this machine (05, section 4): its workspace, its Claude Code session in tmux, the
 // state machine of section 4.7 driven by hooks, the permission rules of the `PreToolUse` hook,
@@ -337,6 +337,11 @@ export class Run {
       this.data.reviewStart = workspace.review;
       this.save();
     } catch (error) {
+      if (error instanceof ReviewCommitMoved) {
+        this.log.warn({ err: error }, 'review commit no longer the head on GitHub');
+        await this.end('review_branch_moved', error.message);
+        return;
+      }
       this.log.error({ err: error }, 'workspace not prepared');
       await this.end('crashed', `The workspace could not be prepared: ${(error as Error).message}`);
       return;
@@ -538,6 +543,7 @@ export class Run {
   private async onSocket(request: RunSocketRequest): Promise<RunSocketAnswer> {
     const pass: HookAnswer = { stdout: '', exitCode: 0 };
     if (request.type === 'mcp') return this.onMcp(request.tool, request.arguments);
+    if (request.type === 'tools') return { tools: this.data.start.mcpTools };
     if (this.ending) {
       return request.type === 'hook' && request.event === 'PreToolUse'
         ? denyAnswer('The run has ended.')

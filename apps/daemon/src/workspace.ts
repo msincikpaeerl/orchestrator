@@ -60,6 +60,19 @@ export interface ReviewStart {
   localBranch: string | null;
 }
 
+/**
+ * GitHub's head of the ticket branch is not the commit a review run was started for: the run
+ * ends with `review_branch_moved` before any session (04, section 3.2; lot 3 step H).
+ */
+export class ReviewCommitMoved extends Error {
+  constructor(head: string, expected: string) {
+    super(
+      `The ticket branch on GitHub moved since the review was started: it is now ${head.slice(0, 7)}, not ${expected.slice(0, 7)}.`,
+    );
+    this.name = 'ReviewCommitMoved';
+  }
+}
+
 /** A prepared workspace; `review` for a review run. */
 export interface PreparedWorkspace {
   bare: string;
@@ -126,7 +139,7 @@ export class Workspaces {
       await git.run(['-C', bare, 'worktree', 'prune'], marker);
       const branch = repository.ticketBranch;
       if (start.purpose === 'review') {
-        review = await this.addReviewWorktree(bare, worktree, branch, marker);
+        review = await this.addReviewWorktree(bare, worktree, branch, start.reviewCommit, marker);
       } else {
         await this.addWorktree(bare, worktree, start, marker);
       }
@@ -227,12 +240,15 @@ export class Workspaces {
     bare: string,
     worktree: string,
     branch: string,
+    expected: string | undefined,
     marker: Record<string, string>,
   ): Promise<ReviewStart> {
     const head = await this.head(bare, `refs/remotes/origin/${branch}`);
     if (head === null) {
       throw new Error(`The ticket branch ${branch} is not on GitHub: there is nothing to review.`);
     }
+    // The commit the server fixed at Start review (04, section 3.2; owner's answer 2b, step H).
+    if (expected !== undefined && head !== expected) throw new ReviewCommitMoved(head, expected);
     const localBranch = await this.head(bare, `refs/heads/${branch}`);
     await this.options.git.run(['-C', bare, 'worktree', 'add', '--detach', worktree, head], marker);
     return { head, localBranch };

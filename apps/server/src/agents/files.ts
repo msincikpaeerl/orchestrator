@@ -61,6 +61,7 @@ export async function loadShippedAgents(directory = agentsDirectory()): Promise<
 /** The run message templates of 03, section 3.2, by file name in `agents/templates/`. */
 export const TEMPLATE_NAMES = [
   'implement',
+  'review',
   'continue',
   'answer',
   'nudge',

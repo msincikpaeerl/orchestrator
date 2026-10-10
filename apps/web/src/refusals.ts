@@ -93,6 +93,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'This ticket can be changed only while it is Proposed or To do. The page now shows its current state.',
   agent_not_found: () =>
     'This agent profile does not exist. Reload the page and choose another assignee.',
+  agent_not_assignable: () =>
+    'This agent reviews the work of other agents and cannot be assigned a ticket. Choose another assignee.',
   ticket_transition_not_allowed: () =>
     'This action is not possible in the ticket’s current state. The page now shows its current state and the actions it allows.',
   dependency_on_itself: () => 'A ticket cannot wait for itself. Choose another ticket.',

@@ -144,6 +144,16 @@ Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.g
 
 The server rejects both tools when the reviewing profile is the one that implemented the ticket, and when the run is not a `review` run of a ticket in `in_review`. On GitHub each is posted as **one review of the "comment" kind**, the points in its body with `file:line` when given: GitHub refuses an approval or a request for changes on your own pull request (every pull request is the owner's), and refuses inline comments on lines outside the diff. When GitHub refuses the post, the decision stands, with an event and a note on the ticket page (owner's decisions, lot 3 step A).
 
+**One decision per review, about one commit** (owner's answers 2 and 3, lot 3 step H). A review run reviews one commit, fixed when **Start review** starts it (04, section 3.2). Within either tool's call, the server reads the pull request's head on GitHub:
+
+- unchanged: the decision (the summary, or the points) is stored on the run and the call answered; the agent ends its turn;
+- read and found moved: the call is refused with `INVALID_TRANSITION` ("The pull request changed on GitHub during your review, now def5678: your review no longer applies. End your turn.") and the server stops the run, which fails with `review_branch_moved`, not counted;
+- not read (GitHub unreachable, its request limit, an answer that cannot be read, the token refused): the call is never refused for it; the decision is stored and answered as when the head is unchanged, marked "head not checked on GitHub at the decision", which the ticket page and the run page then show. A GitHub problem never costs the review.
+
+The decision is applied only when the run ends `submitted` with no head moved on the machine (05, section 4.9): the ticket's status, the `review` comments and the events in one transaction, then the comment review on GitHub, posted at most once, on the reviewed commit (`commit_id`). A decision thrown away (the head moved on the machine, **Stop run** or the machine lost before the end) is kept on the run, which says which decision it was and why it was not applied. A second decision, or `ticket.ask` after one, is refused with `INVALID_TRANSITION` ("You already approved this ticket in this run: end your turn."); a decision after the run's end gets the "run ended" refusal.
+
+**The comment review's text** (template `review-comment`, 03 section 3.2): "**Quality review: approved** · commit abc1234", the summary, then "— Posted by the Orchestrator for BAK-12 (<ticket link>). The owner merges this pull request."; or "**Quality review: changes requested** · commit abc1234 · 3 points", the numbered points ("1. `src/contact.ts:42`: <point>"), then "— Posted by the Orchestrator for BAK-12 (<ticket link>). The agent that implemented it addresses these points in its next run." The agent's text is masked for secrets, then made harmless as the pull request's description (04, section 3.1: a zero-width space after `@`, `#`, `GH-` and in `/issues/`; `<`, `>` and `&` escaped); paths sit in code spans with a fence they cannot close. The body stays within 65,536 characters: the points are kept whole, in order, then "… and N more points: see the ticket page"; a summary too long is cut at a line boundary with "[cut: the full text is on the ticket page]". A refused post writes `ticket.review_not_posted` and the ticket page's note "Not posted on GitHub: <reason>. The decision stands in the Orchestrator.", with the reasons of a pull request not opened; no retry, no "Needs you" item.
+
 ## 5. Permissions by role
 
 | Tool | Planner (PM) | Builder (Architect, Web Dev, Android Dev) | Reviewer (Quality) | Writer (Technical Writer) |
@@ -155,6 +165,8 @@ The server rejects both tools when the reviewing profile is the one that impleme
 | `ticket.update` | ✓ (any ticket in the project) | — | — | — |
 | `request.ask`, `plan.propose` | ✓ | — | — | — |
 | `review.approve`, `review.request_changes` | — | — | ✓ | — |
+
+**The tools a run sees** (owner's answer 1, lot 3 step H). `run.start` carries the tools the run may call: the profile's permissions without those its purpose cannot use (`ticket.submit` in a `review` run; `review.approve` and `review.request_changes` in any other run). The daemon keeps the list with the run and the relay lists only those tools to Claude Code, so an agent never sees a tool it cannot use; the server still refuses each call by role and purpose.
 
 Custom agents take the permissions of the role chosen at creation. The owner can remove permissions from a profile but cannot grant a permission its role does not have; this keeps the review and planning boundaries intact.
 

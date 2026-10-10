@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { McpToolName } from '../mcp/tools.js';
 import { boundedText, requiredText } from '../text-limits.js';
 
 // A run's socket, `runs/<run-id>/daemon.sock` (05, sections 4.2 and 4.5): the commands Claude Code
@@ -82,8 +83,14 @@ export const RunSocketRequest = z.discriminatedUnion('type', [
     tool: z.string().max(200),
     arguments: z.record(z.string(), z.unknown()),
   }),
+  /** The relay, at its start: the tools it lists, those of `run.start` (06, section 5). */
+  z.object({ type: z.literal('tools') }),
 ]);
 export type RunSocketRequest = z.infer<typeof RunSocketRequest>;
+
+/** The daemon's answer to `tools`: the run's MCP tools (lot 3 step H). */
+export const RunToolsAnswer = z.object({ tools: z.array(McpToolName) });
+export type RunToolsAnswer = z.infer<typeof RunToolsAnswer>;
 
 /** What the hook command prints for Claude Code (stdout), and its exit code. */
 export const HookAnswer = z.object({

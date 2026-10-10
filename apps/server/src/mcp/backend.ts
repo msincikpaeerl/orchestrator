@@ -974,6 +974,14 @@ export class McpBackend {
           { field: 'assignee', message: 'unknown agent profile' },
         ]);
       }
+      // Only a builder or a writer implements a ticket (03, section 4; lot 3 step H1).
+      if (assignee.role !== 'builder' && assignee.role !== 'writer') {
+        throw refuse(
+          'VALIDATION_FAILED',
+          `${assignee.name} reviews the work of other agents and cannot be assigned a ticket: choose a builder or a writer from agent_list, or leave the assignee out.`,
+          [{ field: 'assignee', message: 'this profile cannot be assigned a ticket' }],
+        );
+      }
     }
     const references = [...new Set(input.blocked_by ?? [])];
     const blockers: TicketRow[] = [];
