@@ -891,7 +891,9 @@ export class RunService {
             ? { kind: 'conflict' as const, base: previous.baseBranch }
             : previous.failureReason === 'ci_failed'
               ? { kind: 'failed' as const }
-              : null;
+              : previous.failureReason === 'ci_timeout' && previousResult === 'failed'
+                ? { kind: 'failed_unsent' as const }
+                : null;
       let initialPrompt: string;
       try {
         initialPrompt = implementFirstMessage(
@@ -1811,7 +1813,12 @@ export class RunService {
       }
       const deadlines = ciDeadlines(locked.run);
       if (deadlines !== null && now >= deadlines.deadline) {
-        await this.ciTimeout(tx, locked, this.ciTimeoutDetail(locked, 'CI had not finished'));
+        // A result read only after the wait ended still says what it was (owner's review, G2b).
+        const late =
+          kind === 'failed'
+            ? `CI failed on GitHub (failed: ${failedChecks(result)}), and the result was read only after the wait had ended.`
+            : `the pull request conflicts with ${locked.run.baseBranch}, so GitHub started no CI`;
+        await this.ciTimeout(tx, locked, this.ciTimeoutDetail(locked, late));
         return { machineId: locked.machine.id, send: false };
       }
       const round: CiRound = {
@@ -2617,3 +2624,11 @@ function stopMessage(
 }
 
 export const runNotFound = () => new HttpError(404, 'run_not_found', 'No run with this id');
+
+/** The failed checks of a result, named for the owner: `workflow run "CI", status "deploy"`. */
+function failedChecks(result: CiResult): string {
+  return result.checks
+    .filter((check) => check.state === 'failed')
+    .map((check) => `${check.kind === 'workflow_run' ? 'workflow run' : 'status'} "${check.name}"`)
+    .join(', ');
+}

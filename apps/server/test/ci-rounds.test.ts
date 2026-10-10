@@ -674,6 +674,34 @@ describe("the next run's first sentence (owner answer 8 and addition 4)", () => 
     );
   });
 
+  it('after a failure read once the wait had ended: the detail says CI failed, the next run reads it (owner review, step G2b)', async () => {
+    const { daemon, runId, runToken, repo } = await working();
+    const commit = await submitted(daemon, runId, runToken);
+    // GitHub's answer comes only after CI wait at submission (20 minutes) passed.
+    advance(21);
+    failAll(repo, commit);
+    await h.t.ciTick();
+    const run = await h.run(runId);
+    expect(run).toMatchObject({ status: 'failed', failureReason: 'ci_timeout' });
+    expect(run.endDetail).toBe(
+      'CI wait at submission (20 minutes) reached: CI failed on GitHub (failed: workflow run "CI"), and the result was read only after the wait had ended.',
+    );
+    expect(rounds(daemon, runId)).toHaveLength(0);
+    expect(await h.ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    const next = await h.running(daemon);
+    const start = daemon.received.find(
+      (message): message is RunStart =>
+        message.type === 'run.start' && message.payload.runId === next.runId,
+    );
+    expect(start?.payload.initialPrompt).toContain(
+      'The previous attempt ended before a failed CI result on GitHub reached it: call ci_status to read that result before you start.',
+    );
+    const status = McpCiStatus.parse(await h.ok(daemon, next.runToken, 'ci_status'));
+    expect(status.commit).toMatchObject({ hash: commit, by: 'earlier_run' });
+    expect(status.ci?.failed_jobs[0]?.failed_steps[0]?.log).toContain('Broken link');
+  });
+
   it('after a conflict left unresolved: merge the base branch first', async () => {
     const { daemon, runId, runToken, repo } = await working('none');
     await submitted(daemon, runId, runToken);

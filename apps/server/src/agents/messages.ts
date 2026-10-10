@@ -92,7 +92,11 @@ export interface ImplementTicket {
    * `ci_failed`, or a conflict with the base branch left unresolved (`ci_failed` or `ci_timeout`
    * on a conflict). Null otherwise.
    */
-  previousCi?: { kind: 'failed' } | { kind: 'conflict'; base: string } | null;
+  previousCi?:
+    | { kind: 'failed' }
+    | { kind: 'failed_unsent' }
+    | { kind: 'conflict'; base: string }
+    | null;
 }
 
 /** The ticket alone does not fit, even with its description cut to nothing (03, section 3.2). */
@@ -158,7 +162,9 @@ export function implementFirstMessage(
       : `${opening}\n\n${
           previous.kind === 'failed'
             ? part(template, 'after-ci-failed')
-            : part(template, 'after-conflict', { base: previous.base })
+            : previous.kind === 'failed_unsent'
+              ? part(template, 'after-ci-failed-unsent')
+              : part(template, 'after-conflict', { base: previous.base })
         }`;
   const renderedComments = ticket.comments.map((comment) =>
     part(template, 'comment', {
