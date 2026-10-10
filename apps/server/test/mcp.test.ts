@@ -4,7 +4,6 @@ import {
   FIRST_MESSAGE_MAX_BYTES,
   MCP_OUTPUT_MAX_CHARACTERS,
   MCP_TOOLS,
-  ROLE_MCP_PERMISSIONS,
   SETTINGS,
   TicketDetail,
   type McpError,
@@ -80,17 +79,13 @@ describe('the run token (06, section 2)', () => {
 describe('role permissions (06, section 5)', () => {
   it('refuses a tool the role does not have, naming the role', async () => {
     await h.start();
-    await h.t.db.insert(schema.agentProfiles).values({
-      key: 'quality',
-      name: 'Quality',
-      description: 'Reviews submitted work.',
-      role: 'reviewer',
-      instructions: 'Review the work.',
-      model: 'sonnet',
-      mcpPermissions: ROLE_MCP_PERMISSIONS.reviewer,
-      isDefault: false,
-    });
-    await h.createTicket({ assignee: 'quality' });
+    await h.createTicket();
+    // The API refuses a reviewer as assignee (03, section 4): set as a damaged row would be.
+    const [quality] = await h.t.db
+      .select({ id: schema.agentProfiles.id })
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.key, 'quality'));
+    await h.t.db.update(schema.tickets).set({ assigneeProfileId: quality?.id ?? null });
     const { daemon } = await h.machine();
     const { runToken } = await h.running(daemon);
     const error = refusal(await h.tool(daemon, runToken, 'ticket_submit', REPORT));
@@ -207,6 +202,7 @@ describe('reading tools (06, section 4.1)', () => {
     expect(agents).toMatchObject({
       agents: [
         { key: 'architect', role: 'builder' },
+        { key: 'quality', role: 'reviewer' },
         { key: 'web_dev', role: 'builder' },
       ],
     });
@@ -434,6 +430,10 @@ describe('ticket_create (06, section 4.3), then Accept and Reject (04, section 2
       refusal(await h.tool(daemon, runToken, 'ticket_create', { ...input, assignee: 'nobody' }))
         .code,
     ).toBe('NOT_FOUND');
+    // A reviewer never implements (03, section 4; lot 3 step H1).
+    expect(
+      refusal(await h.tool(daemon, runToken, 'ticket_create', { ...input, assignee: 'quality' })),
+    ).toMatchObject({ code: 'VALIDATION_FAILED', details: [{ field: 'assignee' }] });
     await h.ok(daemon, runToken, 'ticket_create', { ...input, blocked_by: [] });
     const limit = refusal(await h.tool(daemon, runToken, 'ticket_create', input));
     expect(limit).toMatchObject({

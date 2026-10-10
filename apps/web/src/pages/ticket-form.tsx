@@ -135,7 +135,10 @@ function AssigneeField({
   onChange: (assignee: AgentKey | null) => void;
 }) {
   const agents = useAgents();
-  const listed = agents.data?.agents ?? [];
+  // Only agents that implement: Quality reviews and is never assigned (03, section 4).
+  const listed = (agents.data?.agents ?? []).filter(
+    (agent) => agent.role === 'builder' || agent.role === 'writer',
+  );
   return (
     <SelectField
       label="Assignee"

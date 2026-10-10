@@ -98,6 +98,9 @@ const blockedFlag = sql<boolean>`exists (
   where d.ticket_id = "tickets"."id" and b.status <> 'done'
 )`.mapWith(Boolean);
 
+/** The roles a ticket's assignee may have: those that implement (03, section 4). */
+const ASSIGNABLE_ROLES = new Set(['builder', 'writer']);
+
 /** The assignee of each ticket row, from a left join on the profiles. */
 const assigneeColumns = { key: schema.agentProfiles.key, name: schema.agentProfiles.name };
 
@@ -197,6 +200,15 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       .where(eq(schema.agentProfiles.key, key));
     if (!row) {
       throw new HttpError(422, 'agent_not_found', `No agent profile with the key ${key}`);
+    }
+    // Only a builder or a writer implements a ticket; Quality's reviews start by themselves
+    // from the ticket in review (03, section 4; lot 3 step H1).
+    if (!ASSIGNABLE_ROLES.has(row.role)) {
+      throw new HttpError(
+        422,
+        'agent_not_assignable',
+        `${row.name} reviews the work of other agents and cannot be assigned a ticket`,
+      );
     }
     return row;
   }

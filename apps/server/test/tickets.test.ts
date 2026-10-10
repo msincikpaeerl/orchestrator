@@ -641,6 +641,26 @@ describe('assignee (01, section 3.4)', () => {
     expect(await events('ticket.updated')).toEqual([]);
   });
 
+  it('refuses Quality as assignee, when creating and when editing: a reviewer never implements (03, section 4)', async () => {
+    const refused = await call('POST', 'WEB/tickets', {
+      type: 'feature',
+      title: 'A ticket',
+      assignee: 'quality',
+    });
+    expect(refused.statusCode).toBe(422);
+    expect(errorCode(refused)).toBe('agent_not_assignable');
+    expect(errorMessage(refused)).toBe(
+      'Quality reviews the work of other agents and cannot be assigned a ticket',
+    );
+    expect(await board()).toEqual([]);
+
+    await create({ title: 'Old', assignee: 'web_dev' });
+    const edit = await call('PATCH', 'WEB/tickets/1', { assignee: 'quality' });
+    expect(edit.statusCode).toBe(422);
+    expect(errorCode(edit)).toBe('agent_not_assignable');
+    expect(await ticket(1)).toMatchObject({ assignee: webDev });
+  });
+
   it('refuses an unknown profile, when creating and when editing, and changes nothing', async () => {
     const refused = await call('POST', 'WEB/tickets', {
       type: 'feature',

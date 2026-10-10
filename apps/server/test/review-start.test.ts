@@ -9,13 +9,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
-import {
-  CHANGED_FILES,
-  RunHarness,
-  cleanWorkspace,
-  eventually,
-  state,
-} from './run-harness.js';
+import { CHANGED_FILES, RunHarness, cleanWorkspace, eventually, state } from './run-harness.js';
 
 // **Start review** (04, sections 2 and 3.2; owner's answers 1, 2a and 4, lot 3 step H1): a
 // `review` run with the `quality` profile on any machine, for the commit CI checked, read again
@@ -47,10 +41,7 @@ const BRANCH = 't/1-contact-form';
  * A ticket in review: implemented, submitted, its pull request opened and CI passed (or, with
  * `none`, "No CI found" after Wait for CI to start). Returns the machine and the commit CI checked.
  */
-async function inReview(
-  ci: 'success' | 'none' = 'success',
-  options: { workflows?: boolean } = {},
-) {
+async function inReview(ci: 'success' | 'none' = 'success', options: { workflows?: boolean } = {}) {
   clock = new Date('2026-10-10T10:00:00.000Z');
   await h.start({ now: () => clock, ci });
   await h.createTicket();
@@ -212,7 +203,7 @@ describe('Start review', () => {
       expect(await refused()).toEqual({ reason: 'review_active' });
     });
 
-    it("a pull request whose head on GitHub is not the commit CI checked", async () => {
+    it('a pull request whose head on GitHub is not the commit CI checked', async () => {
       const { daemon, commit } = await inReview();
       const repo = h.github.repository('octo-owner', 'bakery');
       const head = h.github.commit(repo, BRANCH, { 'src/by-hand.ts': 'export {};\n' }, 'By hand');
