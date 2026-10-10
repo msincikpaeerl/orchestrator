@@ -78,6 +78,14 @@ export function registerRunRoutes(
     return reply.code(201).send(run);
   });
 
+  // **Start review** (04, sections 2 and 3.2; lot 3 step H1): a review run, the ticket in review.
+  app.post<TicketParams>('/api/projects/:key/tickets/:number/review', async (request, reply) => {
+    await requireSession(db, request);
+    const { key, number } = ticketAddress(request.params);
+    const run = await runs.startReview(key, number);
+    return reply.code(201).send(run);
+  });
+
   app.get<TicketParams>('/api/projects/:key/tickets/:number/runs', async (request) => {
     await requireSession(db, request);
     const { key, number } = ticketAddress(request.params);

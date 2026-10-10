@@ -181,7 +181,7 @@ export function checkCiAgainOffered(outcome: RunCiOutcome): boolean {
 /**
  * The ticket's run the CI line is about (owner's answer 3g, lot 3 step G2c): its latest run that
  * had a wait for CI (one ended after a confirmed round counts); none while a later run is active
- * without having handed work in.
+ * without having handed work in. Review runs are passed over (lot 3 step H1).
  */
 export async function ciSourceRun(executor: Executor, ticketId: string): Promise<RunRow | null> {
   const runs = await executor
@@ -190,6 +190,8 @@ export async function ciSourceRun(executor: Executor, ticketId: string): Promise
     .where(eq(schema.runs.ticketId, ticketId))
     .orderBy(desc(schema.runs.createdAt));
   for (const run of runs) {
+    // A review run never waits for CI nor hands work in: the line stays on the work reviewed.
+    if (run.purpose === 'review') continue;
     const had = run.ciCommit !== null || roundsOf(run).some((round) => round.confirmedAt !== null);
     if (had) return ciOutcome(run) === null ? null : run;
     if (ACTIVE.has(run.status)) return null;

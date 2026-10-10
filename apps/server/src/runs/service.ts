@@ -99,7 +99,11 @@ import {
   runReport,
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
-import { implementTicket } from './first-message.js';
+import { implementTicket, reviewTicket } from './first-message.js';
+import { ciOutcome, ciSourceRun } from './ci-outcome.js';
+import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
+import { storedTokenClient } from '../github/connection.js';
+import { readPullRequest } from '../github/pull-requests.js';
 import { CiStatusReader } from './ci-status.js';
 import { ciFailedMessage } from './ci-failed.js';
 import type { CiDecision } from './ci-wait.js';
@@ -961,6 +965,273 @@ export class RunService {
     });
 
     return this.dispatch(prepared);
+  }
+
+  /**
+   * **Start review** (04, sections 2 and 3.2; owner's answers 2a and 4, lot 3 step H1): a `review`
+   * run with the `quality` profile on any machine, for the commit CI checked for the accepted
+   * submission. The pull request is read on GitHub first, outside the transaction: its head must
+   * still be that commit. The ticket stays `in_review`.
+   */
+  async startReview(projectKey: string, ticketNumber: number): Promise<Run> {
+    const github = await this.githubIdentity();
+    const files = await this.files();
+    const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
+    const before = await this.reviewSubject(this.db, projectKey, ticketNumber);
+    const head = await this.pullRequestHead(before.project, before.pullRequest.number);
+    if (head !== before.commit) {
+      throw refuse(
+        { reason: 'review_head_moved', commit: before.commit, head },
+        `The pull request's head on GitHub (${head.slice(0, 7)}) is not the commit CI checked (${before.commit.slice(0, 7)})`,
+      );
+    }
+
+    const prepared = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      await this.lockProject(tx, eq(schema.projects.id, before.project.id));
+      // Checked again under the lock: nothing changed since GitHub was read.
+      const subject = await this.reviewSubject(tx, projectKey, ticketNumber, true);
+      if (subject.commit !== before.commit) {
+        throw refuse(
+          { reason: 'review_head_moved', commit: subject.commit, head },
+          'The work changed while the review was being started',
+        );
+      }
+      const { project, ticket, source } = subject;
+      const [profile] = await tx
+        .select()
+        .from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.key, 'quality'));
+      if (!profile) throw new Error('the quality profile is not seeded');
+      const required = z.array(Capability).parse(profile.requiredCapabilities);
+      const earlier = await tx
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.ticketId, ticket.id))
+        .orderBy(desc(schema.runs.createdAt));
+      const { machine, account } = await this.chooseMachine(tx, {
+        projectId: project.id,
+        earlier,
+        required,
+        now,
+        holding: null,
+      });
+      const reference = ticketReference(project.key, ticket.number);
+      const baseBranch = source.baseBranch;
+      const branchName = ticket.branchName ?? source.branchName;
+      let initialPrompt: string;
+      try {
+        initialPrompt = reviewFirstMessage(
+          files.templates.review,
+          await reviewTicket(tx, {
+            projectKey: project.key,
+            projectName: project.name,
+            ticket,
+            commit: subject.commit,
+            pullRequest: subject.pullRequest,
+            base: baseBranch,
+            ci: subject.ci,
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof FirstMessageTooLarge)) throw error;
+        throw refuse(
+          { reason: 'first_message_too_large', maxBytes: FIRST_MESSAGE_MAX_BYTES },
+          error.message,
+        );
+      }
+      const runToken = newRunToken();
+      const dispatchMessageId = randomUUID();
+      const ackDeadline = new Date(Date.now() + settings.dispatchAckTimeoutSeconds * this.secondMs);
+      const [run] = await tx
+        .insert(schema.runs)
+        .values({
+          projectId: project.id,
+          ticketId: ticket.id,
+          profileId: profile.id,
+          profileVersion: profile.version,
+          purpose: 'review',
+          machineId: machine.id,
+          accountId: account.id,
+          status: 'queued',
+          // The attempt reviewed: a review is never an attempt of its own (04, section 3.2).
+          attempt: source.attempt,
+          runTokenHash: hashCredential(runToken),
+          dispatchMessageId,
+          dispatchKind: 'start',
+          ackDeadline,
+          branchName,
+          baseBranch,
+          statusSince: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      if (!run) throw new Error('run not inserted');
+      await recordEvent(tx, {
+        actor: 'owner',
+        entityType: 'run',
+        entityId: run.id,
+        projectId: project.id,
+        type: 'run.created',
+        payload: {
+          project: project.key,
+          ticket: reference,
+          purpose: 'review',
+          machine: machine.name,
+          account: account.label,
+          profile: profile.key,
+          profileName: profile.name,
+          profileVersion: profile.version,
+          attempt: source.attempt,
+        },
+        at: now,
+      });
+      const start = this.startMessage({
+        messageId: dispatchMessageId,
+        runId: run.id,
+        purpose: 'review',
+        project,
+        ticket: { id: ticket.id, reference },
+        baseBranch,
+        branchName,
+        profile,
+        github,
+        files,
+        runToken,
+        initialPrompt,
+        settings,
+        reviewCommit: subject.commit,
+      });
+      return { run, start, machine, reference, ackDeadline };
+    });
+    return this.dispatch(prepared);
+  }
+
+  /**
+   * What **Start review** reviews, or its refusal: a ticket in review, with a pull request, no run
+   * active, and the commit CI checked for its accepted submission (passed, or "No CI found", in its
+   * run or by **Check CI again** since).
+   */
+  private async reviewSubject(
+    executor: Executor,
+    projectKey: string,
+    ticketNumber: number,
+    lock = false,
+  ): Promise<{
+    project: ProjectRow;
+    ticket: TicketRow;
+    source: RunRow;
+    commit: string;
+    ci: ReviewCi;
+    pullRequest: { number: number; url: string };
+  }> {
+    const [project] = await executor
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.key, projectKey));
+    if (!project) throw new HttpError(404, 'project_not_found', 'No project with this key');
+    if (project.status === 'archived') {
+      throw refuse({ reason: 'project_archived' }, 'The project is archived');
+    }
+    if (project.setupStatus !== 'ready') {
+      throw refuse({ reason: 'project_not_ready' }, 'The repository setup is not finished');
+    }
+    const query = executor
+      .select()
+      .from(schema.tickets)
+      .where(
+        and(eq(schema.tickets.projectId, project.id), eq(schema.tickets.number, ticketNumber)),
+      );
+    const [ticket] = lock ? await query.for('update') : await query;
+    if (!ticket) throw new HttpError(404, 'ticket_not_found', 'No ticket with this number');
+    if (ticket.status !== 'in_review') {
+      throw refuse(
+        { reason: 'ticket_not_in_review', status: TicketStatus.parse(ticket.status) },
+        `Start review needs a ticket in in_review; it is ${ticket.status}`,
+      );
+    }
+    const active = await executor
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.ticketId, ticket.id),
+          inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      );
+    if (active.length > 0) throw refuse({ reason: 'review_active' }, 'A review is already running');
+    const source = await ciSourceRun(executor, ticket.id);
+    const outcome = source === null ? null : ciOutcome(source);
+    const ci: ReviewCi | null =
+      outcome === null
+        ? null
+        : outcome.acceptedLater !== null
+          ? outcome.acceptedLater.state === 'passed'
+            ? 'passed_later'
+            : 'no_ci'
+          : outcome.kind === 'passed'
+            ? 'passed'
+            : outcome.kind === 'no_ci'
+              ? 'no_ci'
+              : null;
+    // A ticket left in review by 0.3.0 has neither a pull request nor work CI checked.
+    if (
+      source === null ||
+      outcome === null ||
+      ci === null ||
+      ticket.pullRequestNumber === null ||
+      ticket.pullRequestUrl === null
+    ) {
+      throw refuse({ reason: 'no_pull_request' }, 'The ticket has no pull request to review');
+    }
+    return {
+      project,
+      ticket,
+      source,
+      commit: outcome.commit,
+      ci,
+      pullRequest: { number: ticket.pullRequestNumber, url: ticket.pullRequestUrl },
+    };
+  }
+
+  /** The pull request's head on GitHub; a refusal when it cannot be read or is not open. */
+  private async pullRequestHead(project: ProjectRow, number: number): Promise<string> {
+    const problem = (message: string) =>
+      refuse({ reason: 'github_problem', message }, `GitHub could not be read: ${message}`);
+    let client;
+    try {
+      client = await storedTokenClient({
+        db: this.db,
+        key: this.options.key,
+        apiUrl: this.options.githubApiUrl,
+        log: this.log,
+      });
+    } catch (error) {
+      if (!(error instanceof SecretUnreadableError)) throw error;
+      throw refuse({ reason: 'github_token_unreadable' }, 'The saved GitHub token cannot be read');
+    }
+    if (client === null)
+      throw refuse({ reason: 'github_not_connected' }, 'GitHub is not connected');
+    let pull;
+    try {
+      pull = await readPullRequest(
+        client,
+        { owner: project.repoOwner, name: project.repoName },
+        number,
+      );
+    } catch (error) {
+      if (!(error instanceof GitHubUnreachableError)) throw error;
+      throw problem('GitHub could not be reached, or answered with a server error.');
+    }
+    if (!pull.ok) throw problem(maskSecrets(pull.refusal.message));
+    if (pull.value.merged || pull.value.state !== 'open') {
+      throw refuse(
+        { reason: 'pull_request_not_open', pullRequest: number, merged: pull.value.merged },
+        `Pull request #${String(number)} is not open on GitHub`,
+      );
+    }
+    return pull.value.headSha;
   }
 
   /** Sends a run's `run.start` once its transaction is committed: `dispatched`, or cancelled. */
