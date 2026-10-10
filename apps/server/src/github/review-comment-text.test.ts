@@ -97,19 +97,37 @@ describe('reviewCommentBody', () => {
     const run = `ort_${'Zx_-'.repeat(10)}abc`;
     const text = body(
       decision({
-        summary: `Thanks @octocat, fixes #3. <img src=x> ${github} ${run} /home/ana/.orchestrator/worktrees/${RUN}/src/a.ts /home/ana/notes.md`,
+        summary: `Thanks @octocat, fixes #3. <img src=x> ${github} ${run} /home/ana/.orchestrator/worktrees/${RUN}/src/a.ts /home/ana/.orchestrator/runs/x`,
       }),
     );
     expect(text).toContain(
-      `Thanks @${ZWSP}octocat, fixes #${ZWSP}3. &lt;img src=x&gt; [hidden] [hidden] src/a.ts ~/notes.md`,
+      `Thanks @${ZWSP}octocat, fixes #${ZWSP}3. &lt;img src=x&gt; [hidden] [hidden] src/a.ts ~/.orchestrator/runs/x`,
     );
-    for (const leak of [github, run, '/home/', '.orchestrator']) expect(text).not.toContain(leak);
+    for (const leak of [github, run, '/home/', 'worktrees']) expect(text).not.toContain(leak);
     const point = body(
       changes([
         { body: `Use ${run}.`, file: `/home/ana/.orchestrator/worktrees/${RUN}/src/b.ts`, line: 1 },
       ]),
     );
     expect(point).toContain('1. `src/b.ts:1`: Use [hidden].');
+  });
+
+  // Owner's answer 4b narrowed on 2026-10-10: a page address or a path the review reports is quoted
+  // as written; only the daemon's folder is rewritten.
+  it('keeps page addresses and paths elsewhere as written', () => {
+    const sentences = [
+      'The route /home/dashboard is not protected.',
+      'GET /home/feed/latest returns 500.',
+      'Opening /Users/42 shows another account.',
+      'Hardcoded /home/alice/data/file.csv in src/config.ts',
+    ];
+    const text = body(
+      changes(sentences.map((sentence) => ({ body: sentence, file: null, line: null }))),
+    );
+    sentences.forEach((sentence, index) => {
+      expect(text).toContain(`${String(index + 1)}. ${sentence}\n`);
+    });
+    expect(body(decision({ summary: sentences.join('\n') }))).toContain(sentences.join('\n'));
   });
 
   it('the agent cannot write the mark the post is found by', () => {

@@ -30,17 +30,14 @@ const LOCAL_PATHS: [RegExp, string | ((match: string) => string)][] = [
     (match) => (/[\\/]$/.test(match) ? '' : '.'),
   ],
   [new RegExp(DAEMON_FOLDER, 'g'), '~/.orchestrator/'],
-  // Home folders: WSL's view of Windows first, then Windows and macOS, Linux and root's.
-  [new RegExp(`${START}/mnt/[A-Za-z]/Users/${SEGMENT}`, 'g'), '~'],
-  [new RegExp(`${START}(?:[A-Za-z]:)?${SLASH}Users${SLASH}${SEGMENT}`, 'g'), '~'],
-  [new RegExp(`${START}/home/${SEGMENT}`, 'g'), '~'],
-  [new RegExp(`${START}/root(?!${SEGMENT})`, 'g'), '~'],
 ];
 
 /**
  * Local paths made harmless in a text that leaves for GitHub (04, section 3.1; owner's answer
  * 4b, lot 3 step H3), never in the Orchestrator's own screens: a path in a run's worktree becomes
- * relative, the daemon's folder `~/.orchestrator/`, and a home folder `~`.
+ * relative, the daemon's folder `~/.orchestrator/`. Any other path stays as written: `/home/x`
+ * may be a page address, or the absolute path a review reports (answer 4b, narrowed on
+ * 2026-10-10).
  */
 export function withoutLocalPaths(text: string): string {
   return LOCAL_PATHS.reduce(

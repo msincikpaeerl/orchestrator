@@ -76,7 +76,16 @@ describe('harmless', () => {
   });
 });
 
-describe('harmless: local paths (owner answer 4b, step H3)', () => {
+/** Page addresses and paths elsewhere on the machine: never rewritten (answer 4b, narrowed). */
+const OTHER_PATHS = [
+  'The route /home/dashboard is not protected.',
+  'GET /home/feed/latest returns 500.',
+  'Opening /Users/42 shows another account.',
+  'Hardcoded /home/alice/data/file.csv in src/config.ts',
+  'in C:\\Users\\ana\\x.md, /mnt/c/Users/ana/x.md and /root/x.md',
+];
+
+describe('harmless: local paths (owner answer 4b, narrowed on 2026-10-10; step H3)', () => {
   const RUN = '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21';
 
   it.each([
@@ -93,14 +102,21 @@ describe('harmless: local paths (owner answer 4b, step H3)', () => {
       `read /home/ana/.orchestrator/runs/${RUN}/mcp.json`,
       `read ~/.orchestrator/runs/${RUN}/mcp.json`,
     ],
-    ['/home/<user>', 'in /home/ana/notes/x.md and /home/bob', 'in ~/notes/x.md and ~'],
-    ['/Users/<user>', 'in /Users/ana/x.md', 'in ~/x.md'],
-    ['\\Users\\<user>', 'in \\Users\\ana\\x.md', 'in ~\\x.md'],
-    ['C:\\Users\\<user>', 'in C:\\Users\\ana\\x.md and C:/Users/ana/y.md', 'in ~\\x.md and ~/y.md'],
-    ['WSL /mnt/<drive>/Users/<user>', 'in /mnt/c/Users/ana/x.md', 'in ~/x.md'],
-    ['/root', 'in /root/x.md and `/root`', 'in ~/x.md and `~`'],
+    ['a WSL worktree', `/mnt/c/Users/Ana/.orchestrator/worktrees/${RUN}/a.ts`, 'a.ts'],
+    [
+      'the daemon folder on Windows',
+      `C:\\Users\\Ana\\.orchestrator\\logs\\daemon.log`,
+      '~/.orchestrator/logs\\daemon.log',
+    ],
+    ['the daemon folder on WSL', '/mnt/c/Users/Ana/.orchestrator/runs/x', '~/.orchestrator/runs/x'],
   ])('%s', (_name, text, expected) => {
     expect(harmless(text)).toBe(expected);
+  });
+
+  // Owner's answer 4b narrowed on 2026-10-10: a home-folder rule also rewrote page addresses and
+  // the absolute paths a review must quote. A path outside the daemon's folder stays as written.
+  it.each(OTHER_PATHS)('leaves a path elsewhere as written: %s', (text) => {
+    expect(harmless(text)).toBe(text);
   });
 
   it('leaves relative paths and links alone', () => {
@@ -146,6 +162,12 @@ describe('pullRequestBody', () => {
     expect(text).toContain('Used [hidden] in src/Form.ts');
     expect(text).not.toContain(token);
     expect(text).not.toContain('/home/');
+  });
+
+  it('keeps page addresses and paths elsewhere as written (answer 4b, narrowed)', () => {
+    for (const path of OTHER_PATHS) {
+      expect(body({ report: { ...report, summary: path } })).toContain(path);
+    }
   });
 
   it('holds the summary, criteria in order, tests, documentation, ADRs and the link', () => {

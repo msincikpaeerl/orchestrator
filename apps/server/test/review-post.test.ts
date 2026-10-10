@@ -176,8 +176,9 @@ describe('the agent text, made harmless', () => {
     const body = ours()[0]?.body ?? '';
     expect(body).toContain('Thanks @\u200boctocat: fixes #\u200b3 and closes GH-\u200b4.');
     expect(body).toContain('Tokens: [hidden] [hidden]');
-    expect(body).toContain('Read src/contact.ts and ~/notes.md');
-    for (const leak of [github, review.runToken, TOKEN, '/home/', '/mnt/', '.orchestrator']) {
+    // A path elsewhere stays as written (answer 4b, narrowed on 2026-10-10).
+    expect(body).toContain('Read src/contact.ts and /mnt/c/Users/ana/notes.md');
+    for (const leak of [github, review.runToken, TOKEN, '/home/', '.orchestrator']) {
       expect(body).not.toContain(leak);
     }
     // The ticket keeps the agent's own text: paths are made harmless only on GitHub (answer 4b).
