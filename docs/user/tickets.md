@@ -222,7 +222,7 @@ Under **Pull request**, the ticket page says in one line what CI came to for the
 
 | It finds | What happens |
 |---|---|
-| CI passed, or **No CI found** | The work is accepted: the ticket moves to **In review**, with a comment. After a run ended with too many CI failures, that run's failed attempt no longer counts, since the same commit passed: the failure was not the agent's. |
+| CI passed, or **No CI found** (nothing on GitHub after the pull request has been open for **Wait for CI to start**; before that it counts as not finished) | The work is accepted: the ticket moves to **In review**, with a comment. After a run ended with too many CI failures, that run's failed attempt no longer counts, since the same commit passed: the failure was not the agent's. |
 | CI not finished | Nothing changes: "CI has still not finished on GitHub (2 of 3 checks finished …). Try again later." |
 | CI failed | Nothing changes: **Run now** gives the failure to the agent. |
 | A conflict | Nothing changes: **Run now** lets the agent merge the default branch. |
