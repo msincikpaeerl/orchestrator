@@ -63,9 +63,9 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan proposing more tickets than this is refused. |
 | Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
 | Failed attempts before asking you (from version 0.4.0) | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
-| CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a submitted ticket waits for its CI result before the attempt fails. |
+| CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a run waits for CI on GitHub after the agent's work is accepted. When it is reached, the run stops without counting as a failed attempt, and Needs you offers Check CI again, or Run now when CI had failed or the pull request conflicts. |
 | Wait for CI to start (from version 0.4.0) | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch). |
-| Most CI failures per run (from version 0.4.0) | 2 failures | 1 to 10 | Yes | How many times in one run a failed CI result, or a conflict with the base branch, is sent back to the agent to fix. One more ends the run as a failed attempt. |
+| Most CI failures per run (from version 0.4.0) | 2 failures | 1 to 10 | Yes | How many CI failures an agent gets back to fix in one run; a conflict with the default branch counts as one. One more ends the run as a failed attempt. |
 | Longest CI log excerpt (from version 0.4.0) | 4,000 characters | 500 to 20,000 | No | How much of each failed CI step's log an agent receives, keeping its end. |
 | Longest CI log read (from version 0.4.0) | 20 megabytes | 1 to 500 | No | How much of a failed CI job's log the Orchestrator downloads from GitHub to find each failed step's part. Beyond it, the agent gets the end of what was read and is told so. |
 

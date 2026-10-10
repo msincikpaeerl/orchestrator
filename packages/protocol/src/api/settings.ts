@@ -234,7 +234,8 @@ const definitions = {
   ciWaitTimeoutMinutes: {
     group: 'tickets',
     label: 'CI wait at submission',
-    description: 'How long a submitted ticket waits for its CI result before the attempt fails.',
+    description:
+      "How long a run waits for CI on GitHub after the agent's work is accepted. When it is reached, the run stops without counting as a failed attempt, and Needs you offers Check CI again, or Run now when CI had failed or the pull request conflicts.",
     unit: 'minutes',
     min: 1,
     max: 240,
@@ -258,7 +259,7 @@ const definitions = {
     group: 'tickets',
     label: 'Most CI failures per run',
     description:
-      'How many times in one run a failed CI result, or a conflict with the base branch, is sent back to the agent to fix. One more ends the run as a failed attempt.',
+      'How many CI failures an agent gets back to fix in one run; a conflict with the default branch counts as one. One more ends the run as a failed attempt.',
     unit: 'failures',
     min: 1,
     max: 10,
