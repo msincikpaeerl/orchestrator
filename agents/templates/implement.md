@@ -34,7 +34,7 @@ The ticket's branch already has commits from an earlier attempt, committed on th
 <!-- part: after-ci-failed -->
 The previous attempt ended after CI failed on GitHub more times than its run allows: call ci_status to read that result before you start.
 <!-- part: after-ci-failed-unsent -->
-The previous attempt ended before a failed CI result on GitHub reached it: call ci_status to read that result before you start.
+CI failed on GitHub for the previous attempt's work, and that attempt ended before it received the result: call ci_status to read it before you start.
 <!-- part: after-conflict -->
 The pull request conflicts with {{base}}: run `git merge origin/{{base}}` and resolve the conflicts before anything else.
 <!-- part: empty-description -->

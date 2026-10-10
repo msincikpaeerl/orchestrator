@@ -4,7 +4,7 @@ import { ApiRequestError } from '../api';
 import { Card, ErrorMessage, InfoMessage, Loading, PageHeader } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { useRun, useTicket } from '../queries';
-import { CiWaitCard } from '../runs/ci-card';
+import { CiHistoryCard, CiWaitCard } from '../runs/ci-card';
 import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/components';
 import { useRunLog } from '../runs/log';
 import { acceptedAfterText, isActive, purposeLabel, runStateText, usageText } from '../runs/text';
@@ -159,6 +159,7 @@ function RunContent({ run }: { run: RunDetail }) {
           <RunActions run={run} />
         </Card>
         <CiWaitCard run={run} />
+        <CiHistoryCard run={run} />
         <Card className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">Branch</h2>
           <p className="break-words" aria-label="Branch">

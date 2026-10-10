@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CheckCiAgainRefused } from './ci.js';
 import { RunRefusal } from './runs.js';
 import { SettingName } from './settings.js';
 
@@ -84,6 +85,11 @@ export const ApiErrorCode = z.enum([
   'no_open_question',
   /** **Try again** on a ticket that no longer waits for its pull request (lot 3 step F3). */
   'no_pull_request_wanted',
+  /**
+   * **Check CI again** refused (04, section 3.1; lot 3 step G2c): the message is the owner's words,
+   * `ciRefusal` says why.
+   */
+  'ci_check_refused',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
@@ -118,6 +124,8 @@ export const ApiError = z.object({
     limits: z.array(LimitExceeded).optional(),
     /** `dependency_cycle`: the tickets of the cycle, each waiting for the next (`WEB-1`, ...). */
     cycle: z.array(z.string()).optional(),
+    /** `ci_check_refused`: why **Check CI again** was refused. */
+    ciRefusal: CheckCiAgainRefused.optional(),
     /** `setting_order_invalid`: the two settings and the values they would have. */
     settingOrder: z
       .object({

@@ -193,13 +193,42 @@ What it decides:
 |---|---|
 | **Passed**: every workflow run and status finished and passed (a skipped one counts as passed) | The run ends as succeeded, and the ticket moves to **In review**. |
 | **No CI found**: nothing appeared within **Wait for CI to start** (5 minutes by default) | The work is accepted as if CI had passed, and the ticket moves to **In review**. A project without workflows always gets this. When the work also changed workflow files, Activity says both in one sentence: the agent may have removed or weakened CI, so read the changes in `.github/workflows/` before merging (see [Workflow files](#workflow-files)). |
-| **Conflicts with the default branch**: nothing appeared, and the pull request conflicts with the project's default branch | Never accepted: GitHub runs no CI on a pull request with a conflict, so the work was not tested. In this version the run waits until **CI wait at submission**, then stops as below. |
-| **Failed**: a workflow run failed, was cancelled or timed out, or a status failed | In this version the run ends as **failed**, and it counts as a failed attempt. The ticket goes back to **To do** with a comment naming what failed. |
-| Still running when **CI wait at submission** (20 minutes by default) is reached | The run ends as **failed**, without counting as a failed attempt. The ticket goes back to **To do** with its branch, its pull request and a comment saying why. |
+| **Conflicts with the default branch**: nothing appeared, and the pull request conflicts with the project's default branch | Never accepted: GitHub runs no CI on a pull request with a conflict, so the work was not tested. The machine downloads the latest default branch, and the agent is told, in the same session, to merge it and resolve the conflict, then hand its work in again. This counts as one of the run's **Most CI failures per run**. |
+| **Failed**: a workflow run failed, was cancelled or timed out, or a status failed | The agent gets the failure back in the same session: each failed job and step, with its part of the log. It fixes its work and hands it in again, checked from the start; handing in the same commit again is refused. After **Most CI failures per run** (2 by default, failures and conflicts together), one more failure ends the run as **failed**, counted as a failed attempt; the ticket goes back to **To do** with a comment naming what failed. Runs GitHub cancelled because the branch changed there (a workflow cancelling its run when the branch is pushed) do not count: the run ends at once, not counted, and the next run starts from GitHub's branch. |
+| **CI wait at submission** (20 minutes by default) reached before a result the agent got | The run ends as **failed**, without counting as a failed attempt. The ticket goes back to **To do** with its branch, its pull request and a comment saying what was found: CI not finished, CI failed but the agent did not receive the result (its machine did not confirm it, or the result came too late), or a conflict not resolved. [Needs you](needs-you.md#ci-items) shows it with what to do. |
 
 If GitHub cannot be reached, refuses because of its request limit, or answers something the Orchestrator cannot read, the run keeps waiting and the Orchestrator asks again: only **CI wait at submission** ends the wait. [Activity](activity.md) shows when GitHub could not be checked, and when it could again. A problem with the token shows in [Needs you](needs-you.md) as usual.
 
 If the agent's session stops while it waits (Claude Code closed, or the machine restarted), nothing is lost: CI still decides, and a run whose CI passes ends as succeeded. If the Orchestrator itself restarts, it goes on waiting where it stopped. A result GitHub gave meanwhile counts, even after **CI wait at submission**.
+
+### The CI line
+
+Under **Pull request**, the ticket page says in one line what CI came to for the ticket's latest run that waited for it, with **Open the run** for each check. It is hidden while a later run works and has not handed its work in yet. A frame marks it when the work was not accepted:
+
+| Line | What to do |
+|---|---|
+| **CI: waiting on GitHub for commit …** | Nothing: the run decides by itself. |
+| **CI passed on GitHub for commit …**, or **No CI found** | Nothing: the ticket is in review. With **No CI found** and workflow files changed, read `.github/workflows/` before merging. |
+| **CI failed on GitHub for commit …** **The run ended after 3 CI failures** (or **failures or conflicts**) | **Run now** gives the failure to the next run's agent. If you re-ran the failed jobs on GitHub yourself, **Check CI again**. |
+| **CI had not finished on GitHub for commit …** | **Check CI again** once CI has finished. |
+| **CI failed on GitHub for commit …, and the run's wait ended before the agent received the result** | **Run now**, or **Check CI again** after a re-run on GitHub. |
+| **The pull request conflicts with main …** | **Run now**: the agent merges the default branch and resolves the conflict. |
+| **CI was cancelled on GitHub because the branch changed there** | **Run now**: the next run starts from GitHub's branch. |
+| **… sent back to the agent as CI round 1, and the run then ended** | **Run now**: the run ended for another reason after the agent got the result. |
+
+### Check CI again
+
+**Check CI again** reads the CI of the commit the agent handed in on GitHub once, without starting a Claude Code session. It is offered after **CI wait at submission** was reached (not for a conflict), and after a run ended with one CI failure too many. The Orchestrator never reads a finished result again by itself, so it is also the way to read CI again after you re-ran a workflow by hand on GitHub.
+
+| It finds | What happens |
+|---|---|
+| CI passed, or **No CI found** (nothing on GitHub after the pull request has been open for **Wait for CI to start**; before that it counts as not finished) | The work is accepted: the ticket moves to **In review**, with a comment. After a run ended with too many CI failures, that run's failed attempt no longer counts, since the same commit passed: the failure was not the agent's. |
+| CI not finished | Nothing changes: "CI has still not finished on GitHub (2 of 3 checks finished …). Try again later." |
+| CI failed | Nothing changes: **Run now** gives the failure to the agent. |
+| A conflict | Nothing changes: **Run now** lets the agent merge the default branch. |
+| GitHub could not be checked | Nothing changes: try again later. |
+
+It is refused while a run is working on the ticket, when newer work was accepted since, when the branch changed on GitHub after that commit (**Run now** hands the work in again), when the pull request is closed or merged (for a merged one, **Mark as done manually**), and when the pull request was never opened: use **Try again** in "Pull request not opened" first.
 
 ### Workflow files
 

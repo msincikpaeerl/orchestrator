@@ -5,6 +5,7 @@
 In this version, it shows:
 
 - what agents' work leaves for you: questions, tickets they propose, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
+- runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
 
 Later versions add plans to approve and pull requests to merge.
@@ -53,6 +54,18 @@ When the ticket's pull request is already open, the item says **Pull request not
 | GitHub refused to open (or update) the pull request of … | Any other refusal, for example a repository that was deleted or renamed. The item shows GitHub's own words, with any secret hidden. | Fix the cause on GitHub, then **Try again**. |
 
 **Try again** makes one new attempt and the item disappears when it succeeds. The Orchestrator also tries again by itself each time it starts, and every **GitHub check interval** while the run waits for CI. The item's **Since** is the first attempt that failed, whatever the tries since; Activity shows "Pull request not opened or updated" when attempts start failing or fail for another reason, not at each try. A try never opens a second pull request: it first looks for the ticket's pull request on GitHub by its branch, even when GitHub did the work but its answer was lost. The item also disappears when the ticket is cancelled or marked as done.
+
+## CI items
+
+From version 0.4.0, a run that reaches **CI wait at submission** stops without counting as a failed attempt, and leaves one of these items, so nothing starts again by itself. Each says what was found, with **Open the run** and **Open the ticket**.
+
+| Item | Why | What to do |
+|---|---|---|
+| CI did not finish for … | CI on GitHub had not finished when the wait ended. | When CI has finished on GitHub, click **Check CI again**: if it passed, the work is accepted without starting a session, the ticket moves to **In review** and the item disappears; otherwise it says what it found. If the pull request was never opened, use **Try again** in "Pull request not opened" first. |
+| CI failed for …, and the agent did not get the result | CI failed, but the result did not reach the agent before the wait ended: its machine did not confirm it, could not take it, or the result came too late. | **Run now**: the next run's agent reads the failure first. If you re-ran the failed jobs on GitHub, **Check CI again** on the ticket page. |
+| … conflicts with main | The pull request conflicts with the default branch, and the agent could not merge it before the wait ended (for example its machine could not download the default branch). | **Run now**: the agent merges the default branch and resolves the conflict. |
+
+The item disappears when the work is accepted, when a new run of the ticket starts, or when the ticket is cancelled or marked as done. See [Tickets > Check CI again](tickets.md#check-ci-again).
 
 ## GitHub items
 

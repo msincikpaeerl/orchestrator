@@ -44,7 +44,7 @@ async function waiting(
     files: Record<string, string | null>;
     message: string;
     from?: string;
-  }) => Promise<void>,
+  }) => Promise<unknown>,
 ) {
   const ticketPage = await readyForRuns(page);
   await page.goto(ticketPage);
@@ -142,7 +142,7 @@ test('a run waiting for CI says when the pull request conflicts with the default
   );
   await ciCheck(page, runId, { startedMinutesAgo: 6, mergeable: false });
   await expect(ciCard(page)).toContainText(
-    'The pull request conflicts with main, so GitHub started no CI and the work cannot be accepted. In this version the run waits until',
+    'The pull request conflicts with main, so GitHub started no CI and the work cannot be accepted: the agent is told to merge main and resolve the conflict, then hand its work in again.',
   );
   await expect(page.getByLabel('Run status')).toHaveText('Waiting for CI');
   await expect(page.getByRole('list', { name: 'CI checks' })).toBeHidden();

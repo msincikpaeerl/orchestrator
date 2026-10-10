@@ -5,6 +5,7 @@ import {
   DoctorCheck,
   DodReport,
   PullRequestFailure,
+  SubmissionRecord,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
 import {
@@ -27,6 +28,7 @@ import type { Database } from './database.js';
 import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.js';
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
+import { ciOutcome } from './runs/ci-outcome.js';
 import type { RunService } from './runs/service.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
 import { profileLinks, toComment } from './tickets/model.js';
@@ -100,6 +102,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
 
   items.push(...(await pushFailedItems(db)));
   items.push(...(await pullRequestItems(db)));
+  items.push(...(await ciTimeoutItems(db)));
 
   const paused = await runs.list(
     and(
@@ -218,6 +221,55 @@ async function pullRequestItems(db: Database): Promise<Items> {
       since: failure.since ?? failure.at,
     };
   });
+}
+
+/**
+ * Runs ended `ci_timeout` (04, section 3.1; owner's answer 1, lot 3 step G2c), not counted: one
+ * item each, "CI did not finish", "CI failed, and the agent did not get the result" or a conflict,
+ * until the work is accepted (**Check CI again**), a new run starts (the run is no longer the
+ * ticket's latest), or the ticket is done or cancelled.
+ */
+async function ciTimeoutItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({
+      run: schema.runs,
+      ticket: schema.tickets,
+      projectKey: schema.projects.key,
+      machine: { id: schema.machines.id, name: schema.machines.name },
+    })
+    .from(schema.runs)
+    .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+    .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        eq(schema.runs.failureReason, 'ci_timeout'),
+        isNull(schema.runs.ciAcceptedLater),
+        isNotNull(schema.runs.endedAt),
+        sql`${schema.runs.createdAt} = (SELECT max(r.created_at) FROM runs r WHERE r.ticket_id = ${schema.runs.ticketId})`,
+      ),
+    );
+  const items: Items = [];
+  for (const { run, ticket, projectKey, machine } of rows) {
+    const outcome = ciOutcome(run);
+    if (outcome === null || run.endedAt === null) continue;
+    items.push({
+      type: 'ci_timeout',
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      runId: run.id,
+      machine,
+      submittedAt: run.submission === null ? null : SubmissionRecord.parse(run.submission).at,
+      // The ticket's pull request now: Try again may have opened it since (owner's answer 3e).
+      pullRequest: ticket.pullRequestNumber,
+      waitMinutes: run.ciWaitTimeoutMinutes,
+      base: run.baseBranch,
+      outcome,
+      since: run.endedAt.toISOString(),
+    });
+  }
+  return items;
 }
 
 /**

@@ -32,6 +32,7 @@ import { refusalText } from '../refusals';
 import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
 import { BlockedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
+import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
 import { useTicketNumber } from '../tickets/params';
 import {
@@ -47,6 +48,7 @@ import {
   typeLabel,
 } from '../tickets/text';
 import { ticketsChanged, useRun, useTicket, useTicketRuns, useTickets } from '../queries';
+import { ticketCiText } from '../runs/ci-outcome-text';
 import { AnswerBox, CommitList, RunActions, RunTimes } from '../runs/components';
 import { isActive, purposeLabel, runStateText, runPath, usageText } from '../runs/text';
 import {
@@ -256,6 +258,45 @@ function PullRequestFailureLine({
 }
 
 /**
+ * The ticket's CI line (02, section 6.4; owner's answers, lot 3 step G2c): what its latest run
+ * with CI came to, what to do, and **Check CI again** when it is offered. Shown with a warning's
+ * frame when the work was not accepted.
+ */
+function CiLine({ ticket }: { ticket: TicketDetail }) {
+  const { ci } = ticket;
+  if (!ci) return null;
+  const lines = ticketCiText(ci, ticket);
+  const { kind, acceptedLater } = ci.outcome;
+  const fine =
+    acceptedLater !== null ||
+    kind === 'waiting' ||
+    kind === 'passed' ||
+    (kind === 'no_ci' && ticket.workflowFlag === null);
+  return (
+    <section
+      aria-label="CI"
+      className={fine ? 'space-y-2' : 'space-y-2 rounded border border-amber-300 bg-amber-50 p-3'}
+    >
+      {lines.map((line, index) => (
+        <p
+          key={line}
+          className={index === 0 ? 'break-words text-slate-900' : 'break-words text-slate-700'}
+        >
+          {line}
+        </p>
+      ))}
+      {ci.checkCiAgain && <CheckCiAgainAction ticket={ticket} runId={ci.runId} />}
+      <p className="flex flex-wrap gap-4 text-sm">
+        <Link to={runPath(ci.runId)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <HelpLink page="tickets#waiting-for-ci">Waiting for CI</HelpLink>
+      </p>
+    </section>
+  );
+}
+
+/**
  * The ticket's pull request (02, section 6.4; lot 3 step F4): its link and state as last seen,
  * "Opening the pull request on GitHub…" while an accepted submission waits for it, "Pull request
  * not opened: <reason>" with **Try again**, and the workflow flag.
@@ -263,7 +304,7 @@ function PullRequestFailureLine({
 function PullRequest({ ticket }: { ticket: TicketDetail }) {
   const { opened, wanted, failure } = ticket.pullRequest;
   const flag = ticket.workflowFlag === null ? null : workflowFlagText(ticket.workflowFlag);
-  if (!opened && !wanted && !failure && !flag) return null;
+  if (!opened && !wanted && !failure && !flag && !ticket.ci) return null;
   return (
     <Card className="space-y-3">
       <SectionTitle>Pull request</SectionTitle>
@@ -281,6 +322,7 @@ function PullRequest({ ticket }: { ticket: TicketDetail }) {
         </p>
       )}
       {!opened && !wanted && !failure && <p className="text-slate-700">No pull request yet.</p>}
+      <CiLine ticket={ticket} />
       {failure && <PullRequestFailureLine ticket={ticket} failure={failure} />}
       {flag && (
         <div

@@ -2,45 +2,20 @@ import { z } from 'zod';
 import { CommitSummary, GitHash, PushResult } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
 import { CiCheckFailure, CiResult } from '../mcp/ci.js';
+import { RunCiHistory } from './ci.js';
 import { SubmissionRecord } from '../mcp/dod-report.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
-import { PauseReason, RunStatus } from './run-status.js';
+import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
 
 export {
   ACCOUNT_BUSY_RUN_STATUSES,
   ACTIVE_RUN_STATUSES,
+  FailureReason,
   PauseReason,
   RunStatus,
 } from './run-status.js';
-
-/** Why a run failed or was cancelled (01, section 3.7). */
-export const FailureReason = z.enum([
-  'timeout',
-  'crash',
-  'agent_gave_up',
-  'dod_failed',
-  'machine_offline',
-  'machine_revoked',
-  'claude_code_unsupported',
-  'machine_problem',
-  'cancelled',
-  /** One CI failure more than **Most CI failures per run** (lot 3). */
-  'ci_failed',
-  /** **CI wait at submission** reached (lot 3). */
-  'ci_timeout',
-  /** The branch head moved during a review run (lot 3). */
-  'review_branch_moved',
-  /** The push at a submission failed: refused, diverged or GitHub unreachable (lot 3 step F). */
-  'push_failed',
-  /**
-   * Every failed check of the submitted commit is a workflow run GitHub cancelled, and the pull
-   * request's head is another commit: the branch moved on GitHub (lot 3 step G2b).
-   */
-  'ci_cancelled',
-]);
-export type FailureReason = z.infer<typeof FailureReason>;
 
 /** Failure reasons never counted as a failed attempt (04, section 5). */
 export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
@@ -162,6 +137,8 @@ export const Run = z.object({
   outcome: z.string().nullable(),
   /** The run's wait for CI after an accepted submission; null when it has none (lot 3 step G1a). */
   ci: RunCiWait.nullable(),
+  /** Its CI rounds and what its CI came to; null when it never waited for CI (lot 3 step G2c). */
+  ciHistory: RunCiHistory.nullable(),
   /**
    * Time spent in `starting` and `running`, and in `waiting_human` and `paused_quota`, up to
    * `statusSince` (01, section 3.7): a screen adds the current period of an active run.
@@ -308,5 +285,7 @@ export const RunTicketAction = z.enum([
   'question_asked',
   /** `waiting_human` → `in_progress`: the owner answered. */
   'answered',
+  /** `todo` → `in_review`: the owner's **Check CI again** found CI passed (lot 3 step G2c). */
+  'ci_checked_again',
 ]);
 export type RunTicketAction = z.infer<typeof RunTicketAction>;

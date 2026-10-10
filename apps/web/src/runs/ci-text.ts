@@ -49,7 +49,7 @@ export function ciWaitText(ci: RunCiWait, now: Date): string[] {
   const result = ci.result;
   if (result?.state === 'conflict') {
     lines.push(
-      `The pull request conflicts with ${baseName(ci)}, so GitHub started no CI and the work cannot be accepted. In this version the run waits until ${deadline}, then stops without counting as a failed attempt.`,
+      `The pull request conflicts with ${baseName(ci)}, so GitHub started no CI and the work cannot be accepted: the agent is told to merge ${baseName(ci)} and resolve the conflict, then hand its work in again.`,
     );
   } else if (result === null || result.checks.length === 0) {
     const startDeadline = ci.startDeadline === null ? null : new Date(ci.startDeadline);

@@ -298,6 +298,12 @@ export const tickets = pgTable(
     pullRequestState: text('pull_request_state'),
     pullRequestHead: text('pull_request_head'),
     /**
+     * When the server last opened or reopened the ticket's pull request, or first found it open
+     * (lot 3 step G2c, the owner's fix): **Check CI again** accepts "No CI found" only once it has
+     * been open for **Wait for CI to start**.
+     */
+    pullRequestOpenedAt: timestamp('pull_request_opened_at', { withTimezone: true }),
+    /**
      * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
      * opened or updated with it, or when the ticket is done or cancelled.
      */
@@ -613,6 +619,16 @@ export const runs = pgTable(
     ciRoundMessageId: uuid('ci_round_message_id'),
     /** The machine's latest refusal of a round (`CiRoundRefusal`), until a round is confirmed. */
     ciRoundRefusal: jsonb('ci_round_refusal'),
+    /**
+     * The pull request's head read with the result that decided, when it was another commit: the
+     * branch moved on GitHub (`ci_cancelled`, lot 3 step G2c). Null otherwise.
+     */
+    ciPullRequestHead: text('ci_pull_request_head'),
+    /**
+     * The work accepted later by the owner's **Check CI again** (`CiAcceptedLater`: when, passed
+     * or "No CI found", whether the run's failed attempt was taken back; lot 3 step G2c).
+     */
+    ciAcceptedLater: jsonb('ci_accepted_later'),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.

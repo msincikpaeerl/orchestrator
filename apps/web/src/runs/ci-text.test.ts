@@ -136,7 +136,7 @@ describe('the CI card while a run waits for CI', () => {
 
   it('says a conflict keeps the work from being accepted', () => {
     expect(ciWaitText(stateOf('a conflict'), AFTER_START_DEADLINE)[2]).toBe(
-      `The pull request conflicts with main, so GitHub started no CI and the work cannot be accepted. In this version the run waits until ${formatDateTime(DEADLINE)}, then stops without counting as a failed attempt.`,
+      'The pull request conflicts with main, so GitHub started no CI and the work cannot be accepted: the agent is told to merge main and resolve the conflict, then hand its work in again.',
     );
   });
 });

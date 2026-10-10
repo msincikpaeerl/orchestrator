@@ -109,7 +109,7 @@ export class FirstMessageTooLarge extends Error {
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
 
 /** `2026-09-27 14:03 UTC`. */
-function timestamp(at: Date): string {
+export function timestamp(at: Date): string {
   return `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 

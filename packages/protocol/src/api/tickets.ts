@@ -3,7 +3,8 @@ import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
 import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { PullRequestFailure, PullRequestState } from './pull-requests.js';
-import { PauseReason, RunStatus } from './run-status.js';
+import { RunCiOutcome } from './ci.js';
+import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
 export const TicketType = z.enum(['feature', 'bug', 'chore', 'docs', 'spike']);
@@ -263,6 +264,31 @@ export type TicketPullRequest = z.infer<typeof TicketPullRequest>;
 export const WorkflowFlag = z.enum(['changed', 'not_listed', 'not_kept']);
 export type WorkflowFlag = z.infer<typeof WorkflowFlag>;
 
+/**
+ * The ticket page's CI line (02, section 6.4; owner's answers, lot 3 step G2c): what the ticket's
+ * latest run with a wait for CI came to (a run that ended after a round sent back counts), and
+ * whether **Check CI again** is offered. Null while none, and while a later run works without
+ * having handed work in.
+ */
+export const TicketCi = z.object({
+  runId: z.uuid(),
+  attempt: z.int().positive(),
+  machine: z.object({ id: z.uuid(), name: z.string() }),
+  /** The run's end; null while it waits. */
+  failureReason: FailureReason.nullable(),
+  endedAt: z.iso.datetime().nullable(),
+  submittedAt: z.iso.datetime().nullable(),
+  /** **CI wait at submission** and **Most CI failures per run** as the run kept them. */
+  waitMinutes: z.int().positive().nullable(),
+  maxCiFailures: z.int().positive().nullable(),
+  /** The pull request's base branch, named by a conflict. */
+  base: z.string().nullable(),
+  outcome: RunCiOutcome,
+  /** After `ci_timeout` without a conflict, and `ci_failed` on a failure, with no run active. */
+  checkCiAgain: z.boolean(),
+});
+export type TicketCi = z.infer<typeof TicketCi>;
+
 export const TicketDetail = TicketSummary.extend({
   description: z.string(),
   acceptanceCriteria: z.array(z.string()),
@@ -285,6 +311,7 @@ export const TicketDetail = TicketSummary.extend({
   /** Its workflow flag; null when not raised. */
   workflowFlag: WorkflowFlag.nullable(),
   pullRequest: TicketPullRequest,
+  ci: TicketCi.nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 

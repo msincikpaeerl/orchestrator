@@ -23,6 +23,7 @@ import { registerProjectRoutes } from './projects/routes.js';
 import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
+import { CiCheckAgain } from './runs/ci-again.js';
 import { CiWatcher } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
@@ -126,6 +127,15 @@ export function buildApp(dependencies: AppDependencies) {
     timers: dependencies.ciTimers,
   });
   ciWatchers.set(app, ci);
+  const ciAgain = new CiCheckAgain({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    readCommit: (repo, commit, pullRequest, startWaitOver) =>
+      ci.readCommit(repo, commit, pullRequest, startWaitOver),
+    now: dependencies.now,
+  });
   app.addHook('onReady', () => {
     ci.start();
   });
@@ -191,7 +201,7 @@ export function buildApp(dependencies: AppDependencies) {
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
-    registerTicketRoutes(scope, { db, runs, pullRequests, now: dependencies.now });
+    registerTicketRoutes(scope, { db, runs, pullRequests, ciAgain, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

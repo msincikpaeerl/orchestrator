@@ -1669,7 +1669,13 @@ export class RunService {
     const before = locked.run.ciResult === null ? null : CiResult.parse(locked.run.ciResult).state;
     await tx
       .update(schema.runs)
-      .set({ ciResult: result, ciCheckedAt: now, ciCheckFailure: null, updatedAt: now })
+      .set({
+        ciResult: result,
+        ciCheckedAt: now,
+        ciCheckFailure: null,
+        ciPullRequestHead: pullRequestHead,
+        updatedAt: now,
+      })
       .where(eq(schema.runs.id, locked.run.id));
     await notifyChange(tx, { entity: 'run', id: locked.run.id, projectId: locked.project.id });
     if (locked.run.ciCheckFailure !== null) {
@@ -2057,8 +2063,11 @@ export class RunService {
       .update(schema.runs)
       .set({ ciRoundMessageId: null })
       .where(eq(schema.runs.id, locked.run.id));
+    // What was found, never "CI did not finish" when it did (owner's answer 1, lot 3 step G2c).
+    const found = /[.!?]$/.test(detail) ? detail : `${detail}.`;
     await this.fail(tx, locked, 'ci_timeout', 'ci_timeout', {
       detail: `CI wait at submission (${String(minutes)} minutes) reached: ${detail}`,
+      comment: `The run on machine ${locked.machine.name} ended when CI wait at submission (${String(minutes)} minutes) was reached: ${found.charAt(0).toUpperCase()}${found.slice(1)} It does not count as a failed attempt.`,
     });
   }
 

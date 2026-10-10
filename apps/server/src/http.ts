@@ -20,6 +20,7 @@ export class HttpError extends Error {
       | 'setting'
       | 'retryAfterSeconds'
       | 'runRefusal'
+      | 'ciRefusal'
     > = {},
   ) {
     super(message);

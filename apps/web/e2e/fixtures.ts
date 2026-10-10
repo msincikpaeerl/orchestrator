@@ -24,7 +24,7 @@ export const test = base.extend<{
     files: Record<string, string | null>;
     message: string;
     from?: string;
-  }) => Promise<void>;
+  }) => Promise<string>;
 }>({
   fresh: [
     async ({ playwright }, use) => {
@@ -51,6 +51,8 @@ export const test = base.extend<{
     await use(async (commit) => {
       const response = await control.post(`${controlUrl}/github/commit`, { data: commit });
       expect(response.status()).toBe(200);
+      // The commit made, as GitHub names it.
+      return ((await response.json()) as { sha: string }).sha;
     });
     await control.dispose();
   },

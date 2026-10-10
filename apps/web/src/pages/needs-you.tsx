@@ -6,7 +6,7 @@ import {
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { UntrustedMarkdown } from '../components/markdown';
-import { Card, HelpLink, Loading, PageHeader } from '../components/ui';
+import { Card, HelpLink, InfoMessage, Loading, PageHeader } from '../components/ui';
 import { formatDateTime, problemText } from '../github/text';
 import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
@@ -19,9 +19,12 @@ import {
   MarkDoneAction,
   RejectAction,
   RequestChangesAction,
+  RunNowAction,
   RunNowOffer,
   type TicketAddress,
 } from '../tickets/actions';
+import { CheckCiAgainAction } from '../tickets/check-ci-again';
+import { ciTimeoutItemText } from '../runs/ci-outcome-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
 import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
 
@@ -34,6 +37,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'work_to_check':
     case 'push_failed':
     case 'pull_request_not_opened':
+    case 'ci_timeout':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -223,6 +227,51 @@ function PullRequestNotOpenedCard({
   );
 }
 
+/**
+ * A run ended at **CI wait at submission** (04, section 3.1; owner's answer 1, lot 3 step G2c):
+ * "CI did not finish" with **Check CI again**, or a failure or a conflict the agent did not get,
+ * with **Run now**.
+ */
+function CiTimeoutCard({
+  item,
+  onAccepted,
+}: {
+  item: Extract<NeedsYouItem, { type: 'ci_timeout' }>;
+  onAccepted: (said: string) => void;
+}) {
+  const { title, detail } = ciTimeoutItemText(item);
+  const notFinished = item.outcome.kind === 'not_finished';
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        {notFinished ? (
+          item.pullRequest !== null && (
+            <CheckCiAgainAction ticket={item.ticket} runId={item.runId} onAccepted={onAccepted} />
+          )
+        ) : (
+          <RunNowAction ticket={item.ticket} />
+        )}
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link to={runPath(item.runId)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="tickets#check-ci-again">What to do</HelpLink>
+      </div>
+    </Card>
+  );
+}
+
 /** Setup still to do and machine problems (02, section 4), with where to fix them. */
 function MachineItemCard({ item }: { item: MachineNeedsYouItem }) {
   const { title, detail } = needsYouText(item);
@@ -291,6 +340,8 @@ export function NeedsYouPage() {
   const needsYou = useNeedsYou();
   // After Request changes the item leaves the list: the page offers Run now (L2).
   const [offer, setOffer] = useState<TicketAddress | null>(null);
+  // Check CI again accepted the work: its item is gone, the page says what happened.
+  const [accepted, setAccepted] = useState<string | null>(null);
   if (github.isPending || needsYou.isPending) return <Loading />;
   const problems = github.data?.connected ? github.data.problems : [];
   const items = needsYou.data?.items ?? [];
@@ -306,6 +357,11 @@ export function NeedsYouPage() {
             setOffer(null);
           }}
         />
+      )}
+      {accepted && (
+        <div role="status" className="mb-3">
+          <InfoMessage>{accepted}</InfoMessage>
+        </div>
       )}
       {needsYou.isError && (
         <p role="alert" className="mb-3 text-red-800">
@@ -361,6 +417,8 @@ export function NeedsYouPage() {
                 <PushFailedCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
                 <PullRequestNotOpenedCard item={item} />
+              ) : item.type === 'ci_timeout' ? (
+                <CiTimeoutCard item={item} onAccepted={setAccepted} />
               ) : (
                 <MachineItemCard item={item} />
               )}

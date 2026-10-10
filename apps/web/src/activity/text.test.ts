@@ -249,6 +249,15 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     reason: 'unreachable',
     message: 'GitHub could not be reached',
   },
+  'ticket.ci_checked_again': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    runId: '3f1e0e8c-3333-4000-8000-000000000000',
+    commit: 'abc1234def5678abc1234def5678abc1234def56',
+    outcome: 'accepted',
+    state: 'passed',
+    attemptTakenBack: true,
+  },
   'agent_profile.created': { key: 'web_dev', name: 'Web Developer', version: 1 },
   'agent_profile.updated': {
     key: 'web_dev',
@@ -373,6 +382,21 @@ describe('eventText', () => {
     };
     expect(plainText(eventText(entry('ticket.status_changed', { payload, comment: null })))).toBe(
       'WEB-12 back to to do: its run ended, its machine was offline (not counted as a failed attempt)',
+    );
+  });
+
+  it('says what Check CI again found (lot 3 step G2c)', () => {
+    expect(plainText(eventText(entry('ticket.ci_checked_again')))).toBe(
+      'WEB-12: you checked CI again for commit abc1234; CI passed, the work accepted without a session and its failed attempt taken back',
+    );
+    const refused = {
+      ...examples['ticket.ci_checked_again'],
+      outcome: 'refused' as const,
+      refusal: 'run_active' as const,
+      message: 'A run is working on WEB-12: its own submission will be checked.',
+    };
+    expect(plainText(eventText(entry('ticket.ci_checked_again', { payload: refused })))).toBe(
+      'WEB-12: Check CI again refused — A run is working on WEB-12: its own submission will be checked.',
     );
   });
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DoctorCheck } from '../daemon/connection.js';
 import { PushFailureReason } from '../daemon/git.js';
 import { AgentLink } from './agents.js';
+import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
 import { PullRequestFailure } from './pull-requests.js';
@@ -173,6 +174,26 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
      */
     openPullRequest: z.int().positive().nullable(),
     /** When the latest attempt failed. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * A run ended `ci_timeout` (04, section 3.1; owner's answer 1, lot 3 step G2c), not counted: by
+   * its outcome, "CI did not finish" with **Check CI again** (`not_finished`), "CI failed, and the
+   * agent did not get the result" (`not_received`) or a conflict (`conflict`), both with **Run
+   * now**. Shown until the work is accepted, a new run starts, or the ticket is done or cancelled.
+   */
+  z.object({
+    type: z.literal('ci_timeout'),
+    ticket: TicketRef,
+    runId: z.uuid(),
+    machine: MachineRef,
+    /** When the agent handed its work in. */
+    submittedAt: z.iso.datetime().nullable(),
+    pullRequest: z.int().positive().nullable(),
+    waitMinutes: z.int().positive().nullable(),
+    base: z.string().nullable(),
+    outcome: RunCiOutcome,
+    /** When the run ended. */
     since: z.iso.datetime(),
   }),
   /** A run paused on a usage limit, detected or suspected: **Resume** or **Stop run**. */

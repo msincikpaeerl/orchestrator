@@ -65,13 +65,25 @@ From version 0.4.0, once the checks accept the agent's work, the run waits for C
 - which commit it waits for, with the pull request's number, since when, and the time after which the run stops without counting as a failed attempt (**CI wait at submission**); then when GitHub was last checked;
 - while the pull request is not opened yet, that CI cannot start, and the time after which the run stops; the ticket page says why it is not opened;
 - while nothing has appeared on GitHub, the time after which the work passes as "No CI found" (**Wait for CI to start**), unless the pull request conflicts with the default branch; after that time, that GitHub is still working out whether it conflicts;
-- when the pull request conflicts with the default branch, that GitHub started no CI and the work cannot be accepted;
+- when the pull request conflicts with the default branch, that GitHub started no CI and the work cannot be accepted: the agent is told to merge the default branch and resolve the conflict;
 - when GitHub could not be checked at the latest check, since when and why: GitHub could not be reached, its request limit (with the time it allows requests again, when GitHub says), an answer that could not be read, the token, a permission missing, or GitHub's own words. The run keeps waiting and the Orchestrator asks again;
 - each check of the commit on its own line, with **Not finished**, **Passed** or **Failed**, and a link "on GitHub" when GitHub gives one:
   - "CI · workflow": a workflow run is one run of a GitHub Actions workflow, a file in the project's `.github/workflows/` folder, named as the workflow names itself;
   - "deploy/preview · status": a status is a result another service reports on the commit, such as a deployment preview, named as that service names it.
 
 Names and links come from GitHub, so they are shown as plain text, with tokens hidden. The agent can read the same result, with the part of the log of each failed step, through the Orchestrator's `ci_status` tool; it says which commit the result is for and when it was read.
+
+**CI rounds.** When CI fails or the pull request conflicts, the result goes back to the agent in the same session (see [Tickets > Waiting for CI](tickets.md#waiting-for-ci)). Each result sent back is a **CI round**. Once the run ends, or while it works again after a round, the run page's **CI** card lists one line per result, the latest with its checks open and the earlier ones folded (click a line to open its checks):
+
+| Line | Meaning |
+|---|---|
+| **Round 1 · commit … · Failed at …** (or **Conflicts with main at …**) **· sent back to the agent** | The result reached the agent, which fixed its work and handed it in again. It counts within **Most CI failures per run**. |
+| **Not sent back · … · the run ended: one failure more than Most CI failures per run (2)** | The result that ended the run, counted as a failed attempt. |
+| **Not confirmed · … · machine … did not confirm it received the result …; not counted** | The result was sent, but the machine never confirmed it before the run ended. It does not count. |
+| **Not sent back · … · read on GitHub only after CI wait at submission was reached; not counted** | The result came too late for the agent. |
+| **Not sent back · … · Downloading main from GitHub failed: …; not counted** | The machine could not take it, here because it could not download the default branch the agent was to merge. |
+| **Commit … · Passed at …**, **No CI found at …**, **Not finished when CI wait at submission (20 minutes) was reached**, **Cancelled on GitHub … because the branch changed there** | How the run's last wait ended. |
+| **Accepted later · Check CI again found CI passed at …** | You accepted the work with **Check CI again** (see [Tickets > Check CI again](tickets.md#check-ci-again)); after one failure too many, the run's failed attempt no longer counts. |
 
 ## Questions
 
@@ -106,7 +118,7 @@ In this version, a paused run never resumes by itself. [Needs you](needs-you.md#
 
 - The agent reports its work done, every acceptance criterion met, with its commits: the ticket moves to **In review**. In this version, **In review** means the work is finished and waits for you to check it. The ticket page shows the **Agent's report**: its summary, for each acceptance criterion whether it is met and why, the files it lists, and from version 0.4.0 the result of each check and the pull request.
 - The agent gives up, runs out of time, or its session stops unexpectedly: the run **fails**, the ticket goes back to **To do** with a comment saying why, and **Failed attempts** goes up by one. The run's page says why, with the machine's own words when it gave some (for example "Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits)", see [Machines > Troubleshooting](machines.md#troubleshooting)).
-- Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, a machine that could not start Claude Code in a process scope (see [Process scopes](machines.md#process-scopes)), a machine that did not confirm the start in time, or a run whose branch could not be pushed to GitHub when the agent submitted its work (from version 0.4.0).
+- Some failures never count as a failed attempt: a run you stopped, a machine offline or revoked, a machine whose Claude Code is too old, a machine that could not start Claude Code in a process scope (see [Process scopes](machines.md#process-scopes)), a machine that did not confirm the start in time, or, from version 0.4.0, a run whose branch could not be pushed to GitHub when the agent submitted its work, a run that reached **CI wait at submission**, and a run whose CI GitHub cancelled because the branch changed there. A run ended by one CI failure too many counts, unless **Check CI again** later finds CI passed for the same commit.
 
 ## Check finished work
 
