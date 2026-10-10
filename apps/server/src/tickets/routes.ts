@@ -1,5 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
+  ACTIVE_RUN_STATUSES,
   AddCommentRequest,
   AddDependencyRequest,
   AnswerRequest,
@@ -742,6 +743,28 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
         if (
+          (action === 'request_changes' || action === 'skip_review') &&
+          ticket.status === 'in_review'
+        ) {
+          // Never during a review run (owner's answer 6e and decision A, lot 3 step H2).
+          const [active] = await tx
+            .select({ id: schema.runs.id })
+            .from(schema.runs)
+            .where(
+              and(
+                eq(schema.runs.ticketId, ticket.id),
+                inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+              ),
+            );
+          if (active) {
+            throw new HttpError(
+              409,
+              'review_active',
+              'A review run is active: wait for its end, or stop it first',
+            );
+          }
+        }
+        if (
           (action === 'cancel' || action === 'mark_done') &&
           refusal(action, TicketStatus.parse(ticket.status)) === null
         ) {
@@ -780,6 +803,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     'request_changes',
     (body) => parseInput(RequestChangesRequest, body).comment,
   );
+  ownerAction('skip-review', 'skip_review', () => undefined);
 
   // **Try again** of "Pull request not opened" (04, section 3.1; lot 3 step F3): one attempt,
   // answered once made; the ticket must still want its pull request.

@@ -121,6 +121,17 @@ const ReviewPoint = z
   });
 
 /**
+ * What a review tool answers (06, section 4.5; lot 3 step H2): the decision recorded on the run,
+ * about which commit, whether the pull request's head could be checked on GitHub, and what to do.
+ */
+const ReviewDecisionOutput = z.object({
+  decision: z.enum(['approved', 'changes_requested']),
+  commit: z.string(),
+  head_checked: z.boolean(),
+  note: z.string(),
+});
+
+/**
  * The tools of lots 2 and 3, by wire name (`<object>_<verb>`, 06 section 3). The agent sees them as
  * `mcp__orchestrator__<name>`. The descriptions are part of the harness, reviewed like code.
  */
@@ -245,15 +256,15 @@ export const MCP_TOOLS = {
   },
   review_approve: {
     description:
-      'Approves the ticket you review, with a summary of your verdict: what you checked and why it is good to merge. The summary is posted as a review comment on the ticket and on the pull request, and the ticket moves to awaiting_merge, where the owner merges it. Use it only in a review run, once every point of your review is satisfied; otherwise use review_request_changes. End your turn after calling it.',
+      "Approves the ticket you review, with a summary of your verdict: what you checked and why it is good to merge. Your approval is about the commit your worktree holds; the Orchestrator checks the pull request's head on GitHub first. It is recorded at once and applied when your turn ends: the summary becomes a review comment on the ticket and on the pull request, and the ticket moves to awaiting_merge, where the owner merges it. Use it only in a review run, once every point of your review is satisfied; otherwise use review_request_changes. One decision per review: end your turn after calling it.",
     input: z.strictObject({ summary: requiredText(COMMENT_CEILING) }),
-    output: z.object({ comment: McpComment, ticket: McpTicket }),
+    output: ReviewDecisionOutput,
   },
   review_request_changes: {
     description:
-      'Requests changes on the ticket you review, as a list of actionable points, each with the file and line it is about when there is one (paths relative to the worktree root). Each point is posted as a review comment on the ticket, all of them as one review on the pull request, and the ticket goes back to todo for the agent that implemented it. Use it only in a review run; never change the branch yourself. End your turn after calling it.',
+      "Requests changes on the ticket you review, as a list of actionable points, each with the file and line it is about when there is one (paths relative to the worktree root). Your request is about the commit your worktree holds; the Orchestrator checks the pull request's head on GitHub first. It is recorded at once and applied when your turn ends: each point becomes a review comment on the ticket, all of them one review on the pull request, and the ticket goes back to todo for the agent that implemented it. Use it only in a review run; never change the branch yourself. One decision per review: end your turn after calling it.",
     input: z.strictObject({ points: z.array(ReviewPoint).min(1) }),
-    output: z.object({ comments: z.array(McpComment), ticket: McpTicket }),
+    output: ReviewDecisionOutput,
   },
 } as const satisfies Record<string, McpToolDefinition>;
 

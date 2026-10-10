@@ -1,4 +1,4 @@
-import { maskSecrets, type CiCheck } from '@orchestrator/protocol';
+import { maskSecrets, type CiCheck, type CiResult } from '@orchestrator/protocol';
 import { z } from 'zod';
 import type { CommitStatus, WorkflowRun } from '../github/ci.js';
 
@@ -59,4 +59,12 @@ export function ciChecksState(checks: CiCheck[]): 'none' | 'pending' | 'passed' 
   if (checks.length === 0) return 'none';
   if (checks.some((check) => check.state === 'pending')) return 'pending';
   return checks.some((check) => check.state === 'failed') ? 'failed' : 'passed';
+}
+
+/** The failed checks of a result, named for the owner: `workflow run "CI", status "deploy"`. */
+export function failedChecks(result: Pick<CiResult, 'checks'>): string {
+  return result.checks
+    .filter((check) => check.state === 'failed')
+    .map((check) => `${check.kind === 'workflow_run' ? 'workflow run' : 'status'} "${check.name}"`)
+    .join(', ');
 }

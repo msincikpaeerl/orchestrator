@@ -133,6 +133,7 @@ export {
   RunCiOutcomeKind,
   RunCiRoundView,
 } from './api/ci.js';
+export { ReviewDecision, ReviewDecisionKind, ReviewPointRecord } from './api/reviews.js';
 export {
   LiveRun,
   LiveRunsQuery,

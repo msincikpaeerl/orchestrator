@@ -630,6 +630,16 @@ export const runs = pgTable(
      */
     ciAcceptedLater: jsonb('ci_accepted_later'),
     /**
+     * A review run's commit under review, fixed by **Start review** (04, section 3.2; lot 3 step
+     * H1), and Quality's decision about it, stored at the review tool's call (`ReviewDecision`,
+     * 06 section 4.5; lot 3 step H2). The decision applies when the run ends `submitted` with no
+     * head moved on the machine (`review_applied_at`); a decision of an ended run never applied was
+     * thrown away, the run's failure reason saying why.
+     */
+    reviewCommit: text('review_commit'),
+    reviewDecision: jsonb('review_decision'),
+    reviewAppliedAt: timestamp('review_applied_at', { withTimezone: true }),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */

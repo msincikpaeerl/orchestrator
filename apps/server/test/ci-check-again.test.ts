@@ -636,3 +636,95 @@ describe('the ticket page and "Needs you" after other ends (owner answers 1, 2 a
     });
   });
 });
+
+describe('ci_status after Check CI again accepted the work (owner review of step H1)', () => {
+  type CiStatus = { read_at: string | null; note: string; ci: { state: string } | null };
+
+  async function ciStatus(daemon: ScriptedDaemon, runToken: string): Promise<CiStatus> {
+    return (await h.ok(daemon, runToken, 'ci_status')) as unknown as CiStatus;
+  }
+
+  /** Never failed nor unfinished for accepted work; the earlier result only as "before". */
+  function expectAccepted(answer: CiStatus, state: 'passed' | 'no_ci', at: Date) {
+    expect(answer.ci?.state).toBe(state);
+    expect(answer.read_at).toBe(at.toISOString());
+    expect(answer.note).toContain(`The owner had CI read again on ${at.toISOString()}`);
+    expect(answer.note).not.toMatch(/^CI failed|\. CI failed|not finished/);
+  }
+
+  /** The review run's answer, then that of a later implement run of the ticket. */
+  async function fromReviewThenLaterRun(daemon: ScriptedDaemon, runToken: string) {
+    const review = await h.reviewing(daemon);
+    const fromReview = await ciStatus(daemon, review.runToken);
+    await h.report(daemon, state(review.runId, { state: 'ended', reason: 'stopped' }));
+    await eventually('the review run ended', async () => {
+      expect((await h.run(review.runId)).status).not.toMatch(/running|starting/);
+    });
+    const sent = await h.call('POST', '/api/projects/WEB/tickets/1/request-changes', {
+      comment: 'Rename the form.',
+    });
+    expect(sent.statusCode, sent.body).toBe(200);
+    const later = await h.running(daemon);
+    expect(later.runToken).not.toBe(runToken);
+    return { fromReview, fromLater: await ciStatus(daemon, later.runToken) };
+  }
+
+  it('after ci_failed and a re-run by hand: CI passed, when Check CI again read it', async () => {
+    const { daemon, runId, runToken, repo } = await working('queued', { maxCiFailuresPerRun: 1 });
+    const first = await submitted(daemon, runId, runToken);
+    failAll(repo, first);
+    await h.t.ciTick();
+    await confirmed(daemon, runId, await round(daemon, runId));
+    const second = await submitted(daemon, runId, runToken);
+    failAll(repo, second);
+    await h.t.ciTick();
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    passAll(repo, second);
+    advance(5);
+    const acceptedAt = clock;
+    expect(await checked(runId)).toMatchObject({ outcome: 'accepted', state: 'passed' });
+
+    const { fromReview, fromLater } = await fromReviewThenLaterRun(daemon, runToken);
+    for (const answer of [fromReview, fromLater]) {
+      expectAccepted(answer, 'passed', acceptedAt);
+      expect(answer.note).toContain(
+        'Before that re-reading, the result read on GitHub was: CI failed (workflow run "CI"). It no longer applies.',
+      );
+    }
+  });
+
+  it('after ci_timeout with a failed result read late: CI passed, when Check CI again read it', async () => {
+    const { daemon, runId, runToken, repo } = await working();
+    const commit = await submitted(daemon, runId, runToken);
+    advance(21);
+    failAll(repo, commit);
+    await h.t.ciTick();
+    expect(await h.run(runId)).toMatchObject({ status: 'failed', failureReason: 'ci_timeout' });
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    passAll(repo, commit);
+    advance(5);
+    const acceptedAt = clock;
+    expect(await checked(runId)).toMatchObject({ outcome: 'accepted', state: 'passed' });
+
+    const { fromReview, fromLater } = await fromReviewThenLaterRun(daemon, runToken);
+    for (const answer of [fromReview, fromLater]) expectAccepted(answer, 'passed', acceptedAt);
+  });
+
+  it('after ci_timeout with nothing on GitHub: No CI found, never "not finished"', async () => {
+    const { daemon, runId, runToken } = await working('none');
+    await submitted(daemon, runId, runToken);
+    h.github.override = () => ({ status: 503, body: { message: 'down' } });
+    advance(21);
+    await h.t.ciTick();
+    expect((await h.run(runId)).failureReason).toBe('ci_timeout');
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    h.github.override = undefined;
+    const acceptedAt = clock;
+    expect(await checked(runId)).toMatchObject({ outcome: 'accepted', state: 'no_ci' });
+
+    const review = await h.reviewing(daemon);
+    const answer = await ciStatus(daemon, review.runToken);
+    expectAccepted(answer, 'no_ci', acceptedAt);
+    expect(answer.note).toContain('Nothing on GitHub tested this work.');
+  });
+});

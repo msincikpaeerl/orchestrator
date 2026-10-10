@@ -53,6 +53,11 @@ export const RunChangeCause = z.enum([
   'ci_result',
   /** **CI wait at submission** reached without a CI result (04, section 3.1; lot 3 step G1a). */
   'ci_timeout',
+  /**
+   * A review decision's call found the pull request's head moved on GitHub: the review run is
+   * stopped with `review_branch_moved` (06, section 4.5; lot 3 step H2).
+   */
+  'review_decision',
 ]);
 export type RunChangeCause = z.infer<typeof RunChangeCause>;
 
@@ -303,11 +308,25 @@ export const RunTicketAction = z.enum([
   'run_submitted',
   /** → `todo`: the run failed or was cancelled (`attemptCounted` says whether it counts). */
   'run_ended',
-  /** `in_progress` → `waiting_human`: the agent asked a question with `ticket_ask`. */
+  /**
+   * `in_progress` (or `in_review`, in a review run) → `waiting_human`: the agent asked a question
+   * with `ticket_ask`.
+   */
   'question_asked',
   /** `waiting_human` → `in_progress`: the owner answered. */
   'answered',
   /** `todo` → `in_review`: the owner's **Check CI again** found CI passed (lot 3 step G2c). */
   'ci_checked_again',
+  /** `waiting_human` → `in_review`: the owner answered Quality's question (lot 3 step H2). */
+  'review_answered',
+  /**
+   * `waiting_human` → `in_review`: a review run with a question open was stopped, failed or
+   * ended without its decision applied (04, section 2; owner's answer 6c, lot 3 step H2).
+   */
+  'review_ended',
+  /** `in_review` → `awaiting_merge`: Quality's approval, applied at its run's end (lot 3 H2). */
+  'review_approved',
+  /** `in_review` → `todo`: Quality's request for changes, applied at its run's end (lot 3 H2). */
+  'review_changes_requested',
 ]);
 export type RunTicketAction = z.infer<typeof RunTicketAction>;

@@ -199,6 +199,28 @@ export class RunHarness {
     return { runId: created.id, runToken: start.payload.runToken };
   }
 
+  /** **Start review**, acknowledged, then the review run `running`: its id, token and start. */
+  async reviewing(
+    daemon: ScriptedDaemon,
+    number = 1,
+  ): Promise<{ runId: string; runToken: string; start: RunStart }> {
+    const response = await this.call('POST', `/api/projects/WEB/tickets/${String(number)}/review`);
+    expect(response.statusCode, response.body).toBe(201);
+    const created = Run.parse(response.json());
+    const start = await daemon.find<RunStart>(
+      (message) => message.type === 'run.start' && message.payload.runId === created.id,
+      'run.start of the review',
+    );
+    daemon.send({ type: 'ack', id: start.id, payload: { ok: true } });
+    await this.report(daemon, state(created.id, { state: 'preparing' }));
+    await this.report(
+      daemon,
+      state(created.id, { state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION }),
+    );
+    await this.report(daemon, state(created.id, { state: 'working' }));
+    return { runId: created.id, runToken: start.payload.runToken, start };
+  }
+
   async report(daemon: ScriptedDaemon, message: RunState) {
     const answer = await daemon.request(message);
     expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
@@ -325,7 +347,13 @@ export function state(
         state: 'preparing' | 'working' | 'idle' | 'waiting_ci' | 'waiting_human' | 'quota_paused';
       }
     | { state: 'starting'; claudeCodeVersion: string | null }
-    | { state: 'ended'; reason: Extract<RunState['payload'], { state: 'ended' }>['reason'] },
+    | {
+        state: 'ended';
+        reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
+        /** A review run's fact: the branch head moved on the machine (05, section 4.9). */
+        headMoved?: boolean;
+        detail?: string;
+      },
   sessionAlive = payload.state !== 'ended',
 ): RunState {
   const base = { runId, at: new Date().toISOString(), claudeSessionId: SESSION, sessionAlive };
@@ -337,10 +365,10 @@ export function state(
         ...base,
         state: 'ended',
         reason: payload.reason,
-        detail: null,
+        detail: payload.detail ?? null,
         branch: { name: 't/1-contact-form', head: HEAD, commitsAhead: COMMITS, notOnGitHub: null },
         push: null,
-        headMoved: null,
+        headMoved: payload.headMoved ?? null,
         gitConfigRestored: null,
       },
     };

@@ -112,6 +112,7 @@ const actionPath: Record<OwnerTicketAction, string> = {
   accept: 'accept',
   reject: 'reject',
   request_changes: 'request-changes',
+  skip_review: 'skip-review',
 };
 
 function act(number: number, action: OwnerTicketAction, comment = 'Done outside the Orchestrator') {
@@ -351,6 +352,7 @@ describe('owner actions on the status (04, section 2)', () => {
         'accept:proposed',
         'reject:proposed',
         'request_changes:in_review',
+        'skip_review:in_review',
       ].sort(),
     );
   });
@@ -381,6 +383,11 @@ describe('owner actions on the status (04, section 2)', () => {
           { author: 'owner', kind: 'status_change', body: 'Done outside the Orchestrator' },
         ]);
         expect(change).toMatchObject({ commentId: comments[0]?.id });
+        expect(event?.payload).toMatchObject({ commentId: comments[0]?.id });
+      } else if (action === 'skip_review') {
+        expect(comments).toMatchObject([
+          { author: 'system', kind: 'status_change', body: 'The owner skipped the review.' },
+        ]);
         expect(event?.payload).toMatchObject({ commentId: comments[0]?.id });
       } else {
         expect(comments).toEqual([]);

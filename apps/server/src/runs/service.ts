@@ -12,6 +12,7 @@ import {
   CiRound,
   CiRoundRefusal,
   PushResult,
+  ReviewDecision,
   SESSION_ALIVE_REFUSAL,
   SESSION_CLOSED_REFUSAL,
   TEXT_CEILING,
@@ -25,7 +26,7 @@ import {
   type Ack,
   type BranchReport,
   type EventPayload,
-  type FailureReason,
+  FailureReason,
   type GitCredential,
   type GitCredentialRequest,
   type Hello,
@@ -105,6 +106,7 @@ import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
 import { storedTokenClient } from '../github/connection.js';
 import { readPullRequest } from '../github/pull-requests.js';
 import { CiStatusReader } from './ci-status.js';
+import { failedChecks } from './ci-result.js';
 import { ciFailedMessage } from './ci-failed.js';
 import type { CiDecision } from './ci-wait.js';
 import {
@@ -225,6 +227,11 @@ export class RunService {
       templates: async () => (await this.files()).templates,
       pullRequestWanted: (ticketId) => options.pullRequestWanted?.(ticketId),
       ciStatus: (call) => ciStatus.answer(call),
+      pullRequestHead: async (project, number) => {
+        const read = await this.readPullRequest(project, number);
+        return read.read ? { read: true, head: read.head } : { read: false, why: read.why };
+      },
+      reviewHeadMoved: (runId, head) => this.reviewHeadMoved(runId, head),
     });
   }
 
@@ -379,6 +386,10 @@ export class RunService {
     }
     if (terminal) this.clearTimer(locked.run.id);
     locked.run = updated;
+    const decision = pendingDecision(updated);
+    if (terminal && to !== 'succeeded' && from !== to && decision !== null) {
+      await this.reviewDiscarded(tx, locked, decision);
+    }
     return updated;
   }
 
@@ -397,6 +408,8 @@ export class RunService {
       comment?: string;
       /** Every commit the run reported was on GitHub: the comment says so (lot 3 step D3). */
       onGitHub?: boolean;
+      /** A review run's end, in words, when the failure reason does not say it all (lot 3 H2). */
+      reviewWhy?: string;
     } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
@@ -406,6 +419,18 @@ export class RunService {
       detail: facts.detail,
     });
     if (!locked.ticket) return;
+    if (locked.run.purpose === 'review') {
+      // Never counted, and the ticket stays in review (owner's answer 6c, lot 3 step H2).
+      const why = facts.reviewWhy ?? this.reviewWhy(locked.run, failureReason, facts.detail);
+      await this.reviewTicketBack(
+        tx,
+        locked,
+        facts.comment ?? reviewEndComment(locked, why),
+        'system',
+        failureReason,
+      );
+      return;
+    }
     const counted = isCounted(failureReason);
     const words = failureWords(failureReason);
     const detail = facts.detail ? ` (${facts.detail})` : '';
@@ -427,6 +452,179 @@ export class RunService {
       comment,
       now: this.now(),
     });
+  }
+
+  /** Why a review run ended without its decision applied, for its ticket's comment. */
+  private reviewWhy(run: RunRow, failureReason: FailureReason, detail?: string): string {
+    if (failureReason === 'agent_gave_up') {
+      return `Quality gave up: ${sentence(run.outcome ?? 'it gave no reason')}`;
+    }
+    if (failureReason === 'review_branch_moved') {
+      return 'the branch changed on the machine during the review';
+    }
+    return `${failureWords(failureReason)}${detail ? ` (${sentence(detail)})` : ''}`;
+  }
+
+  /**
+   * A review run ended without its decision applied: the ticket returns to `in_review` from
+   * `waiting_human`, or stays there, with the comment saying what happened; never counted (04,
+   * section 2; owner's answer 6c, lot 3 step H2). A ticket the owner moved meanwhile is left.
+   */
+  private async reviewTicketBack(
+    tx: Executor,
+    locked: Locked,
+    comment: string,
+    actor: 'owner' | 'system',
+    failureReason: FailureReason,
+  ): Promise<void> {
+    const { ticket } = locked;
+    if (!ticket) return;
+    const now = this.now();
+    if (ticket.status === 'waiting_human') {
+      await applyRunAction(tx, {
+        projectKey: locked.project.key,
+        ticket,
+        action: 'review_ended',
+        actor,
+        runId: locked.run.id,
+        failureReason,
+        attemptCounted: false,
+        comment,
+        now,
+      });
+      return;
+    }
+    if (ticket.status !== 'in_review') return;
+    const [row] = await tx
+      .insert(schema.comments)
+      .values({
+        ticketId: ticket.id,
+        author: 'system',
+        kind: 'note',
+        body: comment,
+        runId: locked.run.id,
+        createdAt: now,
+      })
+      .returning({ id: schema.comments.id });
+    if (!row) throw new Error('comment not inserted');
+    await recordEvent(tx, {
+      actor,
+      ...ticketEntity(ticket),
+      type: 'ticket.commented',
+      payload: {
+        project: locked.project.key,
+        ticket: this.reference(locked),
+        commentId: row.id,
+        kind: 'note',
+      },
+      at: now,
+    });
+  }
+
+  /**
+   * Quality's decision applied when its run ended `submitted` (06, section 4.5; owner's answer
+   * 2d, lot 3 step H2): the `review` comments, the ticket's status and their events, with the
+   * agent as actor; `review_applied_at` set. A decision the ticket no longer allows is thrown away.
+   */
+  private async applyReview(tx: Executor, locked: Locked): Promise<void> {
+    const { run, ticket } = locked;
+    const decision = pendingDecision(run);
+    if (!ticket || decision === null) return;
+    if (ticket.status !== 'in_review') {
+      await this.reviewDiscarded(tx, locked, decision);
+      return;
+    }
+    const [profile] = await tx
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, run.profileId));
+    if (!profile) throw new Error(`profile of run ${run.id} not found`);
+    const agent = { key: profile.key, name: profile.name };
+    const now = this.now();
+    const bodies =
+      decision.kind === 'approved' ? [decision.summary ?? ''] : decision.points.map(pointText);
+    const ids: string[] = [];
+    for (const body of bodies) {
+      const [row] = await tx
+        .insert(schema.comments)
+        .values({
+          ticketId: ticket.id,
+          author: 'agent',
+          authorProfileId: profile.id,
+          runId: run.id,
+          kind: 'review',
+          body,
+          createdAt: now,
+        })
+        .returning({ id: schema.comments.id });
+      if (!row) throw new Error('comment not inserted');
+      ids.push(row.id);
+      await recordEvent(tx, {
+        actor: 'agent',
+        ...ticketEntity(ticket),
+        type: 'ticket.commented',
+        payload: {
+          project: locked.project.key,
+          ticket: this.reference(locked),
+          commentId: row.id,
+          kind: 'review',
+          agent: agent.key,
+          agentName: agent.name,
+          runId: run.id,
+        },
+        at: now,
+      });
+    }
+    await applyRunAction(tx, {
+      projectKey: locked.project.key,
+      ticket,
+      action: decision.kind === 'approved' ? 'review_approved' : 'review_changes_requested',
+      actor: 'agent',
+      agent,
+      runId: run.id,
+      commentId: ids[0],
+      now,
+    });
+    await tx.update(schema.runs).set({ reviewAppliedAt: now }).where(eq(schema.runs.id, run.id));
+  }
+
+  /** A decision of a review run that ended without applying it: kept, with its event (H2). */
+  private async reviewDiscarded(
+    tx: Executor,
+    locked: Locked,
+    decision: ReviewDecision,
+  ): Promise<void> {
+    await recordEvent(tx, {
+      actor: 'system',
+      entityType: 'run',
+      entityId: locked.run.id,
+      projectId: locked.project.id,
+      type: 'run.review_discarded',
+      payload: {
+        project: locked.project.key,
+        ticket: this.reference(locked),
+        machine: locked.machine.name,
+        decision: decision.kind,
+        commit: decision.commit,
+        failureReason:
+          locked.run.failureReason === null ? null : FailureReason.parse(locked.run.failureReason),
+      },
+      at: this.now(),
+    });
+  }
+
+  /** The head moved on GitHub at a review decision: the run fails, not counted (06, 4.5). */
+  private async reviewHeadMoved(runId: string, head: string): Promise<void> {
+    const machineId = await this.withRun(runId, async (tx, locked) => {
+      if (!ACTIVE.has(locked.run.status) || locked.run.purpose !== 'review') return null;
+      const commit = locked.run.reviewCommit ?? '';
+      await this.fail(tx, locked, 'review_branch_moved', 'review_decision', {
+        detail: `The pull request's head on GitHub is now ${head.slice(0, 7)}, not the commit under review ${commit.slice(0, 7)}`,
+        reviewWhy: `the pull request changed on GitHub during the review (now ${head.slice(0, 7)})`,
+      });
+      return locked.machine.id;
+    });
+    if (machineId) await this.sendStop(machineId, runId, 'not_active');
   }
 
   /**
@@ -805,7 +1003,8 @@ export class RunService {
       });
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
-      const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
+      // A review run is never an attempt of its own (owner's review of step H1).
+      const attempt = worked.filter((run) => run.acknowledgedAt !== null).length + 1;
       // Earlier commits: on this machine, or pushed to GitHub, where the daemon takes them from.
       const lastHere = worked.find((run) => run.machineId === machine.id && run.commits !== null);
       const baseBranch = project.defaultBranch;
@@ -1056,6 +1255,7 @@ export class RunService {
           status: 'queued',
           // The attempt reviewed: a review is never an attempt of its own (04, section 3.2).
           attempt: source.attempt,
+          reviewCommit: subject.commit,
           runTokenHash: hashCredential(runToken),
           dispatchMessageId,
           dispatchKind: 'start',
@@ -1197,8 +1397,36 @@ export class RunService {
 
   /** The pull request's head on GitHub; a refusal when it cannot be read or is not open. */
   private async pullRequestHead(project: ProjectRow, number: number): Promise<string> {
-    const problem = (message: string) =>
-      refuse({ reason: 'github_problem', message }, `GitHub could not be read: ${message}`);
+    const read = await this.readPullRequest(project, number);
+    if (!read.read) throw read.refusal;
+    if (read.merged || !read.open) {
+      throw refuse(
+        { reason: 'pull_request_not_open', pullRequest: number, merged: read.merged },
+        `Pull request #${String(number)} is not open on GitHub`,
+      );
+    }
+    return read.head;
+  }
+
+  /**
+   * One read of the pull request on GitHub (one request): its head and state, or why it could not
+   * be read, as **Start review**'s refusal and in words for an agent (lot 3 steps H1 and H2).
+   */
+  private async readPullRequest(
+    project: ProjectRow,
+    number: number,
+  ): Promise<
+    | { read: true; head: string; open: boolean; merged: boolean }
+    | { read: false; why: string; refusal: HttpError }
+  > {
+    const problem = (message: string) => ({
+      read: false as const,
+      why: message,
+      refusal: refuse(
+        { reason: 'github_problem', message },
+        `GitHub could not be read: ${message}`,
+      ),
+    });
     let client;
     try {
       client = await storedTokenClient({
@@ -1209,10 +1437,22 @@ export class RunService {
       });
     } catch (error) {
       if (!(error instanceof SecretUnreadableError)) throw error;
-      throw refuse({ reason: 'github_token_unreadable' }, 'The saved GitHub token cannot be read');
+      return {
+        read: false,
+        why: 'the saved GitHub token cannot be read',
+        refusal: refuse(
+          { reason: 'github_token_unreadable' },
+          'The saved GitHub token cannot be read',
+        ),
+      };
     }
-    if (client === null)
-      throw refuse({ reason: 'github_not_connected' }, 'GitHub is not connected');
+    if (client === null) {
+      return {
+        read: false,
+        why: 'GitHub is not connected',
+        refusal: refuse({ reason: 'github_not_connected' }, 'GitHub is not connected'),
+      };
+    }
     let pull;
     try {
       pull = await readPullRequest(
@@ -1222,16 +1462,15 @@ export class RunService {
       );
     } catch (error) {
       if (!(error instanceof GitHubUnreachableError)) throw error;
-      throw problem('GitHub could not be reached, or answered with a server error.');
+      return problem('GitHub could not be reached, or answered with a server error.');
     }
-    if (!pull.ok) throw problem(maskSecrets(pull.refusal.message));
-    if (pull.value.merged || pull.value.state !== 'open') {
-      throw refuse(
-        { reason: 'pull_request_not_open', pullRequest: number, merged: pull.value.merged },
-        `Pull request #${String(number)} is not open on GitHub`,
-      );
-    }
-    return pull.value.headSha;
+    if (!pull.ok) return problem(maskSecrets(pull.refusal.message));
+    return {
+      read: true,
+      head: pull.value.headSha,
+      open: pull.value.state === 'open',
+      merged: pull.value.merged,
+    };
   }
 
   /** Sends a run's `run.start` once its transaction is committed: `dispatched`, or cancelled. */
@@ -1574,7 +1813,8 @@ export class RunService {
       const updated = await applyRunAction(tx, {
         projectKey: project.key,
         ticket,
-        action: 'answered',
+        // Quality's question returns the ticket to review (04, section 2; lot 3 step H2).
+        action: run.purpose === 'review' ? 'review_answered' : 'answered',
         actor: 'owner',
         runId: run.id,
         commentId: answer.id,
@@ -1649,7 +1889,10 @@ export class RunService {
           : `machine ${name} refused it${detail ? ` (${detail})` : ''}`;
     await this.fail(tx, locked, 'machine_offline', cause, {
       detail,
-      comment: `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
+      comment:
+        locked.run.purpose === 'review'
+          ? `Your answer could not reach the review run: ${why}. The review run failed as "machine offline" and does not count as a failed attempt; the ticket stays in review, and your answer stays here.`
+          : `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
     });
   }
 
@@ -1852,10 +2095,25 @@ export class RunService {
       }
       const online = this.gateway?.isConnected(locked.machine.id) ?? false;
       const kept = `The branch ${locked.run.branchName} is kept on machine ${locked.machine.name}.`;
+      const decision = pendingDecision(locked.run);
       await this.setStatus(tx, locked, online ? 'cancelled' : 'failed', 'owner_stopped', {
         failureReason: online ? 'cancelled' : 'machine_offline',
       });
-      if (locked.ticket) {
+      if (locked.ticket && locked.run.purpose === 'review') {
+        // The ticket stays in review, or returns to it from a question (owner's answer 6c).
+        const stoppedHow = online
+          ? 'Review run stopped by the owner'
+          : `Review run stopped by the owner while machine ${locked.machine.name} was offline (it failed as "machine offline")`;
+        await this.reviewTicketBack(
+          tx,
+          locked,
+          decision === null
+            ? `${stoppedHow}. It does not count as a failed attempt.`
+            : `${stoppedHow} before ${decisionWords(decision)} was applied: it is not applied. It does not count as a failed attempt.`,
+          'owner',
+          online ? 'cancelled' : 'machine_offline',
+        );
+      } else if (locked.ticket) {
         await applyRunAction(tx, {
           projectKey: locked.project.key,
           ticket: locked.ticket,
@@ -2651,7 +2909,25 @@ export class RunService {
           // its session gone, as when Claude Code ends during the wait (lot 3 step G1a).
           return true;
         }
-        const end = endOfReason(payload.reason);
+        if (
+          run.purpose === 'review' &&
+          payload.reason === 'submitted' &&
+          payload.headMoved !== true &&
+          pendingDecision(run) !== null
+        ) {
+          // Quality's decision applies now, and only now (owner's answer 2d, lot 3 step H2).
+          await this.setStatus(tx, locked, 'succeeded', 'daemon', {
+            endReason: payload.reason,
+            detail: payload.detail ?? undefined,
+          });
+          await this.applyReview(tx, locked);
+          return true;
+        }
+        const end = endOfReason(
+          run.purpose === 'review' && payload.headMoved === true
+            ? 'review_branch_moved'
+            : payload.reason,
+        );
         const detail = payload.detail ?? undefined;
         if (end.status === 'succeeded') {
           await this.setStatus(tx, locked, 'succeeded', 'daemon', {
@@ -2990,10 +3266,40 @@ function stopMessage(
 
 export const runNotFound = () => new HttpError(404, 'run_not_found', 'No run with this id');
 
-/** The failed checks of a result, named for the owner: `workflow run "CI", status "deploy"`. */
-function failedChecks(result: CiResult): string {
-  return result.checks
-    .filter((check) => check.state === 'failed')
-    .map((check) => `${check.kind === 'workflow_run' ? 'workflow run' : 'status'} "${check.name}"`)
-    .join(', ');
+/** A text as the end of a sentence: without its own final full stop. */
+function sentence(text: string): string {
+  return text.trim().replace(/[.\s]+$/, '');
+}
+
+/** A review run's decision not applied yet; null when it made none or it was applied (H2). */
+function pendingDecision(run: RunRow): ReviewDecision | null {
+  if (run.purpose !== 'review' || run.reviewDecision === null || run.reviewAppliedAt !== null) {
+    return null;
+  }
+  return ReviewDecision.parse(run.reviewDecision);
+}
+
+/** "Quality's approval of commit abc1234", for the ticket's comments (owner's answer 5). */
+function decisionWords(decision: ReviewDecision): string {
+  const commit = decision.commit.slice(0, 7);
+  if (decision.kind === 'approved') return `Quality's approval of commit ${commit}`;
+  const count = decision.points.length;
+  return `Quality's request for changes (${String(count)} point${count === 1 ? '' : 's'}) on commit ${commit}`;
+}
+
+/** The comment of a review run that ended without its decision applied (owner's answer 5). */
+function reviewEndComment(locked: Pick<Locked, 'run' | 'machine'>, why: string): string {
+  const machine = locked.machine.name;
+  const decision = pendingDecision(locked.run);
+  if (decision === null) {
+    return `The review run on machine ${machine} ended without a decision: ${why}. It does not count as a failed attempt.`;
+  }
+  const what = decision.kind === 'approved' ? 'The approval is' : 'The request for changes is';
+  return `The review run on machine ${machine} ended before ${decisionWords(decision)} was applied: ${why}. ${what} not applied, and the ticket stays in review. It does not count as a failed attempt.`;
+}
+
+/** A point of a request for changes as its `review` comment: `src/contact.ts:42 — <point>`. */
+function pointText(point: ReviewDecision['points'][number]): string {
+  if (point.file === null) return point.body;
+  return `${point.file}${point.line === null ? '' : `:${String(point.line)}`} — ${point.body}`;
 }

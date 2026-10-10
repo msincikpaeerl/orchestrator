@@ -15,6 +15,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
+import { hashCredential } from '../src/machines/credentials.js';
 import { loadShippedAgents } from '../src/agents/files.js';
 import { seedAgentProfiles } from '../src/agents/seed.js';
 import { resetPassword } from '../src/reset-password.js';
@@ -357,6 +358,57 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     payload: { runId: created.id },
   });
   expect(again.statusCode, again.body).toBe(409);
+
+  // A review run of SHOP-3, in review with its pull request (prepared in the database, as a
+  // passed CI would leave it): Quality approves while GitHub cannot be read
+  // (`run.review_decided`), then the owner stops the run before its end (`run.review_discarded`).
+  const shop3 = TicketDetail.parse(
+    (
+      await call('POST', '/api/projects/SHOP/tickets', {
+        type: 'feature',
+        title: 'Search',
+        assignee: 'web_dev',
+      })
+    ).json(),
+  );
+  const [shop3Row] = await t.db
+    .update(schema.tickets)
+    .set({ status: 'in_review', pullRequestNumber: 1, pullRequestUrl: 'https://github.com/x/1' })
+    .where(eq(schema.tickets.id, shop3.id))
+    .returning();
+  const [quality] = await t.db
+    .select()
+    .from(schema.agentProfiles)
+    .where(eq(schema.agentProfiles.key, 'quality'));
+  const reviewToken = 'ort_every_event_review_run_token';
+  const [review] = await t.db
+    .insert(schema.runs)
+    .values({
+      projectId: shop3Row?.projectId ?? '',
+      ticketId: shop3.id,
+      profileId: quality?.id ?? '',
+      profileVersion: 1,
+      purpose: 'review',
+      machineId: machine.id,
+      accountId: account.id,
+      status: 'running',
+      attempt: 1,
+      runTokenHash: hashCredential(reviewToken),
+      branchName: 't/3-search',
+      baseBranch: 'main',
+      reviewCommit: 'd'.repeat(40),
+      acknowledgedAt: new Date(),
+    })
+    .returning();
+  github.alter = (request, reply) =>
+    request.method === 'GET' && /\/pulls\/\d+$/.test(request.path) ? { status: 502 } : reply;
+  await tool({
+    tool: 'review_approve',
+    runToken: reviewToken,
+    input: { summary: 'Good to merge.' },
+  });
+  github.alter = undefined;
+  await call('POST', `/api/runs/${review?.id ?? ''}/stop`);
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

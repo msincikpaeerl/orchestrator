@@ -3,7 +3,8 @@
 # each default agent profile's allowlist lets the agent run what its role needs (install, test,
 # lint, build, an edit, a commit) and refuses what it must not (curl, sudo, docker, the daemon's
 # folder). Quality (lot 3 step H) is checked for reading and testing, and for refusing every
-# command that writes a file or moves HEAD (an edit, a commit, checkout, reset, stash, merge, ...).
+# command that writes a file or moves HEAD (an edit, a commit, checkout, reset, stash, merge, and
+# the writing options of find, sort and sed, which Claude Code otherwise runs as read-only).
 # For the owner only (working rule 10): sessions never run it; CI runs its dry run.
 #
 # One session per default profile, in a scratch Node.js project whose scripts only print a line.
@@ -60,7 +61,7 @@ while (($# > 0)); do
       PATH="$(dirname "$CLAUDE_GIVEN"):$PATH"
       shift
       ;;
-    -h | --help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,33p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -138,7 +139,7 @@ echo "Claude config:   $CLAUDE_CONFIG (the smoke test's own; your ~/.claude is n
 echo
 
 if ((DRY_RUN == 0)); then
-  guard_confirm "${#PROFILES[@]} session(s) (${PROFILES[*]}), one prompt each on $MODEL (about 16 short tool calls each)."
+  guard_confirm "${#PROFILES[@]} session(s) (${PROFILES[*]}), one prompt each on $MODEL (about 17 short tool calls for a builder, 45 for Quality)."
 fi
 helper prepare || stop "the scratch layout could not be prepared."
 
