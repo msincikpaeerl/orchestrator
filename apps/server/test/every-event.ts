@@ -472,6 +472,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         branch: null,
         push: null,
         headMoved: false,
+        movedHead: null,
         gitConfigRestored: null,
       },
     });

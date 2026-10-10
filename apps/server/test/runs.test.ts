@@ -216,6 +216,7 @@ function state(
         branch: payload.branch ? { notOnGitHub: null, ...payload.branch } : null,
         push: payload.push ?? null,
         headMoved: null,
+        movedHead: null,
         gitConfigRestored: payload.gitConfigRestored ?? null,
       },
     };

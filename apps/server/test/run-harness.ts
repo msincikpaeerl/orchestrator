@@ -352,6 +352,8 @@ export function state(
         reason: Extract<RunState['payload'], { state: 'ended' }>['reason'];
         /** A review run's fact: the branch head moved on the machine (05, section 4.9). */
         headMoved?: boolean;
+        /** A review run's fact: GitHub's head found moved at preparation (lot 3 step H4). */
+        movedHead?: string;
         detail?: string;
       },
   sessionAlive = payload.state !== 'ended',
@@ -369,6 +371,7 @@ export function state(
         branch: { name: 't/1-contact-form', head: HEAD, commitsAhead: COMMITS, notOnGitHub: null },
         push: null,
         headMoved: payload.headMoved ?? null,
+        movedHead: payload.movedHead ?? null,
         gitConfigRestored: null,
       },
     };
