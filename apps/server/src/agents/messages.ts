@@ -1,6 +1,7 @@
 import {
   FIRST_MESSAGE_MAX_BYTES,
   type CommentKind,
+  type RunPurpose,
   type TicketPriority,
   type TicketStatus,
   type TicketType,
@@ -293,7 +294,11 @@ export function continueMessage(templates: Templates): string {
   return `${fill(templates.continue, templates.continue.main, {})}\n`;
 }
 
-/** Sent by the daemon when a turn ends without a decision (05, section 4.8). */
-export function nudgeMessage(templates: Templates): string {
-  return `${fill(templates.nudge, templates.nudge.main, {})}\n`;
+/**
+ * Sent by the daemon when a turn ends without a decision (05, section 4.8); a review run's names
+ * the review tools (lot 3 step H).
+ */
+export function nudgeMessage(templates: Templates, purpose: RunPurpose = 'implement'): string {
+  const text = purpose === 'review' ? part(templates.nudge, 'review') : templates.nudge.main;
+  return `${fill(templates.nudge, text, {})}\n`;
 }

@@ -42,6 +42,8 @@ import {
   type RunStart,
   type RunState,
   type ServerMessage,
+  McpPermission,
+  runMcpTools,
 } from '@orchestrator/protocol';
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
@@ -1045,6 +1047,7 @@ export class RunService {
             pushTimeoutSeconds: settings.pushTimeoutSeconds,
           },
           resumeSessionId: null,
+          mcpTools: runMcpTools(z.array(McpPermission).parse(profile.mcpPermissions), 'implement'),
         },
       };
       return { run, start, machine, reference, ackDeadline };

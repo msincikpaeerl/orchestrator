@@ -20,10 +20,11 @@ describe('parseTemplate', () => {
 });
 
 describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
-  it('ship the Architect and the Web Developer only, as builders on Sonnet', async () => {
+  it('ship the Architect and the Web Developer as builders, and Quality as reviewer, on Sonnet', async () => {
     const { profiles } = await loadShippedAgents();
     expect(profiles.map((profile) => [profile.key, profile.role, profile.model])).toEqual([
       ['architect', 'builder', 'sonnet'],
+      ['quality', 'reviewer', 'sonnet'],
       ['web_dev', 'builder', 'sonnet'],
     ]);
   });
@@ -35,7 +36,9 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
   });
 
   it('give both builders the allowlist of 03, section 2.2, with ToolSearch', async () => {
-    const [architect, webDev] = (await loadShippedAgents()).profiles;
+    const { profiles } = await loadShippedAgents();
+    const architect = profiles.find((profile) => profile.key === 'architect');
+    const webDev = profiles.find((profile) => profile.key === 'web_dev');
     expect(architect?.allowedTools).toEqual(webDev?.allowedTools);
     const tools = webDev?.allowedTools ?? [];
     for (const tool of ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'WebFetch', 'WebSearch']) {
@@ -51,6 +54,53 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       // Claude Code's documented rule syntax (03, section 6).
       expect(tool).toMatch(/^([A-Z]\w+|Bash\([^()]+\))$/);
     }
+  });
+
+  it("give Quality the builders' allowlist without anything that writes a file or moves HEAD (03, section 2.5; owner's answer 6b, lot 3 step H)", async () => {
+    const { profiles } = await loadShippedAgents();
+    const builder = profiles.find((profile) => profile.key === 'web_dev')?.allowedTools ?? [];
+    const quality = profiles.find((profile) => profile.key === 'quality')?.allowedTools ?? [];
+    const removed = [
+      'Edit',
+      'Write',
+      'Bash(git add *)',
+      'Bash(git commit *)',
+      'Bash(git rm *)',
+      'Bash(git mv *)',
+      'Bash(git restore *)',
+      'Bash(git merge origin/*)',
+      'Bash(git merge --no-edit origin/*)',
+      'Bash(git merge --abort)',
+      'Bash(mkdir *)',
+      'Bash(mv *)',
+      'Bash(cp *)',
+      'Bash(rm *)',
+      // `find -delete` and `sort -o` write files: Glob and Grep search without them.
+      'Bash(find *)',
+      'Bash(sort *)',
+    ];
+    expect(quality).toEqual(builder.filter((tool) => !removed.includes(tool)));
+    for (const tool of quality) {
+      expect(tool).not.toMatch(
+        /git (checkout|switch|reset|stash|pull|rebase|cherry-pick|revert|apply|am|clean|merge|commit|add|rm|mv|restore|tag|worktree|update-ref|symbolic-ref|notes|gc|prune)\b/,
+      );
+    }
+    for (const kept of [
+      'Read',
+      'Glob',
+      'Grep',
+      'Bash(git diff *)',
+      'Bash(git log *)',
+      'Bash(pnpm *)',
+    ]) {
+      expect(quality).toContain(kept);
+    }
+  });
+
+  it('tell a review run how to end, and to change nothing (lot 3 step H)', async () => {
+    const { commonRules } = await loadShippedAgents();
+    expect(commonRules).toMatch(/In a review run.*`review_approve` or `review_request_changes`/);
+    expect(commonRules).toMatch(/in a review run, change and commit nothing/);
   });
 
   it('tell the agent to read CLAUDE.md first and never to push (06, section 6)', async () => {
@@ -80,6 +130,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     const templates = await loadTemplates();
     expect(Object.keys(templates)).toEqual([
       'implement',
+      'review',
       'continue',
       'answer',
       'nudge',
