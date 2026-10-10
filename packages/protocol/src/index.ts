@@ -90,6 +90,7 @@ export {
   BranchWhere,
   TicketBranch,
   TicketDetail,
+  TicketCi,
   TicketPullRequest,
   WorkflowFlag,
   TicketLink,
@@ -119,6 +120,18 @@ export {
   PullRequestTryAgainResponse,
 } from './api/pull-requests.js';
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
+export {
+  CheckCiAgainRefusal,
+  CheckCiAgainRequest,
+  CheckCiAgainResponse,
+  CiAcceptedLater,
+  CiCheckView,
+  CiNotSent,
+  RunCiHistory,
+  RunCiOutcome,
+  RunCiOutcomeKind,
+  RunCiRoundView,
+} from './api/ci.js';
 export {
   LiveRun,
   LiveRunsQuery,

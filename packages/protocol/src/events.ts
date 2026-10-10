@@ -16,6 +16,7 @@ import {
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
+import { CheckCiAgainRefusal } from './api/ci.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
@@ -82,6 +83,7 @@ export const EventType = z.enum([
   'ticket.pull_request_reopened',
   'ticket.pull_request_updated',
   'ticket.pull_request_not_opened',
+  'ticket.ci_checked_again',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -276,6 +278,29 @@ export const EventPayloads = {
      * one (lot 3 step F4); null otherwise, missing in events written before.
      */
     openPullRequest: z.int().positive().nullable().optional(),
+  }),
+  /**
+   * The owner's **Check CI again** (04, section 3.1; lot 3 step G2c): what it found, or why it was
+   * refused. `accepted` also writes the ticket's status change.
+   */
+  'ticket.ci_checked_again': z.object({
+    ...TicketFacts,
+    runId: z.uuid(),
+    commit: z.string(),
+    outcome: z.enum([
+      'accepted',
+      'not_finished',
+      'failed',
+      'conflict',
+      'github_problem',
+      'refused',
+    ]),
+    /** For `accepted`: passed or "No CI found", and whether a failed attempt was taken back. */
+    state: z.enum(['passed', 'no_ci']).optional(),
+    attemptTakenBack: z.boolean().optional(),
+    refusal: CheckCiAgainRefusal.optional(),
+    /** For `github_problem` and refusals: the words the owner saw. */
+    message: z.string().optional(),
   }),
   'setting.changed': z.object({
     ...SettingFacts,

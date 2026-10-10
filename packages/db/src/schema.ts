@@ -614,6 +614,16 @@ export const runs = pgTable(
     /** The machine's latest refusal of a round (`CiRoundRefusal`), until a round is confirmed. */
     ciRoundRefusal: jsonb('ci_round_refusal'),
     /**
+     * The pull request's head read with the result that decided, when it was another commit: the
+     * branch moved on GitHub (`ci_cancelled`, lot 3 step G2c). Null otherwise.
+     */
+    ciPullRequestHead: text('ci_pull_request_head'),
+    /**
+     * The work accepted later by the owner's **Check CI again** (`CiAcceptedLater`: when, passed
+     * or "No CI found", whether the run's failed attempt was taken back; lot 3 step G2c).
+     */
+    ciAcceptedLater: jsonb('ci_accepted_later'),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */
