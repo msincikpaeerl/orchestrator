@@ -548,6 +548,104 @@ describe('ci_status after a round (owner addition 2)', () => {
     const next = McpCiStatus.parse(await h.ok(daemon, runToken, 'ci_status'));
     expect(next.commit?.hash).toBe(second);
   });
+
+  it('reads again a log the round could not read, after the interval, and keeps it on the round (owner review, step G2b)', async () => {
+    const { daemon, runId, runToken, repo } = await working();
+    const first = await submitted(daemon, runId, runToken);
+    failAll(repo, first);
+    const logPath = /\/actions\/jobs\/\d+\/logs/;
+    h.github.override = (request) => (logPath.test(request.path) ? { status: 503 } : undefined);
+    await h.t.ciTick();
+    const message = await round(daemon, runId);
+    const retryAt = new Date(clock.getTime() + MINUTE).toISOString();
+    expect(textOf(message)).toContain(
+      `GitHub could not be reached for this job's log: call ci_status again after ${retryAt}.`,
+    );
+    await confirmed(daemon, runId, message);
+    const logReads = () => h.github.requests.filter((request) => logPath.test(request.path));
+    const status = async () => McpCiStatus.parse(await h.ok(daemon, runToken, 'ci_status'));
+
+    // Within the GitHub check interval: nothing is asked again.
+    const before = logReads().length;
+    const early = await status();
+    expect(logReads()).toHaveLength(before);
+    expect(early.ci?.failed_jobs[0]?.failed_steps[0]?.log).toBeNull();
+    expect(early.note).not.toMatch(/read again at most every/);
+
+    // After it, the log is read, the excerpt given and kept on the round.
+    advance(1);
+    h.github.override = undefined;
+    const later = await status();
+    expect(later.commit).toMatchObject({ hash: first, by: 'this_run' });
+    expect(later.ci?.failed_jobs[0]?.failed_steps[0]?.log).toContain('Broken link');
+    expect(logReads()).toHaveLength(before + 1);
+    const kept = (await runRow(runId)).ciRounds as { result: CiResult }[];
+    const job = kept[0]?.result.failed_jobs[0];
+    expect(job?.log.state).toBe('read');
+
+    // Complete now: GitHub is asked nothing more.
+    advance(5);
+    const requests = h.github.requests.length;
+    expect((await status()).ci?.failed_jobs[0]?.failed_steps[0]?.log).toContain('Broken link');
+    expect(h.github.requests.length).toBe(requests);
+  });
+
+  it('after a conflict round: the kept result, never "read again at most every", GitHub asked nothing (owner review, step G2b)', async () => {
+    const { daemon, runId, runToken, repo } = await working('none');
+    const first = await submitted(daemon, runId, runToken);
+    conflictOnMain(repo);
+    advance(6);
+    await h.t.ciTick();
+    await h.t.ciTick();
+    await confirmed(daemon, runId, await round(daemon, runId));
+    const before = h.github.requests.length;
+    const status = McpCiStatus.parse(await h.ok(daemon, runToken, 'ci_status'));
+    expect(h.github.requests.length).toBe(before);
+    expect(status.commit?.hash).toBe(first);
+    expect(status.ci?.state).toBe('conflict');
+    expect(status.note).not.toMatch(/read again at most every/);
+    expect(status.note).toContain(
+      'This result was sent back to the agent as CI round 1 of its run: it is not read again, except failed jobs or logs that could not be read then.',
+    );
+    expect(status.note).toContain('The pull request conflicts with main');
+  });
+});
+
+describe("ci_status in the next run, after a run ended following a confirmed round (owner review, step G2b)", () => {
+  it("answers with that run's latest round, not an older run's commit, asking GitHub nothing", async () => {
+    const { daemon, runId, runToken, repo } = await working('queued', { maxCiFailuresPerRun: 1 });
+    // The first run ends ci_failed: its wait keeps its last commit.
+    const older = await submitted(daemon, runId, runToken);
+    failAll(repo, older);
+    await h.t.ciTick();
+    await confirmed(daemon, runId, await round(daemon, runId));
+    const olderLast = await submitted(daemon, runId, runToken);
+    failAll(repo, olderLast);
+    await h.t.ciTick();
+    expect((await h.run(runId)).failureReason).toBe('ci_failed');
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+
+    // The second run gets one round, confirmed, then is stopped before handing in again.
+    advance(5);
+    const second = await h.running(daemon);
+    const sent = await submitted(daemon, second.runId, second.runToken);
+    failAll(repo, sent);
+    await h.t.ciTick();
+    await confirmed(daemon, second.runId, await round(daemon, second.runId));
+    expect((await runRow(second.runId)).ciCommit).toBeNull();
+    await h.report(daemon, state(second.runId, { state: 'ended', reason: 'stopped' }));
+
+    advance(5);
+    const third = await h.running(daemon);
+    const before = h.github.requests.length;
+    const status = McpCiStatus.parse(await h.ok(daemon, third.runToken, 'ci_status'));
+    expect(h.github.requests.length).toBe(before);
+    expect(status.commit).toMatchObject({ hash: sent, by: 'earlier_run', attempt: 2 });
+    expect(status.ci?.state).toBe('failed');
+    expect(status.ci?.failed_jobs[0]?.failed_steps[0]?.log).toContain('Broken link');
+    expect(status.note).toContain('CI round 1 of its run');
+    expect(olderLast).not.toBe(sent);
+  });
 });
 
 describe("the next run's first sentence (owner answer 8 and addition 4)", () => {
