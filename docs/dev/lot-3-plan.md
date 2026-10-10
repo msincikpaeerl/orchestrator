@@ -874,7 +874,7 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers bel
 - **Not in H2** (H3 and H4): the post on GitHub, "Ready for review" and "Review did not finish" in "Needs you", the buttons, the ticket page's review section, the run page's card, Help and CHANGELOG. The event log names the new events and actions now (its types require it).
 - **The smoke run's two FAIL lines** (part 1): see H1's notes. The owner's question 3 (the daemon refusing the writing forms in a review run): **option C**, nothing more (owner's answer, 2026-10-10): no hook rule, no deny rule; the worktree's removal at the end and the moved-HEAD check stay the guard (05 section 4.6). The smoke test still reports those forms, for information.
 
-### [ ] H3. The comment review on GitHub
+### [x] H3. The comment review on GitHub
 
 - The post (answer 3): template `agents/templates/review-comment.md`, masking, size, `commit_id`, at most once after the decision is applied, the note and the event when refused.
 
@@ -885,6 +885,15 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers bel
 3. **"Head not checked"** (A): the post is attempted; a failure gets the usual note under the "head could not be checked" sentence; a post done does not remove that sentence.
 4. **Specs** (a to e agreed, b changed): a. run tokens `ort_` masked (`maskSecrets`: event log, live log and GitHub texts); b. local paths made harmless **only in texts leaving for GitHub** (the pull request's title and description, the review), in one shared place, never in screens, comments or the event log: worktree path → relative, the daemon's folder → `~/.orchestrator/…`, home folders → `~` (`/home/<user>/`, `/Users/<user>/`, `/root/`, `C:\Users\<user>\` or `\Users\<user>\`, WSL's `/mnt/<drive>/Users/<user>/`), each form tested; c. a point too long to fit alone is cut like the summary; d. the words above in 04 and 06; e. GitHub's 422 for posting too fast reads as the request limit, no retry.
 - **Smoke additions** (agreed, A31 included): step 6 posts COMMENT reviews with `commit_id` the head (A11), an older commit and a commit not in the pull request (A30); step 9 posts one on the closed conflict pull request (A31). They stay on the test repository: GitHub never deletes a posted review.
+
+*Done 2026-10-10.* Choices made in the step (flagged to the owner):
+
+- **Where it lives**: `agents/templates/review-comment.md` and `apps/server/src/github/review-comment-text.ts` (the body, the hidden mark `<!-- orchestrator-review run=<run id> -->`); `ReviewPoster` in `apps/server/src/runs/review-post.ts`, one post at a time per run, after the end report's transaction and at each start (`retryWanted`); the run's `review_post_wanted_at`, `review_post_pull_request`, `review_post_started_at` and `review_post` (`ReviewPost`, migration 0026); events `ticket.review_posted` and `ticket.review_not_posted` (`outcome` `not_posted`, `not_found` or `not_checked`); `postReview` with `commit_id` and `findReview` (every page) in `github/pull-requests.ts`; `withoutLocalPaths` inside `harmless` (so the pull request's title and description get it too); `maskSecrets` hides `ort_` run tokens. The note's and the events' words are in `apps/web/src/tickets/review-post-text.ts` and the event log, tested now and shown from H4; nothing reaches the API before H4.
+- **"Sent" or not**: the GitHub client's `GitHubUnreachableError.sent` is false only for a connection never made (refused, no address, a TLS failure); a timeout, a cut connection or answer, and a server error are answers lost. An answer GitHub gave but that cannot be read (200 with a body that does not fit) is also read as lost: the reviews are checked for the mark.
+- **The note when no token or a token that cannot be decrypted** prevents the post: "Not posted on GitHub: the GitHub token cannot be used. …" (the post never left); after a restart with a post started, the same problem makes it "could not be checked afterwards".
+- **A ticket link on a loopback address**: "(<url>, which opens only on the computer running the Orchestrator)" inside the closing line, as the pull request's description says it.
+- **The body's limit**: 65,536 characters, as the pull request's description (A27); GitHub documents none for a review.
+- **Not in H3** (H4): the API fields, the ticket page's review section and the run page's card that show the note, Help and CHANGELOG.
 
 **Done when** fake GitHub tests show one comment review per decision on the right commit, a mention and an issue reference that do not work, a planted secret masked, a review too long cut with its marker, a 403 for a missing permission and GitHub unreachable each keeping the decision with the note and the event, and a server restart during the post never posting twice.
 
