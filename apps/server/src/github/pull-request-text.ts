@@ -15,6 +15,44 @@ export const PULL_REQUEST_TITLE_MAX_LENGTH = 256;
 
 const ZERO_WIDTH_SPACE = '​';
 
+// One segment of a local path: no separator, no space, no quote or bracket around a path.
+const SEGMENT = String.raw`[^\s\\/"'\x60<>()[\]]+`;
+const SLASH = String.raw`[\\/]`;
+/** Not inside a word, a relative path or a link: `src/home/x` and `example.com/home/x` stay. */
+const START = String.raw`(?<![\w.~-])`;
+/** A folder holding the daemon's `.orchestrator` folder: a home, `~`, or any absolute path. */
+const DAEMON_FOLDER = `(?:~|${START}(?:[A-Za-z]:)?(?:${SLASH}${SEGMENT})*)${SLASH}\\.orchestrator${SLASH}`;
+
+const LOCAL_PATHS: [RegExp, string | ((match: string) => string)][] = [
+  // A path in a run's worktree becomes relative to it; the worktree itself, `.`.
+  [
+    new RegExp(`${DAEMON_FOLDER}worktrees${SLASH}${SEGMENT}(?:${SLASH}|(?!${SEGMENT}))`, 'g'),
+    (match) => (/[\\/]$/.test(match) ? '' : '.'),
+  ],
+  [new RegExp(DAEMON_FOLDER, 'g'), '~/.orchestrator/'],
+  // Home folders: WSL's view of Windows first, then Windows and macOS, Linux and root's.
+  [new RegExp(`${START}/mnt/[A-Za-z]/Users/${SEGMENT}`, 'g'), '~'],
+  [new RegExp(`${START}(?:[A-Za-z]:)?${SLASH}Users${SLASH}${SEGMENT}`, 'g'), '~'],
+  [new RegExp(`${START}/home/${SEGMENT}`, 'g'), '~'],
+  [new RegExp(`${START}/root(?!${SEGMENT})`, 'g'), '~'],
+];
+
+/**
+ * Local paths made harmless in a text that leaves for GitHub (04, section 3.1; owner's answer
+ * 4b, lot 3 step H3), never in the Orchestrator's own screens: a path in a run's worktree becomes
+ * relative, the daemon's folder `~/.orchestrator/`, and a home folder `~`.
+ */
+export function withoutLocalPaths(text: string): string {
+  return LOCAL_PATHS.reduce(
+    // A function and a string both: TypeScript cannot pick an overload for the union.
+    (result, [pattern, replacement]) =>
+      typeof replacement === 'string'
+        ? result.replace(pattern, replacement)
+        : result.replace(pattern, replacement),
+    text,
+  );
+}
+
 /**
  * A text GitHub shows as written and acts on in no way (04, section 3.1): secrets masked, `&`,
  * `<` and `>` escaped (everywhere, code spans included: owner's answer 4, lot 3 step F3), and a
@@ -23,7 +61,7 @@ const ZERO_WIDTH_SPACE = '​';
  * keyword ("fixes #3", "fixes owner/repo#3", "fixes GH-3", an issue's link) acts.
  */
 export function harmless(text: string): string {
-  return maskSecrets(text)
+  return withoutLocalPaths(maskSecrets(text))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

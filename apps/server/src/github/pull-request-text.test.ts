@@ -76,6 +76,39 @@ describe('harmless', () => {
   });
 });
 
+describe('harmless: local paths (owner answer 4b, step H3)', () => {
+  const RUN = '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21';
+
+  it.each([
+    [
+      'a worktree path',
+      `see /home/ana/.orchestrator/worktrees/${RUN}/src/contact.ts:42`,
+      'see src/contact.ts:42',
+    ],
+    ['the worktree itself', `ran in /home/ana/.orchestrator/worktrees/${RUN}`, 'ran in .'],
+    ['a worktree under any home', `(/srv/od/.orchestrator/worktrees/${RUN}/a.ts)`, '(a.ts)'],
+    ['a Windows worktree', `C:\\Users\\Ana\\.orchestrator\\worktrees\\${RUN}\\a.ts`, 'a.ts'],
+    [
+      'a run file',
+      `read /home/ana/.orchestrator/runs/${RUN}/mcp.json`,
+      `read ~/.orchestrator/runs/${RUN}/mcp.json`,
+    ],
+    ['/home/<user>', 'in /home/ana/notes/x.md and /home/bob', 'in ~/notes/x.md and ~'],
+    ['/Users/<user>', 'in /Users/ana/x.md', 'in ~/x.md'],
+    ['\\Users\\<user>', 'in \\Users\\ana\\x.md', 'in ~\\x.md'],
+    ['C:\\Users\\<user>', 'in C:\\Users\\ana\\x.md and C:/Users/ana/y.md', 'in ~\\x.md and ~/y.md'],
+    ['WSL /mnt/<drive>/Users/<user>', 'in /mnt/c/Users/ana/x.md', 'in ~/x.md'],
+    ['/root', 'in /root/x.md and `/root`', 'in ~/x.md and `~`'],
+  ])('%s', (_name, text, expected) => {
+    expect(harmless(text)).toBe(expected);
+  });
+
+  it('leaves relative paths and links alone', () => {
+    const text = 'src/home/ana.ts, docs/Users/x.md, https://example.com/home/ana and /homework/a';
+    expect(harmless(text)).toBe(text);
+  });
+});
+
 describe('pullRequestTitle', () => {
   it('is <number>: <title>, made harmless', () => {
     expect(pullRequestTitle(template, { number: 'WEB-12', title: 'Fix #3 for @bob <b>' })).toBe(
@@ -101,6 +134,20 @@ describe('pullRequestTitle', () => {
 });
 
 describe('pullRequestBody', () => {
+  it('holds no run token and no local path (step H3)', () => {
+    const run = '5b0c9a8e-1d2f-4c3b-9a8e-7f6d5c4b3a21';
+    const token = `ort_${'Zx_-'.repeat(10)}abc`;
+    const text = body({
+      report: {
+        ...report,
+        summary: `Used ${token} in /home/ana/.orchestrator/worktrees/${run}/src/Form.ts`,
+      },
+    });
+    expect(text).toContain('Used [hidden] in src/Form.ts');
+    expect(text).not.toContain(token);
+    expect(text).not.toContain('/home/');
+  });
+
   it('holds the summary, criteria in order, tests, documentation, ADRs and the link', () => {
     const text = body();
     expect(text).toContain('Adds a contact form.');
