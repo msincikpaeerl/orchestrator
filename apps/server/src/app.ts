@@ -132,7 +132,8 @@ export function buildApp(dependencies: AppDependencies) {
     key,
     apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
     log: logger,
-    readCommit: (repo, commit, pullRequest) => ci.readCommit(repo, commit, pullRequest),
+    readCommit: (repo, commit, pullRequest, startWaitOver) =>
+      ci.readCommit(repo, commit, pullRequest, startWaitOver),
     now: dependencies.now,
   });
   app.addHook('onReady', () => {

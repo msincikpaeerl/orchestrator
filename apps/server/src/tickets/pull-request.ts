@@ -343,6 +343,12 @@ export class PullRequestOpener {
             pullRequestUrl: pull.url,
             pullRequestState: pull.merged ? 'merged' : pull.state,
             pullRequestHead: pull.headSha,
+            // When it became open: opened or reopened now, or first found open (the later side).
+            ...(outcome.done.action !== 'updated' ||
+            ticket.pullRequestOpenedAt === null ||
+            ticket.pullRequestNumber !== pull.number
+              ? { pullRequestOpenedAt: at }
+              : {}),
             pullRequestFailure: null,
             ...(same ? { pullRequestWantedSince: null } : {}),
             updatedAt: at,

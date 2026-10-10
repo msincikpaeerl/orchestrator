@@ -298,6 +298,12 @@ export const tickets = pgTable(
     pullRequestState: text('pull_request_state'),
     pullRequestHead: text('pull_request_head'),
     /**
+     * When the server last opened or reopened the ticket's pull request, or first found it open
+     * (lot 3 step G2c, the owner's fix): **Check CI again** accepts "No CI found" only once it has
+     * been open for **Wait for CI to start**.
+     */
+    pullRequestOpenedAt: timestamp('pull_request_opened_at', { withTimezone: true }),
+    /**
      * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
      * opened or updated with it, or when the ticket is done or cancelled.
      */

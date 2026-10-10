@@ -169,6 +169,13 @@
       "when": 1791622880328,
       "tag": "0023_ci_check_again",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791625921854,
+      "tag": "0024_pull_request_opened_at",
+      "breakpoints": true
     }
   ]
 }

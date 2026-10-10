@@ -279,16 +279,17 @@ export class CiWatcher {
   }
 
   /**
-   * One reading of `commit` for the owner's **Check CI again** (lot 3 step G2c), as a check after
-   * **Wait for CI to start**: with nothing on GitHub, the pull request's `mergeable` decides
-   * between "No CI found" and a conflict.
+   * One reading of `commit` for the owner's **Check CI again** (lot 3 step G2c): with nothing on
+   * GitHub, the pull request's `mergeable` decides between "No CI found" and a conflict only once
+   * **Wait for CI to start** is over (`startWaitOver`); before, it is not finished.
    */
   readCommit(
     repo: { owner: string; name: string },
     commit: string,
     pullRequest: number,
+    startWaitOver: boolean,
   ): Promise<CiRead> {
-    return this.check(repo, commit, pullRequest, true);
+    return this.check(repo, commit, pullRequest, startWaitOver);
   }
 
   /** Every run waiting for CI, one after another; the request limit stops the tick. */

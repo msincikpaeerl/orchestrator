@@ -14,6 +14,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { timestamp } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
+import { resolveSettings } from '../settings/store.js';
 import { GitHubUnreachableError } from '../github/client.js';
 import { storedTokenClient } from '../github/connection.js';
 import { readPullRequest } from '../github/pull-requests.js';
@@ -44,6 +45,7 @@ export interface CiCheckAgainOptions {
     repo: { owner: string; name: string },
     commit: string,
     pullRequest: number,
+    startWaitOver: boolean,
   ) => Promise<CiRead>;
   now?: () => Date;
 }
@@ -102,7 +104,13 @@ export class CiCheckAgain {
     try {
       await this.refusal(db, project, ticket, run);
       const pullRequest = ticket.pullRequestNumber ?? 0;
-      const read = await this.read(project, ticket, commit, pullRequest);
+      const read = await this.read(
+        project,
+        ticket,
+        commit,
+        pullRequest,
+        await this.startWaitOver(run, ticket),
+      );
       if (read.outcome !== 'accepted') {
         await this.event(db, project, ticket, run, read.outcome, read.facts);
         return read.answer;
@@ -170,12 +178,32 @@ export class CiCheckAgain {
     }
   }
 
+  /**
+   * "No CI found" needs the pull request open for **Wait for CI to start** (the run's kept value)
+   * since the later of the run's wait start and the pull request's opening or reopening (owner's
+   * fix, lot 3 step G2c): opened by **Try again** after the timeout, CI may not have appeared yet.
+   * Neither known: not over, the safe side.
+   */
+  private async startWaitOver(run: RunRow, ticket: TicketRow): Promise<boolean> {
+    const starts = [run.ciWaitStartedAt, ticket.pullRequestOpenedAt].filter(
+      (at): at is Date => at !== null,
+    );
+    if (starts.length === 0) return false;
+    const since = Math.max(...starts.map((at) => at.getTime()));
+    const minutes =
+      run.ciStartWaitMinutes ??
+      (await resolveSettings(this.options.db, ['ciStartWaitMinutes'], run.projectId))
+        .ciStartWaitMinutes;
+    return this.now().getTime() - since >= minutes * 60_000;
+  }
+
   /** The pull request, then the commit's CI: what was found, or a refusal. */
   private async read(
     project: ProjectRow,
     ticket: TicketRow,
     commit: string,
     pullRequest: number,
+    startWaitOver: boolean,
   ): Promise<
     | { outcome: 'accepted'; state: 'passed' | 'no_ci' }
     | {
@@ -229,7 +257,7 @@ export class CiCheckAgain {
         { commit, head: pull.value.headSha },
       );
     }
-    const read = await this.options.readCommit(repo, commit, pullRequest);
+    const read = await this.options.readCommit(repo, commit, pullRequest, startWaitOver);
     if (!read.ok) return problem(read.failure.message);
     const { result } = read;
     switch (result.state) {

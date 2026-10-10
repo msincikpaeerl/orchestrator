@@ -390,8 +390,47 @@ describe('Check CI again refused', () => {
     expect(opened.statusCode, opened.body).toBe(200);
     expect((await h.ticket()).pullRequest.opened?.state).toBe('open');
     expect(await ciItems()).toEqual([expect.objectContaining({ pullRequest: 1 })]);
+    // A run that appeared and passed counts at once, before Wait for CI to start.
     passAll(repo, h.lastPushed ?? '');
     expect(await checked(runId)).toMatchObject({ outcome: 'accepted', state: 'passed' });
+  });
+
+  it('accepts "No CI found" only once the pull request opened by Try again has been open for Wait for CI to start', async () => {
+    const { daemon, runId, runToken } = await working('none');
+    h.github.override = (request) =>
+      request.method === 'POST' && request.path.endsWith('/pulls')
+        ? { status: 503, body: { message: 'down' } }
+        : undefined;
+    await h.ok(daemon, runToken, 'ticket_submit', REPORT);
+    await h.report(daemon, state(runId, { state: 'waiting_ci' }));
+    advance(21);
+    await h.t.ciTick();
+    expect((await h.run(runId)).failureReason).toBe('ci_timeout');
+    h.github.override = undefined;
+    const opened = await h.call('POST', '/api/projects/WEB/tickets/1/pull-request/try-again');
+    expect(opened.statusCode, opened.body).toBe(200);
+    const [row] = await h.t.db.select().from(schema.tickets).where(eq(schema.tickets.number, 1));
+    expect(row?.pullRequestOpenedAt?.toISOString()).toBe(clock.toISOString());
+
+    // At once, nothing on GitHub: not "No CI found" yet, nothing changes.
+    expect(await checked(runId)).toEqual({
+      outcome: 'not_finished',
+      finished: 0,
+      total: 0,
+      at: clock.toISOString(),
+    });
+    // Later, GitHub has worked out that the pull request does not conflict; still nothing ran.
+    advance(4);
+    expect(await checked(runId)).toMatchObject({ outcome: 'not_finished', total: 0 });
+    expect(await h.ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+    // Wait for CI to start (5 minutes) after the opening, still nothing: "No CI found".
+    advance(1);
+    expect(await checked(runId)).toEqual({
+      outcome: 'accepted',
+      state: 'no_ci',
+      attemptTakenBack: false,
+    });
+    expect((await h.ticket()).status).toBe('in_review');
   });
 });
 
@@ -440,6 +479,30 @@ describe('after ci_failed (owner answers 3c and 3d)', () => {
     expect((await h.run(runId)).ciHistory?.outcome?.acceptedLater).toMatchObject({
       attemptTakenBack: true,
     });
+  });
+
+  it('accepts once when pressed twice at the same moment: one failed attempt taken back', async () => {
+    const { daemon, runId, runToken, repo } = await working('queued', { maxCiFailuresPerRun: 1 });
+    const first = await submitted(daemon, runId, runToken);
+    failAll(repo, first);
+    await h.t.ciTick();
+    await confirmed(daemon, runId, await round(daemon, runId));
+    const second = await submitted(daemon, runId, runToken);
+    failAll(repo, second);
+    await h.t.ciTick();
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    expect(await h.ticket()).toMatchObject({ status: 'todo', attemptCount: 1 });
+    passAll(repo, second);
+    const answers = await Promise.all([checkAgain(runId), checkAgain(runId)]);
+    const accepted = answers.filter((answer) => answer.statusCode === 200);
+    expect(accepted, answers.map((answer) => answer.body).join('\n')).toHaveLength(1);
+    expect(answers.filter((answer) => answer.statusCode === 409)).toHaveLength(1);
+    expect(await h.ticket()).toMatchObject({ status: 'in_review', attemptCount: 0 });
+    expect((await checkedEvents()).filter((event) => event.outcome === 'accepted')).toHaveLength(1);
+    const comments = (await h.ticket()).timeline.filter(
+      (entry) => entry.type === 'comment' && entry.comment.body.startsWith('CI passed on GitHub'),
+    );
+    expect(comments).toHaveLength(1);
   });
 
   it('is not offered after a conflict ended the run', async () => {
