@@ -806,7 +806,8 @@ export class RunService {
       });
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
-      const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
+      // A review run is never an attempt of its own (owner's review of step H1).
+      const attempt = worked.filter((run) => run.acknowledgedAt !== null).length + 1;
       // Earlier commits: on this machine, or pushed to GitHub, where the daemon takes them from.
       const lastHere = worked.find((run) => run.machineId === machine.id && run.commits !== null);
       const baseBranch = project.defaultBranch;
