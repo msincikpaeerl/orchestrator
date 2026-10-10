@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   NeedsYouResponse,
+  Run,
   type DodReport,
   type NeedsYouItem,
   type RunStart,
@@ -311,7 +312,7 @@ describe('"Review did not finish"', () => {
     const { daemon, commit } = await inReview();
     const response = await h.call('POST', '/api/projects/WEB/tickets/1/review');
     expect(response.statusCode, response.body).toBe(201);
-    const runId = (response.json() as { id: string }).id;
+    const runId = Run.parse(response.json()).id;
     const start = await daemon.find<RunStart>(
       (message) => message.type === 'run.start' && message.payload.runId === runId,
       'run.start of the review',
