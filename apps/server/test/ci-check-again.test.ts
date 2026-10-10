@@ -170,6 +170,9 @@ describe('Check CI again after CI did not finish', () => {
     const { daemon, runId, repo, commit } = await timedOut();
     const ticket = await h.ticket();
     expect(ticket).toMatchObject({ status: 'todo', attemptCount: 0 });
+    expect(lastComment(ticket)).toBe(
+      'The run on machine Laptop ended when CI wait at submission (20 minutes) was reached: CI had not finished. It does not count as a failed attempt.',
+    );
     expect(ticket.ci).toMatchObject({
       runId,
       failureReason: 'ci_timeout',
@@ -462,6 +465,10 @@ describe('the ticket page and "Needs you" after other ends (owner answers 1, 2 a
     await h.t.ciTick();
     expect((await h.run(runId)).failureReason).toBe('ci_timeout');
     const ticket = await h.ticket();
+    // CI did finish: the comment never says it did not (owner's answer 1).
+    expect(lastComment(ticket)).toBe(
+      'The run on machine Laptop ended when CI wait at submission (20 minutes) was reached: CI failed on GitHub, and machine Laptop did not confirm it received the result. It does not count as a failed attempt.',
+    );
     expect(ticket.ci).toMatchObject({
       checkCiAgain: true,
       outcome: { kind: 'not_received', notSent: { why: 'not_confirmed' } },

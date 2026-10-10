@@ -146,7 +146,7 @@ export function failureWords(reason: FailureReason): string {
     case 'ci_failed':
       return 'CI failed more times than the run allows';
     case 'ci_timeout':
-      return 'CI did not finish in time';
+      return 'CI wait at submission was reached';
     case 'review_branch_moved':
       return 'the branch changed during the review';
     case 'push_failed':

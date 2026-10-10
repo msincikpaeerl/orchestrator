@@ -47,7 +47,7 @@ export const failureText: Record<FailureReason, string> = {
   machine_problem: 'its machine could not start Claude Code in a process scope',
   cancelled: 'it was cancelled',
   ci_failed: 'CI failed more times than the run allows',
-  ci_timeout: 'CI did not finish in time',
+  ci_timeout: 'CI wait at submission was reached',
   review_branch_moved: 'the branch changed during the review',
   push_failed: 'its branch could not be pushed to GitHub',
   ci_cancelled: 'CI was cancelled on GitHub because the branch changed there',
