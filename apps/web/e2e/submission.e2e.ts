@@ -51,7 +51,7 @@ async function working(
     files: Record<string, string | null>;
     message: string;
     from?: string;
-  }) => Promise<void>,
+  }) => Promise<unknown>,
 ) {
   const ticketPage = await readyForRuns(page);
   await page.goto(ticketPage);
