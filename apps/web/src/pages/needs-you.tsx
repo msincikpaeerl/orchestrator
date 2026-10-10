@@ -21,8 +21,11 @@ import {
   RequestChangesAction,
   RunNowAction,
   RunNowOffer,
+  SkipReviewAction,
+  StartReviewAction,
   type TicketAddress,
 } from '../tickets/actions';
+import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
@@ -35,6 +38,8 @@ function itemKey(item: NeedsYouItem): string {
     case 'question':
     case 'ticket_proposed':
     case 'work_to_check':
+    case 'ready_for_review':
+    case 'review_not_finished':
     case 'push_failed':
     case 'pull_request_not_opened':
     case 'ci_timeout':
@@ -161,6 +166,77 @@ function WorkItemCard({
         </Card>
       );
   }
+}
+
+/**
+ * "Ready for review" (02, section 4; owner's answers 4 and 5, lot 3 step H): the pull request, the
+ * CI line, the workflow line, what each choice costs, **Start review** and **Skip review**.
+ */
+function ReadyForReviewCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'ready_for_review' }>;
+}) {
+  const text = readyForReviewText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p>
+        <a
+          href={item.pullRequest.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 underline"
+        >
+          Pull request #{item.pullRequest.number}
+        </a>
+      </p>
+      <p className="break-words text-slate-700">{text.ci}</p>
+      {text.workflows && (
+        <p className="rounded border border-amber-300 bg-amber-50 p-2 break-words text-slate-800">
+          {text.workflows}
+        </p>
+      )}
+      <p className="text-slate-700">{text.cost}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <StartReviewAction ticket={item.ticket} />
+        <SkipReviewAction ticket={item.ticket} />
+      </div>
+      <HelpLink page="tickets#review-by-quality">Review by Quality</HelpLink>
+    </Card>
+  );
+}
+
+/**
+ * "Review did not finish" (02, section 4; owner's answers 2, 3 and 5): why, or which decision was
+ * not applied and why, with **Start review** and **Skip review**.
+ */
+function ReviewNotFinishedCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'review_not_finished' }>;
+}) {
+  const { title, detail } = reviewNotFinishedText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <StartReviewAction ticket={item.ticket} />
+        <SkipReviewAction ticket={item.ticket} />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link to={runPath(item.runId)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <HelpLink page="tickets#review-by-quality">What to do</HelpLink>
+      </div>
+    </Card>
+  );
 }
 
 /** A push GitHub refused or could not take (04, section 5): what happened, what to do. */
@@ -413,6 +489,10 @@ export function NeedsYouPage() {
                 item.type === 'work_to_check' ||
                 item.type === 'run_paused' ? (
                 <WorkItemCard item={item} onChangesRequested={setOffer} />
+              ) : item.type === 'ready_for_review' ? (
+                <ReadyForReviewCard item={item} />
+              ) : item.type === 'review_not_finished' ? (
+                <ReviewNotFinishedCard item={item} />
               ) : item.type === 'push_failed' ? (
                 <PushFailedCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
