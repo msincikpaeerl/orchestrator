@@ -306,6 +306,7 @@ export {
   RunSocketRequest,
   StatusLineInput,
   type HookInput,
+  RunToolsAnswer,
 } from './daemon/run-socket.js';
 export {
   CLAUDE_CODE_MIN_VERSION,

@@ -1,7 +1,14 @@
 import { chmod, rm } from 'node:fs/promises';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
-import { HookAnswer, McpResult, RunSocketRequest, type HookEvent } from '@orchestrator/protocol';
+import {
+  HookAnswer,
+  McpResult,
+  RunSocketRequest,
+  RunToolsAnswer,
+  type HookEvent,
+  type McpToolName,
+} from '@orchestrator/protocol';
 import { safeJson } from './config.js';
 import type { DaemonPaths } from './paths.js';
 
@@ -43,7 +50,7 @@ export function unreachableAnswer(event: HookEvent | 'status_line'): HookAnswer 
 export type McpAnswer = McpResult['payload'];
 
 /** What the socket answers: a hook's output, or a tool's result for the relay. */
-export type RunSocketAnswer = HookAnswer | McpAnswer;
+export type RunSocketAnswer = HookAnswer | McpAnswer | RunToolsAnswer;
 
 /** Listens on `path` (a stale file is replaced); `handle` answers each request. */
 export async function serveRunSocket(
@@ -88,7 +95,7 @@ export async function serveRunSocket(
 export function forwardToRun(
   paths: DaemonPaths,
   runId: string,
-  request: Exclude<RunSocketRequest, { type: 'mcp' }>,
+  request: Extract<RunSocketRequest, { type: 'hook' | 'status_line' }>,
 ): Promise<HookAnswer> {
   const fallback = unreachableAnswer(request.type === 'hook' ? request.event : 'status_line');
   return ask(paths, runId, request, (text) => {
@@ -116,6 +123,17 @@ export function callThroughRun(
   return ask(paths, runId, request, (text) => {
     const answer = McpResult.shape.payload.safeParse(safeJson(text));
     return answer.success ? answer.data : DAEMON_UNREACHABLE;
+  });
+}
+
+/**
+ * The run's MCP tools, for the relay's list (06, section 5); null when the daemon cannot be
+ * reached or gives no list.
+ */
+export function toolsOfRun(paths: DaemonPaths, runId: string): Promise<McpToolName[] | null> {
+  return ask(paths, runId, { type: 'tools' }, (text) => {
+    const answer = RunToolsAnswer.safeParse(safeJson(text));
+    return answer.success ? answer.data.tools : null;
   });
 }
 
