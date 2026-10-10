@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b and G2c done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c)
+> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b and G2c done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H4)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -786,30 +786,83 @@ Split approved by the owner on 2026-10-10 (G2a, G2b, G2c below), with the answer
 **The owner's fix before the merge (2026-10-10)**, tests first: **Check CI again** read GitHub as after **Wait for CI to start** in every case, so after a timeout from a pull request never opened, a press just after **Try again** opened it accepted "No CI found" before any CI could appear. "No CI found" now needs the pull request open for **Wait for CI to start** (the run's kept value) since the later of the run's wait start and the pull request's opening; before, the answer is "not finished" and nothing changes. When the pull request was opened is kept by the server: `tickets.pull_request_opened_at` (migration 0024), set when it opens or reopens it, or first finds it open when updating (the later side); GitHub gives no reopen time. Tests in `ci-check-again.test.ts`: at once and later still nothing (not finished), after the wait "No CI found", a run passed before the wait accepted at once; and two presses at the same moment after `ci_failed` accept once, the attempt taken back once (the project's row lock already serialises them: this test passed before the fix).
 
 
-### [ ] H. Quality and review runs
+### Step H: Quality and review runs, split in four (rule 15)
 
-- `agents/quality.md` (03 section 2.5, with the instruction on not running the tests again), the templates `review.md`, `fix-review.md` and the review's place in the common rules; the allowlist smoke test covers `quality` (different rules from `architect`).
+Split approved by the owner on 2026-10-10 (H1 to H4 below), with the answers below. Scope of the whole step (as planned):
+
+- `agents/quality.md` (03 section 2.5, with the instruction on not running the tests again), the template `review.md` and the review's place in the common rules; the allowlist smoke test covers `quality` (different rules from `architect`).
 - **Start review** (Run now with purpose `review`, the `quality` profile, any machine, the branch from GitHub) and **Skip review**; "Ready for review" in "Needs you".
 - `review_approve` (`awaiting_merge`) and `review_request_changes` (points as `review` comments, `todo`), each posted on GitHub as a comment review; the reviewer is never the profile that implemented it.
 - Quality's questions (`in_review` → `waiting_human` → `in_review`).
 - Review failures not counted ("Review did not finish"); a moved head fails the review.
 - **From step G1** (owner's answer 3): the review's first message carries both facts when they come together, "No CI found" and workflow files changed.
 - Help: Quality, what a review costs, **Skip review**, workflow changes; CHANGELOG.
-
-**Done when** integration and daemon tests cover:
-
-- approval;
-- request for changes (comments, GitHub review, `todo`);
-- a GitHub post refused (decision kept, note shown);
-- a question answered;
-- a review run giving up;
-- a moved head;
-- **Skip review**;
-- a builder profile refused the review tools.
-
-Playwright: **Start review**, **Skip review**, the review summary on the ticket page.
-
 - **From step F4** (owner's answer 4): "Ready for review" in "Needs you" carries the pull request link; it replaces "Work finished: check it". Help > Tickets' states table says **Awaiting merge** is "not used yet in this version": rewrite it.
+
+**Done when** (whole step) integration and daemon tests cover approval; a request for changes (comments, GitHub review, `todo`); a GitHub post refused (decision kept, note shown); a question answered; a review run giving up; a moved head; **Skip review**; a builder profile refused the review tools. Playwright: **Start review**, **Skip review**, the review summary on the ticket page.
+
+**The owner's answers (2026-10-10, start of the step)**, written into specs 02, 03, 04 and 06:
+
+1. **The tool list** (A): `run.start` carries the tools the run may call, the profile's permissions without those its purpose cannot use (`ticket_submit` in a review run, the review tools in any other); the daemon keeps them and the relay lists only them, asking the daemon through the run's socket. The server still refuses by role and purpose. Protocol 2 is not released: no version change. Claude Code's own words for a tool not listed are recorded only if the owner's `quality` smoke run can do it without another session.
+2. **One decision per review, about one commit** (A, with the owner's changes):
+   - a. **Start review** reads the pull request on GitHub (one request). Its head must be the commit CI checked for the accepted submission; that commit goes in `run.start` (`reviewCommit`). A head that differs (a push by hand, **Update branch**) refuses Start review without a session: "The pull request's head on GitHub (def5678) is not the commit CI checked (abc1234)", saying what to do (**Skip review** and check it yourself, or **Request changes**). GitHub unreachable or another problem refuses it with "try again".
+   - b. The daemon fetches the branch at preparation and checks that GitHub's head is still that commit; a moved head fails the preparation with `review_branch_moved`, not counted. The worktree is detached at that commit.
+   - c. At `review_approve` or `review_request_changes` the server reads the pull request's head within the call. Unchanged: the decision is stored on the run and answered (end your turn). Read and found moved: the call is refused ("the pull request changed on GitHub during your review, now def5678: your review no longer applies, end your turn") and the server stops the run with `review_branch_moved`. **GitHub unreachable, limited, unreadable or the token refused never refuses the call** (owner's change): the decision is stored and answered as when the head is unchanged, marked "head not checked on GitHub at the decision"; the ticket page's review section then says "The pull request's head could not be checked on GitHub when Quality decided: check it is still abc1234 before merging.", and the run page's review card says the same. A GitHub problem never costs the review, as for the post.
+   - d. The decision applies only when the daemon reports the run's end `submitted` with no head moved on the machine; else it is thrown away.
+   - e. A second decision, or a question after a decision, is refused with `INVALID_TRANSITION` ("You already approved this ticket in this run: end your turn."); a decision after the run's end gets the "run ended" refusal; **Stop run** between the decision and the end throws the decision away.
+   - When a decision was made and then thrown away (the head moved on the machine, **Stop run** before the end, the machine lost before the end), "Review did not finish" and the run page say which decision it was and why it was not applied (owner's addition).
+3. **The GitHub post** (A): one comment review with `commit_id` the reviewed commit, at most once, after the decision is applied. Words:
+   - approval: "**Quality review: approved** · commit abc1234", the summary, then "— Posted by the Orchestrator for BAK-12 (<ticket link>). The owner merges this pull request.";
+   - request for changes: "**Quality review: changes requested** · commit abc1234 · 3 points", the numbered points ("1. `src/contact.ts:42`: <point>"), then "— Posted by the Orchestrator for BAK-12 (<ticket link>). The agent that implemented it addresses these points in its next run.";
+   - the agent's text masked (`maskSecrets`), then made harmless as the pull request's description (F3: zero-width space after `@`, `#`, `GH-` and in `/issues/`, `<>&` escaped); paths in code spans with a fence they cannot close; the body within 65,536 characters: points kept whole in order, then "… and N more points: see the ticket page"; a summary too long cut at a line boundary with "[cut: the full text is on the ticket page]";
+   - a refused post: the decision stands; event `ticket.review_not_posted`; the ticket page's note "Not posted on GitHub: <reason>. The decision stands in the Orchestrator.", with F3's reasons (Pull requests (Read and write) missing with the token list link, GitHub unreachable, token refused, request limit, unreadable answer, other refusals in GitHub's masked words). No retry, no **Post again**, no "Needs you" item.
+4. **CI in "Ready for review" and the review's first message** (A, with the owner's change), never saying CI failed or did not finish for work accepted:
+   - CI passed in the run: "CI passed on GitHub for commit abc1234." (item and message);
+   - accepted by **Check CI again**: item "CI passed on GitHub for commit abc1234 (checked again by you at 15:10)"; message "CI passed on GitHub for commit abc1234; the owner had it read again after the agent's run ended, and the work was accepted then.";
+   - "No CI found": item "No CI found for commit abc1234"; message "No CI ran on GitHub for commit abc1234: nothing appeared within Wait for CI to start after the pull request opened. Nothing on GitHub tested this work.";
+   - "No CI found" and workflow files changed, one sentence: "No CI found for commit abc1234, and this work changed files under .github/workflows/: it may have removed or weakened CI." (message: "Read those changes first."; item: "Read them before reviewing or merging."; "(checked again by you at 15:10)" when Check CI again found it);
+   - workflow files changed with CI passed: a line of its own, "Workflow files changed: …" ("may have changed" when the list was cut);
+   - **With "No CI found"** (with or without workflow files changed, in the run or by **Check CI again**), `review.md` never says "CI already ran on GitHub: do not run the test suite again": it says nothing on GitHub tested this work, so Quality runs the project's tests and build itself when the project has any, and says in its decision what it ran. The "do not run the test suite again unless…" sentence stays for CI passed. Both variants of the first message are tested (owner's change).
+5. **Words** as proposed, with the owner's changes:
+   - "Ready for review: BAK-12 Contact form", the pull request link, the CI line, the workflow line, "A review by Quality uses one Claude Code session; Skip review uses none.", **Start review** and **Skip review**. **Start review** has no confirmation, as **Run now**.
+   - **Skip review**'s confirmation: "Skip the review of BAK-12? It moves to Awaiting merge without Quality's review: check the pull request yourself before merging it on GitHub.", **Skip review** and **Keep it in review**; comment "The owner skipped the review."
+   - "Review did not finish for BAK-12: Contact form", "The review run on laptop ended without a decision: <reason>. It does not count as a failed attempt.", or, for a decision thrown away, which decision and why it was not applied (answer 2); **Start review** and **Skip review**. Reasons: "Quality gave up: <its reason>", "the pull request changed on GitHub during the review (now def5678)", "the branch changed on the machine during the review", and Runs' words for a timeout, a crash, a machine offline. After the owner's **Stop run** with no decision made, plain "Ready for review" again.
+   - The ticket page's review section: "Approved by Quality · commit abc1234 · 14:52" with the summary (untrusted text) and "Posted on GitHub" (link) or the note; "Changes requested by Quality · commit abc1234 · 3 points" with "src/contact.ts:42 — …"; "Review skipped by you on <date>"; "Review in progress on laptop" (run link); the "head not checked" sentence of answer 2.
+   - The run page's review card: "Reviewed commit abc1234 (pull request #12)", "Decision: approved" or "Decision: changes requested (3 points)", "Decision not applied: <why>", "Posted on GitHub" or the note.
+   - **Awaiting merge** until step J: the ticket page's line "Merge pull request #12 on GitHub, then use Mark as done manually: this version does not notice the merge yet."; Help's row "The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. This version does not notice the merge yet: after merging, use Mark as done manually." Both true from H2, written in H4 with the screens (owner's change to the split); step J rewrites them.
+   - `review.md`: "Review ticket BAK-12 of the project X, then approve it with `review_approve` or ask for changes with `review_request_changes`."; read `CLAUDE.md`; the worktree holds commit abc1234, the head of pull request #12, without a branch; review that commit only, never change a file, commit or merge; `git diff origin/<base>...HEAD` and `git log origin/<base>..HEAD`; the CI and workflow sentences of answer 4; the ticket; **one sentence before "The agent's report"** saying the report is the implementing agent's own account, to check against the diff, never proof by itself (owner's change); the report (summary, criteria with status and justification, tests, docs, ADRs); earlier reviews; comments; "How to decide" (the five checks of 04 section 3.2, the CI sentence of answer 4, actionable points with file and line, `ticket_ask` only for what only the owner can decide, one decision then end the turn).
+6. **Specs** (rule 4), agreed with the owner's changes:
+   - a. 03 section 2.5's "Runs the tests and the build locally to confirm the CI result" is replaced by the rule of answer 4, "No CI found" case included.
+   - b. Quality's allowlist: every Git command that can move HEAD or change tracked files is removed, not only `git merge` (checkout or switch, reset, stash, pull, rebase, cherry-pick, revert, apply, am, clean, and any other found); the H1 summary lists what stays and what was removed, and the smoke test checks one refused command of each kind.
+   - c. A review run's **Stop run** and a lost machine leave the ticket `in_review` (from `waiting_human` too), and an answer to Quality's question returns it to `in_review`.
+   - d. `fix-review.md` is written in step I, with the words proposed (noted in step I). Until then **Run now** after Quality's request starts an `implement` run whose comments hold the points, and no rounds limit applies.
+   - e. The owner's **Request changes** is refused while a review run is active from H2.
+   - f. "Work finished: check it" stays only for 0.3.0 tickets in `in_review` without a pull request; the others get "Ready for review".
+   - g. The reviewer is checked against every profile that ran an `implement` or `fix_review` run of the ticket, tested with a custom profile.
+
+### [ ] H1. Starting a review run
+
+- `agents/quality.md` and its allowlist (answer 6b), `agents/templates/review.md` (answers 4 and 5); **Start review** in the API (purpose `review`, the `quality` profile, any machine) with the commit fixed at its start (answer 2a), carried in `run.start` and checked out detached by the daemon (answer 2b); the relay's tool list (answer 1); the allowlist smoke test covers `quality`, checking that an edit, a commit and one Git command of each kind removed are refused.
+
+**Done when** server tests show `run.start` for a review (purpose, profile, commit, tools, the first message in each CI case, both CI variants of answer 4) and each refusal of **Start review** (wrong state, no pull request, review already running, head on GitHub not the commit checked, GitHub unreachable); daemon tests show the worktree at that commit and a preparation failing when GitHub's branch moved; a relay test shows each purpose's list; the smoke script's dry run passes for `quality`.
+
+### [ ] H2. Decisions, questions, failures and Skip review
+
+- The two review tools checked against the commit (answer 2c), stored at the call, applied at the end (approval → `awaiting_merge`; request for changes → `review` comments and `todo`); twice, late, a moved head and **Stop run** (answers 2d and 2e); Quality's questions; every failure of a review run leaving the ticket `in_review`, not counted (answer 6c); the reviewer never an implementer (6g); builders refused the review tools; the owner's **Request changes** refused during a review run (6e); **Skip review** in the API.
+
+**Done when** integration tests cover approval, a request for changes, a question answered, a give-up, a moved head on the machine and on GitHub, "head not checked", a decision thrown away, **Skip review**, a builder refused, twice and late.
+
+### [ ] H3. The comment review on GitHub
+
+- The post (answer 3): template `agents/templates/review-comment.md`, masking, size, `commit_id`, at most once after the decision is applied, the note and the event when refused.
+
+**Done when** fake GitHub tests show one comment review per decision on the right commit, a mention and an issue reference that do not work, a planted secret masked, a review too long cut with its marker, a 403 for a missing permission and GitHub unreachable each keeping the decision with the note and the event, and a server restart during the post never posting twice.
+
+### [ ] H4. Screens and Help
+
+- "Ready for review" and "Review did not finish" in "Needs you" ("Work finished: check it" kept for 0.3.0 tickets only); **Start review** and **Skip review** on the ticket page and in "Needs you"; the ticket page's review section; the run page's review card; the **Awaiting merge** line and Help row (answer 5); Help: Quality, what a review costs, **Skip review**, workflow changes, the states table; CHANGELOG.
+
+**Done when** Playwright on both viewports shows **Start review**, **Skip review** and the review summary, with the screenshots `needs-you-ready-for-review`, `ticket-review-approved`, `ticket-review-changes`, `ticket-review-not-posted` and `run-review` in `apps/web/e2e-screenshots/`.
 
 ### [ ] I. Changes after a review
 
@@ -828,6 +881,8 @@ Playwright: **Start review**, **Skip review**, the review summary on the ticket 
 
 Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` run.
 
+- **From step H** (owner's answer 6d): `agents/templates/fix-review.md` is written here, with the words approved in step H: "Address the review of ticket BAK-12, then submit it again with `ticket_submit`. This is attempt N."; read `CLAUDE.md`; the branch already holds the submitted work (pull request #12): continue on it; "## Points to address (Quality, 14:52, commit abc1234)" or "(the owner's request, 15:10)" with the numbered points; "Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`."; then the ticket as in `implement.md`. Until this step, **Run now** after Quality's request starts an `implement` run whose comments hold the points.
+
 ### [ ] J. Merge detection, done and cancelled pull requests
 
 - Polling of open pull requests:
@@ -843,6 +898,10 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 - Help: merging, closed pull requests, conflicts; CHANGELOG.
 - **A conflict hidden by another service's status** (owner's note, step G1b): G1a reads the pull request's `mergeable` only when no workflow run and no status appeared on the submitted commit after **Wait for CI to start**. A pull request that conflicts with its base gets no `pull_request` run from GitHub (A18), but a status from another service (a deployment preview, a linter app) can still be reported on the commit; when that status is green, the result is **passed** on that status alone, and the untested work goes to `in_review`. This step decides with the owner whether the conflict is read at every result that decides (one more request per result), and what a conflict found then does.
 - **From step F4** (owner's answer 3): the ticket page shows "Pull request #12 · Open" with the state the server saw when it last opened or updated it. This step refreshes that state at each read of the pull request, and reviews the Help sentence of Tickets > "The pull request" ("It is the state the Orchestrator saw when it last opened or updated the pull request; the link always shows its current state on GitHub"), and the "a later version" sentences of Runs > "What on GitHub means" and Needs you's introduction, and Tickets > "Ticket states" ("use Mark as done manually if it is right", which a merge detected makes `done` by itself).
+
+- **From step H** (owner's notes):
+  - The pull request's head can move after the approval. "Pull requests to merge" and the ticket page say when the head is no longer the reviewed commit ("changed on GitHub since Quality's review of abc1234"), and what a merge of another commit than the reviewed one shows. This step decides the words with the owner.
+  - The interim sentences "this version does not notice the merge yet" (the **Awaiting merge** line on the ticket page and Help's states row, step H4) are rewritten here.
 
 **Done when** tests with the fake GitHub cover: a merge to `done` by merge commit, squash and rebase (dependents unblocked), a merge during `in_review` with a run active, a pull request closed then reopened, cancel closing it, conflicts, and the clean-up: the GitHub branch deleted after a merge, a branch GitHub already deleted accepted, a branch another open pull request uses kept, the local branch deleted after a squash merge, a local branch with an unpushed commit kept, nothing deleted after a cancellation. Playwright: "Needs you" lists a pull request to merge, which becomes `done` after the fake merge without reload.
 
