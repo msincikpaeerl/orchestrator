@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RunLimits, RunStart } from '@orchestrator/protocol';
+import { McpPermission, runMcpTools, type RunLimits, type RunStart } from '@orchestrator/protocol';
 
 type Payload = RunStart['payload'];
 
@@ -50,6 +50,7 @@ export function runStartPayload(
       ...limits,
     },
     resumeSessionId: null,
+    mcpTools: runMcpTools(McpPermission.options, rest.purpose ?? 'implement'),
     ...rest,
   };
 }

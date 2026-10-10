@@ -171,6 +171,7 @@ const serverExamples = {
         pushTimeoutSeconds: 60,
       },
       resumeSessionId: null,
+      mcpTools: ['ticket_get', 'ticket_submit'],
     },
   },
   'run.input': { type: 'run.input', id, payload: { runId, text: 'Use blue.\nNot red.' } },
@@ -395,6 +396,27 @@ describe('payload checks', () => {
       // Fewer characters than the text ceiling, but three bytes each in UTF-8.
       (p) => (p.initialPrompt = '€'.repeat(Math.floor(FIRST_MESSAGE_MAX_BYTES / 3) + 1)),
     ],
+    ['run.start without its tool list', serverExamples['run.start'], (p) => delete p.mcpTools],
+    [
+      'run.start with an unknown tool',
+      serverExamples['run.start'],
+      (p) => (p.mcpTools = ['ticket_get', 'shell_exec']),
+    ],
+    [
+      'run.start of a review without the commit under review',
+      serverExamples['run.start'],
+      (p) => (p.purpose = 'review'),
+    ],
+    [
+      'run.start of a review with a commit that is not a hash',
+      serverExamples['run.start'],
+      (p) => ((p.purpose = 'review'), (p.reviewCommit = 'main')),
+    ],
+    [
+      'run.start of an implement run with a commit under review',
+      serverExamples['run.start'],
+      (p) => (p.reviewCommit = 'a'.repeat(40)),
+    ],
     ['run.input with a number as text', serverExamples['run.input'], (p) => (p.text = 42)],
     [
       'run.resume without the session id',
@@ -486,7 +508,10 @@ describe('payload checks', () => {
       expect(DaemonMessage.safeParse(ended).success).toBe(true);
     }
     for (const purpose of ['review', 'fix_review']) {
-      const start = withPayload(serverExamples['run.start'], (p) => (p.purpose = purpose));
+      const start = withPayload(serverExamples['run.start'], (p) => {
+        p.purpose = purpose;
+        if (purpose === 'review') p.reviewCommit = 'a'.repeat(40);
+      });
       expect(ServerMessage.safeParse(start).success).toBe(true);
     }
     const completed = withPayload(serverExamples['run.stop'], (p) => (p.reason = 'completed'));

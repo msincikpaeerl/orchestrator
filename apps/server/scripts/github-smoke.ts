@@ -389,6 +389,7 @@ function runStart(
     runToken: 'not-used',
     initialPrompt: 'Not used: no session.',
     nudgeMessage: 'Not used: no session.',
+    mcpTools: [],
     limits: {
       maxRunDurationMinutes: 90,
       idleTimeoutMinutes: 10,
