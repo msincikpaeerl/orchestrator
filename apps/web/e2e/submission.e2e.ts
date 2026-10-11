@@ -302,13 +302,19 @@ test('an open pull request a later submission could not update says "Pull reques
   const next = await runNow(page);
   const nextToken = await startRun(page, next);
   await failNextGitHubRequest('GET', '/pulls', 502);
+  // A new commit: the one the owner asked changes on is refused (lot 3 step I).
+  const fixed = 'b'.repeat(40);
   expect(
     await callTool(
       page,
       nextToken,
       'ticket_submit',
       { ...REPORT, summary: 'Adds the phone number too.' },
-      facts,
+      {
+        ...facts,
+        branch: { ...facts.branch, head: fixed },
+        push: { status: 'pushed', head: fixed },
+      },
     ),
   ).toMatchObject({ result: 'pending_ci' });
   await ciPasses(page, next);
