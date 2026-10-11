@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A, B, C, D1, D2, D3, E1, E2, E3, F0, F1, F2, F3, F4, G1a, G1b, G2a, G2b, G2c, H1 and H2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H4)
+> Status: in progress (steps A to H5 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -954,24 +954,50 @@ Approved by the owner on 2026-10-10 (answer 1 of H4), from the H2 summary (about
 **E2E red on the second push (2026-10-11)**: `ci-wait.e2e.ts` failed once on desktop: the CI card still said "Not checked on GitHub yet" after the test's CI check. Not a rules problem: the UI read everything again when its live stream reopened, but not when it first opened ("the screens have just read their data"), so a change made after the page read its data and before the stream opened reached the screen only at the next change. The test runs its check right after loading the page, and lost that race. Fixed in the UI, tests first: every opening of the stream reads the screens again, the first one too (`apps/web/src/live.test.ts`, with the stream logic moved to `connectStream` so it runs without a browser). Spec 02 section 1 says so.
 
 
-### [ ] I. Changes after a review
+### Step I: Changes after a review, split in two (rule 15)
+
+Split approved by the owner on 2026-10-11 (I1 server, I2 screens), with the answers below. Scope of the whole step (as planned):
 
 - `fix_review` runs: **Run now** picks the purpose, first message with the latest points, same branch and pull request, CI, then `in_review`.
 - **Most review rounds per ticket**.
 - The owner's **Request changes** on `in_review` (no review run active), on `awaiting_merge` and on 0.3.0 tickets without a pull request (with **Mark as done manually**), each leading to `fix_review`.
 - Attempts: Quality's request never counts; a failing `fix_review` run counts.
-
-**Done when** tests cover:
-
-- a full round (changes requested, fixed, reviewed again, approved);
-- the rounds limit stopping the ticket;
-- **Request changes** offered and refused in each state (refused while a review run is active);
-- a 0.3.0 `in_review` ticket handled;
-- a failing `fix_review` counted.
-
-Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` run.
-
 - **From step H** (owner's answer 6d): `agents/templates/fix-review.md` is written here, with the words approved in step H: "Address the review of ticket BAK-12, then submit it again with `ticket_submit`. This is attempt N."; read `CLAUDE.md`; the branch already holds the submitted work (pull request #12): continue on it; "## Points to address (Quality, 14:52, commit abc1234)" or "(the owner's request, 15:10)" with the numbered points; "Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`."; then the ticket as in `implement.md`. Until this step, **Run now** after Quality's request starts an `implement` run whose comments hold the points.
+
+**Done when** (whole step) tests cover a full round (changes requested, fixed, reviewed again, approved); the rounds limit stopping the ticket; **Request changes** offered and refused in each state (refused while a review run is active); a 0.3.0 `in_review` ticket handled; a failing `fix_review` counted. Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` run.
+
+**The owner's answers (2026-10-11, start of the step)**, written into specs 01, 02, 03, 04 and 07:
+
+1. **A `fix_review` run that hands in nothing new** (A): the submission check `commits_ahead` refuses, with reason `same_commit`, the commit of a request still standing: the commit Quality reviewed, or for the owner's request the ticket's latest accepted commit (for a 0.3.0 ticket, its run's reported head). A request stands from when it is applied until the next accepted submission. Words: "Commit abc1234 is the one Quality reviewed and asked changes on: commit your changes for its points on the branch {{branch}}, then submit again. If a point should not be done, say why with `ticket_comment`; if none should, ask the owner with `ticket_ask`."; "Commit abc1234 is the one the owner asked changes on: …" with the same ending; on the owner's screens "Same commit as the one Quality asked changes on (abc1234)" or "… the one you asked changes on (abc1234)".
+2. **Review rounds** (A): `review_rounds` counts Quality's applied requests only; the owner's never, a decision thrown away never; it starts again at **Try again** and at **Reopen**, and **Try again** resets `review_rounds` as well as `attempt_count` (01 and 04 fixed). With the default of 2, requests 1 and 2 work as before; request 3 is applied in full (comments, GitHub post, `todo`), then stops the ticket. **The line with step K** (A): the stop is built once, in step I, whole: the mark (with its cause, `review_rounds`), **Run now**'s refusal ("BAK-12 is stopped after 3 requests for changes by Quality (Most review rounds per ticket: 2): use Try again, Cancel or Mark as done manually."), the `system` comment ("Quality requested changes again (round 3), more than Most review rounds per ticket allows (2): the ticket is stopped. Use Try again to let it continue, or Cancel it, or Mark it as done manually."), the "Needs you" item "Stopped after too many review rounds" with **Try again**, **Cancel** and **Mark as done manually**. Step K only adds the `failed_attempts` cause.
+3. **The points a `fix_review` run receives** (A): every request made after the latest accepted submission (in practice one: a new request needs a new submission first; a failed `fix_review` leaves it standing, so the next run gets the same points again with "attempt N" and the earlier commits). Quality's points numbered with `file:line`, the owner's comment whole; earlier rounds stay in "Comments". A point the agent cannot or will not do is explained with `ticket_comment`, and those notes reach the next review.
+4. **The next review's first message** (A, with the owner's addition): a section before "Earlier reviews", which keeps only older rounds:
+
+   ```
+   ## The previous review
+   Quality requested changes on commit abc1234 at 14:52 (round 1 of at most 2). The work you review now is the agent's answer: check that each point was addressed, or that the agent's reason for leaving it holds. `git diff abc1234 HEAD` shows what changed since that review.
+   1. `src/contact.ts:42`: …
+   What the agent said about these points:
+   ### Agent Web Developer, note, 15:40 … | (The agent left no comment about these points.)
+   ```
+
+   The owner's variant: "The owner requested changes at 15:10, on commit abc1234 (Quality had approved it | the review was skipped): <comment>"; a 0.3.0 ticket without a commit gets no `git diff` line. **Owner's addition**: after checking the earlier points, Quality reviews the rest of the change as usual, since the answer to a point can break something else; the review is of the whole work at that commit, not only of what changed since.
+5. **Where a `fix_review` run works** (A, the revoked case included): as an `implement` run (commits not on GitHub pin the machine holding them, else any machine with the branch from GitHub; the parts "not pushed", "diverged", "after CI failed" and "conflict" reuse the implement sentences). A 0.3.0 ticket keeps the lot 2 rule; its first accepted submission pushes, opens the pull request, then CI, then `in_review`; its start part: "The branch already holds the submitted work, committed on this machine and not on GitHub yet: continue on it; `ticket_submit` pushes it and the Orchestrator opens its pull request." When that machine was revoked: still `fix_review`, with the lost-work comment and a part saying the branch starts from <base> and to implement the ticket again with the points in mind.
+6. **The owner's Request changes on Awaiting merge** (A): nothing is posted on GitHub (Quality's comment review stays; the next accepted submission adds commits and updates the description). On the screens the approval (or the skip) stays the latest review with "You requested changes after this approval, at 15:10." while the fix is pending, then H4's "on an earlier submission" sentence.
+7. **Words and specs**: as proposed. Request changes dialog on Awaiting merge: "Request changes on BAK-12? Quality approved commit abc1234 (| you skipped the review). The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open."; ticket page in `todo` after a request: "Run now starts a run that addresses Quality's points (round 1 of at most 2)." or "… your request."; the new setting in `docs/user/settings.md` with "(from version 0.4.0)". Specs fixed: 04 section 2 (the owner's `in_review` → `todo` row, the `awaiting_merge` row), 3.1 (the same-commit check), 5 (counting, Try again), 01 section 3.4, 03 section 3.1, 07 section 3. **Owner's addition (I2, Help)**: what the owner does when they disagree with Quality's request: merge the pull request on GitHub, then **Mark as done manually**; both checked possible from `todo` with a request standing, and tested.
+
+### [ ] I1. Fix runs, rounds and the stop: server
+
+- First commit: the two H5 leftovers (the snapshot's empty "How to decide" heading; "Nothing on GitHub tested this work" said once).
+- `agents/templates/fix-review.md` (answers 3 and 5); **Run now** choosing `fix_review` (07 section 3); the same-commit refusal (answer 1); `maxReviewRounds`, `review_rounds` and the stop mark with **Run now**'s refusal, the comment, the "Needs you" item and **Try again** in the API (answer 2); **Request changes** from `awaiting_merge` and on 0.3.0 tickets (answer 6); the next review's section (answer 4); attempts.
+
+**Done when** integration tests cover a full round, the limit stopping the ticket then **Try again**, **Request changes** in each state, a 0.3.0 ticket, a failing `fix_review` counted, the same commit refused for Quality's and the owner's request, and merging plus **Mark as done manually** from `todo` with a request standing; the snapshot shows `fix-review.md` and the next review's section for the owner to read.
+
+### [ ] I2. Screens and Help
+
+- **Request changes** on **Awaiting merge** with its dialog; the review section after the owner's request; the `todo` line; the stop mark on the board and ticket page and its "Needs you" item with **Try again**; the same-commit words; Help (Tickets: Request changes, Review by Quality with "When you disagree with Quality", the states table; Needs you; Settings) and CHANGELOG.
+
+**Done when** Playwright on both viewports shows **Request changes** from `awaiting_merge` leading to a `fix_review` run and **Try again** on a ticket stopped after too many review rounds, with screenshots, and nothing scrolls sideways on the phone.
 
 ### [ ] J. Merge detection, done and cancelled pull requests
 
@@ -997,7 +1023,7 @@ Playwright: **Request changes** from `awaiting_merge` leading to a `fix_review` 
 
 ### [ ] K. Failures and retries
 
-- **Failed attempts before asking you** and **Most review rounds per ticket** stop a ticket: marked on the board and ticket page, **Run now** refuses, "Needs you" offers **Try again**, **Cancel** and **Mark as done manually**.
+- **Failed attempts before asking you** stops a ticket, as a second cause (`failed_attempts`) of the stop step I built for **Most review rounds per ticket** (owner's answer 2, step I): the same mark on the board and ticket page, **Run now**'s refusal naming the setting and its value, the `system` comment, the "Needs you" item ("Tickets stopped after repeated failures") with **Try again** (resets `attempt_count` and `review_rounds`), **Cancel** and **Mark as done manually**. Nothing of the stop is built again.
 - The counted and not counted failures of lot 3 (`ci_failed`, `ci_timeout`, `push_failed`, review failures), each with its `system` comment.
 - 04 section 5 rewritten from the code; lot 4's rule on blocking items already in 10.
 - Help: "When a ticket keeps failing"; CHANGELOG.
