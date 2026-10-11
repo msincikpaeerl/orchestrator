@@ -2,6 +2,7 @@ import { schema } from '@orchestrator/db';
 import {
   ApiError,
   NeedsYouResponse,
+  TicketListResponse,
   type DodReport,
   type NeedsYouItem,
   type RunStart,
@@ -306,6 +307,14 @@ describe('the rounds limit (answer 2)', () => {
       count: 2,
       limit: 1,
       runId: second.runId,
+    });
+
+    // The board's list carries the stop for its "Stopped" badge (owner's answer 2, step I2).
+    const board = await h.call('GET', '/api/projects/WEB/tickets');
+    expect(TicketListResponse.parse(board.json()).tickets[0]?.stop).toMatchObject({
+      cause: 'review_rounds',
+      count: 2,
+      limit: 1,
     });
 
     const refused = await h.call('POST', '/api/projects/WEB/tickets/1/run');

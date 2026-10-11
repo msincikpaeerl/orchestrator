@@ -387,7 +387,6 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       ci: await ticketCi(executor, ticket),
       review: (await ticketReview(executor, ticket)).review,
       reviewRounds: ticket.reviewRounds,
-      stop: ticketStop(ticket),
       changeRequest: await ticketChangeRequest(executor, ticket),
     };
   }

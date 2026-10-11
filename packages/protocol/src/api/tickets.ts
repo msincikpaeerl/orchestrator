@@ -137,6 +137,11 @@ export const TicketSummary = z.object({
   status: TicketStatus,
   /** Derived: at least one ticket it depends on is not `done` (01, section 3.4). */
   blocked: z.boolean(),
+  /**
+   * The retry policy's stop, for the board's and the ticket page's "Stopped" badge; null when the
+   * ticket is not stopped (04, section 5; lot 3 steps I and I2).
+   */
+  stop: TicketStop.nullable(),
   /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
   assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
@@ -324,8 +329,6 @@ export const TicketDetail = TicketSummary.extend({
   review: TicketReview,
   /** Quality's requests for changes applied, for **Most review rounds per ticket** (step I). */
   reviewRounds: z.int().min(0),
-  /** The retry policy's stop; null when the ticket is not stopped (04, section 5; step I). */
-  stop: TicketStop.nullable(),
   /** The latest request for changes, Quality's or the owner's; null when none (step I). */
   changeRequest: TicketChangeRequest.nullable(),
 });
