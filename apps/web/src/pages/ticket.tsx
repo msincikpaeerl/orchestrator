@@ -30,7 +30,7 @@ import {
 import { formatDateTime } from '../github/text';
 import { refusalText } from '../refusals';
 import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
-import { BlockedBadge } from '../tickets/board';
+import { BlockedBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
@@ -60,8 +60,10 @@ import {
   RequestChangesAction,
   RunNowAction,
   RunNowOffer,
+  TryAgainAction,
   ticketApi,
 } from '../tickets/actions';
+import { requestChangesText, stopText, todoRequestText } from '../tickets/change-text';
 import { TicketReviewSection } from '../tickets/review';
 import { WithProject } from './project';
 
@@ -104,8 +106,16 @@ function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }
   if (!editable && !runnable && !allowed('cancel') && !allowed('mark_done') && !allowed('reopen')) {
     return offer || null;
   }
+  // A stopped ticket shows the stop instead, whose section has Cancel and Mark as done (I2).
+  const request =
+    ticket.stop === null ? todoRequestText(ticket.changeRequest, ticket.reviewRounds) : null;
   return (
     <div className="flex flex-wrap items-start gap-2">
+      {runnable && request && (
+        <p aria-label="Next run" className="w-full break-words text-slate-900">
+          {request}
+        </p>
+      )}
       {runnable && <RunNowAction ticket={ticket} />}
       {proposedByAgent && <AcceptAction ticket={ticket} />}
       {proposedByAgent && <RejectAction ticket={ticket} />}
@@ -121,15 +131,61 @@ function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }
       {allowed('request_changes') && (
         <RequestChangesAction
           ticket={ticket}
+          text={requestChangesText(ticket.status, ticket.review.latest)}
           onRequested={() => {
             setOfferRunNow(true);
           }}
         />
       )}
-      {allowed('mark_done') && <MarkDoneAction ticket={ticket} />}
-      {allowed('cancel') && !proposedByAgent && <CancelAction ticket={ticket} />}
+      {allowed('mark_done') && ticket.stop === null && <MarkDoneAction ticket={ticket} />}
+      {allowed('cancel') && !proposedByAgent && ticket.stop === null && (
+        <CancelAction ticket={ticket} />
+      )}
       {offer}
     </div>
+  );
+}
+
+/**
+ * A ticket stopped by the retry policy (02, section 6.4; owner's answers 2 and 3, lot 3 step I2):
+ * why, since when, and **Try again**, **Cancel** and **Mark as done manually**. Once **Try again**
+ * succeeded the stop is gone, and this section stays only for the confirmation offering Run now.
+ */
+function StopSection({ ticket, canChange }: { ticket: TicketDetail; canChange: boolean }) {
+  const [offerRunNow, setOfferRunNow] = useState(false);
+  const offer = offerRunNow && (
+    <RunNowOffer
+      ticket={ticket}
+      after="try_again"
+      onClose={() => {
+        setOfferRunNow(false);
+      }}
+    />
+  );
+  if (ticket.stop === null) return offer || null;
+  const text = stopText(ticket.stop);
+  return (
+    <Card className="space-y-2 border-amber-300 bg-amber-50">
+      <section aria-label="Stopped" className="space-y-2">
+        <SectionTitle>{text.title}</SectionTitle>
+        <p className="break-words text-slate-800">{text.detail}</p>
+        <p className="break-words text-slate-800">{text.tryAgain}</p>
+        <p className="text-sm text-slate-600">{text.since}</p>
+        {canChange && (
+          <div className="flex flex-wrap items-start gap-2">
+            <TryAgainAction
+              ticket={ticket}
+              onTried={() => {
+                setOfferRunNow(true);
+              }}
+            />
+            <CancelAction ticket={ticket} />
+            <MarkDoneAction ticket={ticket} />
+          </div>
+        )}
+      </section>
+      {offer}
+    </Card>
   );
 }
 
@@ -714,6 +770,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
               {statusLabel[data.status]}
             </span>
             {showsBlocked(data) && <BlockedBadge />}
+            {data.stop && <StoppedBadge />}
           </div>
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
             <dt className="text-slate-600">Type</dt>
@@ -730,6 +787,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
           </dl>
           <Actions project={project} ticket={data} />
         </Card>
+        <StopSection ticket={data} canChange={canChange(project)} />
         <AnswerBox ticket={data} />
         <ActiveRun ticket={data} />
         <TicketReviewSection ticket={data} canChange={canChange(project)} />

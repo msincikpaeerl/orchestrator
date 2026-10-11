@@ -96,13 +96,23 @@ What the agent said about these points:
 
 {{notes}}
 <!-- part: previous-quality -->
-Quality requested changes on commit {{commit}} at {{at}} (round {{round}} of at most {{limit}}). {{answer}}
+Quality requested changes on commit {{commit}} at {{at}}{{round}}. {{answer}}
 
 {{points}}
 <!-- part: previous-owner -->
 The owner requested changes at {{at}}{{on}}: {{comment}}
 
 {{answer}}
+<!-- part: previous-round -->
+ (round {{round}} of at most {{limit}})
+<!-- part: previous-points-left-out -->
+({{count}} more points are not shown here because this message would be too long: read them with `ticket_comments`, where each point is a review comment.)
+<!-- part: previous-owner-cut -->
+(The rest of the owner's request is not shown here because this message would be too long: read it with `ticket_comments`.)
+<!-- part: previous-notes-left-out -->
+({{count}} more comments of the agent about these points are not shown here because this message would be too long: read them with `ticket_comments`.)
+<!-- part: earlier-reviews-left-out -->
+({{count}} earlier review comments are not shown here because this message would be too long: read them with `ticket_comments`.)
 <!-- part: previous-on -->
 , on commit {{commit}}
 <!-- part: previous-on-approved -->

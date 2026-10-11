@@ -11,7 +11,7 @@ Open **Projects**, then a project: its tickets are on the project page, under **
 - Tickets are grouped by state: **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**. See [Ticket states](#ticket-states).
 - **Done** and **Cancelled** are closed at the bottom. Click one to open it.
 - **Proposed** shows the tickets agents proposed, while there is at least one (see [Tickets proposed by agents](#tickets-proposed-by-agents)).
-- Each card shows the ticket's number, title, type and assignee, **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)), **created by agent** for a ticket an agent proposed, and the run in progress with the agent's latest progress line (see [Watch a run](runs.md#watch-a-run)).
+- Each card shows the ticket's number, title, type and assignee, **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)), **Stopped** when it was stopped after too many review rounds (see [Too many review rounds](#too-many-review-rounds)), **created by agent** for a ticket an agent proposed, and the run in progress with the agent's latest progress line (see [Watch a run](runs.md#watch-a-run)).
 - The board updates on its own while you look at it.
 - **Type** shows only tickets of one type. **Assignee** shows only the tickets of one agent, or the **Unassigned** ones. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
 
@@ -111,13 +111,13 @@ The ticket moves to **Done**, and tickets waiting for it are no longer blocked b
 
 ## Request changes
 
-Use **Request changes** on a ticket **In review** when the agent's work is not right yet. It is not offered while Quality is reviewing the ticket: wait for the review to end, or stop its run first.
+Use **Request changes** when the agent's work is not right yet: on a ticket **In review** (not while Quality is reviewing it: wait for the review to end, or stop its run first), or on a ticket **Awaiting merge** that Quality approved or whose review you skipped (see [Request changes after an approval](#request-changes-after-an-approval)).
 
 1. Open the ticket, or find it in [Needs you](needs-you.md#agents-work), and click **Request changes**.
 2. Write **what should change**. This comment is required; it is added to the timeline and the next agent reads it.
 3. Click **Request changes**.
 
-The ticket goes back to **To do**. Its branch and commits are kept, and this does not count as a failed attempt. The next dialog offers **Run now** to start the next run at once; click **Later** to start it yourself later. See [Check finished work](runs.md#check-finished-work).
+The ticket goes back to **To do**. Its branch and commits are kept, and this does not count as a failed attempt. The next dialog offers **Run now** to start the next run at once; click **Later** to start it yourself later. While your request waits, the ticket page says "Run now starts a run that addresses your request.". The next run is a **Fix after review** run: the agent reads your comment first and continues on the same branch and pull request (see [The round after a request](#the-round-after-a-request)). Your **Request changes** never counts as a review round. See also [Check finished work](runs.md#check-finished-work).
 
 ## Reopen a cancelled ticket
 
@@ -273,11 +273,51 @@ A review by Quality uses one Claude Code session, from the usage of your Claude 
 ### The result
 
 - **Approved**: the ticket moves to **Awaiting merge**. Merge the pull request on GitHub, then use [Mark as done manually](#mark-as-done-manually): this version does not notice the merge yet.
-- **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. **Run now** starts the next run of its assignee, which reads the points. Quality's request never counts as a failed attempt.
+- **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. **Run now** starts the next run of its assignee, which addresses the points (see [The round after a request](#the-round-after-a-request)). Quality's request never counts as a failed attempt, but it counts as a review round (see [Too many review rounds](#too-many-review-rounds)).
 
 The ticket page's **Review** shows the latest review: "Approved by Quality · commit abc1234 · <time>" with Quality's summary, or "Changes requested by Quality · commit abc1234 · 3 points" with each point and the file it is about, "Review skipped by you on <date>", or "Review in progress on <machine>". When that review is about an earlier submission (the agent changed the work since), it says so, with the commit now in review, which nobody has reviewed yet. Earlier reviews stay in the timeline. The review's run page shows the commit reviewed and the decision.
 
 Quality's text is shown as plain text: it is an agent's writing, not the Orchestrator's.
+
+### The round after a request
+
+After a request for changes, Quality's or yours, the ticket page says what **Run now** will do: "Run now starts a run that addresses Quality's points (round 1 of at most 2)." or "Run now starts a run that addresses your request.". **Run now** then starts a **Fix after review** run (its run page says so):
+
+1. The agent receives the points first (Quality's, numbered with the file they are about, or your comment whole), and continues the work on the same branch and pull request.
+2. It addresses every point. When one cannot or should not be done, it says why in a comment on the ticket, or asks you a question.
+3. It hands in a new commit. The same commit as the one the request was about is refused: the run page's **Latest refused submission** says "Same commit as the one Quality asked changes on (abc1234)" or "… the one you asked changes on (abc1234)", and the agent is told to commit its changes first.
+4. As after the first run: the pull request on GitHub gets the new commits, CI runs, and the ticket comes back **In review**, ready for review.
+
+The ticket page's **Review** then shows the earlier review as "…, on an earlier submission.", with the commit now in review, which nobody has reviewed yet. When you **Start review** again, Quality is told of the earlier points and of what the agent said about them: it checks that each point was addressed, or that the agent's reason for leaving it holds, then reviews the rest of the work as usual.
+
+A **Fix after review** run that fails (it gives up, runs out of time, its session stops) counts as a failed attempt, like any run; the next **Run now** gets the same points again.
+
+### Too many review rounds
+
+Each request for changes by Quality is a review round. **Most review rounds per ticket** (2 by default, in [Settings](settings.md#settings-reference), also per project) says how many Quality may make on one ticket. Your own **Request changes** never counts.
+
+When Quality asks for changes once more than that, its request is applied in full (its points on the ticket and on GitHub, the ticket back in **To do**), then the ticket stops: it shows **Stopped** on the board and on its page, and [Needs you](needs-you.md#agents-work) lists it as **Stopped after too many review rounds**, for example "Quality requested changes 3 times, more than Most review rounds per ticket allows (2).". **Run now** is refused while it is stopped. Read the points and the earlier rounds in the timeline, then choose, on the ticket page or in Needs you:
+
+- **Try again**: the ticket can go on. It starts no session and needs no confirmation: the review rounds and the failed attempts count from 0 again, and a dialog offers **Run now** at once (or **Later**). The next run addresses Quality's latest points.
+- **Cancel the ticket**: the work is abandoned (see [Cancel a ticket](#cancel-a-ticket)).
+- **Mark as done manually**: the work is good enough as it is (see [When you disagree with Quality](#when-you-disagree-with-quality)).
+
+**Reopen** of a cancelled ticket also starts the review rounds again from 0.
+
+### Request changes after an approval
+
+On a ticket **Awaiting merge** you can still **Request changes**, for example when you read the pull request and something must change before you merge it. The dialog says what it comes after: "Quality approved commit abc1234." or "You skipped the review.", then "The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open.".
+
+Nothing is posted on GitHub for your request, and the pull request stays open: the next run adds its commits to it. Until the fix is in review, the ticket page's **Review** keeps the approval (or the skip) with "You requested changes after this approval, at <time>." (or "… after skipping the review, at <time>."); once the fix is in review, it shows the approval as one of an earlier submission, and the new work waits for its review.
+
+### When you disagree with Quality
+
+Quality's request for changes is advice, and you decide. When you think the work is right as it is, you do not need another run:
+
+1. Open the pull request on GitHub (**Pull request** on the ticket page) and merge it there.
+2. On the ticket page, click [Mark as done manually](#mark-as-done-manually) and write why, for example "Merged on GitHub: point 2 is not needed.".
+
+This works while the ticket is in **To do** with Quality's request waiting, and also when the ticket is stopped after too many review rounds. Mark as done manually is never refused because a request for changes is waiting.
 
 ### The review on GitHub
 
@@ -300,11 +340,11 @@ A review run can end without a decision applied: Quality gave up, its time ran o
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
 | **In review** | The agent finished its work and the checks accepted it; its pull request is on GitHub, and CI passed or found nothing to run (see [Submission and the pull request](#submission-and-the-pull-request)). **Start review** asks Quality to review it, which uses one Claude Code session from your Claude plan; **Skip review** moves it to **Awaiting merge** without a review and uses none. A review that does not finish never counts as a failed attempt (see [Review by Quality](#review-by-quality)). |
-| **Awaiting merge** | The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. This version does not notice the merge yet: after merging, use [Mark as done manually](#mark-as-done-manually). |
+| **Awaiting merge** | The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. This version does not notice the merge yet: after merging, use [Mark as done manually](#mark-as-done-manually). If something must change first, use [Request changes](#request-changes-after-an-approval): the ticket goes back to **To do**. |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 
-Agents move tickets through **In progress**, **Waiting for you** and **In review**; Quality's approval, or your **Skip review**, moves them to **Awaiting merge**, and Quality's request for changes back to **To do**. A ticket left **In review** by version 0.3.0, without a pull request, is checked by you as before: [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not.
+Agents move tickets through **In progress**, **Waiting for you** and **In review**; Quality's approval, or your **Skip review**, moves them to **Awaiting merge**, and Quality's request for changes, or yours, back to **To do**. A ticket in **To do** can also be **Stopped** after too many review rounds: it waits for your **Try again**, **Cancel** or **Mark as done manually** (see [Too many review rounds](#too-many-review-rounds)). A ticket left **In review** by version 0.3.0, without a pull request, is checked by you as before: [Mark as done manually](#mark-as-done-manually) if it is right, or [Request changes](#request-changes) if it is not.
 
 ## If an action is refused
 

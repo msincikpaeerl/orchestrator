@@ -246,7 +246,8 @@ async function previousReview(
       by: 'quality',
       at,
       commit: request.commit,
-      round: request.round,
+      // A request made before Try again or Reopen, which count from 0 again: no round (I2).
+      round: request.round > ticket.reviewRounds ? null : request.round,
       limit: maxReviewRounds,
       points: maskStrings(decision?.points ?? []),
       notes,

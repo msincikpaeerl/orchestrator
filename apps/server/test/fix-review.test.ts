@@ -2,6 +2,7 @@ import { schema } from '@orchestrator/db';
 import {
   ApiError,
   NeedsYouResponse,
+  TicketListResponse,
   type DodReport,
   type NeedsYouItem,
   type RunStart,
@@ -183,6 +184,28 @@ describe('a full round', () => {
   });
 });
 
+describe("the next review's first message, cut and never refused (owner's answer 1, I2)", () => {
+  it('starts the review when the previous points alone are longer than the message allows', async () => {
+    const { daemon } = await inReview();
+    const review = await h.reviewing(daemon);
+    const long = Array.from({ length: 8 }, (_, index) => ({
+      body: `Point ${String(index)} ${'p'.repeat(19_000)}`,
+    }));
+    await h.ok(daemon, review.runToken, 'review_request_changes', { points: long });
+    await h.report(daemon, state(review.runId, { state: 'ended', reason: 'submitted' }));
+    await submitted(daemon);
+
+    const next = await h.reviewing(daemon);
+    const prompt = next.start.payload.initialPrompt;
+    expect(Buffer.byteLength(prompt)).toBeLessThanOrEqual(100_000);
+    expect(prompt).toContain('Point 0 ');
+    expect(prompt).not.toContain('Point 7 ');
+    expect(prompt).toMatch(
+      /\(\d+ more points are not shown here because this message would be too long/,
+    );
+  });
+});
+
 describe('a fix_review run handing in nothing new (answer 1)', () => {
   it('refuses the commit Quality asked changes on, with the approved words', async () => {
     const { daemon, first } = await inReview();
@@ -286,6 +309,14 @@ describe('the rounds limit (answer 2)', () => {
       runId: second.runId,
     });
 
+    // The board's list carries the stop for its "Stopped" badge (owner's answer 2, step I2).
+    const board = await h.call('GET', '/api/projects/WEB/tickets');
+    expect(TicketListResponse.parse(board.json()).tickets[0]?.stop).toMatchObject({
+      cause: 'review_rounds',
+      count: 2,
+      limit: 1,
+    });
+
     const refused = await h.call('POST', '/api/projects/WEB/tickets/1/run');
     expect(refused.statusCode).toBe(409);
     expect(ApiError.parse(refused.json()).error).toMatchObject({
@@ -313,6 +344,20 @@ describe('the rounds limit (answer 2)', () => {
     expect((await h.events('ticket.tried_again')).length).toBe(1);
     const fix = await h.running(daemon);
     expect(startOf(daemon, fix.runId).payload.purpose).toBe('fix_review');
+
+    // The next review leaves the round out of a request made before Try again (answer 4, I2).
+    await h.ok(daemon, fix.runToken, 'ticket_submit', REPORT);
+    await h.ciPasses(daemon, fix.runId);
+    await eventually('the fix in review', async () => {
+      expect((await h.ticket()).status).toBe('in_review');
+    });
+    const review = await h.reviewing(daemon);
+    const previous =
+      review.start.payload.initialPrompt
+        .split('## The previous review')[1]
+        ?.split('## Earlier reviews')[0] ?? '';
+    expect(previous).toMatch(/Quality requested changes on commit [0-9a-f]{40} at [^.(]+ UTC\. /);
+    expect(previous).not.toContain('(round');
   });
 
   it('refuses Try again on a ticket that is not stopped', async () => {
