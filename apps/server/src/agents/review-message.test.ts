@@ -277,6 +277,168 @@ describe('the byte budget of the review message', () => {
     expect(cut).toContain('Visitors need a way to write to the bakery.');
   });
 
+  // Owner's answer 1, lot 3 step I2: never refused for the previous review's length or the
+  // earlier reviews'; each step is taken only while the message is still too long.
+  describe('the previous review and the earlier reviews, cut and never refused (owner, step I2)', () => {
+    const big = (label: string, index: number, size = 2_000) =>
+      `${label} ${String(index)} ${'y'.repeat(size)}`;
+    const notes = (count: number, size = 2_000) =>
+      Array.from({ length: count }, (_, index) => ({
+        author: { kind: 'agent' as const, name: 'Web Developer' },
+        at: new Date(`2026-09-27T15:${String(index).padStart(2, '0')}:00Z`),
+        body: big('Note', index, size),
+      }));
+    const points = (count: number, size = 2_000) =>
+      Array.from({ length: count }, (_, index) => ({
+        body: big('Point', index, size),
+        file: 'src/ContactForm.tsx',
+        line: index + 1,
+      }));
+    const earlier = (count: number, size = 2_000) =>
+      Array.from({ length: count }, (_, index) => ({
+        author: { kind: 'agent' as const, name: 'Quality' },
+        at: new Date(`2026-09-20T10:${String(index).padStart(2, '0')}:00Z`),
+        body: big('Earlier', index, size),
+      }));
+    const quality = (fields: Partial<Extract<ReviewTicket['previous'], { by: 'quality' }>>) => ({
+      ...qualityRequest,
+      ...fields,
+    });
+    const comments = Array.from({ length: 10 }, (_, index) => ({
+      author: { kind: 'owner' as const },
+      kind: 'note' as const,
+      at: new Date(`2026-09-26T09:${String(index).padStart(2, '0')}:00Z`),
+      body: big('Comment', index),
+    }));
+    const summary = Array.from({ length: 200 }, (_, i) => `Line ${String(i)} of the summary.`);
+    const report = { ...sample.report, summary: summary.join('\n') };
+    const description = Array.from({ length: 200 }, (_, i) => `Description line ${String(i)}.`);
+    const within = (ticket: Partial<ReviewTicket>, budget: number) => {
+      const text = reviewFirstMessage(templates.review, { ...sample, ...ticket }, budget);
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(budget);
+      return text;
+    };
+    const fullSize = (ticket: Partial<ReviewTicket>) => Buffer.byteLength(message(ticket));
+    const POINTS_LEFT_OUT =
+      /\((\d+) more points are not shown here because this message would be too long: read them with `ticket_comments`, where each point is a review comment\.\)/;
+    const NOTES_LEFT_OUT =
+      /\((\d+) more comments of the agent about these points are not shown here because this message would be too long: read them with `ticket_comments`\.\)/;
+    const EARLIER_LEFT_OUT =
+      /\((\d+) earlier review comments are not shown here because this message would be too long: read them with `ticket_comments`\.\)/;
+    const REPORT_CUT = '[The report is cut here because it is too long for this message.';
+    const DESCRIPTION_CUT = '[The description is cut here because it is too long for this message.';
+
+    it('drops the comments first, then the earlier reviews oldest first, with their marker', () => {
+      const ticket = { comments, earlierReviews: earlier(10), previous: quality({}) };
+      const text = within(ticket, fullSize(ticket) - 25_000);
+      expect(text).not.toContain('Comment 9 ');
+      expect(text).toMatch(EARLIER_LEFT_OUT);
+      expect(text).not.toContain('Earlier 0 ');
+      expect(text).toContain('Earlier 9 ');
+      expect(text).toContain('Show the error message next to the field.');
+      expect(text).not.toContain(REPORT_CUT);
+    });
+
+    it("then the agent's notes oldest first, keeping the latest, with their marker", () => {
+      const ticket = {
+        comments,
+        earlierReviews: earlier(5),
+        previous: quality({ notes: notes(10) }),
+      };
+      const text = within(ticket, fullSize(ticket) - 40_000);
+      expect(text).not.toContain('Earlier 4 ');
+      expect(text).toMatch(EARLIER_LEFT_OUT);
+      const kept = text.split('What the agent said about these points:')[1] ?? '';
+      expect(kept).toMatch(NOTES_LEFT_OUT);
+      expect(kept.indexOf('more comments of the agent')).toBeLessThan(kept.indexOf('Note 9 '));
+      expect(kept).not.toContain('Note 0 ');
+      expect(kept).toContain('Note 9 ');
+      expect(text).not.toContain(REPORT_CUT);
+      expect(text).toContain('Show the error message next to the field.');
+    });
+
+    it('then cuts the report, then drops the points from the last down to the second', () => {
+      const ticket = { report, previous: quality({ points: points(30), notes: notes(2) }) };
+      const reportOnly = within(ticket, fullSize(ticket) - 6_000);
+      expect(reportOnly).toContain(REPORT_CUT);
+      expect(reportOnly).toContain('Line 0 of the summary.');
+      expect(reportOnly).toContain('Point 29 ');
+      expect(reportOnly).not.toMatch(POINTS_LEFT_OUT);
+      expect(reportOnly.match(NOTES_LEFT_OUT)?.[1]).toBe('2');
+
+      const fewer = within(ticket, fullSize(ticket) - 20_000);
+      expect(fewer).toContain(REPORT_CUT);
+      expect(fewer).toContain('Point 0 ');
+      expect(fewer).not.toContain('Point 29 ');
+      expect(fewer.match(POINTS_LEFT_OUT)?.[1]).toBe(
+        String(30 - (fewer.match(/Point \d+ /g) ?? []).length),
+      );
+      expect(fewer).toContain('Visitors need a way to write to the bakery.');
+    });
+
+    it('then cuts the description, and only then drops the first point', () => {
+      const one = { description: description.join('\n'), previous: quality({ points: points(3) }) };
+      const descriptionCut = within(one, fullSize(one) - 6_000);
+      expect(descriptionCut).toContain('Point 0 ');
+      expect(descriptionCut).not.toContain('Point 1 ');
+      expect(descriptionCut).toMatch(POINTS_LEFT_OUT);
+      expect(descriptionCut).toContain(DESCRIPTION_CUT);
+
+      // A first point larger than the whole budget: left out, the message still built.
+      const huge = { previous: quality({ points: points(2, 100_000) }) };
+      const text = within(huge, FIRST_MESSAGE_MAX_BYTES);
+      expect(text).not.toContain('Point 0 ');
+      expect(text.match(POINTS_LEFT_OUT)?.[1]).toBe('2');
+      expect(text).toContain('# WEB-12: Contact form');
+    });
+
+    it("cuts the owner's request at a line boundary, with its marker, at the points' place", () => {
+      const lines = Array.from({ length: 300 }, (_, i) => `Request line ${String(i)}.`);
+      const owner: ReviewTicket['previous'] = {
+        by: 'owner',
+        at: new Date('2026-09-27T15:10:00Z'),
+        commit: reviewed,
+        after: 'approved',
+        comment: lines.join('\n'),
+        notes: [],
+      };
+      const ticket = { report, previous: owner };
+      const text = within(ticket, fullSize(ticket) - 8_000);
+      expect(text).toContain(REPORT_CUT);
+      expect(text).toContain('Request line 0.');
+      expect(text).not.toContain('Request line 299.');
+      expect(text).toContain(
+        "(The rest of the owner's request is not shown here because this message would be too long: read it with `ticket_comments`.)",
+      );
+      expect(text).toContain('Visitors need a way to write to the bakery.');
+
+      const oneLine = { previous: { ...owner, comment: 'z'.repeat(150_000) } };
+      const cut = within(oneLine, FIRST_MESSAGE_MAX_BYTES);
+      expect(cut).toContain("(The rest of the owner's request is not shown here");
+    });
+
+    it('is never refused at the protocol budget, whatever the lengths', () => {
+      const all = {
+        comments,
+        earlierReviews: earlier(60),
+        report,
+        description: description.join('\n'),
+        previous: quality({ points: points(60), notes: notes(60) }),
+      };
+      expect(() => within(all, FIRST_MESSAGE_MAX_BYTES)).not.toThrow();
+    });
+  });
+
+  it('leaves the round out for a request made before Try again (owner, step I2)', () => {
+    const text = message({
+      previous: { ...qualityRequest, round: null },
+    });
+    expect(text).toContain(
+      `Quality requested changes on commit ${reviewed} at 2026-09-27 14:52 UTC. The work you review now`,
+    );
+    expect(text).not.toContain('round');
+  });
+
   it('uses the protocol constant by default and throws when even the cut ticket cannot fit', () => {
     expect(Buffer.byteLength(message())).toBeLessThan(FIRST_MESSAGE_MAX_BYTES);
     expect(() => reviewFirstMessage(templates.review, sample, 500)).toThrow(FirstMessageTooLarge);

@@ -28,7 +28,8 @@ export type PreviousReview = (
       by: 'quality';
       at: Date;
       commit: string;
-      round: number;
+      /** Its round; null for a request made before **Try again** or **Reopen** (step I2). */
+      round: number | null;
       limit: number;
       points: readonly FixPoint[];
     }
@@ -97,8 +98,24 @@ function ciSection(template: Template, ticket: ReviewTicket): string {
   return `${passed}\n\n${part(template, ticket.workflows === 'changed' ? 'workflows-changed' : 'workflows-maybe')}`;
 }
 
-/** "## The previous review" (owner's answer 4 and addition, lot 3 step I). */
-function previous(template: Template, ticket: ReviewTicket, request: PreviousReview): string {
+/**
+ * "## The previous review" (owner's answer 4 and addition, lot 3 step I), in pieces the byte
+ * budget cuts (owner's answer 1, step I2): Quality's points or the owner's request by lines, and
+ * the agent's notes.
+ */
+interface PreviousPieces {
+  /** Quality's points one by one, or the owner's request line by line. */
+  items: string[];
+  notes: string[];
+  /** The section with the first `shown` items and the newest `notesKept` notes. */
+  render: (shown: number, notesKept: number) => string;
+}
+
+function previous(
+  template: Template,
+  ticket: ReviewTicket,
+  request: PreviousReview,
+): PreviousPieces {
   const answer = [
     part(template, 'previous-answer'),
     ...(request.commit === null
@@ -107,52 +124,83 @@ function previous(template: Template, ticket: ReviewTicket, request: PreviousRev
     part(template, 'previous-rest', { head: ticket.commit }),
   ].join(' ');
   const at = timestamp(request.at);
-  let text: string;
-  if (request.by === 'quality') {
-    const points = request.points
-      .map((point, index) => {
-        const values = { index: String(index + 1), body: point.body.trim() };
-        if (point.file === null) return part(template, 'previous-point', values);
-        if (point.line === null) {
-          return part(template, 'previous-point-file', { ...values, file: point.file });
-        }
-        return part(template, 'previous-point-line', {
-          ...values,
-          file: point.file,
-          line: String(point.line),
-        });
-      })
-      .join('\n');
-    text = part(template, 'previous-quality', {
-      commit: request.commit,
-      at,
-      round: String(request.round),
-      limit: String(request.limit),
-      answer,
-      points,
-    });
-  } else {
+  const items =
+    request.by === 'quality'
+      ? request.points.map((point, index) => {
+          const values = { index: String(index + 1), body: point.body.trim() };
+          if (point.file === null) return part(template, 'previous-point', values);
+          if (point.line === null) {
+            return part(template, 'previous-point-file', { ...values, file: point.file });
+          }
+          return part(template, 'previous-point-line', {
+            ...values,
+            file: point.file,
+            line: String(point.line),
+          });
+        })
+      : request.comment.trim().split('\n');
+  const notes = request.notes.map((note) =>
+    part(template, 'previous-note', {
+      author: author(template, note.author),
+      at: timestamp(note.at),
+      body: note.body.trim(),
+    }),
+  );
+  const requestText = (shown: number) => {
+    if (request.by === 'quality') {
+      const points = [
+        ...items.slice(0, shown),
+        ...(shown < items.length
+          ? [part(template, 'previous-points-left-out', { count: String(items.length - shown) })]
+          : []),
+      ].join('\n');
+      return part(template, 'previous-quality', {
+        commit: request.commit,
+        at,
+        round:
+          request.round === null
+            ? ''
+            : part(template, 'previous-round', {
+                round: String(request.round),
+                limit: String(request.limit),
+              }),
+        answer,
+        points,
+      });
+    }
     const on =
       request.commit === null
         ? ''
         : part(template, request.after === null ? 'previous-on' : `previous-on-${request.after}`, {
             commit: request.commit,
           });
-    text = part(template, 'previous-owner', { at, on, comment: request.comment.trim(), answer });
-  }
-  const notes =
-    request.notes.length === 0
-      ? part(template, 'previous-no-notes')
-      : request.notes
-          .map((note) =>
-            part(template, 'previous-note', {
-              author: author(template, note.author),
-              at: timestamp(note.at),
-              body: note.body.trim(),
-            }),
-          )
-          .join('\n\n');
-  return part(template, 'previous-review', { request: text, notes });
+    const comment =
+      shown < items.length
+        ? [items.slice(0, shown).join('\n').trimEnd(), part(template, 'previous-owner-cut')]
+            .filter((text) => text !== '')
+            .join('\n\n')
+        : items.join('\n');
+    return part(template, 'previous-owner', { at, on, comment, answer });
+  };
+  const notesText = (kept: number) => {
+    if (notes.length === 0) return part(template, 'previous-no-notes');
+    const leftOut = notes.length - kept;
+    return [
+      ...(leftOut > 0
+        ? [part(template, 'previous-notes-left-out', { count: String(leftOut) })]
+        : []),
+      ...notes.slice(leftOut),
+    ].join('\n\n');
+  };
+  return {
+    items,
+    notes,
+    render: (shown, notesKept) =>
+      part(template, 'previous-review', {
+        request: requestText(shown),
+        notes: notesText(notesKept),
+      }),
+  };
 }
 
 function files(template: Template, listed: { paths: string[]; justification: string | null }) {
@@ -220,18 +268,13 @@ export function reviewFirstMessage(
             }),
           )
           .join('\n');
-  const earlierReviews =
-    ticket.earlierReviews.length === 0
-      ? part(template, 'no-earlier-reviews')
-      : ticket.earlierReviews
-          .map((review) =>
-            part(template, 'earlier-review', {
-              author: author(template, review.author),
-              at: timestamp(review.at),
-              body: review.body.trim(),
-            }),
-          )
-          .join('\n\n');
+  const renderedReviews = ticket.earlierReviews.map((review) =>
+    part(template, 'earlier-review', {
+      author: author(template, review.author),
+      at: timestamp(review.at),
+      body: review.body.trim(),
+    }),
+  );
   const renderedComments = ticket.comments.map((comment) =>
     part(template, 'comment', {
       author: author(template, comment.author),
@@ -241,22 +284,31 @@ export function reviewFirstMessage(
     }),
   );
   const ci = ciSection(template, ticket);
-  const previousReview =
-    ticket.previous === null ? '' : `${previous(template, ticket, ticket.previous)}\n\n`;
+  const previousPieces =
+    ticket.previous === null ? null : previous(template, ticket, ticket.previous);
   const testsRule = part(template, ticket.ci === 'no_ci' ? 'tests-no-ci' : 'tests-ci-passed');
 
-  const render = (kept: number, reportText: string, description: string) => {
-    const leftOut = renderedComments.length - kept;
-    const comments =
-      renderedComments.length === 0
-        ? part(template, 'no-comments')
-        : [
-            ...(leftOut > 0
-              ? [part(template, 'comments-left-out', { count: String(leftOut) })]
-              : []),
-            ...renderedComments.slice(leftOut),
-          ].join('\n\n');
-    return `${fill(template, template.main, {
+  /** The newest `kept` of `items`, after the marker saying how many older ones are left out. */
+  const newest = (items: string[], kept: number, marker: string, none: string) => {
+    if (items.length === 0) return part(template, none);
+    const leftOut = items.length - kept;
+    return [
+      ...(leftOut > 0 ? [part(template, marker, { count: String(leftOut) })] : []),
+      ...items.slice(leftOut),
+    ].join('\n\n');
+  };
+
+  interface Cut {
+    comments: number;
+    reviews: number;
+    notes: number;
+    report: string;
+    /** Quality's points shown, or the owner's request's lines. */
+    items: number;
+    description: string;
+  }
+  const render = (cut: Cut) =>
+    `${fill(template, template.main, {
       ticket: ticket.reference,
       project_name: ticket.projectName,
       commit: ticket.commit,
@@ -267,20 +319,25 @@ export function reviewFirstMessage(
       title: ticket.title,
       type: ticket.type,
       priority: ticket.priority,
-      description,
+      description: cut.description,
       acceptance_criteria: criteria,
       dependencies,
-      report: reportText,
-      earlier_reviews: earlierReviews,
-      previous_review: previousReview,
-      comments,
+      report: cut.report,
+      earlier_reviews: newest(
+        renderedReviews,
+        cut.reviews,
+        'earlier-reviews-left-out',
+        'no-earlier-reviews',
+      ),
+      previous_review:
+        previousPieces === null ? '' : `${previousPieces.render(cut.items, cut.notes)}\n\n`,
+      comments: newest(renderedComments, cut.comments, 'comments-left-out', 'no-comments'),
       tests_rule: testsRule,
     })}\n`;
-  };
   const fits = (text: string) => bytes(text) <= maxBytes;
-  /** The largest count from 0 to `most` for which `ok` holds, `ok` holding for every smaller one. */
-  const largest = (most: number, ok: (count: number) => boolean) => {
-    let low = 0;
+  /** The largest count from `least` to `most` for which `ok` holds, `ok` holding for smaller ones. */
+  const largest = (least: number, most: number, ok: (count: number) => boolean) => {
+    let low = least;
     let high = most;
     while (low < high) {
       const middle = Math.ceil((low + high) / 2);
@@ -294,33 +351,56 @@ export function reviewFirstMessage(
     [lines.slice(0, count).join('\n').trimEnd(), marker].filter((t) => t !== '').join('\n\n');
 
   const description = ticket.description.trim();
-  const fullDescription = description === '' ? part(template, 'empty-description') : description;
-  const fullReport = report(template, ticket);
-  const all = renderedComments.length;
-  if (fits(render(all, fullReport, fullDescription)))
-    return render(all, fullReport, fullDescription);
-
-  const kept = largest(all - 1, (count) => fits(render(count, fullReport, fullDescription)));
-  if (fits(render(kept, fullReport, fullDescription))) {
-    return render(kept, fullReport, fullDescription);
-  }
-
-  const reportLines = fullReport.split('\n');
-  const reportCut = part(template, 'report-cut');
-  const reportKept = largest(reportLines.length - 1, (count) =>
-    fits(render(0, cutLines(reportLines, count, reportCut), fullDescription)),
-  );
-  const shortReport = cutLines(reportLines, reportKept, reportCut);
-  if (fits(render(0, shortReport, fullDescription))) {
-    return render(0, shortReport, fullDescription);
-  }
-
   const descriptionLines = description.split('\n');
-  const descriptionCut = part(template, 'description-cut');
-  const descriptionKept = largest(descriptionLines.length - 1, (count) =>
-    fits(render(0, reportCut, cutLines(descriptionLines, count, descriptionCut))),
-  );
-  const result = render(0, reportCut, cutLines(descriptionLines, descriptionKept, descriptionCut));
-  if (!fits(result)) throw new FirstMessageTooLarge(ticket.reference);
-  return result;
+  const reportLines = report(template, ticket).split('\n');
+  const items = previousPieces?.items.length ?? 0;
+  const owner = ticket.previous?.by === 'owner';
+  let cut: Cut = {
+    comments: renderedComments.length,
+    reviews: renderedReviews.length,
+    notes: previousPieces?.notes.length ?? 0,
+    report: reportLines.join('\n'),
+    items,
+    description: description === '' ? part(template, 'empty-description') : description,
+  };
+  if (fits(render(cut))) return render(cut);
+
+  // Each step only while the message is still too long (03, section 3.2; owner's answer 1, lot 3
+  // step I2): the oldest comments, the oldest earlier reviews, the oldest notes, the report, the
+  // last points down to the second (the owner's request by lines), the description, the first point.
+  type Step = (fitting: (change: Partial<Cut>) => boolean) => Partial<Cut>;
+  const steps: Step[] = [
+    (ok) => ({ comments: largest(0, cut.comments, (count) => ok({ comments: count })) }),
+    (ok) => ({ reviews: largest(0, cut.reviews, (count) => ok({ reviews: count })) }),
+    (ok) => ({ notes: largest(0, cut.notes, (count) => ok({ notes: count })) }),
+    (ok) => {
+      const marker = part(template, 'report-cut');
+      const kept = largest(0, reportLines.length - 1, (count) =>
+        ok({ report: cutLines(reportLines, count, marker) }),
+      );
+      return { report: cutLines(reportLines, kept, marker) };
+    },
+    (ok) => {
+      const least = owner ? 0 : Math.min(1, items);
+      return {
+        items: largest(least, Math.max(least, items - (owner ? 1 : 0)), (count) =>
+          ok({ items: count }),
+        ),
+      };
+    },
+    (ok) => {
+      const marker = part(template, 'description-cut');
+      const kept = largest(0, descriptionLines.length - 1, (count) =>
+        ok({ description: cutLines(descriptionLines, count, marker) }),
+      );
+      return { description: cutLines(descriptionLines, kept, marker) };
+    },
+    () => ({ items: 0 }),
+  ];
+  for (const step of steps) {
+    const current = cut;
+    cut = { ...current, ...step((change) => fits(render({ ...current, ...change }))) };
+    if (fits(render(cut))) return render(cut);
+  }
+  throw new FirstMessageTooLarge(ticket.reference);
 }
