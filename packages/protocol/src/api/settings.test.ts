@@ -47,6 +47,7 @@ describe('SETTINGS', () => {
       'ciWaitTimeoutMinutes',
       'ciStartWaitMinutes',
       'maxCiFailuresPerRun',
+      'maxReviewRounds',
     ]);
   });
 

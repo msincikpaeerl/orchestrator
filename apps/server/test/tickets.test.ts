@@ -352,6 +352,8 @@ describe('owner actions on the status (04, section 2)', () => {
         'accept:proposed',
         'reject:proposed',
         'request_changes:in_review',
+        // On Awaiting merge too, from lot 3 step I (owner's answer 6).
+        'request_changes:awaiting_merge',
         'skip_review:in_review',
       ].sort(),
     );
