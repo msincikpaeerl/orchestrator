@@ -320,6 +320,15 @@ export const tickets = pgTable(
      */
     pullRequestOpenedAt: timestamp('pull_request_opened_at', { withTimezone: true }),
     /**
+     * The merge, as GitHub gave it when the server found the pull request merged (lot 3 step J1):
+     * GitHub's time, the pull request's head then (the merged head, never the merge commit), and
+     * the base it was merged into. The clean-up after a merge (step J2) reads them; null until a
+     * merge is found.
+     */
+    pullRequestMergedAt: timestamp('pull_request_merged_at', { withTimezone: true }),
+    pullRequestMergedHead: text('pull_request_merged_head'),
+    pullRequestMergedInto: text('pull_request_merged_into'),
+    /**
      * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
      * opened or updated with it, or when the ticket is done or cancelled.
      */

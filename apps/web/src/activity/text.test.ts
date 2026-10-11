@@ -262,6 +262,18 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   },
   'ticket.pull_request_reopened': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
   'ticket.pull_request_updated': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
+  'ticket.pull_request_merged': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    url: 'u',
+    mergedAt: '2026-10-11T16:02:00.000Z',
+    head: 'def5678def5678def5678def5678def5678def56',
+    into: 'main',
+    outcome: 'done',
+    commentId: null,
+  },
+  'ticket.pull_request_closed': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',

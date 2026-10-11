@@ -59,6 +59,11 @@ export const RunChangeCause = z.enum([
    * stopped with `review_branch_moved` (06, section 4.5; lot 3 step H2).
    */
   'review_decision',
+  /**
+   * The ticket's pull request was found merged into the default branch: its active run is
+   * stopped, `cancelled`, never counted (04, section 2; lot 3 step J1).
+   */
+  'pull_request_merged',
 ]);
 export type RunChangeCause = z.infer<typeof RunChangeCause>;
 
@@ -341,5 +346,10 @@ export const RunTicketAction = z.enum([
   'review_approved',
   /** `in_review` → `todo`: Quality's request for changes, applied at its run's end (lot 3 H2). */
   'review_changes_requested',
+  /**
+   * → `done`: the ticket's pull request was found merged into the default branch, from every
+   * state with an open pull request; an active run is stopped (04, section 2; lot 3 step J1).
+   */
+  'pull_request_merged',
 ]);
 export type RunTicketAction = z.infer<typeof RunTicketAction>;
