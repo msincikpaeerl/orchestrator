@@ -165,15 +165,28 @@ ADRs: none
 Keep the form short: no phone number.
 
 
-# First message (review), No CI found and workflow files changed: its CI and How to decide
+# First message (review) after a request for changes: the previous review
+
+## The previous review
+
+Quality requested changes on commit 1111111aaaaaaa1111111aaaaaaa1111111aaaaa at 2026-09-27 14:52 UTC (round 1 of at most 2). The work you review now is the agent's answer: check that each point was addressed, or that the agent's reason for leaving it holds. `git diff 1111111aaaaaaa1111111aaaaaaa1111111aaaaa HEAD` shows what changed since that review. Then review the rest of the change as usual, since the answer to a point can break something else: your review is of the whole work at commit abc1234def5678abc1234def5678abc1234def56, not only of what changed since.
+
+1. `src/ContactForm.tsx:42`: Show the error message next to the field.
+2. Describe the form in the user documentation.
+
+What the agent said about these points:
+
+### Agent Web Developer, 2026-09-27 15:40 UTC
+
+Point 2: docs/user/contact.md already describes the form.
+
+# First message (review), No CI found and workflow files changed: its CI
 
 ## CI
 
-No CI found for commit abc1234def5678abc1234def5678abc1234def56, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first. Nothing on GitHub tested this work.
+No CI found for commit abc1234def5678abc1234def5678abc1234def56, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first.
 
 Nothing on GitHub tested this work: run the project's tests and build yourself, with the commands `CLAUDE.md` gives, when the project has any, and say in your decision what you ran.
-
-## How to decide
 
 # Nudge (review)
 

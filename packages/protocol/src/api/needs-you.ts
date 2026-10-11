@@ -6,7 +6,7 @@ import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
 import { PullRequestFailure } from './pull-requests.js';
-import { ReviewDecision, ReviewEnd } from './reviews.js';
+import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
 import { Run } from './runs.js';
 import { Comment, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
@@ -174,6 +174,19 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     decision: ReviewDecision.nullable(),
     end: ReviewEnd,
     /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * A ticket stopped by the retry policy (02, section 4; 04, section 5; owner's answer 2, lot 3
+   * step I): **Try again**, **Cancel** or **Mark as done manually**. Shown until one of them, or
+   * **Reopen**, clears the stop.
+   */
+  z.object({
+    type: z.literal('ticket_stopped'),
+    ticket: TicketRef,
+    cause: StopCause,
+    count: z.int().positive(),
+    limit: z.int().positive(),
     since: z.iso.datetime(),
   }),
   /**

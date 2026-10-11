@@ -286,6 +286,20 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     reason: 'refused',
     message: 'Validation Failed',
   },
+  'ticket.stopped': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    cause: 'review_rounds',
+    count: 3,
+    limit: 2,
+    runId: '3f1e0e8c-3333-4000-8000-000000000000',
+  },
+  'ticket.tried_again': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    cause: 'review_rounds',
+    commentId: COMMENT_ID,
+  },
   'ticket.ci_checked_again': {
     project: 'WEB',
     ticket: 'WEB-12',

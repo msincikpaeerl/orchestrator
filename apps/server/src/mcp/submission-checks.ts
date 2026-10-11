@@ -59,6 +59,11 @@ export interface SubmissionFacts {
    * they are refused, since CI would give the same result.
    */
   roundCommits?: readonly { commit: string; kind: 'failed' | 'conflict' }[];
+  /**
+   * The commit a standing request for changes was made on (owner's answer 1, lot 3 step I): handed
+   * in again, it is refused, since nothing was changed for the request.
+   */
+  requestCommit?: { commit: string; by: 'quality' | 'owner' } | null;
   ticketType: TicketType;
   /** The ticket's acceptance criteria, by index. */
   criteria: readonly string[];
@@ -154,6 +159,12 @@ export function checkSubmission(texts: Template, facts: SubmissionFacts): Checke
     ahead.push({
       message: part(texts, `same-commit-${again.kind}`, { commit: again.commit, branch, base }),
       reason: { kind: 'same_commit', commit: again.commit, ci: again.kind, base },
+    });
+  } else if (facts.requestCommit?.commit === handedIn) {
+    const { commit, by } = facts.requestCommit;
+    ahead.push({
+      message: part(texts, `same-commit-${by}`, { commit, branch }),
+      reason: { kind: 'same_commit_request', commit, by },
     });
   }
 

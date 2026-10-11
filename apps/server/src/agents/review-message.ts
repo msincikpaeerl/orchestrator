@@ -12,6 +12,7 @@ import {
   part,
   timestamp,
   type FirstMessageComment,
+  type FixPoint,
 } from './messages.js';
 
 // The first message of a `review` run (03, section 3.1; owner's answers 4 and 5, lot 3 step H):
@@ -20,6 +21,28 @@ import {
 
 /** What the review is told about CI: never that it failed or did not finish (answer 4). */
 export type ReviewCi = 'passed' | 'passed_later' | 'no_ci';
+
+/** The request a review run's work answers, as its first message gives it (lot 3 step I). */
+export type PreviousReview = (
+  | {
+      by: 'quality';
+      at: Date;
+      commit: string;
+      round: number;
+      limit: number;
+      points: readonly FixPoint[];
+    }
+  | {
+      by: 'owner';
+      at: Date;
+      commit: string | null;
+      after: 'approved' | 'skipped' | null;
+      comment: string;
+    }
+) & {
+  /** The agent's comments since the request, oldest first. */
+  notes: readonly Omit<FirstMessageComment, 'kind'>[];
+};
 
 /** Layer 3 of 03, section 3, for a `review` run. */
 export interface ReviewTicket {
@@ -33,8 +56,13 @@ export interface ReviewTicket {
   dependencies: readonly { reference: string; title: string; status: TicketStatus }[];
   /** Oldest first, without the `review` comments. */
   comments: readonly FirstMessageComment[];
-  /** The ticket's `review` comments, oldest first. */
+  /** The ticket's `review` comments, oldest first, without the previous review's. */
   earlierReviews: readonly Omit<FirstMessageComment, 'kind'>[];
+  /**
+   * The request for changes the work in review answers (owner's answer 4, lot 3 step I): its
+   * points or comment, and what the agent said about them since; null when none.
+   */
+  previous: PreviousReview | null;
   /** The commit under review, fixed at **Start review**. */
   commit: string;
   pullRequest: { number: number; url: string };
@@ -67,6 +95,64 @@ function ciSection(template: Template, ticket: ReviewTicket): string {
   const passed = part(template, ticket.ci === 'passed' ? 'ci-passed' : 'ci-passed-later', values);
   if (ticket.workflows === null) return passed;
   return `${passed}\n\n${part(template, ticket.workflows === 'changed' ? 'workflows-changed' : 'workflows-maybe')}`;
+}
+
+/** "## The previous review" (owner's answer 4 and addition, lot 3 step I). */
+function previous(template: Template, ticket: ReviewTicket, request: PreviousReview): string {
+  const answer = [
+    part(template, 'previous-answer'),
+    ...(request.commit === null
+      ? []
+      : [part(template, 'previous-diff', { commit: request.commit })]),
+    part(template, 'previous-rest', { head: ticket.commit }),
+  ].join(' ');
+  const at = timestamp(request.at);
+  let text: string;
+  if (request.by === 'quality') {
+    const points = request.points
+      .map((point, index) => {
+        const values = { index: String(index + 1), body: point.body.trim() };
+        if (point.file === null) return part(template, 'previous-point', values);
+        if (point.line === null) {
+          return part(template, 'previous-point-file', { ...values, file: point.file });
+        }
+        return part(template, 'previous-point-line', {
+          ...values,
+          file: point.file,
+          line: String(point.line),
+        });
+      })
+      .join('\n');
+    text = part(template, 'previous-quality', {
+      commit: request.commit,
+      at,
+      round: String(request.round),
+      limit: String(request.limit),
+      answer,
+      points,
+    });
+  } else {
+    const on =
+      request.commit === null
+        ? ''
+        : part(template, request.after === null ? 'previous-on' : `previous-on-${request.after}`, {
+            commit: request.commit,
+          });
+    text = part(template, 'previous-owner', { at, on, comment: request.comment.trim(), answer });
+  }
+  const notes =
+    request.notes.length === 0
+      ? part(template, 'previous-no-notes')
+      : request.notes
+          .map((note) =>
+            part(template, 'previous-note', {
+              author: author(template, note.author),
+              at: timestamp(note.at),
+              body: note.body.trim(),
+            }),
+          )
+          .join('\n\n');
+  return part(template, 'previous-review', { request: text, notes });
 }
 
 function files(template: Template, listed: { paths: string[]; justification: string | null }) {
@@ -155,6 +241,8 @@ export function reviewFirstMessage(
     }),
   );
   const ci = ciSection(template, ticket);
+  const previousReview =
+    ticket.previous === null ? '' : `${previous(template, ticket, ticket.previous)}\n\n`;
   const testsRule = part(template, ticket.ci === 'no_ci' ? 'tests-no-ci' : 'tests-ci-passed');
 
   const render = (kept: number, reportText: string, description: string) => {
@@ -184,6 +272,7 @@ export function reviewFirstMessage(
       dependencies,
       report: reportText,
       earlier_reviews: earlierReviews,
+      previous_review: previousReview,
       comments,
       tests_rule: testsRule,
     })}\n`;

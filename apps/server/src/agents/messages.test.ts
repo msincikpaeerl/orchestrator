@@ -5,10 +5,12 @@ import {
   FirstMessageTooLarge,
   answerMessage,
   continueMessage,
+  fixReviewFirstMessage,
   implementFirstMessage,
   nudgeMessage,
   runInstructions,
   runRules,
+  type FixReviewTicket,
   type ImplementTicket,
 } from './messages.js';
 
@@ -63,6 +65,120 @@ const sample: ImplementTicket = {
   earlierWorkBase: null,
   notPushed: null,
 };
+
+const COMMIT = 'abc1234def5678abc1234def5678abc1234def56';
+
+/** A `fix_review` run after Quality's request (owner's answers 3 to 5, lot 3 step I). */
+const fixSample: FixReviewTicket = {
+  ...sample,
+  attempt: 2,
+  earlierWorkBase: 'origin/main',
+  branch: 't/12-contact-form',
+  base: 'origin/main',
+  pullRequest: 7,
+  lost: false,
+  request: {
+    by: 'quality',
+    at: new Date('2026-09-27T14:52:00Z'),
+    commit: COMMIT,
+    points: [
+      { body: 'Show the error message next to the field.', file: 'src/ContactForm.tsx', line: 42 },
+      { body: 'Test an empty e-mail address too.', file: 'src/contact.test.ts', line: null },
+      { body: 'Describe the form in the user documentation.', file: null, line: null },
+    ],
+  },
+};
+
+const fixMessage = (ticket: Partial<FixReviewTicket> = {}, maxBytes?: number) =>
+  fixReviewFirstMessage(
+    templates['fix-review'],
+    templates.implement,
+    { ...fixSample, ...ticket },
+    maxBytes,
+  );
+
+describe('the first message of a fix_review run (lot 3 step I)', () => {
+  it("opens with the approved words, the branch and pull request, then Quality's points", () => {
+    const text = fixMessage();
+    expect(text).toMatch(
+      /^Address the review of ticket WEB-12, then submit it again with `ticket_submit`\. This is attempt 2\.\n/,
+    );
+    expect(text).toContain(
+      'The branch t/12-contact-form already holds the submitted work (pull request #7): continue on it.',
+    );
+    expect(text).toContain(
+      `## Points to address (Quality, 2026-09-27 14:52 UTC, commit ${COMMIT})`,
+    );
+    expect(text).toContain(
+      [
+        '1. `src/ContactForm.tsx:42`: Show the error message next to the field.',
+        '2. `src/contact.test.ts`: Test an empty e-mail address too.',
+        '3. Describe the form in the user documentation.',
+      ].join('\n'),
+    );
+    expect(text).toContain(
+      'Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.',
+    );
+    // Then the ticket as in implement.md.
+    expect(text).toContain('# WEB-12: Contact form');
+    expect(text).toContain('- [1] An invalid e-mail address is refused');
+    expect(text).toContain('Keep the form short: no phone number.');
+  });
+
+  it("gives the owner's comment whole, under its own heading", () => {
+    const text = fixMessage({
+      request: {
+        by: 'owner',
+        at: new Date('2026-09-27T15:10:00Z'),
+        comment: 'Also add a link to the map.\n\nKeep the rest.',
+      },
+    });
+    expect(text).toContain(
+      "## Points to address (the owner's request, 2026-09-27 15:10 UTC)\n\nAlso add a link to the map.\n\nKeep the rest.\n",
+    );
+  });
+
+  it('says where the work is: not on GitHub yet (0.3.0), not pushed, diverged, lost', () => {
+    expect(fixMessage({ pullRequest: null })).toContain(
+      'committed on this machine and not on GitHub yet: continue on it; `ticket_submit` pushes it and the Orchestrator opens its pull request.',
+    );
+    expect(fixMessage({ notPushed: { branch: 't/12-contact-form', diverged: false } })).toContain(
+      'committed on this machine but not pushed to GitHub',
+    );
+    expect(fixMessage({ notPushed: { branch: 't/12-contact-form', diverged: true } })).toContain(
+      'run `git merge origin/t/12-contact-form`',
+    );
+    const lost = fixMessage({ lost: true, pullRequest: null, earlierWorkBase: null });
+    expect(lost).toContain('The earlier work on this ticket is no longer available');
+    expect(lost).toContain(
+      'The branch t/12-contact-form starts again from origin/main: implement the ticket again, with the points below in mind.',
+    );
+  });
+
+  it('adds the sentence after CI failed or a conflict, as implement does', () => {
+    expect(fixMessage({ previousCi: { kind: 'failed' } })).toContain(
+      'The previous attempt ended after CI failed on GitHub',
+    );
+    expect(fixMessage({ previousCi: { kind: 'conflict', base: 'main' } })).toContain(
+      'The pull request conflicts with main',
+    );
+  });
+
+  it('when too long, drops the comments, then the last points with their number, never the first', () => {
+    const many = Array.from({ length: 40 }, (_, index) => ({
+      body: `Point ${String(index)}: ${'x'.repeat(3000)}`,
+      file: null,
+      line: null,
+    }));
+    const text = fixMessage({ request: { ...fixSample.request, points: many } as never }, 60_000);
+    expect(bytes(text)).toBeLessThanOrEqual(60_000);
+    expect(text).not.toContain('Keep the form short');
+    expect(text).toContain('1. Point 0:');
+    expect(text).toMatch(
+      /\(\d+ more points are not shown here because this message would be too long: read them with `ticket_comments`, where each point is a review comment\.\)/,
+    );
+  });
+});
 
 /** The sample's question and its answer, as the answer message quotes them. */
 const question = sample.comments[1]?.body ?? '';
@@ -156,6 +272,23 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
         notPushed: { branch: 't/12-contact-form', diverged: true },
       })
         .split('\n# WEB-12')[0]
+        ?.trimEnd() ?? '',
+      "# First message (fix_review), after Quality's request",
+      fixMessage().split('\n# WEB-12')[0]?.trimEnd() ?? '',
+      "# First message (fix_review), after the owner's request on a ticket left by 0.3.0",
+      fixMessage({
+        pullRequest: null,
+        request: {
+          by: 'owner',
+          at: new Date('2026-09-27T15:10:00Z'),
+          comment: 'Also add a link to the map.',
+        },
+      })
+        .split('\n# WEB-12')[0]
+        ?.trimEnd() ?? '',
+      '# First message (fix_review), the earlier work lost with its machine',
+      fixMessage({ lost: true, pullRequest: null, earlierWorkBase: null })
+        .split('\n## Points')[0]
         ?.trimEnd() ?? '',
       '# Owner answer',
       answerMessage(templates, question, answer),

@@ -134,6 +134,10 @@ export {
   RunCiRoundView,
 } from './api/ci.js';
 export {
+  ChangeRequest,
+  StopCause,
+  TicketChangeRequest,
+  TicketStop,
   ReviewDecision,
   ReviewDecisionKind,
   ReviewPointRecord,

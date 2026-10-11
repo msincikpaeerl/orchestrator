@@ -59,6 +59,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.review_posted': "Quality's review posted on GitHub",
   'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
+  'ticket.stopped': 'Ticket stopped',
+  'ticket.tried_again': 'Ticket tried again',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -398,6 +400,13 @@ const describe: { [T in EventType]: Describe<T> } = {
         ];
     }
   },
+  'ticket.stopped': (p, c) => [
+    c.ticket,
+    p.cause === 'review_rounds'
+      ? `: stopped after ${String(p.count)} requests for changes by Quality (Most review rounds per ticket: ${String(p.limit)})`
+      : `: stopped after ${String(p.count)} failed attempts (Failed attempts before asking you: ${String(p.limit)})`,
+  ],
+  'ticket.tried_again': (_p, c) => [c.ticket, ': you used Try again; its counts start again'],
   'ticket.ci_checked_again': (p, c) => {
     const commit = p.commit === '' ? '' : ` for commit ${p.commit.slice(0, 7)}`;
     switch (p.outcome) {

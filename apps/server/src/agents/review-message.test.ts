@@ -35,6 +35,7 @@ const sample: ReviewTicket = {
     },
   ],
   earlierReviews: [],
+  previous: null,
   commit,
   pullRequest: { number: 12, url: 'https://github.com/owner/bakery/pull/12' },
   base: 'main',
@@ -54,6 +55,84 @@ const sample: ReviewTicket = {
 
 const message = (ticket: Partial<ReviewTicket> = {}) =>
   reviewFirstMessage(templates.review, { ...sample, ...ticket });
+
+const reviewed = '1111111aaaaaaa1111111aaaaaaa1111111aaaaa';
+
+/** The request the work answers: Quality's first round (owner's answer 4, lot 3 step I). */
+const qualityRequest: ReviewTicket['previous'] = {
+  by: 'quality',
+  at: new Date('2026-09-27T14:52:00Z'),
+  commit: reviewed,
+  round: 1,
+  limit: 2,
+  points: [
+    { body: 'Show the error message next to the field.', file: 'src/ContactForm.tsx', line: 42 },
+    { body: 'Describe the form in the user documentation.', file: null, line: null },
+  ],
+  notes: [
+    {
+      author: { kind: 'agent', name: 'Web Developer' },
+      at: new Date('2026-09-27T15:40:00Z'),
+      body: 'Point 2: docs/user/contact.md already describes the form.',
+    },
+  ],
+};
+
+describe('the previous review (owner, lot 3 step I)', () => {
+  it("gives Quality's request, the diff since, the rest of the change and the agent's notes, before the earlier reviews", () => {
+    const text = message({ previous: qualityRequest });
+    const section = text.split('## The previous review\n\n')[1]?.split('## Earlier reviews')[0];
+    expect(section).toBe(
+      [
+        `Quality requested changes on commit ${reviewed} at 2026-09-27 14:52 UTC (round 1 of at most 2). The work you review now is the agent's answer: check that each point was addressed, or that the agent's reason for leaving it holds. \`git diff ${reviewed} HEAD\` shows what changed since that review. Then review the rest of the change as usual, since the answer to a point can break something else: your review is of the whole work at commit ${commit}, not only of what changed since.`,
+        '',
+        '1. `src/ContactForm.tsx:42`: Show the error message next to the field.\n2. Describe the form in the user documentation.',
+        '',
+        'What the agent said about these points:',
+        '',
+        '### Agent Web Developer, 2026-09-27 15:40 UTC',
+        '',
+        'Point 2: docs/user/contact.md already describes the form.',
+        '',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it("gives the owner's request with what it came after, and says when the agent left no note", () => {
+    const text = message({
+      previous: {
+        by: 'owner',
+        at: new Date('2026-09-27T15:10:00Z'),
+        commit: reviewed,
+        after: 'approved',
+        comment: 'Also add a link to the map.',
+        notes: [],
+      },
+    });
+    expect(text).toContain(
+      `The owner requested changes at 2026-09-27 15:10 UTC, on commit ${reviewed} (Quality had approved it): Also add a link to the map.\n\nThe work you review now is the agent's answer:`,
+    );
+    expect(text).toContain('(The agent left no comment about these points.)');
+    const legacy = message({
+      previous: {
+        by: 'owner',
+        at: new Date('2026-09-27T15:10:00Z'),
+        commit: null,
+        after: null,
+        comment: 'Also add a link to the map.',
+        notes: [],
+      },
+    });
+    expect(legacy).toContain('The owner requested changes at 2026-09-27 15:10 UTC: Also add');
+    expect(legacy).not.toContain('shows what changed since that review');
+  });
+
+  it('is left out, with no heading, when the work answers no request', () => {
+    expect(message()).not.toContain('The previous review');
+    expect(message()).toContain('\n\n## Earlier reviews\n\n');
+  });
+});
 
 describe('the first message of a review run', () => {
   it('names the commit, the pull request and how to see the diff', () => {
@@ -126,7 +205,7 @@ describe('the first message of a review run', () => {
     it('with No CI found, says nothing tested it and to run the tests and build', () => {
       const text = message({ ci: 'no_ci' });
       expect(text).toContain(
-        `No CI ran on GitHub for commit ${commit}: nothing appeared within Wait for CI to start after the pull request opened. Nothing on GitHub tested this work.`,
+        `No CI ran on GitHub for commit ${commit}: nothing appeared within Wait for CI to start after the pull request opened.`,
       );
       expect(text).toContain(
         "Nothing on GitHub tested this work: run the project's tests and build yourself, with the commands `CLAUDE.md` gives, when the project has any, and say in your decision what you ran.",
@@ -143,6 +222,13 @@ describe('the first message of a review run', () => {
       expect(text).not.toContain('Workflow files changed:');
       expect(text).not.toContain('do not run the test suite again');
       expect(text).toContain("run the project's tests and build yourself");
+    });
+
+    it('with No CI found, says once that nothing on GitHub tested the work (owner, step I)', () => {
+      for (const workflows of [null, 'changed', 'not_listed'] as const) {
+        const text = message({ ci: 'no_ci', workflows });
+        expect(text.split('Nothing on GitHub tested this work').length - 1).toBe(1);
+      }
     });
 
     it('with CI passed and workflow files changed or maybe changed, adds a line of its own', () => {
@@ -221,9 +307,14 @@ describe('Quality and its messages (snapshot)', () => {
           },
         ],
       }),
-      '# First message (review), No CI found and workflow files changed: its CI and How to decide',
+      '# First message (review) after a request for changes: the previous review',
+      `## The previous review${
+        message({ previous: qualityRequest })
+          .split('## The previous review')[1]
+          ?.split('## Earlier reviews')[0] ?? ''
+      }`.trimEnd(),
+      '# First message (review), No CI found and workflow files changed: its CI',
       `## CI${noCi.split('## CI')[1]?.split('\n# WEB-12')[0] ?? ''}`.trimEnd(),
-      `## How to decide${noCi.split('## How to decide')[1] ?? ''}`.trimEnd(),
       '# Nudge (review)',
       nudgeMessage(templates, 'review'),
     ];

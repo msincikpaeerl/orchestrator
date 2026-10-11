@@ -141,6 +141,116 @@ export function implementFirstMessage(
   ticket: ImplementTicket,
   maxBytes = FIRST_MESSAGE_MAX_BYTES,
 ): string {
+  const base = ticket.earlierWorkBase;
+  const opening =
+    base === null
+      ? part(template, 'start')
+      : ticket.notPushed === null
+        ? part(template, 'start-earlier-work', { base })
+        : notPushedStart(template, ticket.notPushed, base);
+  return firstMessage(template, ticket, opening, null, {}, maxBytes);
+}
+
+/** One point of a request for changes, as the `fix_review` run reads it. */
+export interface FixPoint {
+  body: string;
+  file: string | null;
+  line: number | null;
+}
+
+/**
+ * Layer 3 of 03, section 3, for a `fix_review` run (owner's answers 3 and 5, lot 3 step I): the
+ * ticket as for `implement`, the request it addresses and where its work is.
+ */
+export interface FixReviewTicket extends ImplementTicket {
+  /** Quality's request (its points), or the owner's (the comment, whole). */
+  request:
+    | { by: 'quality'; at: Date; commit: string; points: readonly FixPoint[] }
+    | { by: 'owner'; at: Date; comment: string };
+  /** The ticket's branch, and its pull request; null for a ticket left by 0.3.0. */
+  branch: string;
+  /** The base branch as the worktree names it: `origin/main`. */
+  base: string;
+  pullRequest: number | null;
+  /** The machine holding the work was revoked and nothing was pushed: the branch starts again. */
+  lost: boolean;
+}
+
+/**
+ * The first message of a `fix_review` run (owner's answers 3 to 5, lot 3 step I), from
+ * `fix-review.md` and the parts it shares with `implement.md` (the starts of work not pushed or
+ * diverged, the sentences after CI, the ticket's pieces). Comments go first when it is too long,
+ * then the last points (with their number), then the description is cut.
+ */
+export function fixReviewFirstMessage(
+  fix: Template,
+  implement: Template,
+  ticket: FixReviewTicket,
+  maxBytes = FIRST_MESSAGE_MAX_BYTES,
+): string {
+  const template: Template = {
+    name: fix.name,
+    main: fix.main,
+    parts: new Map([...implement.parts, ...fix.parts]),
+  };
+  const { base } = ticket;
+  const opening = ticket.lost
+    ? part(template, 'start-lost', { branch: ticket.branch, base })
+    : ticket.notPushed !== null
+      ? notPushedStart(template, ticket.notPushed, base)
+      : ticket.pullRequest === null
+        ? part(template, 'start-no-pull-request', { branch: ticket.branch, base })
+        : part(template, 'start', {
+            branch: ticket.branch,
+            base,
+            pull_request: String(ticket.pullRequest),
+          });
+  const { request } = ticket;
+  const heading =
+    request.by === 'quality'
+      ? part(template, 'request-quality', { at: timestamp(request.at), commit: request.commit })
+      : part(template, 'request-owner', { at: timestamp(request.at) });
+  const points =
+    request.by === 'quality'
+      ? request.points.map((point, index) => {
+          const values = { index: String(index + 1), body: point.body.trim() };
+          if (point.file === null) return part(template, 'point', values);
+          if (point.line === null)
+            return part(template, 'point-file', { ...values, file: point.file });
+          return part(template, 'point-line', {
+            ...values,
+            file: point.file,
+            line: String(point.line),
+          });
+        })
+      : [request.comment.trim()];
+  return firstMessage(template, ticket, opening, points, { request: heading }, maxBytes);
+}
+
+function notPushedStart(
+  template: Template,
+  notPushed: { branch: string; diverged: boolean },
+  base: string,
+): string {
+  return part(template, notPushed.diverged ? 'start-diverged' : 'start-not-pushed', {
+    base,
+    branch: notPushed.branch,
+  });
+}
+
+/**
+ * A builder run's first message within `maxBytes`: the ticket in full, the points of a
+ * `fix_review` run, then the comments from the newest while they fit; then the last points go,
+ * with their number; then the description is cut at a line boundary.
+ */
+function firstMessage(
+  template: Template,
+  ticket: ImplementTicket,
+  opening: string,
+  points: readonly string[] | null,
+  extra: Record<string, string>,
+  maxBytes: number,
+): string {
   const criteria =
     ticket.acceptanceCriteria.length === 0
       ? part(template, 'no-criteria')
@@ -159,16 +269,6 @@ export function implementFirstMessage(
             }),
           )
           .join('\n');
-  const base = ticket.earlierWorkBase;
-  const opening =
-    base === null
-      ? part(template, 'start')
-      : ticket.notPushed === null
-        ? part(template, 'start-earlier-work', { base })
-        : part(template, ticket.notPushed.diverged ? 'start-diverged' : 'start-not-pushed', {
-            base,
-            branch: ticket.notPushed.branch,
-          });
   const previous = ticket.previousCi ?? null;
   const start =
     previous === null
@@ -191,9 +291,10 @@ export function implementFirstMessage(
       body: comment.body.trim(),
     }),
   );
+  const allPoints = points ?? [];
 
-  /** The message with the newest `kept` comments and the given description. */
-  const render = (kept: number, description: string) => {
+  /** The message with the newest `kept` comments, the first `shownPoints` and the description. */
+  const render = (kept: number, description: string, shownPoints = allPoints.length) => {
     const leftOut = renderedComments.length - kept;
     const shown = renderedComments.slice(leftOut);
     const comments =
@@ -205,6 +306,21 @@ export function implementFirstMessage(
               : []),
             ...shown,
           ].join('\n\n');
+    const pointValues: Record<string, string> =
+      points === null
+        ? {}
+        : {
+            points: [
+              ...allPoints.slice(0, shownPoints),
+              ...(shownPoints < allPoints.length
+                ? [
+                    part(template, 'points-left-out', {
+                      count: String(allPoints.length - shownPoints),
+                    }),
+                  ]
+                : []),
+            ].join('\n'),
+          };
     return `${fill(template, template.main, {
       ticket: ticket.reference,
       project_name: ticket.projectName,
@@ -217,39 +333,45 @@ export function implementFirstMessage(
       acceptance_criteria: criteria,
       dependencies,
       comments,
+      ...extra,
+      ...pointValues,
     })}\n`;
   };
   const fits = (text: string) => bytes(text) <= maxBytes;
+  /** The largest count from 0 to `most` for which `ok` holds, `ok` holding for every smaller one. */
+  const largest = (most: number, ok: (count: number) => boolean) => {
+    let low = 0;
+    let high = most;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (ok(middle)) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
 
   const description = ticket.description.trim();
   const fullDescription = description === '' ? part(template, 'empty-description') : description;
-  if (fits(render(renderedComments.length, fullDescription))) {
-    return render(renderedComments.length, fullDescription);
-  }
   // The most comments that fit: fewer comments always make a shorter message.
-  let low = 0;
-  let high = renderedComments.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (fits(render(middle, fullDescription))) low = middle;
-    else high = middle - 1;
-  }
-  if (fits(render(low, fullDescription))) return render(low, fullDescription);
+  const kept = largest(renderedComments.length, (count) => fits(render(count, fullDescription)));
+  if (fits(render(kept, fullDescription))) return render(kept, fullDescription);
+  // Without comments: the first points that fit, at least one.
+  const shownPoints = Math.max(
+    1,
+    largest(allPoints.length, (count) => fits(render(0, fullDescription, count))),
+  );
+  if (fits(render(0, fullDescription, shownPoints))) return render(0, fullDescription, shownPoints);
 
-  // Without comments the ticket still does not fit: cut the description at a line boundary.
+  // Still too long: cut the description at a line boundary.
   const lines = description.split('\n');
   const cut = (count: number) =>
     [lines.slice(0, count).join('\n').trimEnd(), part(template, 'description-cut')]
       .filter((text) => text !== '')
       .join('\n\n');
-  low = 0;
-  high = lines.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (fits(render(0, cut(middle)))) low = middle;
-    else high = middle - 1;
-  }
-  const message = render(0, cut(low));
+  const kept2 = largest(lines.length - 1, (count) =>
+    fits(render(0, cut(count), Math.min(1, allPoints.length))),
+  );
+  const message = render(0, cut(kept2), Math.min(1, allPoints.length));
   if (!fits(message)) throw new FirstMessageTooLarge(ticket.reference);
   return message;
 }

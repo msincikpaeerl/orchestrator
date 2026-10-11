@@ -185,3 +185,60 @@ export const TicketReview = z.object({
   offered: z.boolean(),
 });
 export type TicketReview = z.infer<typeof TicketReview>;
+
+/**
+ * A request for changes kept on its ticket (04, section 2; owner's answers 1 to 6, lot 3 step I):
+ * Quality's, applied at its review run's end, or the owner's **Request changes**. It stands until
+ * the next accepted submission answers it; the next `fix_review` run addresses it, and the next
+ * review is told of it.
+ */
+export const ChangeRequest = z.discriminatedUnion('by', [
+  z.object({
+    by: z.literal('quality'),
+    /** The commit Quality reviewed and asked changes on. */
+    commit: GitHash,
+    /** The review run, whose `review` comments hold the points. */
+    runId: z.uuid(),
+    /** The ticket's review rounds with this one (01, section 3.4). */
+    round: z.int().positive(),
+    at: z.iso.datetime(),
+  }),
+  z.object({
+    by: z.literal('owner'),
+    /** The ticket's latest accepted commit; null for a ticket of 0.3.0 that reported none. */
+    commit: GitHash.nullable(),
+    /** The owner's `status_change` comment. */
+    commentId: z.uuid(),
+    /** On **Awaiting merge**: what the request came after, Quality's approval or the skip. */
+    after: z.enum(['approved', 'skipped']).nullable(),
+    at: z.iso.datetime(),
+  }),
+]);
+export type ChangeRequest = z.infer<typeof ChangeRequest>;
+
+/** Why the retry policy stopped a ticket (04, section 5): `failed_attempts` from lot 3 step K. */
+export const StopCause = z.enum(['review_rounds', 'failed_attempts']);
+export type StopCause = z.infer<typeof StopCause>;
+
+/**
+ * A ticket's stop (04, section 5; owner's answer 2, lot 3 step I): its cause, the count that
+ * passed the setting and the setting's value then, and when.
+ */
+export const TicketStop = z.object({
+  cause: StopCause,
+  count: z.int().positive(),
+  limit: z.int().positive(),
+  at: z.iso.datetime(),
+});
+export type TicketStop = z.infer<typeof TicketStop>;
+
+/**
+ * The ticket's latest request for changes as the screens show it (lot 3 step I): standing until
+ * the next accepted submission; `limit` is **Most review rounds per ticket** now.
+ */
+export const TicketChangeRequest = z.object({
+  request: ChangeRequest,
+  standing: z.boolean(),
+  limit: z.int().positive(),
+});
+export type TicketChangeRequest = z.infer<typeof TicketChangeRequest>;

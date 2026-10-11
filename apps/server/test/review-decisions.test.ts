@@ -184,15 +184,15 @@ describe('a request for changes', () => {
       action: 'review_changes_requested',
     });
 
-    // Run now (answer 6d, until step I): an implement run whose first message holds the points,
-    // and whose attempt does not count the review run (owner's review of step H1).
+    // Run now (from step I): a fix_review run whose first message holds the points, and whose
+    // attempt does not count the review run (owner's review of step H1).
     const next = await h.running(daemon);
     const start = daemon.received.find(
       (message): message is RunStart =>
         message.type === 'run.start' && message.payload.runId === next.runId,
     );
-    expect(start?.payload.purpose).toBe('implement');
-    expect(start?.payload.initialPrompt).toContain('This is attempt 2 at this ticket.');
+    expect(start?.payload.purpose).toBe('fix_review');
+    expect(start?.payload.initialPrompt).toContain('This is attempt 2.');
     expect(start?.payload.initialPrompt).toContain('Test an empty e-mail address too.');
     expect((await h.run(next.runId)).attempt).toBe(2);
   });
