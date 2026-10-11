@@ -55,6 +55,7 @@ import { z } from 'zod';
 import {
   loadShippedAgents,
   loadTemplates,
+  type Rules,
   type Template,
   type Templates,
 } from '../agents/files.js';
@@ -66,6 +67,7 @@ import {
   implementFirstMessage,
   nudgeMessage,
   runInstructions,
+  runRules,
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -206,7 +208,7 @@ export class RunService {
   private gateway: RunGateway | undefined;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private agentFiles:
-    Promise<{ templates: Templates; commonRules: string; allowlist: Template }> | undefined;
+    Promise<{ templates: Templates; rules: Rules; allowlist: Template }> | undefined;
   private readonly mcp: McpBackend;
   private readonly ciStatus: CiStatusReader;
 
@@ -272,7 +274,7 @@ export class RunService {
     this.agentFiles ??= Promise.all([loadTemplates(), loadShippedAgents()]).then(
       ([templates, shipped]) => ({
         templates,
-        commonRules: shipped.commonRules,
+        rules: shipped.rules,
         allowlist: shipped.allowlist,
       }),
     );
@@ -939,7 +941,7 @@ export class RunService {
   /** **Run now** on a ticket (07, section 3): checks, machine, run `queued`, then `dispatched`. */
   async runNow(projectKey: string, ticketNumber: number): Promise<Run> {
     const github = await this.githubIdentity();
-    const { templates, commonRules, allowlist } = await this.files();
+    const { templates, rules, allowlist } = await this.files();
     const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
 
     const prepared = await this.db.transaction(async (tx) => {
@@ -1183,7 +1185,7 @@ export class RunService {
         branchName,
         profile,
         github,
-        files: { templates, commonRules, allowlist },
+        files: { templates, rules, allowlist },
         runToken,
         initialPrompt,
         settings,
@@ -1524,7 +1526,7 @@ export class RunService {
     branchName: string;
     profile: typeof schema.agentProfiles.$inferSelect;
     github: { login: string; id: number };
-    files: { templates: Templates; commonRules: string; allowlist: Template };
+    files: { templates: Templates; rules: Rules; allowlist: Template };
     runToken: string;
     initialPrompt: string;
     settings: Pick<SettingValues, (typeof RUN_START_SETTINGS)[number]>;
@@ -1554,7 +1556,7 @@ export class RunService {
           key: profile.key,
           version: profile.version,
           instructions: runInstructions(
-            files.commonRules,
+            runRules(files.rules, input.purpose),
             profile.instructions,
             files.allowlist,
             allowedTools,

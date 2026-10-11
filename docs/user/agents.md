@@ -34,10 +34,16 @@ Quality never changes the work: it may read the project, see the changes, and ru
 Every agent works on one ticket at a time, in its own copy of the project on your machine. It:
 
 - reads the project's `CLAUDE.md` first;
-- changes files with Claude Code's editing tools, and runs one command at a time, so a refusal names the command really refused;
+- runs one command at a time, so a refusal names the command really refused;
 - talks to you only through the Orchestrator: a short line showing what it is doing, notes, and questions that appear in **Needs you**;
-- saves its work in commits on the ticket's branch, and never sends anything to GitHub itself;
-- ends its work in one of three ways: it says the ticket is finished (with a report on each acceptance criterion), asks you a question and waits, or gives up with the reason.
+- never sends anything to GitHub itself.
+
+The Architect and the Web Developer also:
+
+- change files with Claude Code's editing tools, and save their work in commits on the ticket's branch;
+- end their work in one of three ways: they say the ticket is finished (with a report on each acceptance criterion), ask you a question and wait, or give up with the reason.
+
+Quality changes no file itself and commits nothing (what installing, building and testing the project leave behind is expected). It ends its review in one of four ways: it approves the work, asks for changes, asks you a question and waits, or gives up with the reason. What it finds goes into its approval or its points, not into separate notes.
 
 ## What an agent may run
 
@@ -47,4 +53,4 @@ This list saves time and keeps agents on task, but it does not protect your comp
 
 ## Versions
 
-Each agent has a version. It goes up when a new version of the Orchestrator changes the agent's instructions, its list of commands, or the rules every agent follows. The Activity page records it ("Agent profile updated").
+Each agent has a version. It goes up when a new version of the Orchestrator changes the agent's instructions, its list of commands, or the rules it follows (those every agent follows, and those of the agents that do the work or of Quality). The Activity page records it ("Agent profile updated").

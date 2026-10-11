@@ -6,7 +6,7 @@ import {
   type TicketStatus,
   type TicketType,
 } from '@orchestrator/protocol';
-import type { Template, Templates } from './files.js';
+import { PURPOSE_RULES, type Rules, type Template, type Templates } from './files.js';
 
 // Filling in the run message templates of `agents/templates/` (03, section 3.2). Every text an
 // agent reads comes from those files; this module only puts the values in their place.
@@ -37,11 +37,27 @@ export function part(
 }
 
 /**
- * What Claude Code's system prompt receives (03, section 3): the common rules, the role, then the
+ * Layer 1 of 03, section 3, for a run of this purpose: the shared rules, with their slots filled
+ * in by the builder or the reviewer rules (owner's answers 1 and 3, lot 3 step H5).
+ */
+export function runRules(rules: Rules, purpose: RunPurpose): string {
+  const kind = PURPOSE_RULES[purpose];
+  if (kind === null) throw new Error(`no rules for ${purpose} runs before lot 5`);
+  const own = rules[kind];
+  return fill(rules.shared, rules.shared.main, {
+    work: own.main,
+    files: part(own, 'files'),
+    needs: part(own, 'needs'),
+    task: part(own, 'task'),
+  });
+}
+
+/**
+ * What Claude Code's system prompt receives (03, section 3): the run's rules, the role, then the
  * profile's Bash rules as the allowlist template lists them.
  */
 export function runInstructions(
-  commonRules: string,
+  runRulesText: string,
   roleInstructions: string,
   allowlist: Template,
   allowedTools: readonly string[],
@@ -52,7 +68,7 @@ export function runInstructions(
       ? part(allowlist, 'no-commands')
       : rules.map((rule) => part(allowlist, 'command', { rule })).join('\n');
   const section = fill(allowlist, allowlist.main, { commands });
-  return `${commonRules.trim()}\n\n${roleInstructions.trim()}\n\n${section.trim()}\n`;
+  return `${runRulesText.trim()}\n\n${roleInstructions.trim()}\n\n${section.trim()}\n`;
 }
 
 export interface FirstMessageComment {

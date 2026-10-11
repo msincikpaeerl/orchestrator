@@ -118,6 +118,9 @@ describe('Start review', () => {
     expect(start.payload.mcpTools).not.toContain('ticket_submit');
     expect(start.payload.profile.allowedTools).not.toContain('Edit');
     expect(start.payload.profile.instructions).toContain('# Your role: Quality');
+    // The reviewer rules, never the builders' (lot 3 step H5).
+    expect(start.payload.profile.instructions).toContain('## Ending your review');
+    expect(start.payload.profile.instructions).not.toContain('ticket_submit');
     // Its first message (template review) and its nudge.
     const prompt = start.payload.initialPrompt;
     expect(prompt).toContain('Review ticket WEB-1 of the project Bakery website');

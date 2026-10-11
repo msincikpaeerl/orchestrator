@@ -92,7 +92,7 @@ function layoutOf(scratch: string): Layout {
 /** The shipped default profiles, by key. */
 function shippedProfiles(): AgentProfileFile[] {
   return readdirSync(agentsFolder)
-    .filter((file) => file.endsWith('.md') && file !== 'common-rules.md')
+    .filter((file) => file.endsWith('.md'))
     .sort()
     .map((file) => parseAgentProfileFile(file, readFileSync(join(agentsFolder, file), 'utf8')));
 }

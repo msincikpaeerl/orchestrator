@@ -356,6 +356,9 @@ describe('Run now', () => {
     });
     expect(payload.profile.instructions).toContain('# How you work in the Orchestrator');
     expect(payload.profile.instructions).toContain('# Your role: Web Developer');
+    // The builder rules, never the reviewer's (lot 3 step H5).
+    expect(payload.profile.instructions).toContain('## Ending your run');
+    expect(payload.profile.instructions).not.toContain('review_approve');
     expect(payload.profile.allowedTools).toContain('Bash(pnpm *)');
     expect(payload.initialPrompt).toContain('Implement ticket WEB-1 of the project Bakery website');
     expect(payload.initialPrompt).toContain('This is attempt 1 at this ticket.');

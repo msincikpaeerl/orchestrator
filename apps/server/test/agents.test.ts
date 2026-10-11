@@ -104,10 +104,25 @@ describe('seeding the default profiles (03, section 3)', () => {
     expect((await profiles()).map((row) => row.version)).toEqual([1, 1, 2]);
   });
 
-  it('raises every default profile when the common rules changed', async () => {
-    await changeFile('common-rules.md', (text) => `${text}\nOne more rule.\n`);
+  it('raises every default profile when the shared rules changed', async () => {
+    await changeFile('rules/shared.md', (text) => `${text}\nOne more rule.\n`);
     const result = await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
     expect(result.updated).toEqual(['architect', 'quality', 'web_dev']);
+    expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2]);
+  });
+
+  it('raises only the profiles whose runs receive the builder or the reviewer rules when they changed (lot 3 step H5)', async () => {
+    await changeFile('rules/builder.md', (text) =>
+      text.replace('Never rebase', 'Never, ever rebase'),
+    );
+    expect((await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy))).updated).toEqual([
+      'architect',
+      'web_dev',
+    ]);
+    await changeFile('rules/reviewer.md', (text) => text.replace('Never push', 'Never, ever push'));
+    expect((await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy))).updated).toEqual([
+      'quality',
+    ]);
     expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2]);
   });
 

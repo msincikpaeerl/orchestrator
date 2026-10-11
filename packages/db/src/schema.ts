@@ -204,7 +204,7 @@ export const agentProfiles = pgTable(
     name: text('name').notNull(),
     description: text('description').notNull(),
     role: text('role').notNull(),
-    /** Role instructions (layer 2 of 03, section 3); the common rules are added at each run. */
+    /** Role instructions (layer 2 of 03, section 3); the rules of the run's purpose are added at each run. */
     instructions: text('instructions').notNull(),
     model: text('model').notNull(),
     allowedTools: jsonb('allowed_tools').notNull().default([]),
@@ -214,7 +214,7 @@ export const agentProfiles = pgTable(
     version: integer('version').notNull().default(1),
     /**
      * For a default profile, the SHA-256 of the shipped files its version covers (its file and the
-     * common rules): a different value at start raises the version.
+     * rules its runs receive): a different value at start raises the version.
      */
     shippedHash: text('shipped_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

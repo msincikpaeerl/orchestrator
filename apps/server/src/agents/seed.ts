@@ -14,7 +14,7 @@ export interface SeedResult {
 /**
  * Seeds the default profiles from `agents/` (03, section 3), in one transaction with their events.
  * A missing profile is created at version 1; one whose shipped files changed since the last start
- * (its file or the common rules) gets them and its version goes up. Profiles cannot be edited
+ * (its file, the shared rules or the rules its role's runs receive) gets them and its version goes up. Profiles cannot be edited
  * before lot 6, so the shipped files are the only source of a default profile.
  */
 export async function seedAgentProfiles(
