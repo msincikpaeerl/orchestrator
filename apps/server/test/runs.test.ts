@@ -660,11 +660,17 @@ describe('the dispatch acknowledgement (07, section 2)', () => {
   });
 
   it('puts a resume not acknowledged in time back to paused, without counting an attempt', async () => {
-    await start(fast);
+    // Only the resume may run out of time: the start, which this test acknowledges, gets the
+    // longest Machine answer timeout. With 100 ms for both, a loaded machine (a full `pnpm
+    // verify`) acknowledged the start too late, and the run was cancelled before its pause (lot 3
+    // step J0: 10 of 20 runs under load).
+    await start({ ...fast, settings: { dispatchAckTimeoutSeconds: 600 } });
     const { daemon } = await laptop();
     const { run: created } = await started(daemon);
     await working(daemon, created.id);
     await report(daemon, suspected(created.id));
+    const shortened = await call('PUT', '/api/settings/dispatchAckTimeoutSeconds', { value: 5 });
+    expect(shortened.statusCode, shortened.body).toBe(200);
     const resumed = await call('POST', `/api/runs/${created.id}/resume`);
     expect(resumed.statusCode, resumed.body).toBe(200);
     expect(Run.parse(resumed.json()).status).toBe('dispatched');
