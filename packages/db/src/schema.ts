@@ -276,6 +276,22 @@ export const tickets = pgTable(
     /** Failed runs, for the retry policy; uncounted ends never change it (04, section 5). */
     attemptCount: integer('attempt_count').notNull().default(0),
     /**
+     * Quality's requests for changes applied, for **Most review rounds per ticket**; the owner's
+     * never count. Reset by **Try again** and **Reopen** (01, section 3.4; lot 3 step I).
+     */
+    reviewRounds: integer('review_rounds').notNull().default(0),
+    /**
+     * The stop of the retry policy (`TicketStop`: cause, count, the setting's value, when; 04,
+     * section 5; lot 3 step I); **Run now** refuses the ticket until **Try again** or **Reopen**.
+     */
+    stopped: jsonb('stopped'),
+    /**
+     * The latest request for changes (`ChangeRequest`), Quality's or the owner's, and when the
+     * next accepted submission answered it; standing while not answered (lot 3 step I).
+     */
+    changeRequest: jsonb('change_request'),
+    changeRequestAnsweredAt: timestamp('change_request_answered_at', { withTimezone: true }),
+    /**
      * The last push of the ticket branch the daemon reported as done (submission or run end): the
      * head pushed, when, from which machine, and the commits ahead of the base that head held
      * (`string[]`). What was pushed, not what GitHub holds now (01, section 3.4; lot 3 step D3).
@@ -322,6 +338,7 @@ export const tickets = pgTable(
     check('tickets_created_by', sql`${table.createdBy} IN ('owner', 'agent')`),
     index('tickets_created_by_run_id').on(table.createdByRunId),
     check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
+    check('tickets_review_rounds', sql`${table.reviewRounds} >= 0`),
     check('tickets_workflow_reason', sql`${table.workflowReason} IN ('changed', 'not_listed')`),
     check(
       'tickets_pull_request_state',

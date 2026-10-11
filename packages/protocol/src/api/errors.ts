@@ -94,6 +94,8 @@ export const ApiErrorCode = z.enum([
   'ci_check_refused',
   /** Request changes or Skip review while a review run is active (lot 3 step H2). */
   'review_active',
+  /** **Try again** on a ticket the retry policy has not stopped (lot 3 step I). */
+  'ticket_not_stopped',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

@@ -3,7 +3,7 @@ import { CommitSummary, GitHash, PushResult } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
 import { CiCheckFailure, CiResult } from '../mcp/ci.js';
 import { RunCiHistory } from './ci.js';
-import { RunReview } from './reviews.js';
+import { RunReview, StopCause } from './reviews.js';
 import { SubmissionRecord } from '../mcp/dod-report.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
@@ -241,6 +241,16 @@ export type MachineUnavailable = z.infer<typeof MachineUnavailable>;
 export const RunRefusal = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('ticket_not_todo'), status: TicketStatus }),
   z.object({ reason: z.literal('no_assignee') }),
+  /**
+   * Stopped by the retry policy (04, section 5; lot 3 step I): the cause, the count that passed
+   * the setting and the setting's value then. **Try again** lets it continue.
+   */
+  z.object({
+    reason: z.literal('ticket_stopped'),
+    cause: StopCause,
+    count: z.int().positive(),
+    limit: z.int().positive(),
+  }),
   /** `tickets`: the tickets it waits for that are not done (`WEB-3`). */
   z.object({ reason: z.literal('blocked'), tickets: z.array(z.string()) }),
   z.object({ reason: z.literal('project_archived') }),

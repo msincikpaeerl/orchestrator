@@ -82,6 +82,15 @@ export const CheckReason = z.discriminatedUnion('kind', [
     ci: z.enum(['failed', 'conflict']),
     base: z.string(),
   }),
+  /**
+   * The commit a standing request for changes was made on, handed in again (owner's answer 1, lot
+   * 3 step I): Quality's or the owner's.
+   */
+  z.object({
+    kind: z.literal('same_commit_request'),
+    commit: z.string(),
+    by: z.enum(['quality', 'owner']),
+  }),
 ]);
 export type CheckReason = z.infer<typeof CheckReason>;
 export type CheckReasonKind = CheckReason['kind'];

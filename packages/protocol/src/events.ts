@@ -18,7 +18,7 @@ import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
-import { ReviewDecisionKind, ReviewPostProblem } from './api/reviews.js';
+import { ReviewDecisionKind, ReviewPostProblem, StopCause } from './api/reviews.js';
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
@@ -87,6 +87,8 @@ export const EventType = z.enum([
   'ticket.review_posted',
   'ticket.review_not_posted',
   'ticket.ci_checked_again',
+  'ticket.stopped',
+  'ticket.tried_again',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -306,6 +308,19 @@ export const EventPayloads = {
     reason: ReviewPostProblem.nullable(),
     message: z.string().nullable(),
   }),
+  /**
+   * The retry policy stopped the ticket (04, section 5; lot 3 step I): the cause, the count past
+   * the setting, the setting's value, and the review run whose request stopped it.
+   */
+  'ticket.stopped': z.object({
+    ...TicketFacts,
+    cause: StopCause,
+    count: z.int().positive(),
+    limit: z.int().positive(),
+    runId: z.uuid().nullable(),
+  }),
+  /** The owner's **Try again** on a stopped ticket: the stop's cause; the counts start again. */
+  'ticket.tried_again': z.object({ ...TicketFacts, cause: StopCause, commentId: z.uuid() }),
   /**
    * The owner's **Check CI again** (04, section 3.1; lot 3 step G2c): what it found, or why it was
    * refused. `accepted` also writes the ticket's status change.

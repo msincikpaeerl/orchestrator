@@ -267,6 +267,18 @@ const definitions = {
     perProject: true,
     usedFrom: '0.4.0',
   },
+  maxReviewRounds: {
+    group: 'tickets',
+    label: 'Most review rounds per ticket',
+    description:
+      'How many times Quality may ask for changes on one ticket before it waits for you. One request more is applied, then stops the ticket until you use Try again. Your own Request changes never counts.',
+    unit: 'rounds',
+    min: 1,
+    max: 10,
+    default: 2,
+    perProject: true,
+    usedFrom: '0.4.0',
+  },
   ciLogExcerptMaxLength: {
     group: 'tickets',
     label: 'Longest CI log excerpt',

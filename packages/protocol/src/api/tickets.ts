@@ -4,7 +4,7 @@ import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { PullRequestFailure, PullRequestState } from './pull-requests.js';
 import { RunCiOutcome } from './ci.js';
-import { TicketReview } from './reviews.js';
+import { TicketChangeRequest, TicketReview, TicketStop } from './reviews.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
@@ -78,7 +78,8 @@ export const OWNER_TRANSITIONS: Readonly<
    * Lot 2, while no Quality run exists: the owner sends finished work back, with a comment (owner's
    * decision, lot 2 step L2). From `awaiting_merge` it comes with lot 3.
    */
-  request_changes: { label: 'Request changes', from: ['in_review'], to: 'todo' },
+  /** On awaiting_merge too from lot 3 step I (owner's answer 6). */
+  request_changes: { label: 'Request changes', from: ['in_review', 'awaiting_merge'], to: 'todo' },
   /**
    * The owner moves work on without Quality's review, while no review run is active (04, section
    * 2; owner's decision, lot 3 step A; lot 3 step H2).
@@ -321,6 +322,12 @@ export const TicketDetail = TicketSummary.extend({
   ci: TicketCi.nullable(),
   /** The latest review, and **Start review** and **Skip review** offered (lot 3 step H4). */
   review: TicketReview,
+  /** Quality's requests for changes applied, for **Most review rounds per ticket** (step I). */
+  reviewRounds: z.int().min(0),
+  /** The retry policy's stop; null when the ticket is not stopped (04, section 5; step I). */
+  stop: TicketStop.nullable(),
+  /** The latest request for changes, Quality's or the owner's; null when none (step I). */
+  changeRequest: TicketChangeRequest.nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 
