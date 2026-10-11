@@ -63,15 +63,22 @@ export function pushPermission(message: string): PushPermission | null {
   return null;
 }
 
-/** A branch report: the commits listed, and what the machine said was not on GitHub. */
+/**
+ * A branch report: its head, the commits listed, and what the machine said was not on GitHub.
+ */
 export interface ReportedBranch {
+  /** The branch's head the machine reported; null when it reported none. */
+  head: string | null;
   commits: readonly CommitSummary[];
   notOnGitHub: NotOnGitHub | null;
 }
 
 /** A run's stored report. */
-export function runReport(run: Pick<RunRow, 'commits' | 'notOnGitHub'>): ReportedBranch {
+export function runReport(
+  run: Pick<RunRow, 'branchHead' | 'commits' | 'notOnGitHub'>,
+): ReportedBranch {
   return {
+    head: run.branchHead,
     commits: reportedCommits(run) ?? [],
     notOnGitHub: run.notOnGitHub === null ? null : NotOnGitHub.parse(run.notOnGitHub),
   };
@@ -82,12 +89,17 @@ export function runReport(run: Pick<RunRow, 'commits' | 'notOnGitHub'>): Reporte
  * machine said were on no branch fetched from GitHub, and no push held, newest first. A machine
  * that said nothing (protocol 1, runs of 0.3.0): every commit no push held. `count` adds the
  * commits beyond the report's ceiling the machine counted: the server knows nothing about them,
- * so they are not on GitHub.
+ * so they are not on GitHub. One exception (owner's answer 3, lot 3 step J1): when the ticket's
+ * pull request, as last read on GitHub, has exactly the head the report has, every commit of the
+ * report is on GitHub, even one whose push the server never saw (D3's "not seen by the server").
  */
 export function commitsNotOnGitHub(
-  ticket: Pick<TicketRow, 'githubBranchCommits'>,
+  ticket: Pick<TicketRow, 'githubBranchCommits' | 'pullRequestHead'>,
   report: ReportedBranch,
 ): { commits: CommitSummary[]; count: number } {
+  if (report.head !== null && report.head === ticket.pullRequestHead) {
+    return { commits: [], count: 0 };
+  }
   const pushed = pushedCommits(ticket);
   if (report.notOnGitHub === null) {
     const commits = report.commits.filter((commit) => !pushed.has(commit.hash));
@@ -227,7 +239,7 @@ export async function ticketBranch(
     .limit(1);
   const report: ReportedBranch = reported
     ? runReport(reported.run)
-    : { commits: [], notOnGitHub: null };
+    : { head: null, commits: [], notOnGitHub: null };
   const notOnGitHub = commitsNotOnGitHub(ticket, report);
   const failure = notOnGitHub.count > 0 ? pushFailure(ticket) : null;
 

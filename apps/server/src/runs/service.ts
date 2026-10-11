@@ -778,8 +778,11 @@ export class RunService {
     const [ticket] = await tx.select().from(schema.tickets).where(eq(schema.tickets.id, ticketId));
     if (!ticket) throw new Error(`ticket ${ticketId} not found`);
     return (
-      commitsNotOnGitHub(ticket, { commits: branch.commitsAhead, notOnGitHub: branch.notOnGitHub })
-        .count === 0
+      commitsNotOnGitHub(ticket, {
+        head: branch.head,
+        commits: branch.commitsAhead,
+        notOnGitHub: branch.notOnGitHub,
+      }).count === 0
     );
   }
 

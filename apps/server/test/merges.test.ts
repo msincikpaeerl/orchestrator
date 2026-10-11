@@ -551,6 +551,58 @@ describe('the stored pull request', () => {
   });
 });
 
+describe("the D3 exception: a pull request's head a machine reported", () => {
+  it("makes that report's commits count as on GitHub, so Run now takes any machine", async () => {
+    const { daemon, first } = await inReview();
+    const asked = await h.call('POST', '/api/projects/WEB/tickets/1/request-changes', {
+      comment: 'Add the opening hours.',
+    });
+    expect(asked.statusCode, asked.body).toBe(200);
+    const fix = await h.running(daemon);
+    // The run's push reached GitHub, but the server never heard of it (the push not reported):
+    // the end report lists the new head as on no branch fetched from GitHub.
+    const pushed = h.github.commit(
+      repo(),
+      't/1-contact-form',
+      { 'src/hours.ts': 'export {};\n' },
+      'Opening hours',
+    );
+    expect((await h.call('POST', `/api/runs/${fix.runId}/stop`)).statusCode).toBe(200);
+    const end = state(fix.runId, { state: 'ended', reason: 'stopped' });
+    if (end.payload.state !== 'ended') throw new Error('not an end');
+    await h.report(daemon, {
+      ...end,
+      payload: {
+        ...end.payload,
+        branch: {
+          name: 't/1-contact-form',
+          head: pushed,
+          commitsAhead: [
+            { hash: pushed, subject: 'Opening hours' },
+            { hash: first.commit, subject: 'Work of the agent' },
+          ],
+          notOnGitHub: { listed: [pushed], count: 1 },
+        },
+      },
+    });
+    expect((await h.ticket()).branch).toMatchObject({
+      where: 'machine_ahead',
+      notOnGitHubCount: 1,
+    });
+    // Only Laptop holds that commit, as far as the server knows: offline, Run now is refused.
+    await daemon.close();
+    const desk = await h.machine('Desk');
+    expect((await h.call('POST', '/api/projects/WEB/tickets/1/run')).statusCode).toBe(409);
+
+    // The next check reads the pull request's head on GitHub: exactly the reported head.
+    await h.t.ciTick();
+    expect((await ticketRow()).pullRequestHead).toBe(pushed);
+    expect((await h.ticket()).branch).toMatchObject({ where: 'github', notOnGitHubCount: 0 });
+    const run = await h.running(desk.daemon);
+    expect((await h.run(run.runId)).machine.name).toBe('Desk');
+  });
+});
+
 describe('Needs you after a merge', () => {
   it('leaves no item of the ticket, whatever its kind', async () => {
     // Every kind tied to a ticket, from the schema: a new kind fails this test until it is here.
