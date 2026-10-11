@@ -930,7 +930,7 @@ Split approved by the owner on 2026-10-10 (H1 to H4 below; H5 added at the start
 - **Words not in the approved list**, written by me: the workflow line of "Ready for review" ("Workflow files changed: this work changes files under .github/workflows/, which decide what CI checks on GitHub. Look at them on the pull request before reviewing or merging." and the "may have changed" form); "Not reviewed yet." in the ticket page's section; the changes heading carries its time ("Changes requested by Quality · commit abc1234 · 3 points · 14:52"); "Open the review run"; Help's new section **Review by Quality** (Tickets) with "What a review costs", "The result", "The review on GitHub", "When the review did not finish".
 - **Not in H4**: the rules of their own for review runs (H5).
 
-### [ ] H5. Rules of their own for review runs
+### [x] H5. Rules of their own for review runs
 
 Approved by the owner on 2026-10-10 (answer 1 of H4), from the H2 summary (about half a session, no protocol change).
 
@@ -946,6 +946,8 @@ Approved by the owner on 2026-10-10 (answer 1 of H4), from the H2 summary (about
 3. **The purposes of later lots** (A): `implement`, `fix_review` and `document` (Technical Writer, lot 6) get shared and builder rules (the writer's "docs only" limit belongs in its role); `review` shared and reviewer rules; `plan` (lot 5) shared and planner rules written in lot 5 (ending with `plan_propose`, `request_ask` or `ticket_give_up`, no commits, no file changes); the shared opening's "one ticket at a time" may become a slot then, keeping the builder and reviewer texts word for word unless the owner agrees. Custom agents get the rules of the run's purpose, never of the profile.
 
 - **Also agreed**: Help > Agents' "What every agent follows" split (shared points, the builders', Quality's ending) and "Versions" says "the rules it follows"; both snapshots regenerated; no allowlist change, so no smoke run by the owner (the smoke script sends its own instructions, not the rules). The tip rule (`/ultrareview`, carried from lot 2) stays in step L and goes into the shared rules.
+
+*Done 2026-10-11.* Choices made in the step: `PURPOSE_RULES` and `ROLE_RULES` in `apps/server/src/agents/files.ts`, `runRules` in `messages.ts` (a `plan` run throws until lot 5); a profile's `shipped_hash` covers the shared rules, the rules of its role's runs, the allowlist template and its file, so a change of the builder rules raises the Architect and the Web Developer only, of the reviewer rules Quality only (tested). The 0.3.0 common rules are kept as `apps/server/src/agents/__fixtures__/common-rules-0.3.0.md` for the word-for-word test. `review.md`'s "How to decide" section is gone: its tests sentence now follows the CI result under "## CI"; Quality's role lost "You do not", the CI sentence, the report sentence and the `ticket_ask` sentence (all said once elsewhere). The allowlist smoke script only drops its `common-rules.md` filter: it sends its own instructions, never the rules.
 
 
 ### [ ] I. Changes after a review

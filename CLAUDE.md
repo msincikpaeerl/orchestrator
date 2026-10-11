@@ -59,7 +59,7 @@ apps/web/        React UI (Vite, TanStack Query, Tailwind)
 apps/daemon/     Daemon, tmux runner, hooks endpoint, MCP relay
 packages/protocol/  Zod schemas shared by all apps: daemon messages, MCP tools, API types
 packages/db/     Drizzle schema and SQL migrations
-agents/          Default agent profiles, common rules and run message templates (seeded at start)
+agents/          Default agent profiles, rules by run purpose (rules/) and run message templates (seeded at start)
 templates/       Files written to GitHub: project-skeleton/ for new repositories (ADR 0023)
 docs/specs/      Specifications (00 to 10)
 docs/user/       User documentation, shown in the app's Help section
