@@ -42,9 +42,9 @@ CI passed on GitHub for commit {{commit}}.
 <!-- part: ci-passed-later -->
 CI passed on GitHub for commit {{commit}}; the owner had it read again after the agent's run ended, and the work was accepted then.
 <!-- part: no-ci -->
-No CI ran on GitHub for commit {{commit}}: nothing appeared within Wait for CI to start after the pull request opened. Nothing on GitHub tested this work.
+No CI ran on GitHub for commit {{commit}}: nothing appeared within Wait for CI to start after the pull request opened.
 <!-- part: no-ci-workflows -->
-No CI found for commit {{commit}}, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first. Nothing on GitHub tested this work.
+No CI found for commit {{commit}}, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first.
 <!-- part: workflows-changed -->
 Workflow files changed: this work changes files under `.github/workflows/`, which decide what CI checks on GitHub. Read those changes as carefully as the code.
 <!-- part: workflows-maybe -->

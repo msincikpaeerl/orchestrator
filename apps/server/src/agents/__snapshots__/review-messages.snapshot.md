@@ -165,15 +165,13 @@ ADRs: none
 Keep the form short: no phone number.
 
 
-# First message (review), No CI found and workflow files changed: its CI and How to decide
+# First message (review), No CI found and workflow files changed: its CI
 
 ## CI
 
-No CI found for commit abc1234def5678abc1234def5678abc1234def56, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first. Nothing on GitHub tested this work.
+No CI found for commit abc1234def5678abc1234def5678abc1234def56, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read those changes first.
 
 Nothing on GitHub tested this work: run the project's tests and build yourself, with the commands `CLAUDE.md` gives, when the project has any, and say in your decision what you ran.
-
-## How to decide
 
 # Nudge (review)
 

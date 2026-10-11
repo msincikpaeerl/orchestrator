@@ -126,7 +126,7 @@ describe('the first message of a review run', () => {
     it('with No CI found, says nothing tested it and to run the tests and build', () => {
       const text = message({ ci: 'no_ci' });
       expect(text).toContain(
-        `No CI ran on GitHub for commit ${commit}: nothing appeared within Wait for CI to start after the pull request opened. Nothing on GitHub tested this work.`,
+        `No CI ran on GitHub for commit ${commit}: nothing appeared within Wait for CI to start after the pull request opened.`,
       );
       expect(text).toContain(
         "Nothing on GitHub tested this work: run the project's tests and build yourself, with the commands `CLAUDE.md` gives, when the project has any, and say in your decision what you ran.",
@@ -143,6 +143,13 @@ describe('the first message of a review run', () => {
       expect(text).not.toContain('Workflow files changed:');
       expect(text).not.toContain('do not run the test suite again');
       expect(text).toContain("run the project's tests and build yourself");
+    });
+
+    it('with No CI found, says once that nothing on GitHub tested the work (owner, step I)', () => {
+      for (const workflows of [null, 'changed', 'not_listed'] as const) {
+        const text = message({ ci: 'no_ci', workflows });
+        expect(text.split('Nothing on GitHub tested this work').length - 1).toBe(1);
+      }
     });
 
     it('with CI passed and workflow files changed or maybe changed, adds a line of its own', () => {
@@ -221,9 +228,8 @@ describe('Quality and its messages (snapshot)', () => {
           },
         ],
       }),
-      '# First message (review), No CI found and workflow files changed: its CI and How to decide',
+      '# First message (review), No CI found and workflow files changed: its CI',
       `## CI${noCi.split('## CI')[1]?.split('\n# WEB-12')[0] ?? ''}`.trimEnd(),
-      `## How to decide${noCi.split('## How to decide')[1] ?? ''}`.trimEnd(),
       '# Nudge (review)',
       nudgeMessage(templates, 'review'),
     ];
