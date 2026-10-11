@@ -17,12 +17,30 @@ import { startFakeGitHub, type FakeGitHub } from './fake-github.js';
 import { createOwner, OWNER, sessionCookie, startTestApp, type TestApp } from './helpers.js';
 
 let github: FakeGitHub;
+let everyEvent: Promise<TestApp> | undefined;
+
+// Writing every event type goes through most of the product, and grows with each new event
+// type: about 1 second on an idle machine, 6.5 to 8.7 seconds while two full test suites run
+// beside it (lot 3 step J0). It is done once for the file, under its own longer deadline.
+const EVERY_EVENT_TIMEOUT_MS = 30_000;
+
+/** The app holding every event type, written once for the whole file. */
+function appWithEveryEvent(): Promise<TestApp> {
+  everyEvent ??= (async () => {
+    github.accounts.clear();
+    const t = await startEveryEventApp(github);
+    await writeEveryEvent(t, github);
+    return t;
+  })();
+  return everyEvent;
+}
 
 beforeAll(async () => {
   github = await startFakeGitHub();
 });
 
 afterAll(async () => {
+  await (await everyEvent)?.close();
   await github.close();
 });
 
@@ -61,15 +79,9 @@ describe('events of every type', () => {
   let cookie: string;
 
   beforeAll(async () => {
-    github.accounts.clear();
-    t = await startEveryEventApp(github);
-    await writeEveryEvent(t, github);
+    t = await appWithEveryEvent();
     cookie = await login(t);
-  });
-
-  afterAll(async () => {
-    await t.close();
-  });
+  }, EVERY_EVENT_TIMEOUT_MS);
 
   it('writes every event type, each with the payload its plain-words text needs', async () => {
     const events = await readAll(t, cookie);
@@ -191,13 +203,16 @@ describe('events of every type', () => {
 });
 
 describe('migration of the events written before the project reference', () => {
+  let t: TestApp;
+
+  beforeAll(async () => {
+    t = await appWithEveryEvent();
+  }, EVERY_EVENT_TIMEOUT_MS);
+
   it('gives them the same project as the current code does', async () => {
-    github.accounts.clear();
-    const t = await startEveryEventApp(github);
     const old = await createTestDatabase({ empty: true });
     const oldPool = createPool({ connectionString: old.url });
     try {
-      await writeEveryEvent(t, github);
       await migrateUpTo(oldPool, '0005_settings');
 
       // The same rows in a database of lot 1 before this step: events without project_id.
@@ -236,7 +251,6 @@ describe('migration of the events written before the project reference', () => {
     } finally {
       await endPool(oldPool);
       await old.drop();
-      await t.close();
     }
   });
 
