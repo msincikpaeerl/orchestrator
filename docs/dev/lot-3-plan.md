@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A to I2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4)
+> Status: in progress (steps A to I2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4; J0 done)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -1087,13 +1087,19 @@ Split approved by the owner on 2026-10-11 (J0 to J4 below), with the answers bel
 8. **The owner's check on the real GitHub** (agreed, with additions): new assumptions A32 (the open list leaves out merged and closed pull requests and gives each head), A33 (after a squash and after a rebase merge: `merged` true, `merged_at`, head = the branch's head), A34 (`pulls?base=<branch>` finds a pull request based on it), A35 (a deleted ref: 404), A36 (`PATCH state=closed` closes), **A37** (`git/ref/heads/<name>` answers 404 when only a longer branch name starting with it exists), **A38** (the comparison's status and commit list for a head moved by **Update branch**). A step 11 asks the owner to merge two small pull requests, one squash and one rebase; before it the script reads the repository's settings and, when squash or rebase merging is disabled, says which box to tick instead of failing later. The test repository keeps 2 or 3 more commits on its default branch and the closed pull requests; every branch the script made is deleted. **The owner runs the script after J4 is merged and pastes the result before K starts.**
 9. **Specs** (rule 4), each by the sub-step that builds it: 04 section 2 (a merge after **Mark as done manually**, the cancel race B, the merged-into-another-base case, the decision named in the merge comment); 05 sections 3.3 and 4.11 (`branch.delete`); 04 section 4 and 05 section 4.11 (the base and ref-head checks); 02 section 4 (the closed item's words); 04 section 3.1 (the closed pull request during a CI wait); Start review on a closed pull request; the end cause "pull request merged" (01 and 04); the clean-up events (01 section 3.10).
 
-### [ ] J0. The two flaky tests
+### [x] J0. The two flaky tests
 
 Its own branch (`lot3/j0-flaky-tests`) and pull request, with this plan update; J1 starts in a new session once J0 is merged.
 
 - Two server tests timed out once each under a full `pnpm verify` during I2: "puts a resume not acknowledged in time back to paused" (`apps/server/test/runs.test.ts`) and "migration of the events written before the project reference" (`apps/server/test/event-log.test.ts`). Each is reproduced under load first, and the summary gives the measured cause. A longer deadline only where the measurement shows plain slowness, never by removing or loosening an assertion. One that cannot be fixed is recorded here as a known unstable test, with its symptom.
 
 **Done when** each test passes repeatedly under the load that made it fail, the cause of each is measured and fixed (or recorded), and `pnpm verify` and `pnpm test:e2e` pass.
+
+*Done 2026-10-11.* Measured with each test run repeatedly while two full `pnpm test` suites ran beside it:
+
+- **The resume test** (`runs.test.ts`): 10 of 20 runs failed, never by a timeout but with Resume refused ("this one is cancelled"). The test shortened **Machine answer timeout** to 100 ms for the whole test, so the start, which the test acknowledges itself, ran out of time too under load and the run was cancelled before its pause. Fixed: the start gets the longest timeout, and the setting goes down to 5 seconds (100 ms) only before the resume; 18 of 20 passed under the same load, the 2 others failing with PostgreSQL's "too many clients already", a limit of three suites sharing one test database, not of this test. Every assertion kept.
+- **The migration test** (`event-log.test.ts`): 10 of 10 runs timed out at 5 seconds. Not the migrations (both under 0.6 s): it wrote every event type again in its own body, 6.5 to 8.7 seconds under load (about 55 API calls and a scripted daemon, no step over 0.8 s), 1 second on an idle machine, and growing with each new event type. Fixed: the file writes every event type once, shared by both describes, under a 30-second hook deadline (plain slowness, measured; the earlier hook had 10 seconds and needed up to 8.7); the test only copies and migrates, 0.22 s under the same load. Every assertion kept.
+- **Same pattern, not changed**: `mcp.test.ts` "fails the run with machine_offline when the machine does not confirm the resume in time" shortens the timeout to 250 ms for the whole test too; it passed 20 of 20 under the same load, so it is left as it is and noted here.
 
 ### [ ] J1. Merge detection and `done`
 
