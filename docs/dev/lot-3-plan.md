@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A to H5 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2)
+> Status: in progress (steps A to H5 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2; I1 done)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -986,12 +986,23 @@ Split approved by the owner on 2026-10-11 (I1 server, I2 screens), with the answ
 6. **The owner's Request changes on Awaiting merge** (A): nothing is posted on GitHub (Quality's comment review stays; the next accepted submission adds commits and updates the description). On the screens the approval (or the skip) stays the latest review with "You requested changes after this approval, at 15:10." while the fix is pending, then H4's "on an earlier submission" sentence.
 7. **Words and specs**: as proposed. Request changes dialog on Awaiting merge: "Request changes on BAK-12? Quality approved commit abc1234 (| you skipped the review). The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open."; ticket page in `todo` after a request: "Run now starts a run that addresses Quality's points (round 1 of at most 2)." or "… your request."; the new setting in `docs/user/settings.md` with "(from version 0.4.0)". Specs fixed: 04 section 2 (the owner's `in_review` → `todo` row, the `awaiting_merge` row), 3.1 (the same-commit check), 5 (counting, Try again), 01 section 3.4, 03 section 3.1, 07 section 3. **Owner's addition (I2, Help)**: what the owner does when they disagree with Quality's request: merge the pull request on GitHub, then **Mark as done manually**; both checked possible from `todo` with a request standing, and tested.
 
-### [ ] I1. Fix runs, rounds and the stop: server
+### [x] I1. Fix runs, rounds and the stop: server
 
 - First commit: the two H5 leftovers (the snapshot's empty "How to decide" heading; "Nothing on GitHub tested this work" said once).
 - `agents/templates/fix-review.md` (answers 3 and 5); **Run now** choosing `fix_review` (07 section 3); the same-commit refusal (answer 1); `maxReviewRounds`, `review_rounds` and the stop mark with **Run now**'s refusal, the comment, the "Needs you" item and **Try again** in the API (answer 2); **Request changes** from `awaiting_merge` and on 0.3.0 tickets (answer 6); the next review's section (answer 4); attempts.
 
 **Done when** integration tests cover a full round, the limit stopping the ticket then **Try again**, **Request changes** in each state, a 0.3.0 ticket, a failing `fix_review` counted, the same commit refused for Quality's and the owner's request, and merging plus **Mark as done manually** from `todo` with a request standing; the snapshot shows `fix-review.md` and the next review's section for the owner to read.
+
+*Done 2026-10-11.* Choices made in the step (flagged to the owner):
+
+- **Where it lives**: the ticket's `review_rounds`, `stopped` (`TicketStop`: cause, count, the setting's value then, when) and `change_request` (`ChangeRequest`) with `change_request_answered_at` (migration 0028); `apps/server/src/tickets/changes.ts` (standing request, accepted commit, Try again's comment); the request kept by `applyOwnerAction` and `applyRunAction` (answered when an accepted submission moves the ticket to `in_review`, by the run or **Check CI again**); the stop in `RunService.stopAfterRounds`; **Try again** `POST /api/projects/<key>/tickets/<n>/try-again` (refusal `ticket_not_stopped`); the "Needs you" item `ticket_stopped`; events `ticket.stopped` and `ticket.tried_again`; check reason `same_commit_request`; `fixReviewFirstMessage` and `fixReviewTicket`; "## The previous review" in `review.md`, built by `reviewTicket`. Tests: `apps/server/test/fix-review.test.ts`, the message tests and both snapshots.
+- **The stop is one record** (`stopped`, 01 section 3.4's field name) rather than a cause and a time: Run now's refusal and the item state the count and the setting's value when the ticket stopped.
+- **"Nothing on GitHub tested this work"** (first commit): said once for both "No CI found" variants, at the start of the tests sentence, not only for the one with workflow files; 04 section 3.2 says so.
+- **Words not in the approved list**, written by me: `fix-review.md`'s line "Project: Bakery website. Type: … Priority: …" (the approved opening has no project name); the start parts' second sentences (`git log`/`git diff`, as implement's); "(N more points are not shown here because this message would be too long: read them with `ticket_comments`, where each point is a review comment.)"; the lost part's "the machine holding it was removed from the Orchestrator before it was pushed to GitHub"; the previous review's sentence for your addition ("Then review the rest of the change as usual, since the answer to a point can break something else: your review is of the whole work at commit def5678, not only of what changed since."); Try again's comment ("The owner used Try again: the ticket was stopped after 3 requests for changes by Quality (Most review rounds per ticket: 2). Its failed attempts and review rounds count from 0 again."); the setting's description; the Needs you card's title and sentence, and the event log's lines; spec 02's "… after skipping the review, at 15:10." for a skip.
+- **What the agent said**: the agents' `note` comments from builder runs after the request (its questions and your answers stay in "Comments").
+- **Reopen** now also resets `attempt_count`, which 04 section 2 already said and the code did not do.
+- **Already on the screens in I1**: the ticket page offers **Request changes** on **Awaiting merge** (the screens read the transitions from the protocol), still with lot 2's dialog; the plain "Needs you" card has no buttons yet. Requests made before 0.4.0 have no `change_request`: their next run stays `implement`, with the points in its comments. A previous review's points too long for the review's first message refuse **Start review** (`first_message_too_large`); only the earlier sections are cut.
+- **Help and CHANGELOG**: in I2, with the screens; only Settings' new row is written in I1.
 
 ### [ ] I2. Screens and Help
 
