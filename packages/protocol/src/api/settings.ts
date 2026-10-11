@@ -139,7 +139,7 @@ const definitions = {
     group: 'github',
     label: 'GitHub check interval',
     description:
-      'How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result.',
+      'How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result, or a pull request waiting to be merged.',
     unit: 'seconds',
     min: 15,
     max: 600,

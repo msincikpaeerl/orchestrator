@@ -8,6 +8,7 @@ import {
 import { Link } from 'react-router';
 import { UntrustedMarkdown } from '../components/markdown';
 import { Card, HelpLink } from '../components/ui';
+import { useGlobalSettings } from '../queries';
 import { runPath } from '../runs/text';
 import { SkipReviewAction, StartReviewAction } from './actions';
 import { requestedAfterText } from './change-text';
@@ -112,6 +113,10 @@ export function TicketReviewSection({
   const opened = ticket.pullRequest.opened;
   const awaitingMerge = ticket.status === 'awaiting_merge' && opened !== null;
   const offered = review.offered && canChange;
+  // The check interval's value, for the Awaiting merge line (owner's answer 7, lot 3 step J1).
+  const settings = useGlobalSettings();
+  const interval =
+    settings.data?.settings.find((setting) => setting.name === 'githubPollSeconds')?.value ?? null;
   if (text === null && !offered && !awaitingMerge) return null;
   const { latest } = review;
   // While the owner's request on Awaiting merge stands (owner's answer 6, lot 3 step I).
@@ -145,7 +150,7 @@ export function TicketReviewSection({
       </section>
       {awaitingMerge && (
         <p aria-label="Merge" className="break-words text-slate-900">
-          {awaitingMergeText(opened.number)}
+          {awaitingMergeText(opened.number, interval)}
         </p>
       )}
       {offered && (
