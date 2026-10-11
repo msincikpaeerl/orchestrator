@@ -10,6 +10,7 @@ import { useRunLog } from '../runs/log';
 import { acceptedAfterText, isActive, purposeLabel, runStateText, usageText } from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
 import { CheckList, ReportFiles } from '../tickets/submission';
+import { RunReviewCard } from '../tickets/review';
 import { ticketPath } from '../tickets/text';
 
 /** The ticket's number in `WEB-12`. */
@@ -158,6 +159,7 @@ function RunContent({ run }: { run: RunDetail }) {
           )}
           <RunActions run={run} />
         </Card>
+        <RunReviewCard run={run} />
         <CiWaitCard run={run} />
         <CiHistoryCard run={run} />
         <Card className="space-y-2">

@@ -206,6 +206,84 @@ function useRunNow(ticket: TicketAddress) {
   });
 }
 
+/**
+ * **Start review** (04, section 3.2; lot 3 step H): a review run by Quality, one Claude Code
+ * session, with no confirmation, as **Run now** (owner's answer 5); the run page opens. A refusal
+ * says why and what to do.
+ */
+export function StartReviewAction({ ticket }: { ticket: TicketAddress }) {
+  const navigate = useNavigate();
+  const start = useMutation({
+    mutationFn: () => api('POST', ticketApi(ticket, '/review'), Run),
+    onSettled: () => ticketsChanged(),
+    onSuccess: (run) => navigate(runPath(run.id)),
+  });
+  return (
+    <>
+      <Button
+        onClick={() => {
+          start.mutate();
+        }}
+        disabled={start.isPending}
+      >
+        Start review
+      </Button>
+      {start.error && (
+        <div className="w-full">
+          <ErrorMessage>{refusalText(start.error)}</ErrorMessage>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * **Skip review** (04, section 2; owner's answer 5, lot 3 step H): the ticket moves to Awaiting
+ * merge without Quality's review, after a confirmation; no session.
+ */
+export function SkipReviewAction({ ticket }: { ticket: TicketAddress }) {
+  const [asking, setAsking] = useState(false);
+  const skip = useTicketAction(() => api('POST', ticketApi(ticket, '/skip-review'), TicketDetail));
+  const ref = ticketRef(ticket.projectKey, ticket.number);
+  return (
+    <>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          skip.reset();
+          setAsking(true);
+        }}
+      >
+        Skip review
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          title={`Skip the review of ${ref}?`}
+          confirmLabel="Skip review"
+          dismissLabel="Keep it in review"
+          busy={skip.isPending}
+          error={skip.error && <ErrorMessage>{refusalText(skip.error)}</ErrorMessage>}
+          onConfirm={() => {
+            skip.mutate(undefined, {
+              onSuccess: () => {
+                setAsking(false);
+              },
+            });
+          }}
+          onCancel={() => {
+            setAsking(false);
+          }}
+        >
+          <p>
+            It moves to Awaiting merge without Quality&apos;s review: check the pull request
+            yourself before merging it on GitHub.
+          </p>
+        </ConfirmDialog>
+      )}
+    </>
+  );
+}
+
 /** **Accept** a ticket an agent proposed: it goes to To do (04, section 2). */
 export function AcceptAction({ ticket }: { ticket: TicketAddress }) {
   const accept = useTicketAction(() => api('POST', ticketApi(ticket, '/accept'), TicketDetail));

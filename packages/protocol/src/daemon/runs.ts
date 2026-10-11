@@ -288,6 +288,12 @@ export const RunState = message(
        */
       headMoved: z.boolean().nullable().default(null),
       /**
+       * A `review` run ended `review_branch_moved` at preparation, before any session: GitHub's
+       * head of the ticket branch found then (lot 3 step H4). Null otherwise; absent from
+       * protocol 1.
+       */
+      movedHead: GitHash.nullable().default(null),
+      /**
        * What the daemon found changed in the bare clone's Git configuration and hooks at the
        * run's end, and restored, in plain words: the settings and hook files named, never their
        * values or content (05, section 7.1; protocol 2). Null when nothing changed, and absent

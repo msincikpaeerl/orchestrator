@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PullRequestFailureReason } from './pull-requests.js';
 import { GitHash } from '../daemon/git.js';
+import { FailureReason } from './run-status.js';
 
 /** One point of a request for changes, as stored: the agent's text, untrusted (06, section 4.5). */
 export const ReviewPointRecord = z.object({
@@ -98,3 +99,89 @@ export const ReviewPost = z.discriminatedUnion('state', [
   }),
 ]);
 export type ReviewPost = z.infer<typeof ReviewPost>;
+
+/**
+ * The post as the screens show it: its outcome, or `posting` while it is wanted and has none yet
+ * ("Posting on GitHub…"; owner's answer 4, lot 3 step H4).
+ */
+export const ReviewPostView = z.union([
+  ReviewPost,
+  z.object({ state: z.literal('posting'), pullRequest: z.int().positive() }),
+]);
+export type ReviewPostView = z.infer<typeof ReviewPostView>;
+
+/** Where a review run found the head moved (lot 3 step H4, owner's answer 3). */
+export const ReviewMoved = z.enum(['before_start', 'machine', 'github']);
+export type ReviewMoved = z.infer<typeof ReviewMoved>;
+
+/**
+ * Why a review run ended without a decision applied, as facts the screens word (owner's answers
+ * 2 and 3, lot 3 step H4): Quality gave up (its reason); the pull request changed on GitHub
+ * before the review started or at a decision (its head then, when known); the branch changed on
+ * the machine; the owner's **Stop run**; any other failure of the run.
+ */
+export const ReviewEnd = z.discriminatedUnion('why', [
+  z.object({ why: z.literal('gave_up'), reason: z.string().nullable() }),
+  z.object({ why: z.literal('moved_before_start'), head: GitHash.nullable() }),
+  z.object({ why: z.literal('moved_on_github'), head: GitHash.nullable() }),
+  z.object({ why: z.literal('moved_on_machine') }),
+  z.object({ why: z.literal('stopped') }),
+  z.object({ why: z.literal('failed'), failureReason: FailureReason }),
+]);
+export type ReviewEnd = z.infer<typeof ReviewEnd>;
+
+/**
+ * A review run's review card (02, section 7; lot 3 step H4): the commit reviewed, Quality's
+ * decision (agent text, credentials masked), whether it was applied, why not, and its post.
+ */
+export const RunReview = z.object({
+  commit: GitHash.nullable(),
+  /** The ticket's pull request. */
+  pullRequest: z.int().positive().nullable(),
+  decision: ReviewDecision.nullable(),
+  applied: z.boolean(),
+  /** The run ended without a decision applied; null while it is active, or once applied. */
+  notApplied: ReviewEnd.nullable(),
+  post: ReviewPostView.nullable(),
+});
+export type RunReview = z.infer<typeof RunReview>;
+
+const MachineRef = z.object({ id: z.uuid(), name: z.string() });
+
+/**
+ * The ticket's latest review, for its page (02, section 6.4; owner's answer 4, lot 3 step H4):
+ * a review run working, Quality's decision applied, a review run that did not finish (shown only
+ * while the ticket is in review, about the work in review), or the owner's **Skip review**. A
+ * review run the owner stopped before any decision is passed over.
+ */
+export const TicketReviewLatest = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('in_progress'), runId: z.uuid(), machine: MachineRef }),
+  z.object({
+    kind: z.literal('decision'),
+    runId: z.uuid(),
+    decision: ReviewDecision,
+    post: ReviewPostView.nullable(),
+  }),
+  z.object({
+    kind: z.literal('not_finished'),
+    runId: z.uuid(),
+    machine: MachineRef,
+    decision: ReviewDecision.nullable(),
+    end: ReviewEnd,
+    endedAt: z.iso.datetime(),
+  }),
+  z.object({ kind: z.literal('skipped'), at: z.iso.datetime() }),
+]);
+export type TicketReviewLatest = z.infer<typeof TicketReviewLatest>;
+
+export const TicketReview = z.object({
+  latest: TicketReviewLatest.nullable(),
+  /**
+   * While the ticket is in review: the commit of the work in review (the one CI checked), and
+   * whether `latest` is about an earlier submission (owner's change to answer 4). Null otherwise.
+   */
+  current: z.object({ commit: GitHash, earlier: z.boolean() }).nullable(),
+  /** **Start review** and **Skip review** offered: in review, a pull request, no run active. */
+  offered: z.boolean(),
+});
+export type TicketReview = z.infer<typeof TicketReview>;

@@ -420,6 +420,38 @@ describe('reviews', () => {
     const reviews = (await api('GET', `${REPO}/pulls/1/reviews`)).body as JsonObject[];
     expect(reviews.map((review) => review.state)).toEqual(['COMMENTED']);
   });
+
+  // The owner's smoke run on the real GitHub (2026-10-10, A30 and A31): a comment review is
+  // accepted for an older commit of the pull request, for a commit not in it, and on a closed one,
+  // each with the `commit_id` sent read back.
+  it('accept a comment review on any commit, and on a closed pull request', async () => {
+    await cloneWithToken();
+    const older = await pushCommit('t/1-cart', { 'cart.md': 'Cart\n' });
+    await pushCommit('t/1-cart', { 'cart.md': 'Cart, second\n' });
+    await openPull('t/1-cart');
+    const elsewhere = await pushCommit('t/2-other', { 'other.md': 'Other\n' });
+
+    for (const commit of [older, elsewhere]) {
+      const review = await api('POST', `${REPO}/pulls/1/reviews`, {
+        event: 'COMMENT',
+        body: 'Quality review: approved',
+        commit_id: commit,
+      });
+      expect(review.status).toBe(200);
+      expect(json(review)).toMatchObject({ state: 'COMMENTED', commit_id: commit });
+    }
+
+    github.closePullRequest(repo, 1);
+    const closed = await api('POST', `${REPO}/pulls/1/reviews`, {
+      event: 'COMMENT',
+      body: 'Quality review: approved',
+      commit_id: older,
+    });
+    expect(closed.status).toBe(200);
+    expect(json(closed)).toMatchObject({ state: 'COMMENTED', commit_id: older });
+    const reviews = (await api('GET', `${REPO}/pulls/1/reviews`)).body as JsonObject[];
+    expect(reviews.map((review) => review.commit_id)).toEqual([older, elsewhere, older]);
+  });
 });
 
 describe('Actions runs and commit statuses', () => {

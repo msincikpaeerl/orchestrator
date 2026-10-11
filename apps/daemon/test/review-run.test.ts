@@ -158,7 +158,12 @@ describe('a review run', () => {
           repository: { cloneUrl },
         });
         const end = await ended(run.runId);
-        expect(end).toMatchObject({ reason: 'review_branch_moved', headMoved: true, push: null });
+        expect(end).toMatchObject({
+          reason: 'review_branch_moved',
+          headMoved: true,
+          push: null,
+          movedHead: null,
+        });
         expect(end.detail).toMatch(/head moved during the review/);
         expect(pushRequests()).toEqual([]);
         expect(head(remote(), `refs/heads/${BRANCH}`)).toBe(github);
@@ -180,7 +185,8 @@ describe('a review run', () => {
         repository: { cloneUrl },
       });
       const end = await ended(run.runId);
-      expect(end).toMatchObject({ reason: 'review_branch_moved', push: null });
+      // GitHub's head is reported as a fact, for the screens' words (lot 3 step H4).
+      expect(end).toMatchObject({ reason: 'review_branch_moved', push: null, movedHead: github });
       expect(end.detail).toBe(
         `The ticket branch on GitHub moved since the review was started: it is now ${github.slice(0, 7)}, not ${local.slice(0, 7)}.`,
       );

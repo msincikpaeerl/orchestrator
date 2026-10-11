@@ -3,6 +3,7 @@ import { CommitSummary, GitHash, PushResult } from '../daemon/git.js';
 import { RunEndReason, RunPurpose } from '../daemon/runs.js';
 import { CiCheckFailure, CiResult } from '../mcp/ci.js';
 import { RunCiHistory } from './ci.js';
+import { RunReview } from './reviews.js';
 import { SubmissionRecord } from '../mcp/dod-report.js';
 import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
@@ -144,6 +145,8 @@ export const Run = z.object({
   ci: RunCiWait.nullable(),
   /** Its CI rounds and what its CI came to; null when it never waited for CI (lot 3 step G2c). */
   ciHistory: RunCiHistory.nullable(),
+  /** A review run's commit, decision and post; null for other runs (lot 3 step H4). */
+  review: RunReview.nullable(),
   /**
    * Time spent in `starting` and `running`, and in `waiting_human` and `paused_quota`, up to
    * `statusSince` (01, section 3.7): a screen adds the current period of an active run.

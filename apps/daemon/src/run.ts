@@ -131,6 +131,8 @@ export class Run {
   /** Between a turn's `Stop` and `afterTurn`: messages wait for `afterTurn`. */
   private turnEnding = false;
   private ending: Promise<void> | null = null;
+  /** GitHub's head of the ticket branch when a review's preparation found it moved. */
+  private movedHead: string | null = null;
   /** Set when the daemon stops: this object no longer acts, the session goes on. */
   private stopped = false;
 
@@ -339,6 +341,7 @@ export class Run {
     } catch (error) {
       if (error instanceof ReviewCommitMoved) {
         this.log.warn({ err: error }, 'review commit no longer the head on GitHub');
+        this.movedHead = error.head;
         await this.end('review_branch_moved', error.message);
         return;
       }
@@ -1160,6 +1163,7 @@ export class Run {
           branch,
           push,
           headMoved,
+          movedHead: this.movedHead,
           gitConfigRestored:
             gitConfigRestored === null
               ? null

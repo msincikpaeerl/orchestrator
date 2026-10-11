@@ -62,6 +62,7 @@ import {
   RunNowOffer,
   ticketApi,
 } from '../tickets/actions';
+import { TicketReviewSection } from '../tickets/review';
 import { WithProject } from './project';
 
 /** Tickets change only on an active project whose setup is done (04, section 2). */
@@ -731,6 +732,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
         </Card>
         <AnswerBox ticket={data} />
         <ActiveRun ticket={data} />
+        <TicketReviewSection ticket={data} canChange={canChange(project)} />
         <BlockedNotice ticket={data} />
         <Card className="space-y-4">
           <div className="space-y-2">

@@ -640,6 +640,13 @@ export const runs = pgTable(
     reviewDecision: jsonb('review_decision'),
     reviewAppliedAt: timestamp('review_applied_at', { withTimezone: true }),
     /**
+     * Where a review run found the head moved (`ReviewMoved`: `before_start`, the daemon's check
+     * at preparation; `machine`, at the end; `github`, at a decision), and the pull request's head
+     * on GitHub then when known, for the screens' words (owner's answers 2 and 3, lot 3 step H4).
+     */
+    reviewMoved: text('review_moved'),
+    reviewMovedHead: text('review_moved_head'),
+    /**
      * The decision's comment review on GitHub (06, section 4.5; lot 3 step H3), posted at most
      * once: wanted from the transaction applying the decision (with the pull request's number),
      * started in a transaction of its own before the request, and its outcome (`ReviewPost`),
@@ -672,6 +679,7 @@ export const runs = pgTable(
       'runs_purpose',
       sql`${table.purpose} IN ('implement', 'review', 'plan', 'document', 'fix_review')`,
     ),
+    check('runs_review_moved', sql`${table.reviewMoved} IN ('before_start', 'machine', 'github')`),
     check(
       'runs_pause_reason',
       sql`${table.pauseReason} IN ('usage_limit', 'suspected_usage_limit')`,

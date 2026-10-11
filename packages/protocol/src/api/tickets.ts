@@ -4,6 +4,7 @@ import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { PullRequestFailure, PullRequestState } from './pull-requests.js';
 import { RunCiOutcome } from './ci.js';
+import { TicketReview } from './reviews.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 
 /** Ticket types; the Definition of Done depends on them (04, section 3.3). */
@@ -318,6 +319,8 @@ export const TicketDetail = TicketSummary.extend({
   workflowFlag: WorkflowFlag.nullable(),
   pullRequest: TicketPullRequest,
   ci: TicketCi.nullable(),
+  /** The latest review, and **Start review** and **Skip review** offered (lot 3 step H4). */
+  review: TicketReview,
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 

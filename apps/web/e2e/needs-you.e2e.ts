@@ -299,5 +299,6 @@ test('a pull request GitHub could not open is opened with Try again', async ({
 
   await notOpened.getByRole('button', { name: 'Try again' }).click();
   await expect(notOpened).toBeHidden();
-  await expect(item(page, 'Work finished: check it')).toBeVisible();
+  // With its pull request, the work is ready for review (owner's answer 6f, lot 3 step H).
+  await expect(item(page, 'Ready for review: WEB-1 Contact form')).toBeVisible();
 });

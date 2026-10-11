@@ -65,7 +65,10 @@ export interface ReviewStart {
  * ends with `review_branch_moved` before any session (04, section 3.2; lot 3 step H).
  */
 export class ReviewCommitMoved extends Error {
-  constructor(head: string, expected: string) {
+  constructor(
+    readonly head: string,
+    expected: string,
+  ) {
     super(
       `The ticket branch on GitHub moved since the review was started: it is now ${head.slice(0, 7)}, not ${expected.slice(0, 7)}.`,
     );
