@@ -215,7 +215,8 @@ export function fixReviewFirstMessage(
       ? request.points.map((point, index) => {
           const values = { index: String(index + 1), body: point.body.trim() };
           if (point.file === null) return part(template, 'point', values);
-          if (point.line === null) return part(template, 'point-file', { ...values, file: point.file });
+          if (point.line === null)
+            return part(template, 'point-file', { ...values, file: point.file });
           return part(template, 'point-line', {
             ...values,
             file: point.file,

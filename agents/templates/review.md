@@ -30,7 +30,7 @@ This report is the implementing agent's own account of its work: check it agains
 
 {{report}}
 
-## Earlier reviews
+{{previous_review}}## Earlier reviews
 
 {{earlier_reviews}}
 
@@ -87,6 +87,46 @@ none listed; the agent's reason: {{justification}}
 none
 <!-- part: report-cut -->
 [The report is cut here because it is too long for this message. Read it whole with `ticket_get` before you decide.]
+<!-- part: previous-review -->
+## The previous review
+
+{{request}}
+
+What the agent said about these points:
+
+{{notes}}
+<!-- part: previous-quality -->
+Quality requested changes on commit {{commit}} at {{at}} (round {{round}} of at most {{limit}}). {{answer}}
+
+{{points}}
+<!-- part: previous-owner -->
+The owner requested changes at {{at}}{{on}}: {{comment}}
+
+{{answer}}
+<!-- part: previous-on -->
+, on commit {{commit}}
+<!-- part: previous-on-approved -->
+, on commit {{commit}} (Quality had approved it)
+<!-- part: previous-on-skipped -->
+, on commit {{commit}} (the review was skipped)
+<!-- part: previous-answer -->
+The work you review now is the agent's answer: check that each point was addressed, or that the agent's reason for leaving it holds.
+<!-- part: previous-diff -->
+`git diff {{commit}} HEAD` shows what changed since that review.
+<!-- part: previous-rest -->
+Then review the rest of the change as usual, since the answer to a point can break something else: your review is of the whole work at commit {{head}}, not only of what changed since.
+<!-- part: previous-point -->
+{{index}}. {{body}}
+<!-- part: previous-point-file -->
+{{index}}. `{{file}}`: {{body}}
+<!-- part: previous-point-line -->
+{{index}}. `{{file}}:{{line}}`: {{body}}
+<!-- part: previous-note -->
+### {{author}}, {{at}}
+
+{{body}}
+<!-- part: previous-no-notes -->
+(The agent left no comment about these points.)
 <!-- part: earlier-review -->
 ### {{author}}, {{at}}
 

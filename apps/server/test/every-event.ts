@@ -486,6 +486,69 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     }
   }
 
+  // A third request for changes on a ticket at Most review rounds per ticket (2) stops it
+  // (`ticket.stopped`), then the owner's Try again (`ticket.tried_again`; lot 3 step I).
+  const filters = TicketDetail.parse(
+    (
+      await call('POST', '/api/projects/SHOP/tickets', {
+        type: 'feature',
+        title: 'Filters',
+        assignee: 'web_dev',
+      })
+    ).json(),
+  );
+  await t.db
+    .update(schema.tickets)
+    .set({ status: 'in_review', reviewRounds: 2 })
+    .where(eq(schema.tickets.id, filters.id));
+  const roundsToken = 'ort_every_event_review_rounds';
+  const [rounds] = await t.db
+    .insert(schema.runs)
+    .values({
+      projectId: shop3Row?.projectId ?? '',
+      ticketId: filters.id,
+      profileId: quality?.id ?? '',
+      profileVersion: 1,
+      purpose: 'review',
+      machineId: machine.id,
+      accountId: account.id,
+      status: 'running',
+      attempt: 1,
+      runTokenHash: hashCredential(roundsToken),
+      branchName: `t/${String(filters.number)}-filters`,
+      baseBranch: 'main',
+      reviewCommit: 'f'.repeat(40),
+      acknowledgedAt: new Date(),
+    })
+    .returning();
+  github.alter = (request, reply) =>
+    request.method === 'GET' && /\/pulls\/\d+$/.test(request.path) ? { status: 502 } : reply;
+  await tool({
+    tool: 'review_request_changes',
+    runToken: roundsToken,
+    input: { points: [{ body: 'Sort the filters.' }] },
+  });
+  github.alter = undefined;
+  await daemon.request({
+    type: 'run.state',
+    id: randomUUID(),
+    payload: {
+      runId: rounds?.id ?? '',
+      at: new Date().toISOString(),
+      claudeSessionId: null,
+      sessionAlive: false,
+      state: 'ended',
+      reason: 'submitted',
+      detail: null,
+      branch: null,
+      push: null,
+      headMoved: false,
+      movedHead: null,
+      gitConfigRestored: null,
+    },
+  });
+  await call('POST', `/api/projects/SHOP/tickets/${String(filters.number)}/try-again`);
+
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({
     type: 'machine.doctor',

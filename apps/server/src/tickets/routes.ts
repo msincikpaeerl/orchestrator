@@ -58,6 +58,13 @@ import {
   type TicketRow,
 } from './model.js';
 import { ticketBranch } from './branch.js';
+import {
+  acceptedCommit,
+  requestAfter,
+  ticketChangeRequest,
+  ticketStop,
+  tryAgainComment,
+} from './changes.js';
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
 /** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
@@ -379,6 +386,9 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       pullRequest: ticketPullRequest(ticket),
       ci: await ticketCi(executor, ticket),
       review: (await ticketReview(executor, ticket)).review,
+      reviewRounds: ticket.reviewRounds,
+      stop: ticketStop(ticket),
+      changeRequest: await ticketChangeRequest(executor, ticket),
     };
   }
 
@@ -777,11 +787,24 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
             action === 'cancel' ? 'ticket_cancelled' : 'ticket_done',
           );
         }
+        // The commit the owner's request is made on, and what it comes after (lot 3 step I).
+        const changeRequest =
+          action === 'request_changes' &&
+          refusal(action, TicketStatus.parse(ticket.status)) === null
+            ? {
+                commit: await acceptedCommit(tx, ticket),
+                after:
+                  ticket.status === 'awaiting_merge'
+                    ? requestAfter((await ticketReview(tx, ticket)).review.latest)
+                    : null,
+              }
+            : undefined;
         const updated = await applyOwnerAction(tx, {
           projectKey: project.key,
           ticket,
           action,
           comment: text,
+          changeRequest,
           now: now(),
         });
         return detail(tx, project, updated);
@@ -806,6 +829,54 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     (body) => parseInput(RequestChangesRequest, body).comment,
   );
   ownerAction('skip-review', 'skip_review', () => undefined);
+
+  // **Try again** on a ticket the retry policy stopped (04, section 5; owner's answer 2, lot 3
+  // step I): the stop cleared, `attempt_count` and `review_rounds` back to 0, with a comment.
+  app.post<TicketParams>('/api/projects/:key/tickets/:number/try-again', async (request) => {
+    await requireSession(db, request);
+    const result = await change(request.params.key, async (tx, project) => {
+      const ticket = await findTicket(tx, project.id, request.params.number);
+      const stop = ticketStop(ticket);
+      if (stop === null || ticket.status !== 'todo') {
+        throw new HttpError(
+          409,
+          'ticket_not_stopped',
+          'This ticket is not stopped: Run now can start it',
+        );
+      }
+      const at = now();
+      const [comment] = await tx
+        .insert(schema.comments)
+        .values({
+          ticketId: ticket.id,
+          author: 'owner',
+          kind: 'status_change',
+          body: tryAgainComment(stop),
+          createdAt: at,
+        })
+        .returning({ id: schema.comments.id });
+      if (!comment) throw new Error('comment not inserted');
+      const [updated] = await tx
+        .update(schema.tickets)
+        .set({ stopped: null, attemptCount: 0, reviewRounds: 0, updatedAt: at })
+        .where(eq(schema.tickets.id, ticket.id))
+        .returning();
+      if (!updated) throw new Error('ticket disappeared');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...ticketEntity(ticket),
+        type: 'ticket.tried_again',
+        payload: { ...about(project, ticket), cause: stop.cause, commentId: comment.id },
+        at,
+      });
+      return detail(tx, project, updated);
+    });
+    request.log.info(
+      { project: result.projectKey, ticket: result.number },
+      'stopped ticket tried again by the owner',
+    );
+    return result;
+  });
 
   // **Try again** of "Pull request not opened" (04, section 3.1; lot 3 step F3): one attempt,
   // answered once made; the ticket must still want its pull request.

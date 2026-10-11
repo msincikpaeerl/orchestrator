@@ -50,6 +50,7 @@ import {
   type CommentRow,
   type TicketRow,
 } from '../tickets/model.js';
+import { standingRequest } from '../tickets/changes.js';
 import { recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import type { Templates } from '../agents/files.js';
@@ -1285,8 +1286,13 @@ export class McpBackend {
       .parse(call.run.ciRounds)
       .filter((round) => round.confirmedAt !== null)
       .map((round) => ({ commit: round.commit, kind: round.kind }));
+    const request = standingRequest(call.ticket);
     const checked = checkSubmission(texts, {
       roundCommits,
+      requestCommit:
+        request === null || request.commit === null
+          ? null
+          : { commit: request.commit, by: request.by },
       ticketType: TicketType.parse(call.ticket.type),
       criteria,
       report,

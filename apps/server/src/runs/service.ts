@@ -14,6 +14,7 @@ import {
   PushResult,
   ReviewDecision,
   type ReviewMoved,
+  type TicketStop,
   SESSION_ALIVE_REFUSAL,
   SESSION_CLOSED_REFUSAL,
   TEXT_CEILING,
@@ -64,6 +65,7 @@ import {
   answerMessage,
   answerResumeMessage,
   continueMessage,
+  fixReviewFirstMessage,
   implementFirstMessage,
   nudgeMessage,
   runInstructions,
@@ -103,7 +105,8 @@ import {
   runReport,
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
-import { implementTicket, reviewTicket } from './first-message.js';
+import { fixReviewTicket, implementTicket, reviewTicket } from './first-message.js';
+import { standingRequest, ticketStop } from '../tickets/changes.js';
 import { ciOutcome, ciSourceRun } from './ci-outcome.js';
 import { reviewCiOf } from './review-view.js';
 import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
@@ -592,6 +595,9 @@ export class RunService {
         at: now,
       });
     }
+    // Quality's request counts one review round and stands until the next accepted submission
+    // (owner's answers 1 and 2, lot 3 step I); never a failed attempt.
+    const round = ticket.reviewRounds + 1;
     await applyRunAction(tx, {
       projectKey: locked.project.key,
       ticket,
@@ -600,8 +606,20 @@ export class RunService {
       agent,
       runId: run.id,
       commentId: ids[0],
+      ...(decision.kind === 'changes_requested'
+        ? {
+            changeRequest: {
+              by: 'quality' as const,
+              commit: decision.commit,
+              runId: run.id,
+              round,
+              at: now.toISOString(),
+            },
+          }
+        : {}),
       now,
     });
+    if (decision.kind === 'changes_requested') await this.stopAfterRounds(tx, locked, round, now);
     // Its comment review is wanted on the pull request reviewed, from this transaction on, so a
     // stop right after it still posts it at the next start (owner's answer 1, lot 3 step H3).
     const pullRequest = ticket.pullRequestNumber;
@@ -615,6 +633,63 @@ export class RunService {
       })
       .where(eq(schema.runs.id, run.id));
     return pullRequest !== null;
+  }
+
+  /**
+   * One request more than **Most review rounds per ticket** (read now) stops the ticket, after it
+   * was applied in full (04, section 5; owner's answer 2, lot 3 step I): the stop, its `system`
+   * comment and its event.
+   */
+  private async stopAfterRounds(tx: Executor, locked: Locked, round: number, now: Date) {
+    const { ticket } = locked;
+    if (!ticket) return;
+    const { maxReviewRounds } = await resolveSettings(tx, ['maxReviewRounds'], locked.project.id);
+    if (round <= maxReviewRounds) return;
+    const stop: TicketStop = {
+      cause: 'review_rounds',
+      count: round,
+      limit: maxReviewRounds,
+      at: now.toISOString(),
+    };
+    await tx.update(schema.tickets).set({ stopped: stop }).where(eq(schema.tickets.id, ticket.id));
+    const [comment] = await tx
+      .insert(schema.comments)
+      .values({
+        ticketId: ticket.id,
+        author: 'system',
+        kind: 'status_change',
+        body: `Quality requested changes again (round ${String(round)}), more than Most review rounds per ticket allows (${String(maxReviewRounds)}): the ticket is stopped. Use Try again to let it continue, or Cancel it, or Mark it as done manually.`,
+        createdAt: now,
+      })
+      .returning({ id: schema.comments.id });
+    if (!comment) throw new Error('comment not inserted');
+    const reference = this.reference(locked);
+    await recordEvent(tx, {
+      actor: 'system',
+      ...ticketEntity(ticket),
+      type: 'ticket.commented',
+      payload: {
+        project: locked.project.key,
+        ticket: reference,
+        commentId: comment.id,
+        kind: 'status_change',
+      },
+      at: now,
+    });
+    await recordEvent(tx, {
+      actor: 'system',
+      ...ticketEntity(ticket),
+      type: 'ticket.stopped',
+      payload: {
+        project: locked.project.key,
+        ticket: reference,
+        cause: 'review_rounds',
+        count: round,
+        limit: maxReviewRounds,
+        runId: locked.run.id,
+      },
+      at: now,
+    });
   }
 
   /** A decision of a review run that ended without applying it: kept, with its event (H2). */
@@ -970,6 +1045,17 @@ export class RunService {
       if (ticket.assigneeProfileId === null) {
         throw refuse({ reason: 'no_assignee' }, 'The ticket has no assignee');
       }
+      // Stopped by the retry policy until **Try again** (04, section 5; lot 3 step I).
+      const stop = ticketStop(ticket);
+      if (stop !== null) {
+        throw refuse(
+          { reason: 'ticket_stopped', cause: stop.cause, count: stop.count, limit: stop.limit },
+          `The ticket is stopped after ${String(stop.count)} ${stop.cause === 'review_rounds' ? 'review rounds' : 'failed attempts'} (limit ${String(stop.limit)}): Try again first`,
+        );
+      }
+      // A request for changes standing: the run addresses it (07, section 3; lot 3 step I).
+      const request = standingRequest(ticket);
+      const purpose = request === null ? ('implement' as const) : ('fix_review' as const);
       const blockers = await tx
         .select({ number: schema.tickets.number })
         .from(schema.ticketDependencies)
@@ -1071,18 +1157,30 @@ export class RunService {
                 : null;
       let initialPrompt: string;
       try {
-        initialPrompt = implementFirstMessage(
-          templates.implement,
-          await implementTicket(tx, {
-            projectKey: project.key,
-            projectName: project.name,
-            ticket,
-            attempt,
-            earlierWorkBase,
-            notPushed,
-            previousCi,
-          }),
-        );
+        const implement = {
+          projectKey: project.key,
+          projectName: project.name,
+          ticket,
+          attempt,
+          earlierWorkBase,
+          notPushed,
+          previousCi,
+        };
+        initialPrompt =
+          request === null
+            ? implementFirstMessage(templates.implement, await implementTicket(tx, implement))
+            : fixReviewFirstMessage(
+                templates['fix-review'],
+                templates.implement,
+                await fixReviewTicket(tx, {
+                  ...implement,
+                  request,
+                  branch: branchName,
+                  base: `origin/${baseBranch}`,
+                  // Nothing pushed and the machine holding the work revoked (answer 5).
+                  lost: lostWork !== undefined && ticket.githubBranchHead === null,
+                }),
+              );
       } catch (error) {
         if (!(error instanceof FirstMessageTooLarge)) throw error;
         throw refuse(
@@ -1104,7 +1202,7 @@ export class RunService {
           ticketId: ticket.id,
           profileId: profile.id,
           profileVersion: profile.version,
-          purpose: 'implement',
+          purpose,
           machineId: machine.id,
           accountId: account.id,
           status: 'queued',
@@ -1135,7 +1233,7 @@ export class RunService {
         payload: {
           project: project.key,
           ticket: reference,
-          purpose: 'implement',
+          purpose,
           machine: machine.name,
           account: account.label,
           profile: profile.key,
@@ -1178,7 +1276,7 @@ export class RunService {
       const start = this.startMessage({
         messageId: dispatchMessageId,
         runId: run.id,
-        purpose: 'implement',
+        purpose,
         project,
         ticket: { id: ticket.id, reference },
         baseBranch,

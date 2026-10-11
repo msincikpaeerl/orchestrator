@@ -6,6 +6,7 @@ import {
   DodReport,
   PullRequestFailure,
   SubmissionRecord,
+  TicketStop,
   WorkflowReason,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
@@ -138,6 +139,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
   items.push(...(await pushFailedItems(db)));
   items.push(...(await pullRequestItems(db)));
   items.push(...(await ciTimeoutItems(db)));
+  items.push(...(await stoppedItems(db)));
 
   const paused = await runs.list(
     and(
@@ -305,6 +307,36 @@ async function ciTimeoutItems(db: Database): Promise<Items> {
     });
   }
   return items;
+}
+
+/**
+ * Tickets the retry policy stopped (02, section 4; 04, section 5; owner's answer 2, lot 3 step I),
+ * in `todo`: **Try again**, **Cancel** or **Mark as done manually**, each of which ends it, as
+ * **Reopen** does.
+ */
+async function stoppedItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ ticket: schema.tickets, projectKey: schema.projects.key })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        eq(schema.tickets.status, 'todo'),
+        isNotNull(schema.tickets.stopped),
+      ),
+    );
+  return rows.map(({ ticket, projectKey }) => {
+    const stop = TicketStop.parse(ticket.stopped);
+    return {
+      type: 'ticket_stopped' as const,
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      cause: stop.cause,
+      count: stop.count,
+      limit: stop.limit,
+      since: stop.at,
+    };
+  });
 }
 
 /**

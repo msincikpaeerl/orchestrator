@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   OWNER_TRANSITIONS,
+  type ChangeRequest,
   TicketStatus,
   type FailureReason,
   type OwnerTicketAction,
@@ -89,6 +90,11 @@ export interface OwnerAction {
    * `status_change` comment. Ignored otherwise.
    */
   comment?: string;
+  /**
+   * For `request_changes` (lot 3 step I): the ticket's latest accepted commit, and on
+   * `awaiting_merge` what the request came after. Kept on the ticket with the comment.
+   */
+  changeRequest?: { commit: string | null; after: 'approved' | 'skipped' | null };
   now: Date;
 }
 
@@ -139,10 +145,28 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
     commentId = comment.id;
   }
 
+  // The owner's request stands until the next accepted submission (owner's answers 1 and 6, lot
+  // 3 step I); Reopen starts the counts again and clears the stop (answer 2).
+  const changes =
+    action === 'request_changes' && commentId !== null
+      ? {
+          changeRequest: {
+            by: 'owner',
+            commit: input.changeRequest?.commit ?? null,
+            commentId,
+            after: input.changeRequest?.after ?? null,
+            at: now.toISOString(),
+          } satisfies ChangeRequest,
+          changeRequestAnsweredAt: null,
+        }
+      : action === 'reopen'
+        ? { attemptCount: 0, reviewRounds: 0, stopped: null }
+        : {};
+
   // The status is checked again in the update: the caller's lock makes a mismatch a bug.
   const [updated] = await tx
     .update(schema.tickets)
-    .set({ status: to, updatedAt: now, ...endsPullRequestWish(to) })
+    .set({ status: to, updatedAt: now, ...endsPullRequestWish(to), ...changes })
     .where(and(eq(schema.tickets.id, ticket.id), eq(schema.tickets.status, from)))
     .returning();
   if (!updated) throw new Error(`ticket ${ticket.id} changed during a transition`);
@@ -203,6 +227,8 @@ export interface RunAction {
   attemptTakenBack?: boolean;
   /** Posted by the system as a `status_change` comment, in the same transaction. */
   comment?: string;
+  /** For `review_changes_requested`: Quality's request, kept on the ticket (lot 3 step I). */
+  changeRequest?: ChangeRequest;
   now: Date;
 }
 
@@ -245,6 +271,22 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
       ...(input.attemptTakenBack === true
         ? { attemptCount: Math.max(0, ticket.attemptCount - 1) }
         : {}),
+      // An accepted submission answers the standing request (owner's answer 3, lot 3 step I).
+      ...(transition.to === 'in_review' &&
+      (action === 'run_submitted' || action === 'ci_checked_again') &&
+      ticket.changeRequest !== null &&
+      ticket.changeRequestAnsweredAt === null
+        ? { changeRequestAnsweredAt: now }
+        : {}),
+      ...(input.changeRequest === undefined
+        ? {}
+        : {
+            changeRequest: input.changeRequest,
+            changeRequestAnsweredAt: null,
+            ...(input.changeRequest.by === 'quality'
+              ? { reviewRounds: input.changeRequest.round }
+              : {}),
+          }),
     })
     .where(and(eq(schema.tickets.id, ticket.id), eq(schema.tickets.status, from)))
     .returning();

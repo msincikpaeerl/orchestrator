@@ -19,6 +19,10 @@ The branch {{branch}} has no commits ahead of the base branch {{base}}: commit y
 Commit {{commit}} is the one CI failed for in this run: commit your fix on the branch {{branch}}, then submit again.
 <!-- part: same-commit-conflict -->
 Commit {{commit}} is the one whose pull request conflicts with {{base}}: run `git merge origin/{{base}}`, resolve the conflicts, commit the merge, then submit again.
+<!-- part: same-commit-quality -->
+Commit {{commit}} is the one Quality reviewed and asked changes on: commit your changes for its points on the branch {{branch}}, then submit again. If a point should not be done, say why with `ticket_comment`; if none should, ask the owner with `ticket_ask`.
+<!-- part: same-commit-owner -->
+Commit {{commit}} is the one the owner asked changes on: commit your changes for its points on the branch {{branch}}, then submit again. If a point should not be done, say why with `ticket_comment`; if none should, ask the owner with `ticket_ask`.
 <!-- part: push-diverged -->
 GitHub's copy of the branch {{branch}} has commits this machine does not have, so your commits could not be pushed.
 <!-- part: push-refused -->

@@ -106,7 +106,9 @@ describe('the first message of a fix_review run (lot 3 step I)', () => {
     expect(text).toContain(
       'The branch t/12-contact-form already holds the submitted work (pull request #7): continue on it.',
     );
-    expect(text).toContain(`## Points to address (Quality, 2026-09-27 14:52 UTC, commit ${COMMIT})`);
+    expect(text).toContain(
+      `## Points to address (Quality, 2026-09-27 14:52 UTC, commit ${COMMIT})`,
+    );
     expect(text).toContain(
       [
         '1. `src/ContactForm.tsx:42`: Show the error message next to the field.',
