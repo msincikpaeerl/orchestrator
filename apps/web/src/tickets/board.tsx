@@ -30,6 +30,11 @@ export function BlockedBadge() {
   return <span className="rounded bg-amber-100 px-2 py-0.5 text-sm text-amber-900">Blocked</span>;
 }
 
+/** A ticket stopped by the retry policy (02, section 6.3; owner's answer 2, lot 3 step I2). */
+export function StoppedBadge() {
+  return <span className="rounded bg-red-100 px-2 py-0.5 text-sm text-red-900">Stopped</span>;
+}
+
 function TicketCard({ ticket }: { ticket: TicketSummary }) {
   return (
     <li className="rounded border border-slate-200 bg-white p-3 shadow-sm">
@@ -45,6 +50,7 @@ function TicketCard({ ticket }: { ticket: TicketSummary }) {
           · {assigneeLabel(ticket.assignee)}
         </span>
         {showsBlocked(ticket) && <BlockedBadge />}
+        {ticket.stop && <StoppedBadge />}
         {ticket.createdByAgent && (
           <span className="rounded bg-violet-100 px-2 py-0.5 text-sm text-violet-900">
             created by agent

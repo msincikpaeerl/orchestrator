@@ -13,6 +13,7 @@ import { Button, ConfirmDialog, ErrorMessage, TextArea, WarningMessage } from '.
 import { ticketsChanged } from '../queries';
 import { refusalText } from '../refusals';
 import { runPath } from '../runs/text';
+import { RUN_NOW_AFTER_TRY_AGAIN, requestChangesText } from './change-text';
 import { markDoneWarning, ticketRef } from './text';
 
 // The owner's actions on a ticket (04, section 2), the same on the ticket page and on "Needs you"
@@ -360,16 +361,20 @@ export function RejectAction({ ticket }: { ticket: TicketAddress }) {
 }
 
 /**
- * **Request changes** on finished work (lot 2: `in_review`, 04 section 2): the comment saying what
- * to change is mandatory, and the ticket goes back to To do. The ticket then leaves the state this
+ * **Request changes** on finished work (`in_review` with no review run active, and `awaiting_merge`
+ * from lot 3 step I; 04 section 2): the comment saying what to change is mandatory, and the ticket
+ * goes back to To do. The ticket then leaves the state this
  * button is shown in, so the page shows `RunNowOffer` itself once `onRequested` is called.
  */
 export function RequestChangesAction({
   ticket,
   onRequested,
+  text = requestChangesText('in_review', null),
 }: {
   ticket: TicketAddress;
   onRequested: () => void;
+  /** What happens, from `requestChangesText`: on Awaiting merge it names the approval or skip. */
+  text?: string;
 }) {
   const [asking, setAsking] = useState(false);
   const [comment, setComment] = useState('');
@@ -424,11 +429,7 @@ export function RequestChangesAction({
             setAsking(false);
           }}
         >
-          <p>
-            The ticket goes back to To do with your comment. Its branch and commits are kept, and
-            the next run continues from them with your comment in its instructions. This does not
-            count as a failed attempt.
-          </p>
+          <p>{text}</p>
           <TextArea
             label="What should change? (required)"
             hint="Added to the ticket's timeline; the agent reads it."
@@ -449,11 +450,21 @@ export function RequestChangesAction({
  * After **Request changes**: **Run now** offered directly, the usual action with its usual
  * refusals (owner's decision, lot 2 step L2).
  */
-export function RunNowOffer({ ticket, onClose }: { ticket: TicketAddress; onClose: () => void }) {
+export function RunNowOffer({
+  ticket,
+  onClose,
+  after = 'request_changes',
+}: {
+  ticket: TicketAddress;
+  onClose: () => void;
+  /** What succeeded: **Request changes**, or **Try again** (owner's answer 3, lot 3 step I2). */
+  after?: 'request_changes' | 'try_again';
+}) {
   const runNow = useRunNow(ticket);
+  const ref = ticketRef(ticket.projectKey, ticket.number);
   return (
     <ConfirmDialog
-      title={`Changes requested on ${ticketRef(ticket.projectKey, ticket.number)}`}
+      title={after === 'try_again' ? `${ref} can continue` : `Changes requested on ${ref}`}
       confirmLabel="Run now"
       dismissLabel="Later"
       busy={runNow.isPending}
@@ -463,7 +474,51 @@ export function RunNowOffer({ ticket, onClose }: { ticket: TicketAddress; onClos
       }}
       onCancel={onClose}
     >
-      <p>The ticket is back in To do. Start the next run now, or later from the ticket page.</p>
+      <p>
+        {after === 'try_again'
+          ? RUN_NOW_AFTER_TRY_AGAIN
+          : 'The ticket is back in To do. Start the next run now, or later from the ticket page.'}
+      </p>
     </ConfirmDialog>
+  );
+}
+
+/**
+ * **Try again** on a ticket stopped by the retry policy (04, section 5; owner's answers 2 and 3,
+ * lot 3 step I2): no confirmation, since it starts no session; once it succeeds, `onTried` lets
+ * the screen offer **Run now** (`RunNowOffer` with `after="try_again"`). It is called before the
+ * screens are read again, since the stop and this button are then gone.
+ */
+export function TryAgainAction({
+  ticket,
+  onTried,
+}: {
+  ticket: TicketAddress;
+  onTried: () => void;
+}) {
+  const tryAgain = useMutation({
+    mutationFn: () => api('POST', ticketApi(ticket, '/try-again'), TicketDetail),
+    onSuccess: (changed) => {
+      onTried();
+      return ticketsChanged(changed);
+    },
+    onError: () => ticketsChanged(),
+  });
+  return (
+    <>
+      <Button
+        onClick={() => {
+          tryAgain.mutate();
+        }}
+        disabled={tryAgain.isPending}
+      >
+        Try again
+      </Button>
+      {tryAgain.error && (
+        <div className="w-full">
+          <ErrorMessage>{refusalText(tryAgain.error)}</ErrorMessage>
+        </div>
+      )}
+    </>
   );
 }

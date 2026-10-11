@@ -16,6 +16,7 @@ import { AccountStatusText, QuestionAnswer, RunActions } from '../runs/component
 import { runPath } from '../runs/text';
 import {
   AcceptAction,
+  CancelAction,
   MarkDoneAction,
   RejectAction,
   RequestChangesAction,
@@ -23,8 +24,10 @@ import {
   RunNowOffer,
   SkipReviewAction,
   StartReviewAction,
+  TryAgainAction,
   type TicketAddress,
 } from '../tickets/actions';
+import { stopText } from '../tickets/change-text';
 import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
@@ -280,32 +283,47 @@ function PushFailedCard({ item }: { item: Extract<NeedsYouItem, { type: 'push_fa
   );
 }
 
+/** A ticket's **Cancel**, which needs the ticket's dependents for its dialog. */
+function Cancel({ ticket }: { ticket: TicketAddress }) {
+  const detail = useTicket(ticket.projectKey, ticket.number);
+  return detail.data ? <CancelAction ticket={detail.data} /> : null;
+}
+
 /**
- * A ticket stopped by the retry policy (04, section 5; lot 3 step I). Step I2 adds **Try again**,
- * **Cancel** and **Mark as done manually** to the card; the ticket page has them meanwhile.
+ * A ticket stopped by the retry policy (04, section 5; owner's answers 2 and 3, lot 3 step I2),
+ * with **Try again**, **Cancel** and **Mark as done manually**; after **Try again** the item
+ * leaves the list and the page offers **Run now**.
  */
-function TicketStoppedCard({ item }: { item: Extract<NeedsYouItem, { type: 'ticket_stopped' }> }) {
+function TicketStoppedCard({
+  item,
+  onTried,
+}: {
+  item: Extract<NeedsYouItem, { type: 'ticket_stopped' }>;
+  onTried: (ticket: TicketAddress) => void;
+}) {
+  const text = stopText({
+    cause: item.cause,
+    count: item.count,
+    limit: item.limit,
+    at: item.since,
+  });
   return (
     <Card className="space-y-2">
-      <h2 className="font-semibold break-words text-slate-900">
-        {item.cause === 'review_rounds'
-          ? 'Stopped after too many review rounds'
-          : 'Stopped after repeated failures'}
-      </h2>
+      <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
       <TicketTitle ticket={item.ticket} />
-      <p className="break-words text-slate-700">
-        {item.cause === 'review_rounds'
-          ? `Quality requested changes ${String(item.count)} times, more than Most review rounds per ticket allows (${String(item.limit)}).`
-          : `It failed ${String(item.count)} times, more than Failed attempts before asking you allows (${String(item.limit)}).`}{' '}
-        Use Try again to let it continue, or Cancel it, or Mark it as done manually.
-      </p>
-      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
-      <Link
-        to={ticketPath(item.ticket.projectKey, item.ticket.number)}
-        className="text-blue-700 underline"
-      >
-        Open the ticket
-      </Link>
+      <p className="break-words text-slate-700">{text.detail}</p>
+      <p className="break-words text-slate-700">{text.tryAgain}</p>
+      <p className="text-sm text-slate-600">{text.since}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <TryAgainAction
+          ticket={item.ticket}
+          onTried={() => {
+            onTried(item.ticket);
+          }}
+        />
+        <Cancel ticket={item.ticket} />
+        <MarkDone ticket={item.ticket} />
+      </div>
     </Card>
   );
 }
@@ -445,8 +463,11 @@ function MachineItemCard({ item }: { item: MachineNeedsYouItem }) {
 export function NeedsYouPage() {
   const github = useGitHubStatus();
   const needsYou = useNeedsYou();
-  // After Request changes the item leaves the list: the page offers Run now (L2).
-  const [offer, setOffer] = useState<TicketAddress | null>(null);
+  // After Request changes (L2) or Try again (I2) the item leaves the list: the page offers Run now.
+  const [offer, setOffer] = useState<{
+    ticket: TicketAddress;
+    after: 'request_changes' | 'try_again';
+  } | null>(null);
   // Check CI again accepted the work: its item is gone, the page says what happened.
   const [accepted, setAccepted] = useState<string | null>(null);
   if (github.isPending || needsYou.isPending) return <Loading />;
@@ -459,7 +480,8 @@ export function NeedsYouPage() {
       <AccountStatusLines accounts={needsYou.data?.accounts ?? []} />
       {offer && (
         <RunNowOffer
-          ticket={offer}
+          ticket={offer.ticket}
+          after={offer.after}
           onClose={() => {
             setOffer(null);
           }}
@@ -519,7 +541,12 @@ export function NeedsYouPage() {
                 item.type === 'ticket_proposed' ||
                 item.type === 'work_to_check' ||
                 item.type === 'run_paused' ? (
-                <WorkItemCard item={item} onChangesRequested={setOffer} />
+                <WorkItemCard
+                  item={item}
+                  onChangesRequested={(ticket) => {
+                    setOffer({ ticket, after: 'request_changes' });
+                  }}
+                />
               ) : item.type === 'ready_for_review' ? (
                 <ReadyForReviewCard item={item} />
               ) : item.type === 'review_not_finished' ? (
@@ -531,7 +558,12 @@ export function NeedsYouPage() {
               ) : item.type === 'ci_timeout' ? (
                 <CiTimeoutCard item={item} onAccepted={setAccepted} />
               ) : item.type === 'ticket_stopped' ? (
-                <TicketStoppedCard item={item} />
+                <TicketStoppedCard
+                  item={item}
+                  onTried={(ticket) => {
+                    setOffer({ ticket, after: 'try_again' });
+                  }}
+                />
               ) : (
                 <MachineItemCard item={item} />
               )}

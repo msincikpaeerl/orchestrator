@@ -10,6 +10,7 @@ import { UntrustedMarkdown } from '../components/markdown';
 import { Card, HelpLink } from '../components/ui';
 import { runPath } from '../runs/text';
 import { SkipReviewAction, StartReviewAction } from './actions';
+import { requestedAfterText } from './change-text';
 import { reviewPostText } from './review-post-text';
 import {
   REVIEW_COST,
@@ -113,6 +114,11 @@ export function TicketReviewSection({
   const offered = review.offered && canChange;
   if (text === null && !offered && !awaitingMerge) return null;
   const { latest } = review;
+  // While the owner's request on Awaiting merge stands (owner's answer 6, lot 3 step I).
+  const requestedAfter =
+    latest?.kind === 'decision' || latest?.kind === 'skipped'
+      ? requestedAfterText(ticket.changeRequest)
+      : null;
   return (
     <Card className="space-y-3">
       <h2 className="text-lg font-semibold text-slate-900">Review</h2>
@@ -123,6 +129,9 @@ export function TicketReviewSection({
           <p className="font-medium break-words text-slate-900">{text.heading}</p>
         )}
         {text?.earlier && <p className="break-words text-slate-700">{text.earlier}</p>}
+        {requestedAfter && (
+          <p className="font-medium break-words text-slate-900">{requestedAfter}</p>
+        )}
         {latest?.kind === 'decision' && <DecisionDetails decision={latest.decision} />}
         {latest?.kind === 'decision' && latest.post && (
           <PostLine post={latest.post} commit={latest.decision.commit} />
