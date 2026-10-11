@@ -4,7 +4,7 @@
 
 In this version, it shows:
 
-- what agents' work leaves for you: questions, tickets they propose, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
+- what agents' work leaves for you: questions, tickets they propose, work ready for review, tickets stopped after too many review rounds, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
 - runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
 
@@ -31,13 +31,14 @@ Each item links to its ticket; its buttons are the same as on the ticket page.
 | Ticket proposed by agent … | While working, an agent found more work and proposed a ticket. | **Accept** it (it moves to **To do**) or **Reject** it (see [Tickets proposed by agents](tickets.md#tickets-proposed-by-agents)). |
 | Ready for review: … | An agent's work was accepted and CI passed, or found nothing to run: the ticket is **In review**. The item shows the pull request, the CI line ("CI passed on GitHub for commit …", "(checked again by you at …)" after **Check CI again**, or "No CI found for commit …"), a line when the work changed workflow files, and what each choice costs. | **Start review** (Quality reviews it, one Claude Code session) or **Skip review** (none; you check the pull request yourself). See [Review by Quality](tickets.md#review-by-quality). |
 | Review did not finish for … | Quality's review run ended without a decision, or with a decision that was not applied: the item says why, or which decision and why. It never counts as a failed attempt. | **Start review** again, or **Skip review**. See [When the review did not finish](tickets.md#when-the-review-did-not-finish). |
+| Stopped after too many review rounds | From version 0.4.0: Quality asked for changes on the ticket more times than **Most review rounds per ticket** allows. Its latest request was applied, and **Run now** is refused until you decide. The item says how many times and the setting's value. | **Try again** (no session; the review rounds and failed attempts count from 0 again, and a dialog offers **Run now** at once), **Cancel the ticket**, or **Mark as done manually**. See [Too many review rounds](tickets.md#too-many-review-rounds). |
 | Work finished: check it | A ticket left **In review** by version 0.3.0, without a pull request. The item shows the agent's summary; **Open the run** shows its log. | If the work is right, **Mark as done manually**. If not, **Request changes** (see [Check finished work](runs.md#check-finished-work)). |
 | GitHub refused the push of … / The branch of … changed on GitHub / GitHub could not be reached to push … | From version 0.4.0: the agent's work is committed on its machine, but could not be pushed to GitHub. The item names the token permission to give when GitHub said which, in the words of GitHub's token page, with **Open your tokens on GitHub**. | Fix what the item says, then open the ticket and click **Run now**. See [When the work cannot be pushed to GitHub](tickets.md#when-the-work-cannot-be-pushed-to-github). |
 | Pull request not opened for … / Pull request not updated for … | From version 0.4.0: the agent's work was accepted and is on GitHub, but the Orchestrator could not open its pull request, or update the one that is open. See [Pull request not opened](#pull-request-not-opened). | Fix what the item says, then click **Try again**. |
 | Run paused: Claude usage limit reached | The run stopped at the usage limit of its Claude account. The item says when you can resume it, "(estimated)" when Claude gave no reset time. | Wait for that time, then click **Resume**: the button becomes available by itself. Or **Stop run**. |
 | Run paused: possible Claude usage limit | The run stopped on an error that may be the usage limit, or Claude being overloaded, or a network problem. | Click **Resume** at once: the run may pause again if it was the limit. Or **Stop run**. |
 
-In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, reviewed or skipped, resumed or stopped, the branch pushed to GitHub, or the pull request opened or updated.
+In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, reviewed or skipped, tried again or cancelled, resumed or stopped, the branch pushed to GitHub, or the pull request opened or updated.
 
 ## Pull request not opened
 
