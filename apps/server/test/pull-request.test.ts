@@ -183,8 +183,10 @@ describe('the pull request (04, section 3.1)', () => {
     const { daemon, runId, runToken, repo } = await working();
     await h.ok(daemon, runToken, 'ticket_submit', REPORT);
     await settled();
-    h.github.mergePullRequest(repo, 1);
     const next = await nextRun(daemon, runId);
+    // Merged after the last check of GitHub (from step J1 a merge found moves the ticket to done):
+    // the next submission finds it merged before the next check does.
+    h.github.mergePullRequest(repo, 1);
     await h.ok(daemon, next.runToken, 'ticket_submit', REPORT);
     await eventually('the second pull request', () => {
       expect(pulls(repo)).toHaveLength(2);

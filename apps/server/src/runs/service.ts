@@ -2258,14 +2258,16 @@ export class RunService {
 
   /**
    * **Cancel** or **Mark as done manually** on a ticket with an active run, in the owner action's
-   * transaction (the project is locked): the run is cancelled and its token revoked. Returns what
-   * to do once the transaction committed: send `run.stop`.
+   * transaction (the project is locked), or its pull request found merged (lot 3 step J1): the run
+   * is cancelled and its token revoked, never counted; a review decision not applied yet is kept
+   * with `run.review_discarded`. Returns what to do once the transaction committed: send
+   * `run.stop`.
    */
   async endForTicket(
     tx: Executor,
     project: ProjectRow,
     ticket: TicketRow,
-    cause: 'ticket_cancelled' | 'ticket_done',
+    cause: 'ticket_cancelled' | 'ticket_done' | 'pull_request_merged',
   ): Promise<() => Promise<void>> {
     const [run] = await tx
       .select()
@@ -2289,7 +2291,11 @@ export class RunService {
       this.sendStop(
         machine.id,
         run.id,
-        cause === 'ticket_cancelled' ? 'ticket_cancelled' : 'owner_stopped',
+        cause === 'ticket_cancelled'
+          ? 'ticket_cancelled'
+          : cause === 'ticket_done'
+            ? 'owner_stopped'
+            : 'not_active',
       );
   }
 
