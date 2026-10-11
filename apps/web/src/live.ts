@@ -4,7 +4,7 @@ import { keys, queryClient } from './queries';
 
 // The realtime stream (02, section 1): one Server-Sent Events stream while logged in. A "changed"
 // message reloads the screens showing that kind of thing; a run log notice makes the screen
-// showing that run fetch its new entries; after a reconnection, everything is read again.
+// showing that run fetch its new entries; each time the stream opens, everything is read again.
 
 type RunLogListener = (seq: number) => void;
 const runLogListeners = new Map<string, Set<RunLogListener>>();
@@ -78,53 +78,61 @@ export function handleStreamMessage(message: StreamMessage) {
 }
 
 /**
- * Keeps the stream open while `enabled` (logged in). The browser reconnects a lost stream by
- * itself after the server's delay; a stream it gives up (the server refused it, for example
- * after a logout elsewhere) makes the session be checked, then is opened again after that delay.
+ * Opens the stream with `Source` (the browser's EventSource) and keeps it open until the returned
+ * function is called. The browser reconnects a lost stream by itself after the server's delay; a
+ * stream it gives up (the server refused it, for example after a logout elsewhere) makes the
+ * session be checked, then is opened again after that delay.
  */
+export function connectStream(Source: typeof EventSource): () => void {
+  let source: EventSource | null = null;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+
+  const open = () => {
+    source = new Source(STREAM_PATH);
+    // Every opening reads everything again, the first one too: a change made after a screen read
+    // its data but before the stream opened reaches no stream (lot 3 step H5).
+    source.onopen = () => {
+      reloadAll();
+    };
+    source.onmessage = (event: MessageEvent<string>) => {
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      const parsed = StreamMessage.safeParse(data);
+      if (parsed.success) handleStreamMessage(parsed.data);
+    };
+    source.onerror = () => {
+      if (source?.readyState !== Source.CLOSED || stopped) return;
+      source = null;
+      void queryClient.invalidateQueries({ queryKey: keys.session });
+      retry = setTimeout(open, STREAM_RETRY_MS);
+    };
+  };
+  open();
+  return () => {
+    stopped = true;
+    clearTimeout(retry);
+    source?.close();
+  };
+}
+
+/** Keeps the stream open while `enabled` (logged in), and reads the screens again on focus. */
 export function useLiveStream(enabled: boolean) {
   useEffect(() => {
     if (!enabled || typeof EventSource === 'undefined') return;
-    let source: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    let opened = false;
-    let stopped = false;
-
-    const open = () => {
-      source = new EventSource(STREAM_PATH);
-      source.onopen = () => {
-        // The first opening needs no reload: the screens have just read their data.
-        if (opened) reloadAll();
-        opened = true;
-      };
-      source.onmessage = (event: MessageEvent<string>) => {
-        let data: unknown;
-        try {
-          data = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-        const parsed = StreamMessage.safeParse(data);
-        if (parsed.success) handleStreamMessage(parsed.data);
-      };
-      source.onerror = () => {
-        if (source?.readyState !== EventSource.CLOSED || stopped) return;
-        source = null;
-        void queryClient.invalidateQueries({ queryKey: keys.session });
-        retry = setTimeout(open, STREAM_RETRY_MS);
-      };
-    };
     const focused = () => {
       if (document.visibilityState === 'visible') {
         for (const listener of reloadListeners) listener();
       }
     };
-    open();
+    const close = connectStream(EventSource);
     document.addEventListener('visibilitychange', focused);
     return () => {
-      stopped = true;
-      clearTimeout(retry);
-      source?.close();
+      close();
       document.removeEventListener('visibilitychange', focused);
     };
   }, [enabled]);
