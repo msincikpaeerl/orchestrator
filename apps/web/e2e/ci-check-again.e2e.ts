@@ -189,12 +189,13 @@ test('CI did not finish: "Needs you" offers Check CI again, which accepts the wo
   // Finished since: the work is accepted, the item goes, the page says so.
   expect((await status('success')).status()).toBeLessThan(300);
   await item.getByRole('button', { name: 'Check CI again' }).click();
-  await expect(
-    page.getByRole('status').filter({ hasText: 'CI passed: WEB-1 moved to In review.' }),
-  ).toBeVisible();
+  // The item goes first: until then its own status line says the same words as the page's.
   await expect(
     page.getByRole('listitem').filter({ hasText: 'CI did not finish for WEB-1' }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole('status').filter({ hasText: 'CI passed: WEB-1 moved to In review.' }),
+  ).toBeVisible();
   await control.dispose();
 
   await page.goto('/projects/WEB/tickets/1');
