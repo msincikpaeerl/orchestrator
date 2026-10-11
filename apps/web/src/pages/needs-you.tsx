@@ -43,6 +43,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'push_failed':
     case 'pull_request_not_opened':
     case 'ci_timeout':
+    case 'ticket_stopped':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -280,6 +281,36 @@ function PushFailedCard({ item }: { item: Extract<NeedsYouItem, { type: 'push_fa
 }
 
 /**
+ * A ticket stopped by the retry policy (04, section 5; lot 3 step I). Step I2 adds **Try again**,
+ * **Cancel** and **Mark as done manually** to the card; the ticket page has them meanwhile.
+ */
+function TicketStoppedCard({ item }: { item: Extract<NeedsYouItem, { type: 'ticket_stopped' }> }) {
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">
+        {item.cause === 'review_rounds'
+          ? 'Stopped after too many review rounds'
+          : 'Stopped after repeated failures'}
+      </h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">
+        {item.cause === 'review_rounds'
+          ? `Quality requested changes ${String(item.count)} times, more than Most review rounds per ticket allows (${String(item.limit)}).`
+          : `It failed ${String(item.count)} times, more than Failed attempts before asking you allows (${String(item.limit)}).`}{' '}
+        Use Try again to let it continue, or Cancel it, or Mark it as done manually.
+      </p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <Link
+        to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+        className="text-blue-700 underline"
+      >
+        Open the ticket
+      </Link>
+    </Card>
+  );
+}
+
+/**
  * An accepted submission whose pull request was not opened (04, section 3.1; lot 3 step F3): what
  * happened, where to fix it, and **Try again** (one attempt; the row goes when it succeeds).
  */
@@ -499,6 +530,8 @@ export function NeedsYouPage() {
                 <PullRequestNotOpenedCard item={item} />
               ) : item.type === 'ci_timeout' ? (
                 <CiTimeoutCard item={item} onAccepted={setAccepted} />
+              ) : item.type === 'ticket_stopped' ? (
+                <TicketStoppedCard item={item} />
               ) : (
                 <MachineItemCard item={item} />
               )}

@@ -77,6 +77,11 @@ export function reasonText(reason: CheckReason): string {
       return reason.ci === 'failed'
         ? `The agent handed in commit ${reason.commit.slice(0, 7)} again, the one CI failed for in this run: it must commit a fix first.`
         : `The agent handed in commit ${reason.commit.slice(0, 7)} again, whose pull request conflicted with ${reason.base} in this run: it must merge ${reason.base} first.`;
+    case 'same_commit_request':
+      // Owner's answer 1, lot 3 step I.
+      return reason.by === 'quality'
+        ? `Same commit as the one Quality asked changes on (${reason.commit.slice(0, 7)})`
+        : `Same commit as the one you asked changes on (${reason.commit.slice(0, 7)})`;
   }
 }
 

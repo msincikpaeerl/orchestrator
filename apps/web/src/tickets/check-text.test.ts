@@ -41,6 +41,7 @@ const SAMPLES: Record<CheckReasonKind, CheckReason> = {
   files_cut: { kind: 'files_cut', listed: 1200, count: 4000, unchecked: 3 },
   files_not_sent: { kind: 'files_not_sent' },
   same_commit: { kind: 'same_commit', commit: 'c'.repeat(40), ci: 'conflict', base: 'main' },
+  same_commit_request: { kind: 'same_commit_request', commit: 'c'.repeat(40), by: 'quality' },
 };
 
 /**

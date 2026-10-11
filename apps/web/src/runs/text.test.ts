@@ -26,6 +26,7 @@ const unavailable: {
 const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason: Reason }> } = {
   ticket_not_todo: { reason: 'ticket_not_todo', status: 'in_progress' },
   no_assignee: { reason: 'no_assignee' },
+  ticket_stopped: { reason: 'ticket_stopped', cause: 'review_rounds', count: 3, limit: 2 },
   blocked: { reason: 'blocked', tickets: ['WEB-3', 'WEB-4'] },
   project_archived: { reason: 'project_archived' },
   project_not_ready: { reason: 'project_not_ready' },
