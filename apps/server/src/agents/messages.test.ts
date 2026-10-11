@@ -8,6 +8,7 @@ import {
   implementFirstMessage,
   nudgeMessage,
   runInstructions,
+  runRules,
   type ImplementTicket,
 } from './messages.js';
 
@@ -89,6 +90,33 @@ describe('run instructions', () => {
   });
 });
 
+describe('the rules each run purpose receives (03, section 3; lot 3 step H5)', () => {
+  it('gives shared and builder rules to implement, fix_review and document runs, shared and reviewer rules to review runs, and none yet to plan runs', () => {
+    const { shared, builder, reviewer } = shipped.rules;
+    const builderRules = runRules(shipped.rules, 'implement');
+    const reviewerRules = runRules(shipped.rules, 'review');
+    expect(runRules(shipped.rules, 'fix_review')).toBe(builderRules);
+    expect(runRules(shipped.rules, 'document')).toBe(builderRules);
+    expect(reviewerRules).not.toBe(builderRules);
+    // Each one holds the shared rules' own text and its kind's, never the other kind's.
+    for (const rules of [builderRules, reviewerRules]) {
+      expect(rules).toContain('# How you work in the Orchestrator');
+      expect(rules).toContain('## Staying on task');
+    }
+    expect(builderRules).toContain(builder.main);
+    expect(builderRules).not.toContain(reviewer.main);
+    expect(reviewerRules).toContain(reviewer.main);
+    expect(reviewerRules).not.toContain(builder.main);
+    for (const name of ['files', 'needs', 'task']) {
+      expect(builderRules).toContain(builder.parts.get(name));
+      expect(reviewerRules).toContain(reviewer.parts.get(name));
+    }
+    expect(shared.main).toMatch(/\{\{work\}\}/);
+    // Planning runs get their own rules in lot 5 (owner's answer 3, lot 3 step H5).
+    expect(() => runRules(shipped.rules, 'plan')).toThrow('lot 5');
+  });
+});
+
 describe('run instructions and messages for a sample ticket (snapshot)', () => {
   it('renders the appended instructions, the first message and the other templates', async () => {
     const webDev = shipped.profiles.find((profile) => profile.key === 'web_dev');
@@ -96,7 +124,7 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
       '<!-- Rendered by apps/server/src/agents/messages.test.ts: review it with the templates. -->',
       '# Appended to the system prompt (Web Developer)',
       runInstructions(
-        shipped.commonRules,
+        runRules(shipped.rules, 'implement'),
         webDev?.instructions ?? '',
         shipped.allowlist,
         webDev?.allowedTools ?? [],

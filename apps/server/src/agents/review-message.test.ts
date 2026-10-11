@@ -1,7 +1,7 @@
 import { FIRST_MESSAGE_MAX_BYTES } from '@orchestrator/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadShippedAgents, loadTemplates, type Templates } from './files.js';
-import { FirstMessageTooLarge, nudgeMessage, runInstructions } from './messages.js';
+import { FirstMessageTooLarge, nudgeMessage, runInstructions, runRules } from './messages.js';
 import { reviewFirstMessage, type ReviewTicket } from './review-message.js';
 
 // The first message of a review run (03, section 3.1; owner's answers 4 and 5, lot 3 step H).
@@ -63,7 +63,8 @@ describe('the first message of a review run', () => {
     expect(text).toContain('https://github.com/owner/bakery/pull/12');
     expect(text).toContain('`git diff origin/main...HEAD`');
     expect(text).toContain('`git log origin/main..HEAD`');
-    expect(text).toContain('never change a file, commit or merge');
+    // What a review must not change is said once, in the reviewer rules (lot 3 step H5).
+    expect(text).not.toMatch(/never change a file|commit or merge/);
   });
 
   it('holds the ticket, the report as the agent account and the comments', () => {
@@ -107,6 +108,10 @@ describe('the first message of a review run', () => {
         'CI already ran on GitHub: do not run the test suite again unless the diff or the CI result gives you a reason.',
       );
       expect(text).not.toContain('Nothing on GitHub tested this work');
+      // Whether to run the tests comes right after the CI result (lot 3 step H5).
+      expect(text.split('## CI')[1]?.split('\n# WEB-12')[0]).toContain(
+        'CI already ran on GitHub: do not run the test suite again',
+      );
     });
 
     it('with the work accepted by Check CI again, says CI passed and never that it failed', () => {
@@ -201,7 +206,7 @@ describe('Quality and its messages (snapshot)', () => {
       '<!-- Rendered by apps/server/src/agents/review-message.test.ts: review it with the templates. -->',
       '# Appended to the system prompt (Quality)',
       runInstructions(
-        shipped.commonRules,
+        runRules(shipped.rules, 'review'),
         quality?.instructions ?? '',
         shipped.allowlist,
         quality?.allowedTools ?? [],

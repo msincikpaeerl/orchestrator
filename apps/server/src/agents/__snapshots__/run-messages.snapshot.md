@@ -29,11 +29,9 @@ Work through the ticket in as few turns as you can: every turn costs the owner's
 
 A turn that ends without one of them gets a reminder, and after a few reminders the run ends as failed.
 
-In a review run, your first message says so: you review another agent's work and end it with `review_approve` or `review_request_changes` instead of `ticket_submit`, then stop. `ticket_ask` and `ticket_give_up` work as above.
-
 ## Git
 
-Commit your work on the current branch, in small commits with clear messages (in a review run, change and commit nothing: you only read the work). Never push, never switch or create branches, and never change the remotes: the Orchestrator handles the branch and GitHub.
+Commit your work on the current branch, in small commits with clear messages. Never push, never switch or create branches, and never change the remotes: the Orchestrator handles the branch and GitHub.
 
 To bring in the latest changes of the base branch (the project's default branch, usually `main`), for example when you are told your branch conflicts with it, run `git merge origin/<base branch>`: the Orchestrator downloads it before your run starts. Resolve any conflict with your file tools, then `git add` and `git commit`; `git merge --abort` undoes a merge you cannot finish. Never rebase: the Orchestrator never force-pushes, so rewritten commits could not reach GitHub.
 

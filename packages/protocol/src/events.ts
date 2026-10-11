@@ -407,7 +407,7 @@ export const EventPayloads = {
   'machine.doctor_changed': z.object({ ...MachineFacts, errors: z.array(z.string()) }),
   /** A default profile seeded from `agents/` at the server's start (03, section 3). */
   'agent_profile.created': z.object({ key: z.string(), name: z.string(), version: z.int() }),
-  /** A shipped file of the profile, or the common rules, changed: the version went up. */
+  /** A shipped file of the profile, or the rules its runs receive, changed: the version went up. */
   'agent_profile.updated': z.object({
     key: z.string(),
     name: z.string(),

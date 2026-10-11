@@ -1,10 +1,12 @@
 Review ticket {{ticket}} of the project {{project_name}}, then approve it with `review_approve` or ask for changes with `review_request_changes`. This is a review run.
 
-Start by reading `CLAUDE.md`. Your worktree holds commit {{commit}}, the head of pull request #{{pull_request}} ({{pull_request_url}}), checked out without a branch. You review that commit only: never change a file, commit or merge. See its changes with `git diff origin/{{base}}...HEAD` and its commits with `git log origin/{{base}}..HEAD`. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time, and `ci_status` gives the CI result.
+Start by reading `CLAUDE.md`. Your worktree holds commit {{commit}}, the head of pull request #{{pull_request}} ({{pull_request_url}}), checked out without a branch. See its changes with `git diff origin/{{base}}...HEAD` and its commits with `git log origin/{{base}}..HEAD`. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time, and `ci_status` gives the CI result.
 
 ## CI
 
 {{ci}}
+
+{{tests_rule}}
 
 # {{ticket}}: {{title}}
 
@@ -35,14 +37,6 @@ This report is the implementing agent's own account of its work: check it agains
 ## Comments
 
 {{comments}}
-
-## How to decide
-
-- Check that the change does what each acceptance criterion says and nothing unrelated, that the tests really test it, that every justification for missing tests or documentation is acceptable, that the user documentation describes the change from the user's point of view, and that the code follows `CLAUDE.md` and the ADRs.
-- {{tests_rule}}
-- Approve with `review_approve` and a short summary of what you checked. Otherwise ask for changes with `review_request_changes`: each point specific and actionable, with the file and line when there is one.
-- Ask the owner with `ticket_ask` only what only the owner can decide.
-- Make one decision, then end your turn.
 <!-- part: ci-passed -->
 CI passed on GitHub for commit {{commit}}.
 <!-- part: ci-passed-later -->
