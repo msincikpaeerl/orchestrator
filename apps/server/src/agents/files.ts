@@ -116,6 +116,7 @@ export const TEMPLATE_NAMES = [
   'review-comment',
   'ci-status',
   'ci-failed',
+  'fix-review',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 

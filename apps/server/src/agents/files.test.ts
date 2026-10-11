@@ -197,6 +197,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'review-comment',
       'ci-status',
       'ci-failed',
+      'fix-review',
     ]);
   });
 });

@@ -185,6 +185,38 @@ Implement ticket WEB-12 of the project Bakery website, then submit it with `tick
 
 The ticket's branch already has commits from an earlier attempt, committed on this machine but not pushed to GitHub: GitHub's copy of the branch has commits this machine does not have, so the push was refused. Start by reading `CLAUDE.md`, then bring GitHub's commits in before anything else: run `git merge origin/t/12-contact-form` (the Orchestrator downloaded it before your run started), resolve any conflict with your file tools, then `git add` and `git commit`. Never rebase. Then see what was done: `git log origin/main..HEAD` lists the branch's commits and `git diff origin/main...HEAD` shows their changes. Continue that work rather than redo it, then submit it with `ticket_submit`, which pushes it. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
 
+# First message (fix_review), after Quality's request
+
+Address the review of ticket WEB-12, then submit it again with `ticket_submit`. This is attempt 2.
+
+Start by reading `CLAUDE.md`. The branch t/12-contact-form already holds the submitted work (pull request #7): continue on it. `git log origin/main..HEAD` lists its commits and `git diff origin/main...HEAD` shows their changes. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
+## Points to address (Quality, 2026-09-27 14:52 UTC, commit abc1234def5678abc1234def5678abc1234def56)
+
+1. `src/ContactForm.tsx:42`: Show the error message next to the field.
+2. `src/contact.test.ts`: Test an empty e-mail address too.
+3. Describe the form in the user documentation.
+
+Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.
+
+# First message (fix_review), after the owner's request on a ticket left by 0.3.0
+
+Address the review of ticket WEB-12, then submit it again with `ticket_submit`. This is attempt 2.
+
+Start by reading `CLAUDE.md`. The branch t/12-contact-form already holds the submitted work, committed on this machine and not on GitHub yet: continue on it; `ticket_submit` pushes it and the Orchestrator opens its pull request. `git log origin/main..HEAD` lists its commits and `git diff origin/main...HEAD` shows their changes. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
+## Points to address (the owner's request, 2026-09-27 15:10 UTC)
+
+Also add a link to the map.
+
+Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.
+
+# First message (fix_review), the earlier work lost with its machine
+
+Address the review of ticket WEB-12, then submit it again with `ticket_submit`. This is attempt 2.
+
+The earlier work on this ticket is no longer available: the machine holding it was removed from the Orchestrator before it was pushed to GitHub. Start by reading `CLAUDE.md`. The branch t/12-contact-form starts again from origin/main: implement the ticket again, with the points below in mind. Everything below comes from the ticket; `ticket_get` and `ticket_comments` return it again at any time.
+
 # Owner answer
 
 The owner answered your question.
