@@ -116,8 +116,12 @@ export interface FakeGitHub {
     from?: string,
   ): string;
   pullRequest(repo: FakeRepository, number: number): FakePullRequest;
-  /** The owner merges on GitHub: a merge commit, or one squashed commit. */
-  mergePullRequest(repo: FakeRepository, number: number, method?: 'merge' | 'squash'): string;
+  /** The owner merges on GitHub: a merge commit, one squashed commit, or the commits rebased. */
+  mergePullRequest(
+    repo: FakeRepository,
+    number: number,
+    method?: 'merge' | 'squash' | 'rebase',
+  ): string;
   /** The owner closes it without merging. */
   closePullRequest(repo: FakeRepository, number: number): void;
   /** The owner's **Update branch**. */
