@@ -12,7 +12,7 @@ import { z } from 'zod';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import type { GitHubRefusal } from '../github/answers.js';
+import { retryAt, type GitHubRefusal } from '../github/answers.js';
 import { listCommitRuns, readCommitStatus } from '../github/ci.js';
 import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
 import { storedTokenClient } from '../github/connection.js';
@@ -138,6 +138,8 @@ export interface CiWatcherOptions {
     check(): Promise<Date | null>;
     seen(ticketId: string, pull: PullRequest): Promise<void>;
   };
+  /** The clean-up after a merge (lot 3 step J2a), tried after the CI waits. */
+  branchCleanUps?: { check(): Promise<Date | null> };
   now?: () => Date;
   /** False in tests: no tick starts by itself, the test calls `tick()`. */
   timers?: boolean;
@@ -170,14 +172,6 @@ function failureOf(refusal: GitHubRefusal): Omit<CiCheckFailure, 'since' | 'at'>
     default:
       return { ...base, reason: 'refused' };
   }
-}
-
-/** The first moment GitHub allows requests again, as its refusal says; null when it does not. */
-function retryAt(refusal: GitHubRefusal, now: Date): Date | null {
-  if (refusal.kind !== 'rate_limited' || refusal.retry === null) return null;
-  return 'afterSeconds' in refusal.retry
-    ? new Date(now.getTime() + refusal.retry.afterSeconds * 1000)
-    : new Date(refusal.retry.resetAtSeconds * 1000);
 }
 
 /**
@@ -311,7 +305,8 @@ export class CiWatcher {
 
   /**
    * The watched pull requests first (merges before the CI waits, owner's answer 1, lot 3 step
-   * J1), then every run waiting for CI, one after another; the request limit stops the tick.
+   * J1), then every run waiting for CI, one after another, then the clean-ups after a merge
+   * (step J2a); the request limit stops the tick.
    */
   private async checkAll(): Promise<void> {
     let limited: Date | null = null;
@@ -366,6 +361,13 @@ export class CiWatcher {
         return;
       }
     }
+    let cleanUpUntil: Date | null = null;
+    try {
+      cleanUpUntil = (await this.options.branchCleanUps?.check()) ?? null;
+    } catch (error) {
+      this.options.log.error({ err: error }, 'branch clean-ups not tried');
+    }
+    if (cleanUpUntil !== null) this.loop.pauseUntil(cleanUpUntil.getTime());
   }
 
   /** One waiting run; returns when GitHub allows requests again after its request limit. */

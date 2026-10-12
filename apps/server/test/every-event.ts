@@ -19,6 +19,7 @@ import { hashCredential } from '../src/machines/credentials.js';
 import { loadShippedAgents } from '../src/agents/files.js';
 import { seedAgentProfiles } from '../src/agents/seed.js';
 import { resetPassword } from '../src/reset-password.js';
+import { branchPushedAgain } from '../src/tickets/branch-clean-up.js';
 import { enroll, enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, type FakeGitHub } from './fake-github.js';
 import { createOwner, OWNER, startTestApp, type TestApp } from './helpers.js';
@@ -568,6 +569,37 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   });
   expect(reopened.status).toBe(200);
   github.mergePullRequest(shop, 2);
+  await t.ciTick();
+  // Its branch deleted after the merge, at the check that found it (`ticket.branch_deleted`;
+  // lot 3 step J2a), then a push of it recorded after the deletion, as the server's function
+  // does (`ticket.branch_pushed_again`).
+  const [doneTicket] = await t.db.select().from(schema.tickets).where(eq(schema.tickets.number, 2));
+  expect(doneTicket?.status).toBe('done');
+  await t.db.transaction((tx) =>
+    branchPushedAgain(tx, {
+      project: { key: 'SHOP' },
+      ticketId: doneTicket?.id ?? '',
+      branch: doneTicket?.branchName ?? '',
+      machine: 'Laptop',
+      head: 'f'.repeat(40),
+      now: new Date(),
+    }),
+  );
+  // SHOP-1's clean-up wanted as a merge into the default branch would want it, while the ticket
+  // is not done: kept (`ticket.branch_kept`).
+  const [mergedElsewhere] = await t.db
+    .select()
+    .from(schema.tickets)
+    .where(eq(schema.tickets.number, 1));
+  await t.db.insert(schema.branchCleanUps).values({
+    ticketId: mergedElsewhere?.id ?? '',
+    target: 'github',
+    pullRequestNumber: 1,
+    branch: mergedElsewhere?.branchName ?? 't/1',
+    mergedHead: 'e'.repeat(40),
+    mergedInto: 'main',
+    defaultBranch: 'main',
+  });
   await t.ciTick();
 
   // A run's process scope could not be created: the checks again while connected.

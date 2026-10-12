@@ -10,7 +10,7 @@ import { and, desc, eq, inArray, isNotNull, notInArray, or } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import type { GitHubRefusal } from '../github/answers.js';
+import { retryAt, type GitHubRefusal } from '../github/answers.js';
 import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
 import { storedTokenClient } from '../github/connection.js';
 import {
@@ -30,6 +30,7 @@ import {
   mergedAfterDoneComment,
   type MergeReview,
 } from './merge-comment.js';
+import { cleanUpWanted } from './branch-clean-up.js';
 import { ticketEntity, ticketReference, type TicketRow } from './model.js';
 import { applyRunAction } from './transitions.js';
 
@@ -54,15 +55,6 @@ export interface PullRequestWatcherOptions {
   log: FastifyBaseLogger;
   runs: Pick<RunService, 'endForTicket'>;
   now?: () => Date;
-}
-
-/** The first moment GitHub allows requests again, as its refusal says; null when it does not. */
-function retryAt(refusal: GitHubRefusal, now: Date): Date | null {
-  if (refusal.kind !== 'rate_limited') return null;
-  if (refusal.retry === null) return null;
-  return 'afterSeconds' in refusal.retry
-    ? new Date(now.getTime() + refusal.retry.afterSeconds * 1000)
-    : new Date(refusal.retry.resetAtSeconds * 1000);
 }
 
 export class PullRequestWatcher {
@@ -310,6 +302,7 @@ export class PullRequestWatcher {
     let outcome: 'done' | 'already_done' | 'cancelled' | 'other_base';
     let commentId: string | null = null;
     const words = { number: pull.number, reference, mergedAt, head };
+    const merge = { number: pull.number, head, into: pull.baseBranch };
     if (project.defaultBranch === null || pull.baseBranch !== project.defaultBranch) {
       // Merged into another base (its base changed by hand on GitHub): the ticket is unchanged,
       // and step J3's item says where it went (owner's answer 1).
@@ -317,6 +310,7 @@ export class PullRequestWatcher {
     } else if (status === 'done') {
       outcome = 'already_done';
       commentId = await comment(mergedAfterDoneComment(words));
+      await cleanUpWanted(tx, project, ticket, merge);
     } else if (status === 'cancelled') {
       // The cancel race (B): the ticket stays cancelled (owner's answer 2).
       outcome = 'cancelled';
@@ -351,6 +345,8 @@ export class PullRequestWatcher {
         now,
       });
       if (updated === null) throw new Error(`ticket ${reference} not moved to done`);
+      // The branch's clean-up, in the merge's transaction: once per recorded merge (step J2).
+      await cleanUpWanted(tx, project, ticket, merge);
       // The stop of the retry policy goes with it: nothing is left to try again.
       if (ticket.stopped !== null) {
         await tx

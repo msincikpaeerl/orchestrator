@@ -26,6 +26,7 @@ import { registerRunRoutes } from './runs/routes.js';
 import { CiCheckAgain } from './runs/ci-again.js';
 import { CiWatcher } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
+import { BranchCleanUp } from './tickets/branch-clean-up.js';
 import { PullRequestWatcher } from './tickets/merge-watch.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
 import { ReviewPoster } from './runs/review-post.js';
@@ -147,6 +148,13 @@ export function buildApp(dependencies: AppDependencies) {
     },
     retryPullRequest: (ticketId) => pullRequests.request(ticketId),
     pullRequests: watcher,
+    branchCleanUps: new BranchCleanUp({
+      db,
+      key,
+      apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+      log: logger,
+      now: dependencies.now,
+    }),
     now: dependencies.now,
     timers: dependencies.ciTimers,
   });
