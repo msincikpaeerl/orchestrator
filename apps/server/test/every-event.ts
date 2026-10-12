@@ -260,8 +260,9 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   // Closed by the owner on GitHub, then **Try again**: reopened (`ticket.pull_request_reopened`).
   github.closePullRequest(shop, 1);
   await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
-  // As a later accepted submission would: wanted again, then updated, then (after a merge) a new
-  // one opened. Server functions, as the header says, without two more runs.
+  // As a later accepted submission would: wanted again, then updated, then (after a merge into
+  // another base, which leaves the ticket going on: `ticket.pull_request_merged`) a new one
+  // opened. Server functions, as the header says, without two more runs.
   const wantAgain = () =>
     t.db
       .update(schema.tickets)
@@ -269,6 +270,13 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       .where(eq(schema.tickets.id, shop2.id));
   await wantAgain();
   await call('POST', '/api/projects/SHOP/tickets/2/pull-request/try-again');
+  github.commit(shop, 'release', { 'RELEASE.md': 'Next\n' }, 'Release branch', 'main');
+  const rebased = await fetch(`${github.url}/repos/octo-owner/online-shop/pulls/1`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ base: 'release' }),
+  });
+  expect(rebased.status).toBe(200);
   github.mergePullRequest(shop, 1);
   github.commit(shop, shopBranch, { 'src/more.ts': 'more\n' }, 'More work');
   await wantAgain();

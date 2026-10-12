@@ -202,8 +202,16 @@ describe('the pull request (04, section 3.1)', () => {
     await settled();
     expect(h.github.pullRequest(repo, 1)).toMatchObject({ merged: true });
     expect(h.github.pullRequest(repo, 2)).toMatchObject({ state: 'open', base: 'main' });
-    expect(await ticketRow()).toMatchObject({ pullRequestNumber: 2, pullRequestState: 'open' });
+    expect(await ticketRow()).toMatchObject({
+      pullRequestNumber: 2,
+      pullRequestState: 'open',
+      pullRequestMergedAt: null,
+    });
     expect(await h.events('ticket.pull_request_opened')).toHaveLength(2);
+    // The new pull request's own merge into main is recorded: the ticket is done.
+    h.github.mergePullRequest(repo, 2);
+    await h.t.ciTick();
+    expect(await ticketRow()).toMatchObject({ status: 'done', pullRequestMergedInto: 'main' });
   });
 
   it('opens a new one when GitHub refuses to reopen the closed one (owner answer 2)', async () => {

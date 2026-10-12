@@ -398,6 +398,15 @@ export class PullRequestOpener {
             ticket.pullRequestNumber !== pull.number
               ? { pullRequestOpenedAt: at }
               : {}),
+            // Another pull request is the ticket's now: the merge recorded was the earlier one's,
+            // and never stops the watcher from recording this one's (lot 3 step J1).
+            ...(ticket.pullRequestNumber !== pull.number
+              ? {
+                  pullRequestMergedAt: null,
+                  pullRequestMergedHead: null,
+                  pullRequestMergedInto: null,
+                }
+              : {}),
             pullRequestFailure: null,
             ...(same ? { pullRequestWantedSince: null } : {}),
             updatedAt: at,
