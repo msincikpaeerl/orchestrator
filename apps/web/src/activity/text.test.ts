@@ -298,6 +298,24 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     machine: 'laptop',
     head: 'abc1234abc1234abc1234abc1234abc1234abc12',
   },
+  'ticket.machine_branch_deleted': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    branch: 't/12-contact-form',
+    pullRequest: 4,
+    head: 'def5678def5678def5678def5678def5678def56',
+    machine: 'laptop',
+    notFound: null,
+  },
+  'ticket.machine_branch_kept': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    branch: 't/12-contact-form',
+    pullRequest: 4,
+    head: 'def5678def5678def5678def5678def5678def56',
+    machine: 'laptop',
+    reason: { kind: 'local_head_differs', head: 'abc1234abc1234abc1234abc1234abc1234abc12' },
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -410,6 +428,18 @@ describe('eventText', () => {
     );
     expect(text('ticket.branch_pushed_again')).toBe(
       'WEB-12: branch t/12-contact-form is on GitHub again: laptop pushed abc1234 after its deletion; it is kept',
+    );
+    expect(text('ticket.machine_branch_deleted')).toBe(
+      'WEB-12: branch t/12-contact-form deleted on machine laptop after the merge of pull request #4',
+    );
+    expect(text('ticket.machine_branch_deleted', { notFound: 'branch' })).toBe(
+      'WEB-12: machine laptop had no branch t/12-contact-form left after the merge of pull request #4',
+    );
+    expect(text('ticket.machine_branch_deleted', { notFound: 'repository' })).toBe(
+      'WEB-12: machine laptop has no copy of the repository: no branch t/12-contact-form to delete after the merge of pull request #4',
+    );
+    expect(text('ticket.machine_branch_kept')).toBe(
+      'WEB-12: branch t/12-contact-form kept on machine laptop: its head abc1234 is not the merged head def5678',
     );
   });
 

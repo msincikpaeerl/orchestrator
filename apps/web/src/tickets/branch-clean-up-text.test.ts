@@ -1,6 +1,6 @@
 import { BranchKeptReason } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { keptReasonText } from './branch-clean-up-text';
+import { keptReasonText, machineWaitText } from './branch-clean-up-text';
 
 const context = {
   ticket: 'WEB-12',
@@ -61,6 +61,20 @@ const examples: [BranchKeptReason, string][] = [
     { kind: 'refused', message: 'Cannot delete this protected branch.' },
     'GitHub refused to delete it: Cannot delete this protected branch',
   ],
+  [
+    { kind: 'local_head_differs', head: 'abc1234abc1234abc1234abc1234abc1234abc12' },
+    'its head abc1234 is not the merged head def5678',
+  ],
+  [
+    { kind: 'in_use', by: 'worktree' },
+    'a run waiting for an answer or paused still has it checked out',
+  ],
+  [{ kind: 'in_use', by: 'run' }, 'a run of the same repository was working on the machine'],
+  [
+    { kind: 'in_use', by: 'bare_head' },
+    "it is the current branch of the machine's copy of the repository",
+  ],
+  [{ kind: 'machine_revoked' }, 'the machine was revoked'],
 ];
 
 describe('why a branch was kept on GitHub', () => {
@@ -71,5 +85,22 @@ describe('why a branch was kept on GitHub', () => {
   it('has words for every kind', () => {
     const kinds = BranchKeptReason.options.map((option) => option.shape.kind.value);
     expect(new Set(examples.map(([reason]) => reason.kind))).toEqual(new Set(kinds));
+  });
+});
+
+describe("what a machine's clean-up waits for", () => {
+  it.each([
+    ['runs_ending', null, 'a run stopped by the merge has not reported its end yet'],
+    ['offline', '16:02', 'the machine is offline since 16:02; it is asked when it reconnects'],
+    ['offline', null, 'the machine is offline; it is asked when it reconnects'],
+    [
+      'daemon_outdated',
+      null,
+      "the machine's daemon is too old to be asked; it is asked once the daemon is updated",
+    ],
+    ['next_check', null, 'it is asked at the next check'],
+    ['answer', null, 'the machine was asked and has not answered yet'],
+  ] as const)('%s', (wait, since, words) => {
+    expect(machineWaitText(wait, since)).toBe(words);
   });
 });

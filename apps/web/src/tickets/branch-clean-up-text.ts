@@ -1,8 +1,8 @@
-import type { BranchKeptReason } from '@orchestrator/protocol';
+import type { BranchKeptReason, MachineCleanUpWait } from '@orchestrator/protocol';
 
 // The clean-up after a merge in the owner's words (lot 3 step J2): why a ticket branch was kept
-// on GitHub, from the facts the server keeps. The activity log uses it since J2a; the ticket page
-// lines come with J2c.
+// on GitHub or on a machine, and what a machine's clean-up waits for, from the facts the server
+// keeps. The activity log uses it since J2a; the ticket page lines come with J2c.
 
 const short = (commit: string) => commit.slice(0, 7);
 
@@ -13,7 +13,10 @@ export interface KeptContext {
   mergedHead: string;
 }
 
-/** Why the branch was kept, as the end of "Branch t/12-… kept on GitHub: …", without a full stop. */
+/**
+ * Why the branch was kept, as the end of "Branch t/12-… kept on GitHub: …" or "… kept on machine
+ * laptop: …", without a full stop.
+ */
 export function keptReasonText(reason: BranchKeptReason, context: KeptContext): string {
   const pull = `pull request #${String(context.pullRequest)}`;
   switch (reason.kind) {
@@ -60,5 +63,36 @@ export function keptReasonText(reason: BranchKeptReason, context: KeptContext): 
     }
     case 'refused':
       return `GitHub refused to delete it: ${reason.message.replace(/[.\s]+$/, '')}`;
+    case 'local_head_differs':
+      return `its head ${short(reason.head)} is not the merged head ${short(context.mergedHead)}`;
+    case 'in_use':
+      return reason.by === 'worktree'
+        ? 'a run waiting for an answer or paused still has it checked out'
+        : reason.by === 'run'
+          ? 'a run of the same repository was working on the machine'
+          : "it is the current branch of the machine's copy of the repository";
+    case 'machine_revoked':
+      return 'the machine was revoked';
+  }
+}
+
+/**
+ * What a machine's clean-up waits for, as the end of "Branch t/12-… not deleted on machine laptop
+ * yet: …", without a full stop. `offlineSince` is already in the owner's words.
+ */
+export function machineWaitText(wait: MachineCleanUpWait, offlineSince: string | null): string {
+  switch (wait) {
+    case 'runs_ending':
+      return 'a run stopped by the merge has not reported its end yet';
+    case 'offline':
+      return offlineSince === null
+        ? 'the machine is offline; it is asked when it reconnects'
+        : `the machine is offline since ${offlineSince}; it is asked when it reconnects`;
+    case 'daemon_outdated':
+      return "the machine's daemon is too old to be asked; it is asked once the daemon is updated";
+    case 'next_check':
+      return 'it is asked at the next check';
+    case 'answer':
+      return 'the machine was asked and has not answered yet';
   }
 }
