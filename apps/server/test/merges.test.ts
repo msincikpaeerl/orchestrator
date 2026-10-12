@@ -467,6 +467,71 @@ describe('the same result whoever reads the merge first', () => {
   });
 });
 
+describe('one ticket or one run never blocks the others', () => {
+  /** Submitted with CI started (the project's CI queued): its run and commit. */
+  async function handedIn(daemon: ScriptedDaemon, number: number) {
+    const run = await h.running(daemon, number);
+    await h.ok(daemon, run.runToken, 'ticket_submit', REPORT);
+    await h.report(daemon, state(run.runId, { state: 'waiting_ci' }));
+    await eventually('the pull request opened', async () => {
+      expect((await ticketRow(number)).pullRequestState).toBe('open');
+    });
+    return { ...run, commit: h.lastPushed ?? '' };
+  }
+
+  const passes = (commit: string) => {
+    for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
+  };
+
+  it('a ticket whose handling throws: another merge is found and a CI wait decided in the same tick', async () => {
+    await h.start({ ci: 'queued' });
+    const { daemon } = await h.machine('Laptop', 3);
+    for (const title of ['Contact form', 'Map page', 'Opening hours']) {
+      await h.createTicket({ title });
+    }
+    for (const number of [1, 2]) {
+      const { runId, commit } = await handedIn(daemon, number);
+      passes(commit);
+      await h.t.ciTick();
+      await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+    }
+    const waiting = await handedIn(daemon, 3);
+    // WEB-1 holds a value an older build wrote, which no longer reads.
+    await h.t.db
+      .update(schema.tickets)
+      .set({ changeRequest: { by: 'nobody' } })
+      .where(eq(schema.tickets.number, 1));
+    merge(1);
+    merge(2);
+    passes(waiting.commit);
+
+    await h.t.ciTick();
+    expect((await ticketRow(1)).status).toBe('in_review');
+    expect((await ticketRow(2)).status).toBe('done');
+    expect((await h.run(waiting.runId)).status).toBe('succeeded');
+    expect((await ticketRow(3)).status).toBe('in_review');
+    expect(h.t.logs.text).toMatch(/"ticket":"WEB-1".*"msg":"pull request not checked"/);
+  });
+
+  it('a run whose CI check throws: the runs after it are still checked', async () => {
+    await h.start({ ci: 'queued' });
+    const { daemon } = await h.machine('Laptop', 2);
+    for (const title of ['Contact form', 'Map page']) await h.createTicket({ title });
+    const broken = await handedIn(daemon, 1);
+    const next = await handedIn(daemon, 2);
+    // WEB-1's run holds rounds an older build wrote, which no longer read.
+    await h.t.db
+      .update(schema.runs)
+      .set({ ciRoundMessageId: randomUUID(), ciRounds: [{ round: 'one' }] })
+      .where(eq(schema.runs.id, broken.runId));
+    passes(next.commit);
+    await h.t.ciTick();
+    expect((await h.run(next.runId)).status).toBe('succeeded');
+    expect((await ticketRow(2)).status).toBe('in_review');
+    expect(h.t.logs.text).toMatch(/"ticket":"WEB-1".*"msg":"CI check of a run failed"/);
+  });
+});
+
 describe('what is not a merge into the default branch', () => {
   it('a merge into another base leaves the ticket unchanged, and is not read again', async () => {
     const { daemon } = await inReview();
