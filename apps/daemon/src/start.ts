@@ -226,6 +226,17 @@ export async function startDaemon(options: StartOptions): Promise<number> {
         case 'mcp.result':
           serverCalls.answer(message);
           return;
+        case 'branch.delete':
+          void runs.branches
+            .handle(message)
+            .then((payload) =>
+              server.sendMessage({ type: 'branch.delete_result', id: message.id, payload }),
+            )
+            .catch((error: unknown) => {
+              // No answer: the server sends the same message again (lot 3 step J2b).
+              log.error({ err: error, id: message.id }, 'branch delete failed');
+            });
+          return;
         default:
           void runs
             .handle(message)

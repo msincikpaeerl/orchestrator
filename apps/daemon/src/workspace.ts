@@ -8,6 +8,7 @@ import {
   PUSH_MESSAGE_MAX_CHARACTERS,
   cutText,
   fitList,
+  type BranchDeleteAnswer,
   type BranchReport,
   type ChangedFiles,
   type NotOnGitHub,
@@ -17,7 +18,7 @@ import {
 } from '@orchestrator/protocol';
 import type { Logger } from 'pino';
 import type { CredentialSource } from './credentials.js';
-import type { Git } from './git.js';
+import { GitError, type Git } from './git.js';
 import { ORIGIN_FETCH, restoreBareConfig } from './bare-config.js';
 import { isolatedFetch, isolatedPush, type IsolatedGitOptions } from './isolated-git.js';
 import type { DaemonPaths } from './paths.js';
@@ -43,7 +44,10 @@ export interface WorkspaceOptions {
   log: Logger;
 }
 
-export function bareClonePath(paths: DaemonPaths, repository: Repository): string {
+export function bareClonePath(
+  paths: DaemonPaths,
+  repository: Pick<Repository, 'owner' | 'name'>,
+): string {
   return join(paths.home, 'repos', repository.owner, `${repository.name}.git`);
 }
 
@@ -597,6 +601,42 @@ export class Workspaces {
     );
     const paths = [...new Set(listing.split('\0').filter(Boolean))].sort();
     return { listed: fitList(paths, CHANGED_FILES_MAX_BYTES), count: paths.length };
+  }
+
+  /**
+   * Deletes the local ticket branch after its pull request's merge (05, section 4.11; lot 3 step
+   * J2b), under the bare clone's lock, so no run's preparation, end or push works in it meanwhile.
+   * Kept when the bare clone's `HEAD` names it, a worktree has it, or `runActive` says a run of the
+   * repository is active; deleted only by `update-ref` with the merged head as the old value, so a
+   * branch that moved even after it was read is kept. The name is the caller's to check.
+   */
+  async deleteMergedBranch(
+    repository: Pick<Repository, 'owner' | 'name'>,
+    branch: string,
+    mergedHead: string,
+    runActive: () => boolean,
+  ): Promise<BranchDeleteAnswer> {
+    const { git, paths } = this.options;
+    const bare = bareClonePath(paths, repository);
+    if (!(await exists(join(bare, 'HEAD')))) return { outcome: 'not_found', what: 'repository' };
+    return this.locked(bare, async () => {
+      const ref = `refs/heads/${branch}`;
+      const head = await this.head(bare, ref);
+      if (head === null) return { outcome: 'not_found', what: 'branch' };
+      const bareHead = await git.exec(['-C', bare, 'symbolic-ref', '--quiet', 'HEAD']);
+      if (bareHead.stdout.trim() === ref) return { outcome: 'in_use', by: 'bare_head' };
+      if ((await this.checkedOutBy(bare, branch)) !== null) {
+        return { outcome: 'in_use', by: 'worktree' };
+      }
+      if (runActive()) return { outcome: 'in_use', by: 'run' };
+      // Only the merged head is deleted: Git compares and deletes in one step.
+      const deleted = await git.exec(['-C', bare, 'update-ref', '-d', ref, mergedHead]);
+      if (deleted.code === 0) return { outcome: 'deleted' };
+      const now = await this.head(bare, ref);
+      if (now === null) return { outcome: 'not_found', what: 'branch' };
+      if (now !== mergedHead) return { outcome: 'kept', head: now };
+      throw new GitError(['update-ref', '-d', ref, mergedHead], deleted.code, deleted.stderr);
+    });
   }
 
   /** Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). */
