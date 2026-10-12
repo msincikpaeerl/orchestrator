@@ -1,34 +1,25 @@
 import { z } from 'zod';
 import { ask, type GitHubResult } from '../src/github/answers.js';
 import type { GitHubClient } from '../src/github/client.js';
-import { branchPath, repoPath, type RepositoryRef } from '../src/github/repositories.js';
+import { readBranchRef } from '../src/github/pull-requests.js';
+import { repoPath, type RepositoryRef } from '../src/github/repositories.js';
 
 // GitHub reads only the owner's smoke script makes (tools/smoke/github-smoke.sh, lot 3 step E3),
 // kept out of the GitHub layer because no product code uses them (working rule 5). Each is read
 // as GitHub documents it and checked against the documented bodies in
 // test/github-documented.test.ts (ADR 0035), like the layer's.
 
-/** "git-ref": the branch's head. */
-const Reference = z.object({ object: z.object({ sha: z.string() }) });
-
 /**
- * The branch's head on GitHub ("Get a reference", "REST API endpoints for Git references",
- * https://docs.github.com/en/rest/git/refs); null when the branch does not exist (404).
+ * The branch's head on GitHub; null when the branch does not exist (404). The layer's read
+ * (`readBranchRef`), which the clean-up after a merge uses since lot 3 step J2a.
  */
 export async function branchHead(
   client: GitHubClient,
   repo: RepositoryRef,
   branch: string,
 ): Promise<GitHubResult<string | null>> {
-  const read = await ask(
-    client,
-    { method: 'GET', path: `${repoPath(repo)}/git/ref/heads/${branchPath(branch)}` },
-    200,
-    Reference,
-  );
-  if (read.ok) return { ok: true, value: read.value.object.sha };
-  if (read.refusal.kind === 'not_found') return { ok: true, value: null };
-  return read;
+  const read = await readBranchRef(client, repo, branch);
+  return read.ok ? { ok: true, value: read.value?.sha ?? null } : read;
 }
 
 /** "git-commit": its message and its parents. */

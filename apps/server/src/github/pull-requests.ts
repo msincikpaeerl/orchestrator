@@ -32,8 +32,17 @@ const PullRequestSimple = z.object({
   merged_at: z.string().nullable(),
 });
 
+/**
+ * A pull request's head or base repository: its full name and default branch. A head repository
+ * reads as null (a fork deleted since, which GitHub's description does not show): never the
+ * project's.
+ */
+const Repository = z.object({ full_name: z.string(), default_branch: z.string() });
+
 /** "pull-request", as get, create and update return it. */
 const PullRequestFull = PullRequestSimple.extend({
+  head: Branch.extend({ repo: Repository.nullable() }),
+  base: Branch.extend({ repo: Repository }),
   merged: z.boolean(),
   // Null while GitHub computes it: read again later (A5).
   mergeable: z.boolean().nullable(),
@@ -60,6 +69,10 @@ export interface PullRequest extends PullRequestSummary {
   mergeable: boolean | null;
   /** For example `clean`, `dirty` or `unknown`: printed only, `mergeable` is what is used (A10). */
   mergeableState: string;
+  /** The head repository, `owner/name`; null when GitHub gives none (a fork deleted since). */
+  headRepository: string | null;
+  /** The base repository's default branch, as GitHub has it now. */
+  defaultBranch: string;
 }
 
 function summary(body: z.infer<typeof PullRequestSimple>): PullRequestSummary {
@@ -82,6 +95,8 @@ function full(body: z.infer<typeof PullRequestFull>): PullRequest {
     merged: body.merged,
     mergeable: body.mergeable,
     mergeableState: body.mergeable_state,
+    headRepository: body.head.repo?.full_name ?? null,
+    defaultBranch: body.base.repo.default_branch,
   };
 }
 
@@ -227,6 +242,60 @@ export async function listOpenPullRequests(
     found.push(...batch.value.map(summary));
     if (batch.value.length < PAGE_SIZE) return { ok: true, value: found };
   }
+}
+
+/**
+ * The open pull requests whose head (`head`, as `owner:branch`) or base (`base`) is `branch`,
+ * every page read (lot 3 step J2a). GitHub ignores a malformed `head` filter and returns every
+ * open pull request: the caller checks each one's head and base itself.
+ */
+export async function listOpenPullRequestsUsing(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  side: 'head' | 'base',
+  branch: string,
+): Promise<GitHubResult<PullRequestSummary[]>> {
+  const found: PullRequestSummary[] = [];
+  const filter = encodeURIComponent(side === 'head' ? `${repo.owner}:${branch}` : branch);
+  for (let page = 1; ; page++) {
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/pulls?state=open&${side}=${filter}&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.array(PullRequestSimple),
+    );
+    if (!batch.ok) return batch;
+    found.push(...batch.value.map(summary));
+    if (batch.value.length < PAGE_SIZE) return { ok: true, value: found };
+  }
+}
+
+/** "git-ref": the reference GitHub answered for, and its head. */
+const Reference = z.object({ ref: z.string(), object: z.object({ sha: z.string() }) });
+
+/**
+ * A branch's reference on GitHub ("Get a reference", singular `git/ref`, "REST API endpoints for
+ * Git references", https://docs.github.com/en/rest/git/refs): the reference GitHub answered for
+ * and its head; null when there is none (404). The caller checks `ref` is exactly the one asked
+ * for (A37).
+ */
+export async function readBranchRef(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  branch: string,
+): Promise<GitHubResult<{ ref: string; sha: string } | null>> {
+  const read = await ask(
+    client,
+    { method: 'GET', path: `${repoPath(repo)}/git/ref/heads/${branchPath(branch)}` },
+    200,
+    Reference,
+  );
+  if (read.ok) return { ok: true, value: { ref: read.value.ref, sha: read.value.object.sha } };
+  if (read.refusal.kind === 'not_found') return { ok: true, value: null };
+  return read;
 }
 
 /** "Check if a pull request has been merged": 204 merged, 404 not merged (A20). */
