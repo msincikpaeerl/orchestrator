@@ -90,6 +90,17 @@ export function buildApp(dependencies: AppDependencies) {
     secondMs: dependencies.daemonSecondMs,
   });
   const key = deriveSecretKey(dependencies.secretKey);
+  // The clean-up after a merge, on GitHub and on the machines (lot 3 step J2), looked at by the
+  // CI loop, at each end report and at each machine's reconnection.
+  const branchCleanUps = new BranchCleanUp({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    daemons: gateway,
+    now: dependencies.now,
+  });
+  gateway.attachBranchCleanUps(branchCleanUps);
   let templates: ReturnType<typeof loadTemplates> | undefined;
   const pullRequests = new PullRequestOpener({
     db,
@@ -121,6 +132,7 @@ export function buildApp(dependencies: AppDependencies) {
     secondMs: dependencies.daemonSecondMs,
     pullRequestWanted: (ticketId) => void pullRequests.request(ticketId),
     reviewPostWanted: (runId) => void reviewPosts.request(runId),
+    endReported: (ticketId) => void branchCleanUps.runEnded(ticketId),
   });
   runs.attach(gateway);
   gateway.attachRuns(runs);
@@ -148,13 +160,7 @@ export function buildApp(dependencies: AppDependencies) {
     },
     retryPullRequest: (ticketId) => pullRequests.request(ticketId),
     pullRequests: watcher,
-    branchCleanUps: new BranchCleanUp({
-      db,
-      key,
-      apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
-      log: logger,
-      now: dependencies.now,
-    }),
+    branchCleanUps,
     now: dependencies.now,
     timers: dependencies.ciTimers,
   });
