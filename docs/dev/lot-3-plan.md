@@ -1118,7 +1118,9 @@ Its own branch (`lot3/j0-flaky-tests`) and pull request, with this plan update; 
 - **The stop and the items**: a merge clears the retry policy's stop (`stopped`); every other item goes with the status or the stopped run. The test takes the kinds tied to a ticket from the schema, so a new kind fails it until it is covered; `ticket_proposed` and `work_to_check` are left out (never on a ticket with a pull request).
 - **The D3 exception**: `commitsNotOnGitHub` counts none when the ticket's pull request head (as last read) is exactly the report's head (unit test, and an integration test where **Run now** takes another machine after the check).
 - **Sentences moved from J4 to J1** (answer 7 placed them in J4, but J1 makes them false): "Review by Quality" > Approved, the state of Tickets > "The pull request" ("the state the Orchestrator saw when it last opened or updated the pull request"), the **Check CI again** sentence on a merged pull request, and an exception sentence in Runs > "What on GitHub means" (the rest of that paragraph stays for J4). Help gains Tickets > "Merging the pull request".
-- `pull-request.test.ts` "opens a new one when the newest was merged": the merge now happens after the last check (a merge found first makes the ticket `done`, as specified); the opener's rule it tests is unchanged.
+- **The owner's corrections after reading the branch** (2026-10-12):
+  - *One result whoever reads the merge first*: the pull request opener never records a merge and never opens a new pull request over a merge of the ticket's own pull request that is not recorded yet; it hands that read to the watcher (`pullRequestSeen`), then stops when the ticket is done. F3's rule (a new pull request after a merged one) still applies when the ticket goes on: merged into another base, or reopened after the cancel race. "Exactly once" relies on the recorded merge (`pull_request_merged_at`, written only by the watcher), not on `pull_request_state`. The comment's CI line prefers the outcome whose commit is the merged head. Tests: merged after the last check then a submission accepted before the next one (done once, the run stopped, no second pull request); merged between the opener's find and its update (done once, the merge's facts stored); `pull-request.test.ts` "opens a new one when the newest was merged" rebuilt on a merge into another base.
+  - *One ticket or one run never blocks the others*: an error while one ticket's pull request is handled is logged with the ticket and the others go on; an error in the merge check never stops the CI waits of the tick; one run whose CI check throws never stops the runs after it (runs checked oldest first). Tests: a ticket whose handling throws (a stored value that no longer reads) while another merge is found and a CI wait decided in the same tick; a run whose check throws while the next run is decided.
 
 ### [ ] J2. Clean-up after a merge
 
@@ -1128,11 +1130,15 @@ Its own branch (`lot3/j0-flaky-tests`) and pull request, with this plan update; 
 
 ### [ ] J3. Closed pull requests, cancel, conflicts, moved head
 
+- **A watch that cannot read GitHub** (owner's note on J1, 2026-10-12): when the watch cannot read a project's pull requests (a refusal other than the request limit, an answer that cannot be read), nothing is decided, which is right, but nothing tells the owner while the ticket page says the merge is found at the next check. J3 stores the failure as the CI wait does (since when, the reason, one event when it starts, changes or works again); J4 shows it.
 - "Pull request closed without merging" with **Reopen pull request** and **Cancel ticket** (answers 1 and 4); **Cancel** closing the pull request; conflicts on **Awaiting merge** with the filled-in **Request changes** and the conflict mark from the fact; the hidden conflict (answer 6); the moved head with the comparison (answer 3); "No CI found" never accepting while the pull request is closed.
 
 **Done when** tests cover a pull request closed then reopened (from the Orchestrator and on GitHub); a refused reopen; cancel closing it and a reopened ticket keeping it closed until its next accepted submission; the retry of the close stopping at a merged pull request; a conflict on **Awaiting merge** leading to a `fix_review` run with the conflict part, the comment edited; a green status from another service with a conflict; the moved head with `ahead`, another status and a failed comparison; "No CI found" refused while the pull request is closed.
 
 ### [ ] J4. Screens, Help, CHANGELOG
+
+- **The watch's failure** stored by J3 (owner's note on J1): shown on the ticket page and on the "to merge" item.
+- **The e2e job** (owner's note on J1): it takes 479 seconds on `main`; J4 adds end-to-end tests, so it splits the job in the same change if it passes 8 minutes.
 
 - "Needs you" pull requests to merge, the closed item, the conflict flag, the moved-head line; the ticket page lines; the rest of answer 7's Help rewrites; CHANGELOG; the smoke script's A32 to A38 and step 11 (answer 8).
 
