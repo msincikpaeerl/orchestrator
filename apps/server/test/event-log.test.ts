@@ -143,10 +143,12 @@ describe('events of every type', () => {
       'ticket.status_changed',
       'ticket.submission_refused',
       'ticket.submitted',
-      // Its pull request: not opened, reopened by Try again, updated, then opened after a merge.
+      // Its pull request: not opened, reopened by Try again, updated, then opened after a merge
+      // into another base (lot 3 step J1).
       'ticket.pull_request_not_opened',
       'ticket.pull_request_reopened',
       'ticket.pull_request_updated',
+      'ticket.pull_request_merged',
       'ticket.pull_request_opened',
       'ticket.status_changed',
       // Check CI again on the ended run, refused (lot 3 step G2c).

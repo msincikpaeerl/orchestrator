@@ -97,6 +97,8 @@ export function buildApp(dependencies: AppDependencies) {
     log: logger,
     publicUrl: dependencies.publicUrl,
     templates: () => (templates ??= loadTemplates()),
+    // The watcher records a merge the opener finds (lot 3 step J1); built below, with the runs.
+    pullRequestSeen: (ticketId, pull) => watcher.seen(ticketId, pull),
     now: dependencies.now,
   });
   const reviewPosts = new ReviewPoster({

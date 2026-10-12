@@ -756,7 +756,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         if (
           action === 'mark_done' &&
           ticket.status === 'done' &&
-          ticket.pullRequestState === 'merged' &&
+          ticket.pullRequestMergedAt !== null &&
           ticket.pullRequestNumber !== null
         ) {
           // The merge was found first: exactly once (owner's answer 2, lot 3 step J1).

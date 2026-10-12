@@ -179,23 +179,39 @@ describe('the pull request (04, section 3.1)', () => {
     });
   });
 
-  it('opens a new one when the newest was merged (owner answer 1)', async () => {
+  it('opens a new one when the newest was merged and the ticket went on (owner answer 1)', async () => {
     const { daemon, runId, runToken, repo } = await working();
     await h.ok(daemon, runToken, 'ticket_submit', REPORT);
     await settled();
-    const next = await nextRun(daemon, runId);
-    // Merged after the last check of GitHub (from step J1 a merge found moves the ticket to done):
-    // the next submission finds it merged before the next check does.
+    // Its base changed by hand on GitHub, then merged there: the merge is recorded, the ticket
+    // goes on (lot 3 step J1), so its next accepted submission needs a new pull request.
+    h.github.commit(repo, 'release', { 'RELEASE.md': 'Next\n' }, 'Release branch', 'main');
+    const moved = await fetch(`${h.github.url}/repos/octo-owner/bakery/pulls/1`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ base: 'release' }),
+    });
+    expect(moved.status).toBe(200);
     h.github.mergePullRequest(repo, 1);
+    const next = await nextRun(daemon, runId);
+    expect(await ticketRow()).toMatchObject({ pullRequestMergedInto: 'release' });
     await h.ok(daemon, next.runToken, 'ticket_submit', REPORT);
     await eventually('the second pull request', () => {
       expect(pulls(repo)).toHaveLength(2);
     });
     await settled();
     expect(h.github.pullRequest(repo, 1)).toMatchObject({ merged: true });
-    expect(h.github.pullRequest(repo, 2)).toMatchObject({ state: 'open' });
-    expect(await ticketRow()).toMatchObject({ pullRequestNumber: 2, pullRequestState: 'open' });
+    expect(h.github.pullRequest(repo, 2)).toMatchObject({ state: 'open', base: 'main' });
+    expect(await ticketRow()).toMatchObject({
+      pullRequestNumber: 2,
+      pullRequestState: 'open',
+      pullRequestMergedAt: null,
+    });
     expect(await h.events('ticket.pull_request_opened')).toHaveLength(2);
+    // The new pull request's own merge into main is recorded: the ticket is done.
+    h.github.mergePullRequest(repo, 2);
+    await h.t.ciTick();
+    expect(await ticketRow()).toMatchObject({ status: 'done', pullRequestMergedInto: 'main' });
   });
 
   it('opens a new one when GitHub refuses to reopen the closed one (owner answer 2)', async () => {

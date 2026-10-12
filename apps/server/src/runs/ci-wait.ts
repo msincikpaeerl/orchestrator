@@ -314,7 +314,13 @@ export class CiWatcher {
    * J1), then every run waiting for CI, one after another; the request limit stops the tick.
    */
   private async checkAll(): Promise<void> {
-    const limited = (await this.options.pullRequests?.check()) ?? null;
+    let limited: Date | null = null;
+    try {
+      limited = (await this.options.pullRequests?.check()) ?? null;
+    } catch (error) {
+      // An error in the merge check never stops the CI waits (owner's correction, step J1).
+      this.options.log.error({ err: error }, 'pull requests not checked');
+    }
     if (limited !== null) {
       this.loop.pauseUntil(limited.getTime());
       return;
@@ -337,11 +343,26 @@ export class CiWatcher {
             isNotNull(schema.runs.ciRoundMessageId),
           ),
         ),
-      );
+      )
+      .orderBy(schema.runs.createdAt);
     for (const row of waiting) {
-      const limited = await this.checkRun(row);
-      if (limited !== null) {
-        this.loop.pauseUntil(limited.getTime());
+      let until: Date | null;
+      try {
+        until = await this.checkRun(row);
+      } catch (error) {
+        // One run that cannot be checked never stops the runs after it.
+        this.options.log.error(
+          {
+            err: error,
+            run: row.run.id,
+            ticket: ticketReference(row.project.key, row.ticket.number),
+          },
+          'CI check of a run failed',
+        );
+        continue;
+      }
+      if (until !== null) {
+        this.loop.pauseUntil(until.getTime());
         return;
       }
     }
@@ -408,7 +429,17 @@ export class CiWatcher {
     }
     // Every read of the pull request refreshes the ticket's, and may find it merged: the run is
     // then stopped, and the result below decides nothing for it.
-    if (check.pullRequest) await this.options.pullRequests?.seen(ticket.id, check.pullRequest);
+    if (check.pullRequest) {
+      try {
+        await this.options.pullRequests?.seen(ticket.id, check.pullRequest);
+      } catch (error) {
+        // The merge check's error never stops this run's CI decision.
+        this.options.log.error(
+          { err: error, ticket: ticketReference(project.key, ticket.number) },
+          'pull request read by the CI wait not handled',
+        );
+      }
+    }
     const { result } = check;
     if (
       result.state === 'passed' ||
