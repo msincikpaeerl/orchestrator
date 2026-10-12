@@ -764,6 +764,13 @@ export const branchCleanUps = pgTable(
     reason: jsonb('reason'),
     failure: jsonb('failure'),
     pushedAgain: jsonb('pushed_again'),
+    /**
+     * A machine row's `branch.delete` message (lot 3 step J2b): the same id each time it is sent
+     * again, so the daemon applies it once; null until first sent.
+     */
+    messageId: uuid('message_id'),
+    /** When the machine's `branch.delete` was last sent; its answer is awaited from then. */
+    sentAt: timestamp('sent_at', { withTimezone: true }),
     triedAt: timestamp('tried_at', { withTimezone: true }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

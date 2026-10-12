@@ -125,6 +125,8 @@ export {
   BranchCleanUpWait,
   BranchKeptReason,
   BranchPushedAgain,
+  MachineBranchCleanUp,
+  MachineCleanUpWait,
   TicketBranchCleanUp,
   isTicketBranchName,
 } from './api/branch-clean-up.js';
