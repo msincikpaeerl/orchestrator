@@ -14,6 +14,7 @@ import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
 import { causeText, failureText, pauseText, runStatusLabel } from '../runs/text';
+import { keptReasonText } from '../tickets/branch-clean-up-text';
 import { checkLabel, priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
 /**
@@ -63,6 +64,9 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.ci_checked_again': 'CI checked again',
   'ticket.stopped': 'Ticket stopped',
   'ticket.tried_again': 'Ticket tried again',
+  'ticket.branch_deleted': 'Ticket branch deleted on GitHub',
+  'ticket.branch_kept': 'Ticket branch kept on GitHub',
+  'ticket.branch_pushed_again': 'Ticket branch on GitHub again',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -381,6 +385,24 @@ const describe: { [T in EventType]: Describe<T> } = {
         : p.outcome === 'cancelled'
           ? `, into ${p.into}: the ticket stays cancelled`
           : `, into ${p.into}, not the project's default branch: the ticket is unchanged`,
+  ],
+  'ticket.branch_deleted': (p, c) => [
+    c.ticket,
+    p.alreadyGone
+      ? `: branch ${p.branch} was already gone from GitHub after the merge of pull request #${String(p.pullRequest)}`
+      : `: branch ${p.branch} deleted on GitHub after the merge of pull request #${String(p.pullRequest)}`,
+  ],
+  'ticket.branch_kept': (p, c) => [
+    c.ticket,
+    `: branch ${p.branch} kept on GitHub: ${keptReasonText(p.reason, {
+      ticket: p.ticket,
+      pullRequest: p.pullRequest,
+      mergedHead: p.head,
+    })}`,
+  ],
+  'ticket.branch_pushed_again': (p, c) => [
+    c.ticket,
+    `: branch ${p.branch} is on GitHub again: ${p.machine} pushed ${p.head.slice(0, 7)} after its deletion; it is kept`,
   ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,

@@ -3,6 +3,7 @@ import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
 import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { PullRequestFailure, PullRequestState } from './pull-requests.js';
+import { TicketBranchCleanUp } from './branch-clean-up.js';
 import { RunCiOutcome } from './ci.js';
 import { TicketChangeRequest, TicketReview, TicketStop } from './reviews.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
@@ -331,6 +332,8 @@ export const TicketDetail = TicketSummary.extend({
   reviewRounds: z.int().min(0),
   /** The latest request for changes, Quality's or the owner's; null when none (step I). */
   changeRequest: TicketChangeRequest.nullable(),
+  /** The ticket branch's clean-up on GitHub after the latest recorded merge; null when none. */
+  branchCleanUp: TicketBranchCleanUp.nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 
