@@ -317,6 +317,7 @@ export {
   McpResult,
   WorkspaceFacts,
 } from './daemon/relay.js';
+export { BranchDelete, BranchDeleteAnswer, BranchDeleteResult } from './daemon/branches.js';
 export { DaemonMessage, ServerMessage } from './daemon/messages.js';
 export {
   DAEMON_PACKAGE_NAME,
