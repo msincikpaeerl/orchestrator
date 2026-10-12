@@ -50,7 +50,19 @@ import {
   type RunPurpose,
   type SettingValues,
 } from '@orchestrator/protocol';
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne, type SQL } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  type SQL,
+} from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import {
@@ -3322,9 +3334,11 @@ export class RunService {
             run: schema.runs,
             owner: schema.projects.repoOwner,
             name: schema.projects.repoName,
+            enrolledAt: schema.machines.enrolledAt,
           })
           .from(schema.runs)
           .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+          .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
           .where(eq(schema.runs.id, runId))
       : [];
     const refused = (why: string): GitCredential['payload'] => {
@@ -3336,6 +3350,12 @@ export class RunService {
     };
     if (!row || row.run.machineId !== machineId) return refused('unknown run');
     const { command } = message.payload;
+    if (command === 'push' && row.enrolledAt !== null && row.run.createdAt < row.enrolledAt) {
+      // A run of an earlier enrollment of this machine (revoked, then enrolled again) never
+      // pushes again: the clean-up after a merge stops waiting for it at the revocation (owner's
+      // answer 1, lot 3 step J2).
+      return refused('the run started before this machine was enrolled again');
+    }
     if (command === 'push' && !PUSHING.has(row.run.status)) {
       const ending = await this.endingWindow(row.run);
       if (ending === null) return refused(`the run is ${row.run.status}`);
@@ -3390,6 +3410,23 @@ export class RunService {
    * considers active is stopped, which also ends a session whose end was never reported.
    */
   async reconcile(machineId: string, runs: Hello['payload']['runs']): Promise<void> {
+    // A started run whose end was never reported and that the daemon no longer has: it never
+    // pushes for it again, so the clean-up after a merge stops waiting for it (lot 3 step J2a).
+    const held = runs
+      .map((reported) => reported.runId)
+      .filter((id) => z.uuid().safeParse(id).success);
+    await this.db
+      .update(schema.runs)
+      .set({ endMissingAt: this.now() })
+      .where(
+        and(
+          eq(schema.runs.machineId, machineId),
+          isNotNull(schema.runs.acknowledgedAt),
+          isNull(schema.runs.endReportedAt),
+          isNull(schema.runs.endMissingAt),
+          ...(held.length > 0 ? [notInArray(schema.runs.id, held)] : []),
+        ),
+      );
     for (const reported of runs) {
       const [run] = await this.db
         .select({ status: schema.runs.status, machineId: schema.runs.machineId })

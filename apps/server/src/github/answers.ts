@@ -219,3 +219,11 @@ export async function ask<T>(
 export function refused(refusal: GitHubRefusal): { ok: false; refusal: GitHubRefusal } {
   return { ok: false, refusal };
 }
+
+/** The first moment GitHub allows requests again, as its refusal says; null when it does not. */
+export function retryAt(refusal: GitHubRefusal, now: Date): Date | null {
+  if (refusal.kind !== 'rate_limited' || refusal.retry === null) return null;
+  return 'afterSeconds' in refusal.retry
+    ? new Date(now.getTime() + refusal.retry.afterSeconds * 1000)
+    : new Date(refusal.retry.resetAtSeconds * 1000);
+}

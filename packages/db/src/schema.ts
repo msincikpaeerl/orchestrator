@@ -607,6 +607,11 @@ export const runs = pgTable(
     stopSentAt: timestamp('stop_sent_at', { withTimezone: true }),
     /** When the daemon reported the run's end (`run.state` `ended`). */
     endReportedAt: timestamp('end_reported_at', { withTimezone: true }),
+    /**
+     * When the run's machine reconnected without it in its `hello` while its end was not
+     * reported: the daemon no longer has it, so it never pushes for it again (lot 3 step J2a).
+     */
+    endMissingAt: timestamp('end_missing_at', { withTimezone: true }),
     /** The run's latest push of the ticket branch (`PushResult`) and when it was reported. */
     push: jsonb('push'),
     pushAt: timestamp('push_at', { withTimezone: true }),
@@ -727,6 +732,61 @@ export const runs = pgTable(
     index('runs_account_id').on(table.accountId, table.status),
     // History pages ended runs newest first (02, section 7).
     index('runs_ended_at').on(table.endedAt, table.id),
+  ],
+);
+
+/**
+ * The clean-up of a ticket branch after its pull request's merge into the default branch (04,
+ * section 4; lot 3 step J2): one row for GitHub and one per machine whose runs reported the
+ * branch, written in the transaction that records the merge (or **Mark as done manually** after
+ * the cancel race), with its own copy of the merge's facts. `state` (`BranchCleanUpState`):
+ * `wanted`, then `deleted`, `already_gone` or `kept` with `reason` (`BranchKeptReason`); `failure`
+ * (`BranchCleanUpFailure`) is the latest try that could not end; `pushed_again`
+ * (`BranchPushedAgain`) a push recorded after the deletion (owner's answer 2).
+ */
+export const branchCleanUps = pgTable(
+  'branch_clean_ups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    target: text('target').notNull(),
+    /** The machine of a `machine` row; null for GitHub's. */
+    machineId: uuid('machine_id').references(() => machines.id),
+    pullRequestNumber: integer('pull_request_number').notNull(),
+    branch: text('branch').notNull(),
+    mergedHead: text('merged_head').notNull(),
+    mergedInto: text('merged_into').notNull(),
+    /** The project's default branch when the merge was recorded. */
+    defaultBranch: text('default_branch').notNull(),
+    state: text('state').notNull().default('wanted'),
+    reason: jsonb('reason'),
+    failure: jsonb('failure'),
+    pushedAgain: jsonb('pushed_again'),
+    triedAt: timestamp('tried_at', { withTimezone: true }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('branch_clean_ups_target', sql`${table.target} IN ('github', 'machine')`),
+    check(
+      'branch_clean_ups_machine',
+      sql`(${table.target} = 'machine') = (${table.machineId} IS NOT NULL)`,
+    ),
+    check(
+      'branch_clean_ups_state',
+      sql`${table.state} IN ('wanted', 'deleted', 'already_gone', 'kept')`,
+    ),
+    // One recorded merge never makes a second GitHub row, nor a second row for one machine
+    // (owner's addition, lot 3 step J2).
+    uniqueIndex('branch_clean_ups_github')
+      .on(table.ticketId, table.pullRequestNumber)
+      .where(sql`${table.target} = 'github'`),
+    uniqueIndex('branch_clean_ups_machine_once')
+      .on(table.ticketId, table.pullRequestNumber, table.machineId)
+      .where(sql`${table.target} = 'machine'`),
+    index('branch_clean_ups_wanted').on(table.state, table.createdAt),
   ],
 );
 

@@ -286,6 +286,9 @@ describe('pull requests', () => {
       'number: expected number, received a string',
       'state: expected one of open, closed, received a string not among them',
       'head.sha: expected string, received nothing',
+      // The head and base repositories, read since lot 3 step J2a.
+      'head.repo: expected object, received nothing',
+      'base.repo: expected object, received nothing',
       'mergeable_state: expected string, received nothing',
     ];
     expect(refused).toEqual({

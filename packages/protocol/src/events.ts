@@ -17,6 +17,7 @@ import {
 import { PushFailureReason } from './daemon/git.js';
 import { PullRequestFailureReason } from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
+import { BranchKeptReason } from './api/branch-clean-up.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
 import { ReviewDecisionKind, ReviewPostProblem, StopCause } from './api/reviews.js';
 import { DodCheck } from './mcp/errors.js';
@@ -91,6 +92,9 @@ export const EventType = z.enum([
   'ticket.ci_checked_again',
   'ticket.stopped',
   'ticket.tried_again',
+  'ticket.branch_deleted',
+  'ticket.branch_kept',
+  'ticket.branch_pushed_again',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -354,6 +358,36 @@ export const EventPayloads = {
   }),
   /** The owner's **Try again** on a stopped ticket: the stop's cause; the counts start again. */
   'ticket.tried_again': z.object({ ...TicketFacts, cause: StopCause, commentId: z.uuid() }),
+  /**
+   * The ticket branch deleted on GitHub after its pull request's merge (lot 3 step J2a), or found
+   * already gone (`alreadyGone`: deleted on GitHub, by hand or by the repository's setting).
+   */
+  'ticket.branch_deleted': z.object({
+    ...TicketFacts,
+    branch: z.string(),
+    pullRequest: z.int().positive(),
+    head: z.string(),
+    alreadyGone: z.boolean(),
+  }),
+  /** The ticket branch kept on GitHub after the merge, never tried again (lot 3 step J2a). */
+  'ticket.branch_kept': z.object({
+    ...TicketFacts,
+    branch: z.string(),
+    pullRequest: z.int().positive(),
+    head: z.string(),
+    reason: BranchKeptReason,
+  }),
+  /**
+   * A push of the ticket branch recorded after the branch was deleted on GitHub (owner's answer 2,
+   * lot 3 step J2): the branch is on GitHub again and is never deleted a second time.
+   */
+  'ticket.branch_pushed_again': z.object({
+    ...TicketFacts,
+    branch: z.string(),
+    pullRequest: z.int().positive(),
+    machine: z.string(),
+    head: z.string(),
+  }),
   /**
    * The owner's **Check CI again** (04, section 3.1; lot 3 step G2c): what it found, or why it was
    * refused. `accepted` also writes the ticket's status change.

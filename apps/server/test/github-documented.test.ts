@@ -5,8 +5,10 @@ import type { GitHubClient } from '../src/github/client.js';
 import {
   closePullRequest,
   findPullRequests,
+  listOpenPullRequestsUsing,
   openPullRequest,
   postReview,
+  readBranchRef,
   readPullRequest,
   reopenPullRequest,
   updatePullRequest,
@@ -100,11 +102,20 @@ describe.each<Filling>(['nulls', 'inner'])(
       );
       expect(opened.mergeable).toBeNull();
       expect(opened.mergedAt).toBeNull();
-      read(await readPullRequest(client, REPO, 1));
+      const pull = read(await readPullRequest(client, REPO, 1));
+      // The head and base repositories the clean-up after a merge checks (lot 3 step J2a).
+      expect(pull.headRepository).toBe('documented');
+      expect(pull.defaultBranch).toBe('documented');
       read(await updatePullRequest(client, REPO, 1, { title: 'u' }));
       read(await closePullRequest(client, REPO, 1));
       read(await reopenPullRequest(client, REPO, 1));
       expect(read(await findPullRequests(client, REPO, 'h'))).toHaveLength(1);
+      expect(read(await listOpenPullRequestsUsing(client, REPO, 'head', 'h'))).toHaveLength(1);
+      expect(read(await listOpenPullRequestsUsing(client, REPO, 'base', 'h'))).toHaveLength(1);
+      expect(read(await readBranchRef(client, REPO, 'h'))).toEqual({
+        ref: 'documented',
+        sha: 'documented',
+      });
       read(await postReview(client, REPO, 1, { event: 'COMMENT', body: 'c' }));
     });
 

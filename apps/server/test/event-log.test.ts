@@ -157,6 +157,9 @@ describe('events of every type', () => {
       'ticket.pull_request_closed',
       'ticket.status_changed',
       'ticket.pull_request_merged',
+      // Its branch deleted on GitHub at the same check, then a push recorded after (step J2a).
+      'ticket.branch_deleted',
+      'ticket.branch_pushed_again',
     ]);
 
     const settings = await readAll(t, cookie, 'entity=setting');

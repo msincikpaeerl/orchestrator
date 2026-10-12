@@ -119,6 +119,15 @@ export {
   PullRequestState,
   PullRequestTryAgainResponse,
 } from './api/pull-requests.js';
+export {
+  BranchCleanUpFailure,
+  BranchCleanUpState,
+  BranchCleanUpWait,
+  BranchKeptReason,
+  BranchPushedAgain,
+  TicketBranchCleanUp,
+  isTicketBranchName,
+} from './api/branch-clean-up.js';
 export { isLoopback, isRefusedPlainHttp } from './daemon/server-address.js';
 export {
   CheckCiAgainRefusal,

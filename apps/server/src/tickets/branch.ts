@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import type { ProjectRow } from '../projects/model.js';
+import { branchPushedAgain } from './branch-clean-up.js';
 import { reportedCommits, type RunRow } from '../runs/model.js';
 import { ticketReference, type TicketRow } from './model.js';
 
@@ -190,6 +191,15 @@ export async function recordPush(
       type: 'run.branch_pushed',
       payload: { ...facts, head: result.head },
       at: now,
+    });
+    // On GitHub again after its deletion (owner's answer 2, lot 3 step J2).
+    await branchPushedAgain(tx, {
+      project: input.project,
+      ticketId: input.ticket.id,
+      branch: input.run.branchName,
+      machine: input.machine.name,
+      head: result.head,
+      now,
     });
     return;
   }

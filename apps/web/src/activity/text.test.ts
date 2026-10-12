@@ -274,6 +274,30 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     commentId: null,
   },
   'ticket.pull_request_closed': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
+  'ticket.branch_deleted': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    branch: 't/12-contact-form',
+    pullRequest: 4,
+    head: 'def5678def5678def5678def5678def5678def56',
+    alreadyGone: false,
+  },
+  'ticket.branch_kept': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    branch: 't/12-contact-form',
+    pullRequest: 4,
+    head: 'def5678def5678def5678def5678def5678def56',
+    reason: { kind: 'used_as_base', pullRequest: 5 },
+  },
+  'ticket.branch_pushed_again': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    branch: 't/12-contact-form',
+    pullRequest: 4,
+    machine: 'laptop',
+    head: 'abc1234abc1234abc1234abc1234abc1234abc12',
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -366,6 +390,27 @@ describe('eventText', () => {
     expect(text).not.toContain(type);
     expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b|undefined|null|\[object/);
     expect(text).toMatch(/^[A-Z“]/);
+  });
+
+  it('names the real branch of a clean-up after a merge (step J2a)', () => {
+    const text = (type: EventType, payload: Record<string, unknown> = {}) =>
+      plainText(
+        eventText(
+          entry(type, { payload: { ...examples[type as 'ticket.branch_kept'], ...payload } }),
+        ),
+      );
+    expect(text('ticket.branch_deleted')).toBe(
+      'WEB-12: branch t/12-contact-form deleted on GitHub after the merge of pull request #4',
+    );
+    expect(text('ticket.branch_deleted', { alreadyGone: true })).toBe(
+      'WEB-12: branch t/12-contact-form was already gone from GitHub after the merge of pull request #4',
+    );
+    expect(text('ticket.branch_kept')).toBe(
+      'WEB-12: branch t/12-contact-form kept on GitHub: open pull request #5 is based on it',
+    );
+    expect(text('ticket.branch_pushed_again')).toBe(
+      'WEB-12: branch t/12-contact-form is on GitHub again: laptop pushed abc1234 after its deletion; it is kept',
+    );
   });
 
   it('says whether a pull request was not opened or not updated (step F4)', () => {

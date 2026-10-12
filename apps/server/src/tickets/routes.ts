@@ -58,6 +58,7 @@ import {
   type TicketRow,
 } from './model.js';
 import { ticketBranch } from './branch.js';
+import { cleanUpWanted, ticketBranchCleanUp } from './branch-clean-up.js';
 import {
   acceptedCommit,
   requestAfter,
@@ -388,6 +389,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       review: (await ticketReview(executor, ticket)).review,
       reviewRounds: ticket.reviewRounds,
       changeRequest: await ticketChangeRequest(executor, ticket),
+      branchCleanUp: await ticketBranchCleanUp(executor, ticket.id),
     };
   }
 
@@ -819,6 +821,22 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           changeRequest,
           now: now(),
         });
+        if (
+          action === 'mark_done' &&
+          updated.status === 'done' &&
+          ticket.pullRequestNumber !== null &&
+          ticket.pullRequestMergedAt !== null &&
+          ticket.pullRequestMergedHead !== null &&
+          ticket.pullRequestMergedInto !== null
+        ) {
+          // The cancel race finished: Reopen, then Mark as done manually, while the merged pull
+          // request is still the ticket's own starts the clean-up now (owner's answer 3, step J2).
+          await cleanUpWanted(tx, project, ticket, {
+            number: ticket.pullRequestNumber,
+            head: ticket.pullRequestMergedHead,
+            into: ticket.pullRequestMergedInto,
+          });
+        }
         return detail(tx, project, updated);
       });
       await afterCommit();
