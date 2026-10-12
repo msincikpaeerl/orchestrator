@@ -123,7 +123,7 @@ test('Ready for review in Needs you, Start review, then an approval on the ticke
     /\/pull\/1#pullrequestreview-\d+$/,
   );
   await expect(page.getByLabel('Merge')).toHaveText(
-    'Merge pull request #1 on GitHub, then use Mark as done manually: this version does not notice the merge yet.',
+    'Merge pull request #1 on GitHub. The Orchestrator checks GitHub every 60 seconds (GitHub check interval, in Settings > Limits) and moves the ticket to Done when it finds the merge.',
   );
   await expect(page.getByRole('button', { name: 'Start review' })).toBeHidden();
   await expectFitsScreen(page);

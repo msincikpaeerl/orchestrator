@@ -233,9 +233,12 @@ describe('the ticket page', () => {
     expect(ticketReviewText(review(null))).toBeNull();
   });
 
-  it('Awaiting merge until merge detection (answer 5)', () => {
-    expect(awaitingMergeText(12)).toBe(
-      'Merge pull request #12 on GitHub, then use Mark as done manually: this version does not notice the merge yet.',
+  it('Awaiting merge: the merge found at the next check, every GitHub check interval (step J1)', () => {
+    expect(awaitingMergeText(12, 90)).toBe(
+      'Merge pull request #12 on GitHub. The Orchestrator checks GitHub every 90 seconds (GitHub check interval, in Settings > Limits) and moves the ticket to Done when it finds the merge.',
+    );
+    expect(awaitingMergeText(12, null)).toBe(
+      'Merge pull request #12 on GitHub. The Orchestrator checks GitHub at each GitHub check interval (Settings > Limits) and moves the ticket to Done when it finds the merge.',
     );
   });
 });

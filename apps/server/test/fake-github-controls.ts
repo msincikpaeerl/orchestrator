@@ -31,7 +31,7 @@ const GitHubStatus = z.object({
 const GitHubPullRequest = z.object({
   repository: z.string(),
   pullRequest: z.int().positive(),
-  method: z.enum(['merge', 'squash']).optional(),
+  method: z.enum(['merge', 'squash', 'rebase']).optional(),
 });
 
 /** The GitHub controls; a refusal of the fake (what GitHub would not offer) answers 409. */

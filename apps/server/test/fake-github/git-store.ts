@@ -301,6 +301,23 @@ export class GitStore {
     return stdout.split('\n')[0] ?? null;
   }
 
+  /**
+   * The tree of `commit`'s change (against its first parent) applied on `onto`, as a cherry-pick
+   * makes it, or null on a conflict.
+   */
+  pickTree(onto: string, commit: string): string | null {
+    const { code, stdout } = this.status([
+      'merge-tree',
+      '--write-tree',
+      `--merge-base=${commit}^`,
+      onto,
+      commit,
+    ]);
+    if (code === 1) return null;
+    if (code !== 0) throw new Error(`git merge-tree failed for ${commit} onto ${onto}`);
+    return stdout.split('\n')[0] ?? null;
+  }
+
   /** Files that differ between two commits. */
   changedFiles(from: string, to: string): string[] {
     return this.git(['diff', '--name-only', from, to]).split('\n').filter(Boolean);

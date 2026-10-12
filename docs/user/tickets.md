@@ -109,6 +109,8 @@ If the ticket still waits for tickets that are not done, the dialog warns you an
 
 The ticket moves to **Done**, and tickets waiting for it are no longer blocked by it. This is possible from **To do**, **In progress**, **Waiting for you**, **In review** and **Awaiting merge**, but not from **Proposed**: accept or reject a proposed ticket instead.
 
+You do not need it after merging the ticket's pull request on GitHub: the ticket moves to **Done** by itself (see [Merging the pull request](#merging-the-pull-request)), and once it has, **Mark as done manually** is refused with "WEB-12 is already done: pull request #12 was merged on GitHub.".
+
 ## Request changes
 
 Use **Request changes** when the agent's work is not right yet: on a ticket **In review** (not while Quality is reviewing it: wait for the review to end, or stop its run first), or on a ticket **Awaiting merge** that Quality approved or whose review you skipped (see [Request changes after an approval](#request-changes-after-an-approval)).
@@ -173,7 +175,7 @@ Nothing in it can act on GitHub by itself: secrets are hidden, HTML is shown as 
 
 The ticket page shows it under **Pull request**:
 
-- **Pull request #12 · Open**: the link opens it on GitHub. The state is **Open**, **Closed without merging** or **Merged**. It is the state the Orchestrator saw when it last opened or updated the pull request; the link always shows its current state on GitHub.
+- **Pull request #12 · Open**: the link opens it on GitHub. The state is **Open**, **Closed without merging** or **Merged**. It is the state the Orchestrator saw at its latest check of GitHub, made every **GitHub check interval** (in [Settings > Limits](settings.md#settings-reference)), so it can be behind GitHub for that long; the link always shows its current state on GitHub.
 - **Opening the pull request on GitHub…**: the work was just accepted, and the pull request is being opened or updated.
 - **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
 - **Pull request not updated**, under an open pull request: a later accepted submission could not update it. The pull request is there, but its description still shows the report of the earlier submission; the new commits are on GitHub, in the pull request. Click **Try again** as above. A pull request closed without merging, or merged, says **Pull request not opened**, since the next try reopens it or opens a new one.
@@ -228,7 +230,7 @@ Under **Pull request**, the ticket page says in one line what CI came to for the
 | A conflict | Nothing changes: **Run now** lets the agent merge the default branch. |
 | GitHub could not be checked | Nothing changes: try again later. |
 
-It is refused while a run is working on the ticket, when newer work was accepted since, when the branch changed on GitHub after that commit (**Run now** hands the work in again), when the pull request is closed or merged (for a merged one, **Mark as done manually**), and when the pull request was never opened: use **Try again** in "Pull request not opened" first.
+It is refused while a run is working on the ticket, when newer work was accepted since, when the branch changed on GitHub after that commit (**Run now** hands the work in again), when the pull request is closed or merged (a pull request merged into the default branch moves the ticket to **Done** by itself, see [Merging the pull request](#merging-the-pull-request)), and when the pull request was never opened: use **Try again** in "Pull request not opened" first.
 
 ### Workflow files
 
@@ -272,7 +274,7 @@ A review by Quality uses one Claude Code session, from the usage of your Claude 
 
 ### The result
 
-- **Approved**: the ticket moves to **Awaiting merge**. Merge the pull request on GitHub, then use [Mark as done manually](#mark-as-done-manually): this version does not notice the merge yet.
+- **Approved**: the ticket moves to **Awaiting merge**. Merge the pull request on GitHub: the ticket then moves to **Done** by itself (see [Merging the pull request](#merging-the-pull-request)).
 - **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. **Run now** starts the next run of its assignee, which addresses the points (see [The round after a request](#the-round-after-a-request)). Quality's request never counts as a failed attempt, but it counts as a review round (see [Too many review rounds](#too-many-review-rounds)).
 
 The ticket page's **Review** shows the latest review: "Approved by Quality · commit abc1234 · <time>" with Quality's summary, or "Changes requested by Quality · commit abc1234 · 3 points" with each point and the file it is about, "Review skipped by you on <date>", or "Review in progress on <machine>". When that review is about an earlier submission (the agent changed the work since), it says so, with the commit now in review, which nobody has reviewed yet. Earlier reviews stay in the timeline. The review's run page shows the commit reviewed and the decision.
@@ -315,9 +317,9 @@ Nothing is posted on GitHub for your request, and the pull request stays open: t
 Quality's request for changes is advice, and you decide. When you think the work is right as it is, you do not need another run:
 
 1. Open the pull request on GitHub (**Pull request** on the ticket page) and merge it there.
-2. On the ticket page, click [Mark as done manually](#mark-as-done-manually) and write why, for example "Merged on GitHub: point 2 is not needed.".
+2. Nothing else is needed: at its next check of GitHub the Orchestrator finds the merge and moves the ticket to **Done**, with a comment saying that Quality's request for changes was not addressed (see [Merging the pull request](#merging-the-pull-request)).
 
-This works while the ticket is in **To do** with Quality's request waiting, and also when the ticket is stopped after too many review rounds. Mark as done manually is never refused because a request for changes is waiting.
+To write why in the ticket, add a comment, or use [Mark as done manually](#mark-as-done-manually) before merging and write why there, for example "Merging as it is: point 2 is not needed.": the merge found afterwards is then only recorded, with a comment. This works while the ticket is in **To do** with Quality's request waiting, and also when the ticket is stopped after too many review rounds. Mark as done manually is never refused because a request for changes is waiting.
 
 ### The review on GitHub
 
@@ -331,6 +333,20 @@ A review run can end without a decision applied: Quality gave up, its time ran o
 
 **Start review** is refused when it cannot start, saying why, for example when the pull request's latest commit on GitHub is not the one CI checked (someone pushed to it, or used **Update branch**): use **Skip review** and check it yourself, or **Request changes** so the agent continues.
 
+### Merging the pull request
+
+You merge the pull request on GitHub, with the method you prefer: a merge commit, squash, or rebase. The Orchestrator checks GitHub every **GitHub check interval** (60 seconds by default, in [Settings > Limits](settings.md#settings-reference)); the ticket page's **Awaiting merge** line says the current value. At the first check after the merge:
+
+- The ticket moves to **Done**, from any state where its pull request was open, even before Quality's review. Tickets waiting for it are no longer blocked by it, and its items leave [Needs you](needs-you.md).
+- A run still working on the ticket (the agent, or Quality's review) is stopped. It does not count as a failed attempt.
+- A comment says when GitHub merged it and its latest commit then, for example "Pull request #12 was merged on GitHub at 2026-10-11 16:02 UTC (head def5678).", then what CI said of that commit ("CI passed for this commit.", or why the Orchestrator's CI result does not cover it), and Quality's review ("Quality approved this commit.", "It was merged before Quality's review.", or a request for changes that was not addressed). Times in comments are in UTC.
+
+Only a merge into the project's default branch counts. If you change the pull request's base on GitHub and merge it into another branch, the ticket does not change.
+
+If the Orchestrator was stopped when you merged, it finds the merge when it starts again, and the comment gives GitHub's time of the merge. A ticket you already marked as done manually only gets a comment saying the pull request was merged after you marked it. A ticket you cancelled stays **Cancelled**: the comment says the pull request was merged anyway; to record it as done, use **Reopen**, then **Mark as done manually**.
+
+A pull request you closed without merging stays watched while its ticket is not done or cancelled: if you reopen it on GitHub, the Orchestrator sees it open again, and if you reopen and merge it, the ticket moves to **Done** as above.
+
 ## Ticket states
 
 | State | Meaning |
@@ -340,7 +356,7 @@ A review run can end without a decision applied: Quality gave up, its time ran o
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
 | **In review** | The agent finished its work and the checks accepted it; its pull request is on GitHub, and CI passed or found nothing to run (see [Submission and the pull request](#submission-and-the-pull-request)). **Start review** asks Quality to review it, which uses one Claude Code session from your Claude plan; **Skip review** moves it to **Awaiting merge** without a review and uses none. A review that does not finish never counts as a failed attempt (see [Review by Quality](#review-by-quality)). |
-| **Awaiting merge** | The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. This version does not notice the merge yet: after merging, use [Mark as done manually](#mark-as-done-manually). If something must change first, use [Request changes](#request-changes-after-an-approval): the ticket goes back to **To do**. |
+| **Awaiting merge** | The work was approved by Quality, or you skipped the review: merge the pull request on GitHub. The ticket then moves to **Done** by itself at the next check of GitHub (see [Merging the pull request](#merging-the-pull-request)). If something must change first, use [Request changes](#request-changes-after-an-approval): the ticket goes back to **To do**. |
 | **Done** | Finished: merged, or marked as done manually. |
 | **Cancelled** | Abandoned. It can be reopened. |
 

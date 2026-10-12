@@ -26,6 +26,7 @@ import { registerRunRoutes } from './runs/routes.js';
 import { CiCheckAgain } from './runs/ci-again.js';
 import { CiWatcher } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
+import { PullRequestWatcher } from './tickets/merge-watch.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
 import { ReviewPoster } from './runs/review-post.js';
 import { loadTemplates } from './agents/files.js';
@@ -120,6 +121,15 @@ export function buildApp(dependencies: AppDependencies) {
   });
   runs.attach(gateway);
   gateway.attachRuns(runs);
+  // The tickets' pull requests watched on GitHub (lot 3 step J1), looked at by the CI loop.
+  const watcher = new PullRequestWatcher({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    runs,
+    now: dependencies.now,
+  });
   // The wait for CI of accepted submissions (04, section 3.1; lot 3 step G1a), restored from what
   // the runs keep: the first check at start, then every GitHub check interval.
   const ci = new CiWatcher({
@@ -134,6 +144,7 @@ export function buildApp(dependencies: AppDependencies) {
       roundDue: (runId) => runs.ciRoundDue(runId),
     },
     retryPullRequest: (ticketId) => pullRequests.request(ticketId),
+    pullRequests: watcher,
     now: dependencies.now,
     timers: dependencies.ciTimers,
   });

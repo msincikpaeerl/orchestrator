@@ -329,6 +329,33 @@ describe('pull requests', () => {
     expect((await api('POST', `${REPO}/pulls`, {})).status).toBe(422);
   });
 
+  it('merged by rebase: the commits again on main, no merge commit, the head unchanged', async () => {
+    await cloneWithToken();
+    await git(work, 'checkout', '--quiet', 'main');
+    await pushCommit('main', { 'base.md': 'Base\n' }, 'Base moves on');
+    await git(work, 'checkout', '--quiet', 'HEAD~1');
+    await pushCommit('t/3-rebase', { 'c.md': 'C\n' }, 'First');
+    const head = await pushCommit('t/3-rebase', { 'd.md': 'D\n' }, 'Second');
+    await openPull('t/3-rebase');
+    const before = github.branches(repo).get('main');
+
+    const sha = github.mergePullRequest(repo, 1, 'rebase');
+    const merged = json(await api('GET', `${REPO}/pulls/1`));
+    expect(merged).toMatchObject({ state: 'closed', merged: true, head: { sha: head } });
+    expect(github.branches(repo).get('main')).toBe(sha);
+    const second = json(await api('GET', `${REPO}/git/commits/${sha}`));
+    expect(second.message).toBe('Second');
+    expect(second.sha).not.toBe(head);
+    const parents = second.parents as JsonObject[];
+    expect(parents).toHaveLength(1);
+    const first = json(await api('GET', `${REPO}/git/commits/${String(parents[0]?.sha)}`));
+    expect(first.message).toBe('First');
+    expect((first.parents as JsonObject[])[0]?.sha).toBe(before);
+    await git(work, 'fetch', '--quiet', 'origin');
+    const files = await git(work, 'ls-tree', '--name-only', 'origin/main');
+    expect(files.split('\n')).toEqual(expect.arrayContaining(['base.md', 'c.md', 'd.md']));
+  });
+
   it('closed by the owner on GitHub, stay closed', async () => {
     await cloneWithToken();
     await pushCommit('t/2-close', { 'b.md': 'B\n' });

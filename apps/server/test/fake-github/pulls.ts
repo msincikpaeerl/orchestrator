@@ -429,7 +429,7 @@ export function mergePull(
   ctx: FakeContext,
   state: RepositoryState,
   number: number,
-  method: 'merge' | 'squash' = 'merge',
+  method: 'merge' | 'squash' | 'rebase' = 'merge',
 ): string {
   const pull = openPull(state, number);
   const base = state.store.branch(pull.base);
@@ -437,14 +437,30 @@ export function mergePull(
   const tree = state.store.mergeTree(base, pull.headSha);
   if (tree === null)
     throw new Error(`pull request #${String(number)} has conflicts with ${pull.base}`);
-  const sha =
-    method === 'merge'
-      ? state.store.commitTree(
-          tree,
-          [base, pull.headSha],
-          `Merge pull request #${String(number)} from ${state.owner}/${pull.head}\n\n${pull.title}`,
-        )
-      : state.store.commitTree(tree, [base], `${pull.title} (#${String(number)})`);
+  let sha: string;
+  if (method === 'rebase') {
+    // "Rebase and merge": each commit of the head branch applied again on the base, one after
+    // the other, with no merge commit; the pull request's head stays the branch's head (A33).
+    sha = base;
+    for (const commit of state.store.commitsBetween(base, pull.headSha)) {
+      const found = state.store.commit(commit);
+      if (found === undefined) throw new Error(`commit ${commit} is gone`);
+      // A merge commit of the branch (an **Update branch**) adds nothing the base lacks.
+      if (found.parents.length > 1) continue;
+      const picked = state.store.pickTree(sha, commit);
+      if (picked === null) throw new Error(`commit ${commit} does not apply on ${pull.base}`);
+      sha = state.store.commitTree(picked, [sha], found.message);
+    }
+  } else {
+    sha =
+      method === 'merge'
+        ? state.store.commitTree(
+            tree,
+            [base, pull.headSha],
+            `Merge pull request #${String(number)} from ${state.owner}/${pull.head}\n\n${pull.title}`,
+          )
+        : state.store.commitTree(tree, [base], `${pull.title} (#${String(number)})`);
+  }
   state.store.setBranch(pull.base, sha, base);
   const time = ctx.now();
   Object.assign(pull, {

@@ -205,6 +205,11 @@ const RUN_TRANSITIONS: Readonly<
   review_ended: { from: ['waiting_human'], to: 'in_review' },
   review_approved: { from: ['in_review'], to: 'awaiting_merge' },
   review_changes_requested: { from: ['in_review'], to: 'todo' },
+  // Every state with an open pull request (owner's answer 2, lot 3 step J1).
+  pull_request_merged: {
+    from: ['todo', 'in_progress', 'waiting_human', 'in_review', 'awaiting_merge'],
+    to: 'done',
+  },
 };
 
 export interface RunAction {
@@ -212,7 +217,8 @@ export interface RunAction {
   ticket: TicketRow;
   action: RunTicketAction;
   actor: 'owner' | 'system' | 'agent';
-  runId: string;
+  /** Null for `pull_request_merged` on a ticket with no active run. */
+  runId: string | null;
   /** The comment behind the change, already written (a question, an answer). */
   commentId?: string;
   /** For the `agent` actor: the profile's key and name (01, section 3.10). */
@@ -299,7 +305,7 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
     to: transition.to,
     action,
     commentId,
-    runId: input.runId,
+    ...(input.runId === null ? {} : { runId: input.runId }),
     ...(input.failureReason === undefined ? {} : { failureReason: input.failureReason }),
     ...(input.attemptCounted === undefined ? {} : { attemptCounted: input.attemptCounted }),
     ...(input.agent ? { agent: input.agent.key, agentName: input.agent.name } : {}),

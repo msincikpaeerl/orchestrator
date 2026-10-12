@@ -549,6 +549,19 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   });
   await call('POST', `/api/projects/SHOP/tickets/${String(filters.number)}/try-again`);
 
+  // SHOP-2's pull request closed on GitHub (`ticket.pull_request_closed`), then reopened and
+  // merged there between two checks (`ticket.pull_request_merged`: SHOP-2 done; lot 3 step J1).
+  github.closePullRequest(shop, 2);
+  await t.ciTick();
+  const reopened = await fetch(`${github.url}/repos/octo-owner/online-shop/pulls/2`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ state: 'open' }),
+  });
+  expect(reopened.status).toBe(200);
+  github.mergePullRequest(shop, 2);
+  await t.ciTick();
+
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({
     type: 'machine.doctor',

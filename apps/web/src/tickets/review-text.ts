@@ -196,9 +196,17 @@ export function ticketReviewText(review: TicketReview): {
   }
 }
 
-/** The line of a ticket in Awaiting merge until merge detection (answer 5; step J rewrites it). */
-export function awaitingMergeText(pullRequest: number): string {
-  return `Merge pull request #${String(pullRequest)} on GitHub, then use Mark as done manually: this version does not notice the merge yet.`;
+/**
+ * The line of a ticket on Awaiting merge (owner's answer 7, lot 3 step J1): the merge is found
+ * at a check of GitHub, every **GitHub check interval**, whose value the page reads (null while
+ * it loads): never a fixed time.
+ */
+export function awaitingMergeText(pullRequest: number, intervalSeconds: number | null): string {
+  const every =
+    intervalSeconds === null
+      ? 'at each GitHub check interval (Settings > Limits)'
+      : `every ${String(intervalSeconds)} seconds (GitHub check interval, in Settings > Limits)`;
+  return `Merge pull request #${String(pullRequest)} on GitHub. The Orchestrator checks GitHub ${every} and moves the ticket to Done when it finds the merge.`;
 }
 
 /** The run page's review card (owner's answers 2, 5 and 5 of H4). */

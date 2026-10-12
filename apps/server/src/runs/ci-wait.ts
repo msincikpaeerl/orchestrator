@@ -16,7 +16,7 @@ import type { GitHubRefusal } from '../github/answers.js';
 import { listCommitRuns, readCommitStatus } from '../github/ci.js';
 import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
 import { storedTokenClient } from '../github/connection.js';
-import { readPullRequest } from '../github/pull-requests.js';
+import { readPullRequest, type PullRequest } from '../github/pull-requests.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { resolveSettings } from '../settings/store.js';
 import { ticketReference } from '../tickets/model.js';
@@ -128,6 +128,16 @@ export interface CiWatcherOptions {
   outcomes: CiOutcomes;
   /** One more attempt at the pull request of a ticket whose pull request is not opened. */
   retryPullRequest: (ticketId: string) => Promise<void>;
+  /**
+   * The ticket's pull requests watched on GitHub (lot 3 step J1): looked at before the CI waits
+   * in each tick, so a ticket merged during a wait ends as merged; every read of a pull request
+   * the CI wait makes is handed to `seen`. `check` returns when GitHub allows requests again
+   * after its request limit, which holds the whole tick.
+   */
+  pullRequests?: {
+    check(): Promise<Date | null>;
+    seen(ticketId: string, pull: PullRequest): Promise<void>;
+  };
   now?: () => Date;
   /** False in tests: no tick starts by itself, the test calls `tick()`. */
   timers?: boolean;
@@ -135,7 +145,14 @@ export interface CiWatcherOptions {
 
 /** One reading of a commit's CI on GitHub: its result, or why GitHub could not be read. */
 export type CiRead =
-  | { ok: true; result: CiResult; pullRequestHead: string | null; branchMoved: boolean }
+  | {
+      ok: true;
+      result: CiResult;
+      pullRequestHead: string | null;
+      branchMoved: boolean;
+      /** The pull request when this reading read it (lot 3 step J1). */
+      pullRequest?: PullRequest;
+    }
   | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
 
 /** A refusal of GitHub's as a failed check: its words masked, never a value of an answer. */
@@ -292,8 +309,16 @@ export class CiWatcher {
     return this.check(repo, commit, pullRequest, startWaitOver);
   }
 
-  /** Every run waiting for CI, one after another; the request limit stops the tick. */
+  /**
+   * The watched pull requests first (merges before the CI waits, owner's answer 1, lot 3 step
+   * J1), then every run waiting for CI, one after another; the request limit stops the tick.
+   */
   private async checkAll(): Promise<void> {
+    const limited = (await this.options.pullRequests?.check()) ?? null;
+    if (limited !== null) {
+      this.loop.pauseUntil(limited.getTime());
+      return;
+    }
     const waiting = await this.options.db
       .select({
         run: schema.runs,
@@ -381,6 +406,9 @@ export class CiWatcher {
       }
       return check.retryAt ?? null;
     }
+    // Every read of the pull request refreshes the ticket's, and may find it merged: the run is
+    // then stopped, and the result below decides nothing for it.
+    if (check.pullRequest) await this.options.pullRequests?.seen(ticket.id, check.pullRequest);
     const { result } = check;
     if (
       result.state === 'passed' ||
@@ -498,10 +526,16 @@ export class CiWatcher {
     const state = ciChecksState(checks);
     let decided: CiState;
     let pullRequestHead: string | null = null;
+    let pullRead: PullRequest | undefined;
+    const readPull = async (number: number) => {
+      const read = await readPullRequest(client, repo, number);
+      if (read.ok) pullRead = read.value;
+      return read;
+    };
     const head = async (): Promise<void> => {
       if (pullRequest === null) return;
       // Only to say so in the result's event: never part of the result (owner's answer 2).
-      const read = await readPullRequest(client, repo, pullRequest);
+      const read = await readPull(pullRequest);
       if (read.ok && read.value.headSha !== commit) pullRequestHead = read.value.headSha;
     };
     if (state === 'none') {
@@ -509,7 +543,7 @@ export class CiWatcher {
         decided = 'pending';
       } else {
         // GitHub starts no `pull_request` run on a conflict (A18): read it before "No CI found".
-        const read = await readPullRequest(client, repo, pullRequest);
+        const read = await readPull(pullRequest);
         if (!read.ok) return refused(read.refusal);
         if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
         // Null while GitHub computes it (A5): read again at the next check.
@@ -527,7 +561,7 @@ export class CiWatcher {
         // Cancelled runs: the agent's failure, or the branch moving on GitHub (a workflow
         // cancelling the run in progress)? Only the pull request's head tells; while it cannot
         // be read, nothing is decided (owner's answer 4, lot 3 step G2b).
-        const read = await readPullRequest(client, repo, pullRequest);
+        const read = await readPull(pullRequest);
         if (!read.ok) return refused(read.refusal);
         if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
         return {
@@ -535,6 +569,7 @@ export class CiWatcher {
           result: { state, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
           pullRequestHead,
           branchMoved: pullRequestHead !== null,
+          pullRequest: read.value,
         };
       }
       if (state !== 'pending') await head().catch(() => undefined);
@@ -544,6 +579,7 @@ export class CiWatcher {
       result: { state: decided, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
       pullRequestHead,
       branchMoved: false,
+      ...(pullRead === undefined ? {} : { pullRequest: pullRead }),
     };
   }
 }

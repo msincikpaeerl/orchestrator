@@ -56,6 +56,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_reopened': 'Pull request reopened',
   'ticket.pull_request_updated': 'Pull request updated',
   'ticket.pull_request_not_opened': 'Pull request not opened or updated',
+  'ticket.pull_request_merged': 'Pull request merged',
+  'ticket.pull_request_closed': 'Pull request closed without merging',
   'ticket.review_posted': "Quality's review posted on GitHub",
   'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
@@ -327,6 +329,8 @@ const describe: { [T in EventType]: Describe<T> } = {
         return [c.ticket, ' awaiting merge: Quality approved it'];
       case 'review_changes_requested':
         return [c.ticket, ' back to to do: Quality requested changes'];
+      case 'pull_request_merged':
+        return [c.ticket, ' done: its pull request was merged on GitHub', ...said];
     }
   },
   'ticket.dependency_added': (p, c) => [c.ticket, ' now waits for ', ticketRefLink(p.blockedBy)],
@@ -363,7 +367,24 @@ const describe: { [T in EventType]: Describe<T> } = {
   ],
   'ticket.pull_request_reopened': (p, c) => [
     c.ticket,
-    `: pull request #${String(p.number)}, closed without merging, reopened on GitHub with the latest submission`,
+    p.seen === true
+      ? `: pull request #${String(p.number)} was reopened on GitHub`
+      : `: pull request #${String(p.number)}, closed without merging, reopened on GitHub with the latest submission`,
+  ],
+  'ticket.pull_request_merged': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} was merged on GitHub`,
+    p.outcome === 'done'
+      ? `, into ${p.into}: the ticket is done`
+      : p.outcome === 'already_done'
+        ? `, into ${p.into}, after the ticket was marked as done`
+        : p.outcome === 'cancelled'
+          ? `, into ${p.into}: the ticket stays cancelled`
+          : `, into ${p.into}, not the project's default branch: the ticket is unchanged`,
+  ],
+  'ticket.pull_request_closed': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} was closed on GitHub without merging`,
   ],
   'ticket.pull_request_updated': (p, c) => [
     c.ticket,

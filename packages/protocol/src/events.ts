@@ -84,6 +84,8 @@ export const EventType = z.enum([
   'ticket.pull_request_reopened',
   'ticket.pull_request_updated',
   'ticket.pull_request_not_opened',
+  'ticket.pull_request_merged',
+  'ticket.pull_request_closed',
   'ticket.review_posted',
   'ticket.review_not_posted',
   'ticket.ci_checked_again',
@@ -271,8 +273,16 @@ export const EventPayloads = {
     url: z.string(),
     notReopened: z.int().optional(),
   }),
-  /** A pull request closed without merging, found by the ticket's branch, reopened and updated. */
-  'ticket.pull_request_reopened': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),
+  /**
+   * A pull request closed without merging, found by the ticket's branch, reopened and updated;
+   * `seen`: found open again by the check of GitHub, reopened by someone on GitHub (lot 3 J1).
+   */
+  'ticket.pull_request_reopened': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
+    seen: z.literal(true).optional(),
+  }),
   /** The open pull request's title and description updated with the latest accepted report. */
   'ticket.pull_request_updated': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),
   /** An attempt to open or update the pull request failed: "Needs you" offers **Try again**. */
@@ -285,6 +295,29 @@ export const EventPayloads = {
      * one (lot 3 step F4); null otherwise, missing in events written before.
      */
     openPullRequest: z.int().positive().nullable().optional(),
+  }),
+  /**
+   * The ticket's pull request found merged on GitHub (04, section 2; lot 3 step J1), once: at
+   * GitHub's time `mergedAt`, with its head then and the base it went into. `outcome`: the ticket
+   * moved to `done`; it was `done` already (**Mark as done manually** first); it stays
+   * `cancelled` (the cancel race); or another base than the default branch, the ticket unchanged.
+   */
+  'ticket.pull_request_merged': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
+    mergedAt: z.iso.datetime(),
+    head: z.string(),
+    into: z.string(),
+    outcome: z.enum(['done', 'already_done', 'cancelled', 'other_base']),
+    /** The `system` comment it wrote; null when it wrote none (another base). */
+    commentId: z.uuid().nullable(),
+  }),
+  /** The ticket's pull request found closed without merging on GitHub (lot 3 step J1). */
+  'ticket.pull_request_closed': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
   }),
   /** Quality's decision posted on the pull request as a comment review (lot 3 step H3). */
   'ticket.review_posted': z.object({

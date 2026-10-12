@@ -754,6 +754,19 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
         if (
+          action === 'mark_done' &&
+          ticket.status === 'done' &&
+          ticket.pullRequestState === 'merged' &&
+          ticket.pullRequestNumber !== null
+        ) {
+          // The merge was found first: exactly once (owner's answer 2, lot 3 step J1).
+          throw new HttpError(
+            409,
+            'ticket_transition_not_allowed',
+            `${ticketReference(project.key, ticket.number)} is already done: pull request #${String(ticket.pullRequestNumber)} was merged on GitHub.`,
+          );
+        }
+        if (
           (action === 'request_changes' || action === 'skip_review') &&
           ticket.status === 'in_review'
         ) {

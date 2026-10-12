@@ -203,6 +203,32 @@ export async function findPullRequests(
   }
 }
 
+/**
+ * Every open pull request of the repository, every page read (lot 3 step J1, owner's answer 1):
+ * merged and closed ones are left out (A32). A page that fails fails the whole list: a pull
+ * request missing from a partial list must never read as gone.
+ */
+export async function listOpenPullRequests(
+  client: GitHubClient,
+  repo: RepositoryRef,
+): Promise<GitHubResult<PullRequestSummary[]>> {
+  const found: PullRequestSummary[] = [];
+  for (let page = 1; ; page++) {
+    const batch = await ask(
+      client,
+      {
+        method: 'GET',
+        path: `${repoPath(repo)}/pulls?state=open&per_page=${String(PAGE_SIZE)}&page=${String(page)}`,
+      },
+      200,
+      z.array(PullRequestSimple),
+    );
+    if (!batch.ok) return batch;
+    found.push(...batch.value.map(summary));
+    if (batch.value.length < PAGE_SIZE) return { ok: true, value: found };
+  }
+}
+
 /** "Check if a pull request has been merged": 204 merged, 404 not merged (A20). */
 export async function isPullRequestMerged(
   client: GitHubClient,

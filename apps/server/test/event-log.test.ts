@@ -151,6 +151,10 @@ describe('events of every type', () => {
       'ticket.status_changed',
       // Check CI again on the ended run, refused (lot 3 step G2c).
       'ticket.ci_checked_again',
+      // Its pull request closed on GitHub, then reopened and merged there: done (step J1).
+      'ticket.pull_request_closed',
+      'ticket.status_changed',
+      'ticket.pull_request_merged',
     ]);
 
     const settings = await readAll(t, cookie, 'entity=setting');

@@ -49,7 +49,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | GitHub token expiry warning | 14 days | 1 to 90 | No | "Needs you" warns this many days before the GitHub token expires. |
 | GitHub request timeout | 15 seconds | 1 to 300 | No | How long the Orchestrator waits for GitHub to answer one request. |
 | GitHub clock tolerance | 120 seconds | 0 to 3,600 | No | Allowed difference between this computer's clock and GitHub's, when Try again checks whether a repository was created by an earlier attempt. |
-| GitHub check interval (from version 0.4.0) | 60 seconds | 15 to 600 | No | How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result. |
+| GitHub check interval (from version 0.4.0) | 60 seconds | 15 to 600 | No | How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result, or a pull request waiting to be merged. |
 
 ### Tickets
 
