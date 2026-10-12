@@ -400,6 +400,73 @@ describe('exactly once, with the owner and with a stopped server', () => {
   });
 });
 
+describe('the same result whoever reads the merge first', () => {
+  /** Your request for changes, then the fix run working: its id and token. */
+  async function fixing(daemon: ScriptedDaemon) {
+    const asked = await h.call('POST', '/api/projects/WEB/tickets/1/request-changes', {
+      comment: 'Add the opening hours.',
+    });
+    expect(asked.statusCode, asked.body).toBe(200);
+    return h.running(daemon);
+  }
+
+  it('merged after the last check, then a submission accepted before the next one: done once, no second pull request', async () => {
+    const { daemon, first } = await inReview();
+    const fix = await fixing(daemon);
+    const mergedAt = merge();
+    // The submission's pull request attempt finds #1 merged first: the watcher records it.
+    expect((await h.ok(daemon, fix.runToken, 'ticket_submit', REPORT)).result).toBe('pending_ci');
+    await eventually('the ticket done', async () => {
+      expect((await ticketRow()).status).toBe('done');
+    });
+    expect((await h.run(fix.runId)).status).toBe('cancelled');
+    expect(stops(daemon, fix.runId).map((stop) => stop.payload.reason)).toEqual(['not_active']);
+    expect(() => h.github.pullRequest(repo(), 2)).toThrow();
+    expect(await ticketRow()).toMatchObject({
+      pullRequestNumber: 1,
+      pullRequestWantedSince: null,
+      pullRequestMergedAt: mergedAt,
+      pullRequestMergedHead: first.commit,
+    });
+    // CI of the merged head, not of the commit the fix pushed after the merge.
+    expect(await lastBody()).toBe(
+      `${opening(mergedAt, first.commit)} The run on Laptop was stopped. CI passed for this commit. Your request for changes on ${short(first.commit)} was not addressed.`,
+    );
+    await h.t.ciTick();
+    expect(await h.events('ticket.pull_request_merged')).toHaveLength(1);
+    expect(await h.events('ticket.pull_request_opened')).toHaveLength(1);
+  });
+
+  it("merged between the opener's find and its update: done once, the merge's facts stored", async () => {
+    const { daemon } = await inReview();
+    const fix = await fixing(daemon);
+    let mergedAt: Date | null = null;
+    // The owner merges just as the Orchestrator updates the pull request's description.
+    h.github.override = (request) => {
+      if (mergedAt === null && request.method === 'PATCH' && request.path.endsWith('/pulls/1')) {
+        mergedAt = merge();
+      }
+      return undefined;
+    };
+    await h.ok(daemon, fix.runToken, 'ticket_submit', REPORT);
+    await eventually('the ticket done', async () => {
+      expect((await ticketRow()).status).toBe('done');
+    });
+    expect(mergedAt).not.toBeNull();
+    expect(await ticketRow()).toMatchObject({
+      pullRequestState: 'merged',
+      pullRequestMergedAt: mergedAt,
+      // The fix's push was in the pull request when it was merged.
+      pullRequestMergedHead: h.lastPushed,
+      pullRequestMergedInto: 'main',
+    });
+    expect((await h.run(fix.runId)).status).toBe('cancelled');
+    await h.t.ciTick();
+    expect(await h.events('ticket.pull_request_merged')).toHaveLength(1);
+    expect(await h.events('ticket.pull_request_updated')).toHaveLength(0);
+  });
+});
+
 describe('what is not a merge into the default branch', () => {
   it('a merge into another base leaves the ticket unchanged, and is not read again', async () => {
     const { daemon } = await inReview();

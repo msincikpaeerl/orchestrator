@@ -19,6 +19,7 @@ import {
   reopenPullRequest,
   updatePullRequest,
   type PullRequest,
+  type PullRequestSummary,
 } from '../github/pull-requests.js';
 import { pullRequestBody, pullRequestTitle, ticketLink } from '../github/pull-request-text.js';
 import { pullRequestReady } from '../runs/ci-wait.js';
@@ -40,14 +41,28 @@ export interface PullRequestOpenerOptions {
   log: FastifyBaseLogger;
   publicUrl: string;
   templates: () => Promise<Templates>;
+  /**
+   * The watcher's handling of a read of the ticket's pull request (`PullRequestWatcher.seen`,
+   * lot 3 step J1): a merge this task finds is recorded there, never here, so it has one result
+   * whoever reads it first.
+   */
+  pullRequestSeen: (ticketId: string, pull: PullRequest | PullRequestSummary) => Promise<void>;
   now?: () => Date;
 }
 
 type Done =
   | { action: 'opened'; pull: PullRequest; notReopened?: number }
-  | { action: 'reopened' | 'updated'; pull: PullRequest };
+  | { action: 'reopened' | 'updated'; pull: PullRequest }
+  /** The ticket's own pull request found merged, its merge not recorded yet: for the watcher. */
+  | { action: 'merged'; pull: PullRequest | PullRequestSummary };
 
 type Outcome = { ok: true; done: Done } | { ok: false; failure: Omit<PullRequestFailure, 'at'> };
+
+/** The ticket's pull request as recorded: its number, and whether its merge is recorded. */
+interface OwnPullRequest {
+  number: number | null;
+  mergeRecorded: boolean;
+}
 
 /** The failure to keep for a refusal of GitHub's: its words, masked, and what the owner can do. */
 export function failureOf(
@@ -142,7 +157,12 @@ export class PullRequestOpener {
     while (this.queues.size > 0) await Promise.all([...this.queues.values()].map((q) => q.done));
   }
 
-  private async attempt(ticketId: string): Promise<void> {
+  /**
+   * One attempt; `handedOver` once a merge found by it went to the watcher, which recorded it:
+   * the attempt that follows applies F3's rule (a new pull request after a merged one) only when
+   * the ticket goes on (merged into another base).
+   */
+  private async attempt(ticketId: string, handedOver = false): Promise<void> {
     const { db } = this.options;
     const [row] = await db
       .select({ ticket: schema.tickets, project: schema.projects })
@@ -173,7 +193,20 @@ export class PullRequestOpener {
     const outcome = await this.openOrUpdate(
       { owner: project.repoOwner, name: project.repoName },
       { branch: ticket.branchName, base: project.defaultBranch, title, body },
+      {
+        number: ticket.pullRequestNumber,
+        // Recorded once (by the watcher): its time is the mark, not the state another writer sets.
+        mergeRecorded: ticket.pullRequestMergedAt !== null,
+      },
     );
+    if (outcome.ok && outcome.done.action === 'merged') {
+      if (handedOver) throw new Error('a merge handed over twice');
+      log.info({ pullRequest: outcome.done.pull.number }, 'pull request found merged');
+      await this.options.pullRequestSeen(ticketId, outcome.done.pull);
+      // Done (or anything else that ends the wish) stops there; another base goes on.
+      await this.attempt(ticketId, true);
+      return;
+    }
     if (outcome.ok) {
       log.info(
         { pullRequest: outcome.done.pull.number, action: outcome.done.action },
@@ -192,6 +225,7 @@ export class PullRequestOpener {
   private async openOrUpdate(
     repo: { owner: string; name: string },
     pull: { branch: string; base: string; title: string; body: string },
+    own: OwnPullRequest,
   ): Promise<Outcome> {
     let client: GitHubClient | null;
     try {
@@ -221,7 +255,7 @@ export class PullRequestOpener {
       };
     }
     try {
-      return await this.withClient(client, repo, pull);
+      return await this.withClient(client, repo, pull, own);
     } catch (error) {
       if (!(error instanceof GitHubUnreachableError)) throw error;
       return {
@@ -240,7 +274,11 @@ export class PullRequestOpener {
     client: GitHubClient,
     repo: { owner: string; name: string },
     pull: { branch: string; base: string; title: string; body: string },
+    own: OwnPullRequest,
   ): Promise<Outcome> {
+    // The ticket's own pull request merged, and that merge not recorded yet (lot 3 step J1).
+    const unrecordedMerge = (found: { number: number }) =>
+      found.number === own.number && !own.mergeRecorded;
     const failed = (refusal: GitHubRefusal): Outcome => ({
       ok: false,
       failure: failureOf(refusal, repo),
@@ -250,9 +288,12 @@ export class PullRequestOpener {
         title: pull.title,
         body: pull.body,
       });
-      return updated.ok
-        ? { ok: true, done: { action, pull: updated.value } }
-        : failed(updated.refusal);
+      if (!updated.ok) return failed(updated.refusal);
+      // Merged between the find and the update: the watcher records it.
+      if (updated.value.merged && unrecordedMerge(updated.value)) {
+        return { ok: true, done: { action: 'merged', pull: updated.value } };
+      }
+      return { ok: true, done: { action, pull: updated.value } };
     };
     // GitHub's "already exists" means one was opened meanwhile: look again, once.
     for (let look = 0; look < 2; look++) {
@@ -262,6 +303,10 @@ export class PullRequestOpener {
       if (open) return update(open.number, 'updated');
       // Only the newest counts (owner's answer 1, lot 3 step F3).
       const newest = [...found.value].sort((a, b) => b.number - a.number)[0];
+      // Never a new pull request over a merge of the ticket's own that is not recorded yet.
+      if (newest && newest.mergedAt !== null && unrecordedMerge(newest)) {
+        return { ok: true, done: { action: 'merged', pull: newest } };
+      }
       let notReopened: number | undefined;
       if (newest && newest.mergedAt === null) {
         const reopened: GitHubResult<PullRequest> = await reopenPullRequest(
@@ -333,7 +378,10 @@ export class PullRequestOpener {
         ticket: ticketReference(current.projectKey, ticket.number),
       };
       if (outcome.ok) {
-        const { pull } = outcome.done;
+        const { done } = outcome;
+        // A merge never reaches here: `attempt` hands it to the watcher (lot 3 step J1).
+        if (done.action === 'merged') throw new Error('a merge recorded by the opener');
+        const { pull } = done;
         // A later submission wants it again: its own attempt follows.
         const same = ticket.pullRequestWantedSince?.getTime() === wanted.getTime();
         await tx
@@ -341,10 +389,11 @@ export class PullRequestOpener {
           .set({
             pullRequestNumber: pull.number,
             pullRequestUrl: pull.url,
-            pullRequestState: pull.merged ? 'merged' : pull.state,
+            // Never `merged`: a merge goes to the watcher first (lot 3 step J1).
+            pullRequestState: pull.state,
             pullRequestHead: pull.headSha,
             // When it became open: opened or reopened now, or first found open (the later side).
-            ...(outcome.done.action !== 'updated' ||
+            ...(done.action !== 'updated' ||
             ticket.pullRequestOpenedAt === null ||
             ticket.pullRequestNumber !== pull.number
               ? { pullRequestOpenedAt: at }
@@ -355,24 +404,22 @@ export class PullRequestOpener {
           })
           .where(eq(schema.tickets.id, ticketId));
         // The pull request is open: CI runs on the pushed commit, and the wait begins (G1a).
-        if (pull.state === 'open' && !pull.merged) {
+        if (pull.state === 'open') {
           await pullRequestReady(tx, ticket, current.projectKey, pull.number, at);
         }
         const payload = { ...facts, number: pull.number, url: pull.url };
         await recordEvent(tx, {
           actor: 'system',
           ...ticketEntity(ticket),
-          ...(outcome.done.action === 'opened'
+          ...(done.action === 'opened'
             ? {
                 type: 'ticket.pull_request_opened',
                 payload: {
                   ...payload,
-                  ...(outcome.done.notReopened === undefined
-                    ? {}
-                    : { notReopened: outcome.done.notReopened }),
+                  ...(done.notReopened === undefined ? {} : { notReopened: done.notReopened }),
                 },
               }
-            : outcome.done.action === 'reopened'
+            : done.action === 'reopened'
               ? { type: 'ticket.pull_request_reopened', payload }
               : { type: 'ticket.pull_request_updated', payload }),
           at,

@@ -210,8 +210,9 @@ export class PullRequestWatcher {
     };
     const merged = 'merged' in pull ? pull.merged : pull.mergedAt !== null;
     if (merged) {
-      // Exactly once: a merge already recorded is never recorded again.
-      if (ticket.pullRequestState === 'merged') return nothing;
+      // Exactly once: a merge already recorded (its stored time, which only this watcher writes)
+      // is never recorded again; `pull_request_state` alone is not the mark.
+      if (ticket.pullRequestMergedAt !== null) return nothing;
       return this.merged(tx, project, ticket, pull, now);
     }
     const state = pull.state;
@@ -313,7 +314,7 @@ export class PullRequestWatcher {
       const body = mergeComment({
         ...words,
         stoppedOn: active?.machine ?? null,
-        ci: await latestCi(tx, ticket.id),
+        ci: await latestCi(tx, ticket.id, head),
         review: await reviewOf(tx, ticket, active?.run ?? null),
       });
       after = await this.options.runs.endForTicket(tx, project, ticket, 'pull_request_merged');
@@ -360,19 +361,25 @@ export class PullRequestWatcher {
   }
 }
 
-/** The CI outcome of the ticket's latest work with one; review runs never hold work. */
-async function latestCi(tx: Executor, ticketId: string): Promise<RunCiOutcome | null> {
+/**
+ * The CI outcome of the ticket's latest work with one; review runs never hold work. With `head`,
+ * the latest outcome whose commit is that head comes first: work pushed after a merge has a newer
+ * outcome, which says nothing of the merged head.
+ */
+async function latestCi(
+  tx: Executor,
+  ticketId: string,
+  head?: string,
+): Promise<RunCiOutcome | null> {
   const runs = await tx
     .select()
     .from(schema.runs)
     .where(eq(schema.runs.ticketId, ticketId))
     .orderBy(desc(schema.runs.createdAt));
-  for (const run of runs) {
-    if (run.purpose === 'review') continue;
-    const outcome = ciOutcome(run);
-    if (outcome !== null) return outcome;
-  }
-  return null;
+  const outcomes = runs
+    .filter((run) => run.purpose !== 'review')
+    .flatMap((run) => ciOutcome(run) ?? []);
+  return outcomes.find((outcome) => outcome.commit === head) ?? outcomes[0] ?? null;
 }
 
 /** Quality's review of the work merged, as the merge found it (owner's answer 2). */
