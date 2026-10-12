@@ -600,7 +600,13 @@ describe('what is not a merge into the default branch', () => {
     const mergedAt = merge();
     from = h.github.requests.length;
     await h.t.ciTick();
-    expect(pullRequests(from)).toEqual(['GET /pulls/1']);
+    expect(pullRequests(from)).toEqual([
+      'GET /pulls/1',
+      // Then the clean-up after the merge, in the same tick (lot 3 step J2a).
+      'GET /pulls/1',
+      'GET /pulls?state=open&head=octo-owner%3At%2F1-contact-form&per_page=100&page=1',
+      'GET /pulls?state=open&base=t%2F1-contact-form&per_page=100&page=1',
+    ]);
     expect((await h.ticket()).status).toBe('done');
     expect(await lastBody()).toBe(
       `${opening(mergedAt, first.commit)} CI passed for this commit. Quality approved this commit.`,
@@ -647,6 +653,10 @@ describe('the requests per GitHub check interval', () => {
       'GET /pulls?state=open&per_page=100&page=1',
       'GET /pulls/1',
       'GET /pulls/3',
+      // Then the clean-up after the merge, once (lot 3 step J2a): not a cost of each interval.
+      'GET /pulls/1',
+      'GET /pulls?state=open&head=octo-owner%3At%2F1-contact-form&per_page=100&page=1',
+      'GET /pulls?state=open&base=t%2F1-contact-form&per_page=100&page=1',
     ]);
     from = h.github.requests.length;
     await h.t.ciTick();
