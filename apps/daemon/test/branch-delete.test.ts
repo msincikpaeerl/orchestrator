@@ -7,7 +7,16 @@ import { branchDeletesPath } from '../src/branch-deletes.js';
 import type { RunManager } from '../src/runs.js';
 import { bareClonePath } from '../src/workspace.js';
 import { gitIn } from './remote.js';
-import { TIMEOUT, daemon, ended, fake, home, start, useRunnerHarness } from './runner-harness.js';
+import {
+  TIMEOUT,
+  daemon,
+  ended,
+  fake,
+  home,
+  start,
+  states,
+  useRunnerHarness,
+} from './runner-harness.js';
 import { fakeExecutable, waitFor } from './testing.js';
 
 // The local ticket branch deleted after its pull request's merge (05, section 4.11; lot 3 step
@@ -191,7 +200,13 @@ describe('the local ticket branch after its merge', () => {
         subject: { kind: 'ticket', id: randomUUID(), number: 'NOTES-2' },
         repository: { ticketBranch: 't/2-more' },
       });
-      await waitFor(() => head('refs/heads/t/2-more') !== null, 20_000, "the other run's worktree");
+      // Working, not preparing: a run stopped while it prepares is launched all the same, a
+      // daemon issue of its own (reported to the owner in lot 3 step J2b).
+      await waitFor(
+        () => states(other.runId).some((reported) => reported.state === 'working'),
+        20_000,
+        'the other run working',
+      );
       expect(await manager.branches.handle(message())).toEqual({ outcome: 'in_use', by: 'run' });
       expect(head(`refs/heads/${BRANCH}`)).toBe(merged);
       await manager.handle({
