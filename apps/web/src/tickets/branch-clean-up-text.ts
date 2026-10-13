@@ -1,8 +1,17 @@
-import type { BranchKeptReason, MachineBusy, MachineCleanUpWait } from '@orchestrator/protocol';
+import type {
+  BranchCleanUpFailure,
+  BranchCleanUpWait,
+  BranchKeptReason,
+  MachineBranchCleanUp,
+  MachineBusy,
+  MachineCleanUpWait,
+  TicketBranchCleanUp,
+} from '@orchestrator/protocol';
+import { formatDateTime } from '../github/text';
 
 // The clean-up after a merge in the owner's words (lot 3 step J2): why a ticket branch was kept
 // on GitHub or on a machine, and what a machine's clean-up waits for, from the facts the server
-// keeps. The activity log uses it since J2a; the ticket page lines come with J2c.
+// keeps. The activity log uses it since J2a, the ticket page's lines since J2c.
 
 const short = (commit: string) => commit.slice(0, 7);
 
@@ -64,7 +73,7 @@ export function keptReasonText(reason: BranchKeptReason, context: KeptContext): 
     case 'refused':
       return `GitHub refused to delete it: ${reason.message.replace(/[.\s]+$/, '')}`;
     case 'local_head_differs':
-      return `its head ${short(reason.head)} is not the merged head ${short(context.mergedHead)}`;
+      return `its head ${short(reason.head)} is not the merged head ${short(context.mergedHead)}; it may hold work that was not merged`;
     case 'bare_head':
       return "it is the current branch of the machine's copy of the repository";
     case 'machine_revoked':
@@ -99,5 +108,166 @@ export function machineWaitText(
       return 'it is asked at the next check';
     case 'answer':
       return 'the machine was asked and has not answered yet';
+  }
+}
+
+/** A line of the ticket page's clean-up: `kept` lines are framed as a warning. */
+export interface CleanUpLine {
+  text: string;
+  tone: 'done' | 'waiting' | 'kept';
+}
+
+/** Why a try on GitHub could not end, tried again at the next check. */
+function failureReasonText(failure: BranchCleanUpFailure): string {
+  switch (failure.reason) {
+    case 'unreachable':
+      return 'GitHub could not be reached, or answered with a server error';
+    case 'rate_limited':
+      return "GitHub's request limit was reached";
+    case 'token':
+      return 'the saved GitHub token cannot be used (Settings > GitHub)';
+    case 'permission_missing':
+      return `the token is missing a permission: ${failure.message.replace(/[.\s]+$/, '')}`;
+  }
+}
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1] ?? ''}`;
+}
+
+/**
+ * The wait for the end of the runs the merge stopped (owner's answer 1, lot 3 step J2): "the run
+ * on laptop was stopped by the merge and laptop has not reported its end yet (offline since …).
+ * The branch is deleted once laptop reports its end, or if you revoke laptop."
+ */
+function endWaitText(waits: BranchCleanUpWait[]): string {
+  const machines = new Map<string, { name: string; runs: number; offlineSince: string | null }>();
+  for (const wait of waits) {
+    const known = machines.get(wait.machine.id);
+    if (known) known.runs += 1;
+    else {
+      machines.set(wait.machine.id, {
+        name: wait.machine.name,
+        runs: 1,
+        offlineSince: wait.offlineSince,
+      });
+    }
+  }
+  const each = [...machines.values()].map((machine) => {
+    const offline =
+      machine.offlineSince === null
+        ? ''
+        : ` (offline since ${formatDateTime(machine.offlineSince)})`;
+    const runs = machine.runs === 1 ? 'the run' : 'the runs';
+    const was = machine.runs === 1 ? 'was' : 'were';
+    return `${runs} on ${machine.name} ${was} stopped by the merge and ${machine.name} has not reported ${machine.runs === 1 ? 'its' : 'their'} end yet${offline}`;
+  });
+  const names = joinNames([...machines.values()].map((machine) => machine.name));
+  const reports = machines.size === 1 ? `${names} reports its end` : `${names} report their end`;
+  const revoke = machines.size === 1 ? names : 'the machine';
+  return `${each.join('; ')}. The branch is deleted once ${reports}, or if you revoke ${revoke}.`;
+}
+
+/**
+ * The clean-up on GitHub, in one line or two (lot 3 step J2c): deleted, already gone, kept with its
+ * reason, or waiting with what it waits for; then, after a deletion, a push recorded since.
+ */
+export function gitHubCleanUpLines(cleanUp: TicketBranchCleanUp, ticket: string): CleanUpLine[] {
+  const branch = `Branch ${cleanUp.branch}`;
+  const at = cleanUp.decidedAt === null ? '' : ` at ${formatDateTime(cleanUp.decidedAt)}`;
+  const lines: CleanUpLine[] = [];
+  switch (cleanUp.state) {
+    case 'deleted':
+      lines.push({ text: `${branch} deleted on GitHub${at}.`, tone: 'done' });
+      break;
+    case 'already_gone':
+      lines.push({
+        text: `${branch} was already gone from GitHub when the Orchestrator checked${at}: nothing to delete.`,
+        tone: 'done',
+      });
+      break;
+    case 'kept':
+      lines.push({
+        text: `${branch} kept on GitHub: ${
+          cleanUp.reason === null
+            ? 'no reason was recorded'
+            : keptReasonText(cleanUp.reason, {
+                ticket,
+                pullRequest: cleanUp.pullRequest,
+                mergedHead: cleanUp.mergedHead,
+              })
+        }.`,
+        tone: 'kept',
+      });
+      break;
+    case 'wanted':
+      if (cleanUp.waitingFor.length > 0) {
+        lines.push({
+          text: `${branch} kept on GitHub for now: ${endWaitText(cleanUp.waitingFor)}`,
+          tone: 'waiting',
+        });
+      } else if (cleanUp.failure !== null) {
+        lines.push({
+          text: `${branch} not deleted on GitHub yet: at ${formatDateTime(cleanUp.failure.at)}, ${failureReasonText(cleanUp.failure)}. The Orchestrator tries again at the next check.`,
+          tone: 'waiting',
+        });
+      } else {
+        lines.push({
+          text: `${branch} is deleted on GitHub at the next check.`,
+          tone: 'waiting',
+        });
+      }
+      break;
+  }
+  const again = cleanUp.pushedAgain;
+  if (again !== null) {
+    lines.push({
+      text: `${branch} is on GitHub again since ${formatDateTime(again.at)}: ${again.machine} pushed ${short(again.head)} after the deletion, a commit that was not merged. It is kept; delete it on GitHub if you do not need it.`,
+      tone: 'kept',
+    });
+  }
+  return lines;
+}
+
+/** The clean-up on one machine (lot 3 step J2c): deleted, already gone, kept, or waiting. */
+export function machineCleanUpLine(
+  row: MachineBranchCleanUp,
+  cleanUp: TicketBranchCleanUp,
+  ticket: string,
+): CleanUpLine {
+  const branch = `Branch ${cleanUp.branch}`;
+  const machine = `machine ${row.machine.name}`;
+  const at = row.decidedAt === null ? '' : ` at ${formatDateTime(row.decidedAt)}`;
+  switch (row.state) {
+    case 'deleted':
+      return { text: `${branch} deleted on ${machine}${at}.`, tone: 'done' };
+    case 'already_gone':
+      return {
+        text: `${branch} was already gone from ${machine}${at}: nothing to delete.`,
+        tone: 'done',
+      };
+    case 'kept':
+      return {
+        text: `${branch} kept on ${machine}: ${
+          row.reason === null
+            ? 'no reason was recorded'
+            : keptReasonText(row.reason, {
+                ticket,
+                pullRequest: cleanUp.pullRequest,
+                mergedHead: cleanUp.mergedHead,
+              })
+        }.`,
+        tone: 'kept',
+      };
+    case 'wanted':
+      return {
+        text: `${branch} not deleted on ${machine} yet: ${machineWaitText(
+          row.waiting ?? 'next_check',
+          row.offlineSince === null ? null : formatDateTime(row.offlineSince),
+          row.busy,
+        )}.`,
+        tone: 'waiting',
+      };
   }
 }

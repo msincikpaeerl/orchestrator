@@ -439,7 +439,7 @@ describe('eventText', () => {
       'WEB-12: machine laptop has no copy of the repository: no branch t/12-contact-form to delete after the merge of pull request #4',
     );
     expect(text('ticket.machine_branch_kept')).toBe(
-      'WEB-12: branch t/12-contact-form kept on machine laptop: its head abc1234 is not the merged head def5678',
+      'WEB-12: branch t/12-contact-form kept on machine laptop: its head abc1234 is not the merged head def5678; it may hold work that was not merged',
     );
   });
 
