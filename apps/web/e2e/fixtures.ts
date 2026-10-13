@@ -7,7 +7,7 @@ export const TOKEN_NO_WORKFLOWS = 'github_pat_e2e_no_workflows_0123456789';
 export const OWNER = { username: 'owner', password: 'correct horse battery' };
 
 /** Test-only control address of apps/server/test/e2e-server.ts. */
-const controlUrl = `http://127.0.0.1:${String(Number(process.env.E2E_PORT ?? 8095) + 1)}`;
+export const controlUrl = `http://127.0.0.1:${String(Number(process.env.E2E_PORT ?? 8095) + 1)}`;
 
 /**
  * Every test starts from the first launch: the server's database is emptied and the fake GitHub
