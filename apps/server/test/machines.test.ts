@@ -803,8 +803,11 @@ describe('the daemon connection', () => {
       await holder.query('SELECT 1 FROM machines WHERE id = $1 FOR UPDATE', [id]);
       await daemon.close();
       await eventually(async () => {
+        // This test's database only: the test PostgreSQL holds every test file's database, whose
+        // lock waits under a full run made this count wrong (lot 3 step J3a).
         const { rows } = await t.pool.query<{ waiting: number }>(
-          "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE wait_event_type = 'Lock'",
+          `SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND datname = current_database()`,
         );
         expect(rows[0]?.waiting).toBe(1);
       });
