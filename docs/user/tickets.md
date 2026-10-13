@@ -347,6 +347,43 @@ If the Orchestrator was stopped when you merged, it finds the merge when it star
 
 A pull request you closed without merging stays watched while its ticket is not done or cancelled: if you reopen it on GitHub, the Orchestrator sees it open again, and if you reopen and merge it, the ticket moves to **Done** as above.
 
+### What the Orchestrator deletes after a merge
+
+Once a ticket's pull request is merged into the project's default branch and the ticket is **Done**, the Orchestrator deletes the ticket's branch (its name starts with `t/` and the ticket's number, for example `t/12-add-faq`), and only it:
+
+- **On GitHub**: the ticket branch. The pull request stays on GitHub, shown as merged, and the merged work stays in the default branch.
+- **On each machine** where a run worked on the ticket: the ticket branch in the machine's copy of the repository. The folder each run worked in is already removed when the run ends.
+
+Nothing else is deleted: no other branch, no commit of the default branch, no pull request. **Nothing is deleted after a cancellation**: **Reopen** finds the work where it was. A ticket you marked as done manually gets the same clean-up once the Orchestrator finds its pull request merged.
+
+The ticket page's **Clean-up after the merge** section has one line for GitHub and one per machine, with the branch's real name: deleted (with the time), already gone (deleted on GitHub by you or by GitHub's "Automatically delete head branches" setting), kept with the reason, or what it waits for.
+
+**When a branch is kept.** The Orchestrator deletes only a branch it is sure holds nothing more than the merged work. It keeps the branch on GitHub, and says why, when:
+
+- another open pull request uses it, as its branch or as the branch it merges into;
+- commits were pushed to it after the merge;
+- the pull request was merged into another branch than the project's default branch, or comes from another repository (a fork);
+- the repository's default branch on GitHub is no longer the project's (renamed on GitHub);
+- GitHub refused the deletion (for example a protected branch) or answered in a way the Orchestrator could not read: it is not tried again.
+
+On a machine, it keeps the branch when the branch's latest commit is not the merged one ("it may hold work that was not merged"), when the branch is the current branch of the machine's copy of the repository, or when you revoked the machine before it was asked. A kept branch is never deleted later by the Orchestrator: delete it yourself once you no longer need it.
+
+**What the clean-up waits for.**
+
+- **A run's end report**: a run the merge stopped may still push its last commits. The branch on GitHub is deleted only once that run's machine reports the run's end. If the machine is offline, the line names it and says since when; it reports at its reconnection, or you can revoke the machine (see [Disable, revoke, enroll again](machines.md#disable-revoke-enroll-again)) to stop the wait.
+- **An offline machine**: it is asked when it reconnects.
+- **A busy machine**: when a run on that machine has the branch open, or another run of the same repository was working, the machine is asked again at the next check, until it can answer.
+- **An outdated daemon**: a machine with a daemon older than this version cannot be asked; it is asked once its daemon is updated (see [Update the daemon](machines.md#update-the-daemon)).
+- **A failure tried again**: GitHub could not be reached, its request limit was reached, the saved token cannot be used, or the token lacks a permission. The line says which; the Orchestrator tries again at each **GitHub check interval**. A missing permission also appears in [Needs you](needs-you.md): deleting a branch needs **Contents (Read and write)** (see [Connect GitHub](github-token.md#required-permissions)).
+
+**Known limits.**
+
+- A push made by hand to the ticket branch after its deletion is not seen: the branch is back on GitHub and the Orchestrator does not say so. A push by a run that the Orchestrator records after the deletion is shown ("is on GitHub again"), and that branch is kept.
+- After **Update branch** on GitHub, the machine's branch is behind the merged commit: it is kept on the machine, though it holds no work that was not merged.
+- A machine that stays busy is asked again at every check; its line says why it waits.
+
+**Getting a deleted branch back on GitHub.** In the repository on GitHub, open **Pull requests**, click **Closed**, open the ticket's pull request, and near the bottom of the page click **Restore branch**. A branch deleted on a machine needs no restoring: its merged work is in the default branch, which every new run starts from.
+
 ## Ticket states
 
 | State | Meaning |
