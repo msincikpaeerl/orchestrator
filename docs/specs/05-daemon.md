@@ -103,7 +103,7 @@ Sizes (owner's decision, lot 2 step B): every text of a message has a ceiling de
 | D → S | `git.credential_request` | Ask for the credential for one Git command on one repository of an active or ending run: `fetch`, or from protocol 2 `push` (never for a `review` run). |
 | S → D | `git.credential` | The credential for that one command (section 7). |
 | S → D | `branch.delete` | From protocol 2 (lot 3 step J2b): delete the local ticket branch after its pull request's merge, with the repository, the ticket's number, the branch and the merged head (section 4.11). Sent again with the same id when no answer came; the daemon applies it once. Never sent to a protocol 1 daemon, which would ignore it. |
-| D → S | `branch.delete_result` | The answer, with the same id: `deleted`, `not_found` (no bare clone of the repository, or no such branch), `kept` (the local head, not the merged head), `in_use` (the bare clone's `HEAD`, a worktree, or a run of the repository active) or `not_a_ticket_branch`. A copy of a message already answered gets the same answer again. No answer when Git failed: the server sends the message again. |
+| D → S | `branch.delete_result` | The answer, with the same id: `deleted`, `not_found` (no bare clone of the repository, or no such branch), `kept` (the local head, not the merged head), `in_use` (the bare clone's `HEAD`, a worktree, or a run of the repository active: the server asks again with a new message for the last two, 04 section 4) or `not_a_ticket_branch`. A copy of a message already answered gets the same answer again. No answer when Git failed: the server sends the message again. |
 
 ## 4. Run execution
 
