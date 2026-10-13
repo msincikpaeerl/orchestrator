@@ -289,6 +289,8 @@ describe('pull requests', () => {
       // The head and base repositories, read since lot 3 step J2a.
       'head.repo: expected object, received nothing',
       'base.repo: expected object, received nothing',
+      // When it was closed, read since lot 3 step J3a.
+      'closed_at: expected string, received nothing',
       'mergeable_state: expected string, received nothing',
     ];
     expect(refused).toEqual({

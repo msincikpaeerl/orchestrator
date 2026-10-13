@@ -589,7 +589,13 @@ describe('what is not a merge into the default branch', () => {
       pullRequest: { opened: { state: 'closed' } },
     });
     expect((await h.events('ticket.pull_request_closed')).map((e) => e.payload)).toEqual([
-      { project: 'WEB', ticket: 'WEB-1', number: 1, url: expect.any(String) as string },
+      {
+        project: 'WEB',
+        ticket: 'WEB-1',
+        number: 1,
+        url: expect.any(String) as string,
+        by: 'github',
+      },
     ]);
     // Still watched while closed: read by itself at each check.
     let from = h.github.requests.length;
@@ -757,7 +763,16 @@ describe('Needs you after a merge', () => {
     let clock = new Date('2026-10-11T10:00:00.000Z');
     await h.start({ ci: 'queued', now: () => clock });
     const { daemon } = await h.machine('Laptop', 10);
-    const titles = ['Question', 'Not finished', 'Paused', 'Push', 'Pull request', 'Stopped', 'CI'];
+    const titles = [
+      'Question',
+      'Not finished',
+      'Paused',
+      'Push',
+      'Pull request',
+      'Stopped',
+      'CI',
+      'Closed',
+    ];
     for (const title of titles) await h.createTicket({ title });
     /** Submitted, CI started: its pull request open. */
     const handedIn = async (number: number) => {
@@ -779,6 +794,15 @@ describe('Needs you after a merge', () => {
     await handedIn(7);
     clock = new Date(clock.getTime() + 25 * 60_000);
     await h.t.ciTick();
+    // 8: its pull request closed on GitHub without merging (lot 3 step J3a).
+    {
+      const { runId, commit } = await handedIn(8);
+      for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
+      await h.t.ciTick();
+      await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+      h.github.closePullRequest(repo(), 8);
+      await h.t.ciTick();
+    }
     // 4: your request for changes, then a run whose push failed at its submission.
     const asked = await h.call('POST', '/api/projects/WEB/tickets/4/request-changes', {
       comment: 'Add the opening hours.',
@@ -849,6 +873,8 @@ describe('Needs you after a merge', () => {
       }
     });
 
+    // GitHub merges only an open pull request: 8 is reopened there first.
+    await onGitHub(8, { state: 'open' });
     for (let number = 1; number <= titles.length; number++) merge(number);
     await h.t.ciTick();
     for (let number = 1; number <= titles.length; number++) {

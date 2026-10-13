@@ -9,6 +9,7 @@ import { AgentKey } from './agents.js';
 import { UnusableReason } from './machines.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
+import { PullRequestState } from './pull-requests.js';
 
 export {
   ACCOUNT_BUSY_RUN_STATUSES,
@@ -89,8 +90,14 @@ export const RunCiWait = z.object({
   checkedAt: z.iso.datetime().nullable(),
   /** The latest check that failed, until one works again. */
   checkFailure: CiCheckFailure.nullable(),
-  /** The ticket's pull request, as last seen; null while it is not opened (lot 3 step G1b). */
-  pullRequest: z.object({ number: z.int().positive(), url: z.url() }).nullable(),
+  /**
+   * The ticket's pull request, as last seen; null while it is not opened (lot 3 step G1b). Its
+   * state (lot 3 step J3a): while it is `closed`, "No CI found" never accepts the work, so the
+   * wait goes on until **CI wait at submission**.
+   */
+  pullRequest: z
+    .object({ number: z.int().positive(), url: z.url(), state: PullRequestState })
+    .nullable(),
   /** The project's default branch, the pull request's base: named by a conflict. */
   base: z.string().nullable(),
 });

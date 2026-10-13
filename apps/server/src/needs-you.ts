@@ -5,7 +5,9 @@ import {
   DoctorCheck,
   DodReport,
   PullRequestFailure,
+  PullRequestReopenFailure,
   SubmissionRecord,
+  TicketStatus,
   TicketStop,
   WorkflowReason,
   type NeedsYouResponse,
@@ -138,6 +140,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
 
   items.push(...(await pushFailedItems(db)));
   items.push(...(await pullRequestItems(db)));
+  items.push(...(await closedPullRequestItems(db)));
   items.push(...(await ciTimeoutItems(db)));
   items.push(...(await stoppedItems(db)));
 
@@ -258,6 +261,55 @@ async function pullRequestItems(db: Database): Promise<Items> {
       since: failure.since ?? failure.at,
     };
   });
+}
+
+/**
+ * Pull requests closed on GitHub without merging, or merged into another base than the project's
+ * default branch (04, section 2; lot 3 step J3a), on tickets neither done nor cancelled: the
+ * ticket is unchanged. One closed by the Orchestrator at **Cancel** is left out: a ticket reopened
+ * after it keeps it closed until its next accepted submission.
+ */
+async function closedPullRequestItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ ticket: schema.tickets, project: schema.projects })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        isNotNull(schema.tickets.pullRequestNumber),
+        or(
+          and(
+            eq(schema.tickets.pullRequestState, 'closed'),
+            eq(schema.tickets.pullRequestClosedBy, 'github'),
+          ),
+          eq(schema.tickets.pullRequestState, 'merged'),
+        ),
+      ),
+    );
+  const items: Items = [];
+  for (const { ticket, project } of rows) {
+    const { pullRequestNumber: number, pullRequestUrl: url } = ticket;
+    if (number === null || url === null) continue;
+    const merged = ticket.pullRequestState === 'merged';
+    // Merged into the default branch: the ticket is done, or stays cancelled (the cancel race).
+    if (merged && ticket.pullRequestMergedInto === project.defaultBranch) continue;
+    const since = merged ? ticket.pullRequestMergedAt : ticket.pullRequestClosedAt;
+    items.push({
+      type: 'pull_request_closed',
+      ticket: { projectKey: project.key, number: ticket.number, title: ticket.title },
+      status: TicketStatus.parse(ticket.status),
+      pullRequest: { number, url },
+      mergedInto: merged ? ticket.pullRequestMergedInto : null,
+      reopenFailure:
+        ticket.pullRequestReopenFailure === null
+          ? null
+          : PullRequestReopenFailure.parse(ticket.pullRequestReopenFailure),
+      since: (since ?? ticket.updatedAt).toISOString(),
+    });
+  }
+  return items;
 }
 
 /**

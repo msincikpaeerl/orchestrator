@@ -407,6 +407,15 @@ export class PullRequestOpener {
                   pullRequestMergedInto: null,
                 }
               : {}),
+            // Open again (an accepted submission reopens one closed at **Cancel**, lot 3 step
+            // J3a), or another one: nothing closed, nothing left to reopen.
+            ...(pull.state === 'open' || ticket.pullRequestNumber !== pull.number
+              ? {
+                  pullRequestClosedAt: null,
+                  pullRequestClosedBy: null,
+                  pullRequestReopenFailure: null,
+                }
+              : {}),
             pullRequestFailure: null,
             ...(same ? { pullRequestWantedSince: null } : {}),
             updatedAt: at,

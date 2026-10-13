@@ -558,16 +558,44 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   });
   await call('POST', `/api/projects/SHOP/tickets/${String(filters.number)}/try-again`);
 
-  // SHOP-2's pull request closed on GitHub (`ticket.pull_request_closed`), then reopened and
-  // merged there between two checks (`ticket.pull_request_merged`: SHOP-2 done; lot 3 step J1).
+  // The Checkout ticket (pull request #999, which GitHub does not have) cancelled while its pull
+  // request reads open: Cancel's close refused (`ticket.pull_request_not_closed`), and the watch
+  // cannot read it (`project.pull_request_watch_failed`; lot 3 step J3a). Then read as closed, it
+  // is no longer watched.
+  const [checkout] = await t.db
+    .update(schema.tickets)
+    .set({ pullRequestState: 'open' })
+    .where(eq(schema.tickets.pullRequestNumber, 999))
+    .returning();
+  await call('POST', `/api/projects/SHOP/tickets/${String(checkout?.number ?? 0)}/cancel`);
+  for (let tries = 0; ; tries++) {
+    const written = await t.db
+      .select()
+      .from(schema.events)
+      .where(eq(schema.events.type, 'ticket.pull_request_not_closed'));
+    if (written.length > 0) break;
+    if (tries > 100) throw new Error('no ticket.pull_request_not_closed event');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await t.ciTick();
+  await t.db
+    .update(schema.tickets)
+    .set({ pullRequestState: 'closed', pullRequestCloseWantedAt: null })
+    .where(eq(schema.tickets.id, checkout?.id ?? ''));
+
+  // SHOP-2's pull request closed on GitHub (`ticket.pull_request_closed`), at a check that reads
+  // every watched pull request again (`project.pull_request_watch_recovered`). Reopen pull request
+  // refused once (`ticket.pull_request_not_reopened`), then done (`ticket.pull_request_reopened`;
+  // lot 3 step J3a); merged on GitHub (`ticket.pull_request_merged`: SHOP-2 done; lot 3 step J1).
   github.closePullRequest(shop, 2);
   await t.ciTick();
-  const reopened = await fetch(`${github.url}/repos/octo-owner/online-shop/pulls/2`, {
-    method: 'PATCH',
-    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ state: 'open' }),
-  });
-  expect(reopened.status).toBe(200);
+  github.alter = (request, reply) =>
+    request.method === 'PATCH' && request.path.endsWith('/pulls/2')
+      ? { status: 422, body: { message: 'Validation Failed' } }
+      : reply;
+  await call('POST', '/api/projects/SHOP/tickets/2/pull-request/reopen');
+  github.alter = undefined;
+  await call('POST', '/api/projects/SHOP/tickets/2/pull-request/reopen');
   github.mergePullRequest(shop, 2);
   await t.ciTick();
   // Its branch deleted after the merge, at the check that found it (`ticket.branch_deleted`;

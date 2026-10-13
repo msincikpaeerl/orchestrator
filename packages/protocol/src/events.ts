@@ -15,7 +15,7 @@ import {
   RunTicketAction,
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
-import { PullRequestFailureReason } from './api/pull-requests.js';
+import { PullRequestClosedBy, PullRequestFailureReason } from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
 import { BranchKeptReason } from './api/branch-clean-up.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
@@ -73,6 +73,8 @@ export const EventType = z.enum([
   'project.harness_checked',
   'project.archived',
   'project.unarchived',
+  'project.pull_request_watch_failed',
+  'project.pull_request_watch_recovered',
   'ticket.created',
   'ticket.updated',
   'ticket.status_changed',
@@ -87,6 +89,8 @@ export const EventType = z.enum([
   'ticket.pull_request_not_opened',
   'ticket.pull_request_merged',
   'ticket.pull_request_closed',
+  'ticket.pull_request_not_closed',
+  'ticket.pull_request_not_reopened',
   'ticket.review_posted',
   'ticket.review_not_posted',
   'ticket.ci_checked_again',
@@ -204,6 +208,18 @@ export const EventPayloads = {
   'project.harness_checked': z.object({ ...ProjectFacts, missing: z.array(HarnessElement) }),
   'project.archived': z.object(ProjectFacts),
   'project.unarchived': z.object(ProjectFacts),
+  /**
+   * The watch of the project's pull requests could not read GitHub (lot 3 step J3a): once when it
+   * starts failing, and when its reason changes; `pullRequests` as `PullRequestWatchFailure`.
+   */
+  'project.pull_request_watch_failed': z.object({
+    ...ProjectFacts,
+    reason: CiCheckFailureReason,
+    message: z.string(),
+    pullRequests: z.array(z.int().positive()),
+  }),
+  /** The watch read every pull request of the project again, after a failure. */
+  'project.pull_request_watch_recovered': z.object(ProjectFacts),
   'ticket.created': z.object({
     ...TicketFacts,
     type: TicketType,
@@ -283,11 +299,27 @@ export const EventPayloads = {
    * A pull request closed without merging, found by the ticket's branch, reopened and updated;
    * `seen`: found open again by the check of GitHub, reopened by someone on GitHub (lot 3 J1).
    */
+  /**
+   * Reopened: with the latest submission; found reopened on GitHub (`seen`, lot 3 step J1); or by
+   * the owner's **Reopen pull request** (`owner`, lot 3 step J3a).
+   */
   'ticket.pull_request_reopened': z.object({
     ...TicketFacts,
     number: z.int(),
     url: z.string(),
     seen: z.literal(true).optional(),
+    owner: z.literal(true).optional(),
+  }),
+  /**
+   * A reopen of the ticket's pull request failed (lot 3 step J3a): **Reopen pull request**, by the
+   * owner. `branchGone`: GitHub refused it, and the head branch is gone from GitHub.
+   */
+  'ticket.pull_request_not_reopened': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    reason: PullRequestFailureReason,
+    message: z.string(),
+    branchGone: z.boolean(),
   }),
   /** The open pull request's title and description updated with the latest accepted report. */
   'ticket.pull_request_updated': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),
@@ -319,11 +351,26 @@ export const EventPayloads = {
     /** The `system` comment it wrote; null when it wrote none (another base). */
     commentId: z.uuid().nullable(),
   }),
-  /** The ticket's pull request found closed without merging on GitHub (lot 3 step J1). */
+  /**
+   * The ticket's pull request closed without merging (lot 3 step J1): found closed on GitHub, or
+   * closed by the Orchestrator at **Cancel** (`by`, step J3a; missing in events written before,
+   * which were found on GitHub).
+   */
   'ticket.pull_request_closed': z.object({
     ...TicketFacts,
     number: z.int(),
     url: z.string(),
+    by: PullRequestClosedBy.optional(),
+  }),
+  /**
+   * **Cancel**'s close of the pull request failed (lot 3 step J3a): once when it starts failing, and
+   * when its reason changes; tried again at each **GitHub check interval**.
+   */
+  'ticket.pull_request_not_closed': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    reason: PullRequestFailureReason,
+    message: z.string(),
   }),
   /** Quality's decision posted on the pull request as a comment review (lot 3 step H3). */
   'ticket.review_posted': z.object({

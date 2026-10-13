@@ -154,11 +154,16 @@ export type CiRead =
       branchMoved: boolean;
       /** The pull request when this reading read it (lot 3 step J1). */
       pullRequest?: PullRequest;
+      /**
+       * No CI found, and the pull request closed on GitHub: not accepted, the wait goes on
+       * (lot 3 step J3a).
+       */
+      pullRequestClosed?: true;
     }
   | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
 
 /** A refusal of GitHub's as a failed check: its words masked, never a value of an answer. */
-function failureOf(refusal: GitHubRefusal): Omit<CiCheckFailure, 'since' | 'at'> {
+export function failureOf(refusal: GitHubRefusal): Omit<CiCheckFailure, 'since' | 'at'> {
   const base = { message: maskSecrets(refusal.message), fields: [], retryAt: null };
   switch (refusal.kind) {
     case 'token_invalid':
@@ -462,7 +467,11 @@ export class CiWatcher {
       await outcomes.timedOut(
         run.id,
         commit,
-        result.checks.length === 0 ? 'no CI run or status appeared yet' : 'CI had not finished',
+        check.pullRequestClosed && ticket.pullRequestNumber !== null
+          ? `no CI run or status appeared, and pull request #${String(ticket.pullRequestNumber)} is closed on GitHub`
+          : result.checks.length === 0
+            ? 'no CI run or status appeared yet'
+            : 'CI had not finished',
       );
     }
     return null;
@@ -559,6 +568,7 @@ export class CiWatcher {
     const state = ciChecksState(checks);
     let decided: CiState;
     let pullRequestHead: string | null = null;
+    let pullRequestClosed = false;
     let pullRead: PullRequest | undefined;
     const readPull = async (number: number) => {
       const read = await readPullRequest(client, repo, number);
@@ -579,9 +589,16 @@ export class CiWatcher {
         const read = await readPull(pullRequest);
         if (!read.ok) return refused(read.refusal);
         if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
-        // Null while GitHub computes it (A5): read again at the next check.
+        // Null while GitHub computes it (A5): read again at the next check. While the pull
+        // request is closed, "No CI found" never accepts the work (owner's addition, lot 3 step
+        // J3a): GitHub starts no CI for it, and the wait ends at **CI wait at submission**.
+        pullRequestClosed = read.value.state === 'closed' && !read.value.merged;
         decided =
-          read.value.mergeable === null ? 'pending' : read.value.mergeable ? 'no_ci' : 'conflict';
+          read.value.mergeable === null || (read.value.mergeable && pullRequestClosed)
+            ? 'pending'
+            : read.value.mergeable
+              ? 'no_ci'
+              : 'conflict';
       }
     } else {
       decided = state;
@@ -612,6 +629,7 @@ export class CiWatcher {
       result: { state: decided, checks, failed_jobs: [], jobs_read: false, jobs_problem: null },
       pullRequestHead,
       branchMoved: false,
+      ...(pullRequestClosed ? { pullRequestClosed: true as const } : {}),
       ...(pullRead === undefined ? {} : { pullRequest: pullRead }),
     };
   }

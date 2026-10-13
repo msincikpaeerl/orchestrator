@@ -7,6 +7,7 @@ import {
   Capability,
   FIRST_MESSAGE_MAX_BYTES,
   PUSH_PERMISSION_WORDS,
+  PullRequestState,
   CiCheckFailure,
   CiResult,
   CiRound,
@@ -2877,6 +2878,7 @@ export class RunService {
         ticketNumber: schema.tickets.number,
         pullRequestNumber: schema.tickets.pullRequestNumber,
         pullRequestUrl: schema.tickets.pullRequestUrl,
+        pullRequestState: schema.tickets.pullRequestState,
         profile: { key: schema.agentProfiles.key, name: schema.agentProfiles.name },
         machine: {
           id: schema.machines.id,
@@ -2908,9 +2910,15 @@ export class RunService {
         account: { id: row.account.id, label: row.account.label },
         resumeAfter: resumeAfter(row.run, row.account, now),
         pullRequest:
-          row.pullRequestNumber === null || row.pullRequestUrl === null
+          row.pullRequestNumber === null ||
+          row.pullRequestUrl === null ||
+          row.pullRequestState === null
             ? null
-            : { number: row.pullRequestNumber, url: row.pullRequestUrl },
+            : {
+                number: row.pullRequestNumber,
+                url: row.pullRequestUrl,
+                state: PullRequestState.parse(row.pullRequestState),
+              },
         base: row.base,
       }),
     );

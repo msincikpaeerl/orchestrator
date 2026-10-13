@@ -114,10 +114,14 @@ export {
 } from './api/needs-you.js';
 export {
   PULL_REQUEST_PERMISSION_WORDS,
+  PullRequestClosedBy,
   PullRequestFailure,
   PullRequestFailureReason,
+  PullRequestReopenFailure,
+  PullRequestReopenResponse,
   PullRequestState,
   PullRequestTryAgainResponse,
+  PullRequestWatchFailure,
 } from './api/pull-requests.js';
 export {
   BranchCleanUpFailure,

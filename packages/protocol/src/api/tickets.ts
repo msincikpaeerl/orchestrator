@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
 import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
-import { PullRequestFailure, PullRequestState } from './pull-requests.js';
+import {
+  PullRequestClosedBy,
+  PullRequestFailure,
+  PullRequestReopenFailure,
+  PullRequestState,
+  PullRequestWatchFailure,
+} from './pull-requests.js';
 import { TicketBranchCleanUp } from './branch-clean-up.js';
 import { RunCiOutcome } from './ci.js';
 import { TicketChangeRequest, TicketReview, TicketStop } from './reviews.js';
@@ -268,6 +274,24 @@ export const TicketPullRequest = z.object({
     .nullable(),
   wanted: z.boolean(),
   failure: PullRequestFailure.nullable(),
+  /**
+   * The pull request closed without merging (lot 3 step J3a): GitHub's time, and who closed it;
+   * null while it is open or merged.
+   */
+  closed: z.object({ at: z.iso.datetime().nullable(), by: PullRequestClosedBy }).nullable(),
+  /**
+   * **Cancel**'s close of the pull request, not done yet: since when, and the latest failure; it
+   * is tried again at each **GitHub check interval** until it is closed, found merged, or the
+   * ticket reopened. Null when none is wanted.
+   */
+  close: z.object({ since: z.iso.datetime(), failure: PullRequestFailure.nullable() }).nullable(),
+  /** The latest failed reopen, until the pull request is open again or another one is recorded. */
+  reopenFailure: PullRequestReopenFailure.nullable(),
+  /**
+   * The watch of the project's pull requests could not read this one at its latest check (the
+   * project's list, or this pull request's own read); null when it could.
+   */
+  watchFailure: PullRequestWatchFailure.nullable(),
 });
 export type TicketPullRequest = z.infer<typeof TicketPullRequest>;
 

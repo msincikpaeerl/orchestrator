@@ -247,7 +247,7 @@ const definitions = {
     group: 'tickets',
     label: 'Wait for CI to start',
     description:
-      'When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch).',
+      'When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch, or is closed on GitHub).',
     unit: 'minutes',
     min: 1,
     max: 60,
