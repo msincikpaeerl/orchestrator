@@ -1226,12 +1226,37 @@ Its own branch (`lot3/j2-stop-while-preparing`) and pull request, in a new sessi
 - **End-to-end** (`apps/web/e2e/clean-up.e2e.ts`, desktop and phone): a ticket merged while its run waits for CI, the clean-up waiting for the stopped run on GitHub and on the machine, then the end report, the machine's answer and a GitHub check, both deleted, and the Help section opened from the page; a branch kept on GitHub (a commit pushed after the merge) and on the machine (a local head that differs). The end-to-end server gains `POST /github/check` (one check of GitHub) and `POST /daemon/branch-delete` (the scripted daemon's answer to `branch.delete`; it answers none by itself). Screenshots: `ticket-clean-up-waiting` and `ticket-clean-up-kept` (the section), `ticket-clean-up-deleted` (the whole page).
 - **The e2e job split** (ADR 0036): two shards, `playwright test --shard=i/2`; locally 2.9 and 3.0 minutes (71 tests each: Playwright puts the computer screen's tests in the first shard and the phone's in the second). A test checks the shards and the per-shard report.
 
-### [ ] J3. Closed pull requests, cancel, conflicts, moved head
+### J3. Closed pull requests, cancel, conflicts, moved head, split in two (rule 15)
 
 - **A watch that cannot read GitHub** (owner's note on J1, 2026-10-12): when the watch cannot read a project's pull requests (a refusal other than the request limit, an answer that cannot be read), nothing is decided, which is right, but nothing tells the owner while the ticket page says the merge is found at the next check. J3 stores the failure as the CI wait does (since when, the reason, one event when it starts, changes or works again); J4 shows it.
 - "Pull request closed without merging" with **Reopen pull request** and **Cancel ticket** (answers 1 and 4); **Cancel** closing the pull request; conflicts on **Awaiting merge** with the filled-in **Request changes** and the conflict mark from the fact; the hidden conflict (answer 6); the moved head with the comparison (answer 3); "No CI found" never accepting while the pull request is closed.
 
-**Done when** tests cover a pull request closed then reopened (from the Orchestrator and on GitHub); a refused reopen; cancel closing it and a reopened ticket keeping it closed until its next accepted submission; the retry of the close stopping at a merged pull request; a conflict on **Awaiting merge** leading to a `fix_review` run with the conflict part, the comment edited; a green status from another service with a conflict; the moved head with `ahead`, another status and a failed comparison; "No CI found" refused while the pull request is closed.
+**Done when** (whole of J3) tests cover a pull request closed then reopened (from the Orchestrator and on GitHub); a refused reopen; cancel closing it and a reopened ticket keeping it closed until its next accepted submission; the retry of the close stopping at a merged pull request; a conflict on **Awaiting merge** leading to a `fix_review` run with the conflict part, the comment edited; a green status from another service with a conflict; the moved head with `ahead`, another status and a failed comparison; "No CI found" refused while the pull request is closed.
+
+Split approved by the owner on 2026-10-14 (J3a, J3b below; J4 unchanged), with these answers:
+
+1. Two sub-steps, each on its own branch: `lot3/j3a-closed-cancel`, then `lot3/j3b-conflicts-moved-head`.
+2. **The closed item goes into "Needs you" in J3a** as a plain card with no buttons, so J1's "every item kind" test keeps covering every kind; its words and buttons come in J4. Its facts include "merged into another base".
+3. **J3b puts the conflict and moved-head facts on the ticket's API**; J4 shows them on the "to merge" item (which J4 builds).
+4. J3a starts with the two unstable tests found in J2c and in the CI of pull request #70, in a commit of their own: each reproduced under load, its cause measured, fixed without loosening any check (or recorded here as a known unstable test).
+
+### [ ] J3a. The unstable tests, the watch's failure, closed pull requests and cancel
+
+- The two unstable tests (answer 4): `machines.test.ts` "finishes the status work already queued before the server stops" and `server.test.ts` "logs each terminated connection, idle, in use or listening, and recovers"; for the second, first whether the GitHub check loop holds a connection whose loss is reported another way or not at all (then a product bug, fixed in the product).
+- The watch's failure stored per project as the CI wait stores its own (since when, the reason, one event when it starts, changes or works again), with what J4 needs to show it.
+- The closed item in "Needs you" (a plain card, answer 2), its facts including "merged into another base"; **Reopen pull request** (GitHub's refusal kept, its branch gone named); **Start review** refused while the pull request is closed ("Reopen it first").
+- **Cancel** closes the pull request after the transaction; a failure is stored for the ticket page and tried again at the next tick, stopping when the pull request is found merged (answer 2 of step J, the cancel race); a ticket reopened in the Orchestrator keeps its pull request closed until its next accepted submission.
+- While the pull request is closed, "No CI found" never accepts the work; the run's CI facts say why the wait goes on, and the wait ends at **CI wait at submission**.
+
+**Done when** server tests with the fake GitHub cover: a pull request closed then reopened, from the Orchestrator and on GitHub; a refused reopen (its branch gone, and another refusal); **Start review** refused while closed; cancel closing it, a failed close tried again at the next tick, the retry stopping at a merged pull request; a reopened ticket keeping it closed until its next accepted submission; "No CI found" refused while closed, the wait ending at **CI wait at submission**; the watch's failure (started, reason changed, working again, one event each); the closed item's facts (closed, merged into another base); both unstable tests passing repeatedly under the load that made them fail.
+
+### [ ] J3b. Conflicts and the moved head
+
+- The `mergeable` reads on **Awaiting merge** (M in answer 1's cost, measured and written there); the conflict fact stored on the ticket and given by its API; **Request changes** marked as a conflict from that fact, never from the comment's text, with the filled-in text, and `fix_review` with G2's conflict part (answer 4).
+- The hidden conflict (answer 6).
+- The moved head (answer 3): one comparison when the head changes, at most 5 titles as plain text, never retried in a loop; its facts on the ticket's API.
+
+**Done when** server tests with the fake GitHub cover: a conflict on **Awaiting merge** leading to a `fix_review` run with the conflict part, the comment edited; a green status from another service with a conflict; the moved head with `ahead`, another status and a failed comparison; the requests per interval counted on the fake.
 
 ### [ ] J4. Screens, Help, CHANGELOG
 
