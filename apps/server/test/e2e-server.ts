@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { createTestDatabase } from '@orchestrator/db/testing';
-import { DaemonBuild, DaemonMessage, Hello, type RunStart } from '@orchestrator/protocol';
+import {
+  BranchDeleteAnswer,
+  DaemonBuild,
+  DaemonMessage,
+  Hello,
+  type BranchDelete,
+  type RunStart,
+} from '@orchestrator/protocol';
 import { createPool, endPool } from '@orchestrator/db';
 import { z } from 'zod';
 import { daemonPackageFile } from '../src/downloads.js';
@@ -121,6 +128,10 @@ const server = await startServer(
 // runs one CI check with these answers for the run's commit, used for that check only (lot 3 step
 // G1b); `"rateLimitedSeconds":600` makes GitHub refuse it for its request limit, `"mergeable":false`
 // gives the pull request a conflict, `"startedMinutesAgo":6` puts **Wait for CI to start** behind.
+// POST /github/check runs one check of GitHub as **GitHub check interval** would (merges, CI waits,
+// the clean-up after a merge; lot 3 step J2c). POST /daemon/branch-delete `{"answer":{"outcome":
+// "deleted"}}` waits for the latest daemon's `branch.delete` not answered yet and answers it
+// (`branch.delete_result`, the same id); the daemon answers nothing by itself.
 const pool = createPool({ connectionString: database.url });
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
@@ -176,6 +187,9 @@ const CiCheckControl = z.object({
   startedMinutesAgo: z.int().min(0).optional(),
 });
 const RequestControl = z.object({ message: DaemonMessage });
+const BranchDeleteControl = z.object({ answer: BranchDeleteAnswer });
+/** The ids of the `branch.delete` messages a test answered, so each is answered once. */
+const answeredDeletes = new Set<string>();
 
 const ConnectDaemon = z.object({
   code: z.string(),
@@ -212,6 +226,23 @@ async function handle(
     await pool.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
     resetGitHub();
     heldInputs = null;
+    answeredDeletes.clear();
+    return 204;
+  }
+  if (request.method === 'POST' && request.url === '/github/check') {
+    await ciWatcherOf(server.app).tick();
+    return 204;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/branch-delete') {
+    const { answer } = BranchDeleteControl.parse(await readJson(request));
+    const daemon = latestDaemon();
+    const message = await daemon.find<BranchDelete>(
+      (sent) => sent.type === 'branch.delete' && !answeredDeletes.has(sent.id),
+      'branch.delete',
+      10_000,
+    );
+    answeredDeletes.add(message.id);
+    daemon.send({ type: 'branch.delete_result', id: message.id, payload: answer });
     return 204;
   }
   if (request.method === 'POST' && request.url === '/daemon/hold-input') {

@@ -29,6 +29,11 @@ import {
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { refusalText } from '../refusals';
+import {
+  gitHubCleanUpLines,
+  machineCleanUpLine,
+  type CleanUpLine,
+} from '../tickets/branch-clean-up-text';
 import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
 import { BlockedBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
@@ -275,6 +280,47 @@ function Branch({ ticket }: { ticket: TicketDetail }) {
         ))}
       <p className="text-sm text-slate-600">
         <HelpLink page="runs#where-the-work-is">Where the work is</HelpLink>
+      </p>
+    </Card>
+  );
+}
+
+const cleanUpLineClass: Record<CleanUpLine['tone'], string> = {
+  done: 'break-words text-slate-800',
+  waiting: 'break-words text-slate-700',
+  kept: 'break-words rounded border border-amber-300 bg-amber-50 p-2 text-slate-900',
+};
+
+/**
+ * The clean-up after the merge (02, section 6.4; lot 3 step J2c): the ticket branch on GitHub,
+ * then on each machine whose runs had it: deleted, already gone, kept with its reason, or what it
+ * waits for.
+ */
+function BranchCleanUp({ ticket }: { ticket: TicketDetail }) {
+  const cleanUp = ticket.branchCleanUp;
+  if (!cleanUp) return null;
+  const ref = ticketRef(ticket.projectKey, ticket.number);
+  const lines = [
+    ...gitHubCleanUpLines(cleanUp, ref).map((line) => ({ key: `github ${line.text}`, line })),
+    ...cleanUp.machines.map((row) => ({
+      key: row.machine.id,
+      line: machineCleanUpLine(row, cleanUp, ref),
+    })),
+  ];
+  return (
+    <Card className="space-y-3">
+      <SectionTitle>Clean-up after the merge</SectionTitle>
+      <ul aria-label="Clean-up after the merge" className="space-y-2">
+        {lines.map(({ key, line }) => (
+          <li key={key} className={cleanUpLineClass[line.tone]}>
+            {line.text}
+          </li>
+        ))}
+      </ul>
+      <p className="text-sm text-slate-600">
+        <HelpLink page="tickets#what-the-orchestrator-deletes-after-a-merge">
+          What the Orchestrator deletes after a merge
+        </HelpLink>
       </p>
     </Card>
   );
@@ -818,6 +864,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
         </Card>
         <Branch ticket={data} />
         <PullRequest ticket={data} />
+        <BranchCleanUp ticket={data} />
         <Report ticket={data} />
         <Dependencies project={project} ticket={data} />
         <Runs ticket={data} />

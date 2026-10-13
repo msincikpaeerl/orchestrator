@@ -168,6 +168,23 @@ describe("this repository's CI", () => {
     expect(shards?.length).toBeGreaterThan(1);
     expect(shards).toEqual(shards?.map((_shard, index) => index + 1));
   });
+
+  it('runs every shard of the end-to-end tests, numbered 1 to their count (ADR 0036)', async () => {
+    const ci = await readFile(join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
+    const e2e = workflowJobs(ci).get('e2e') ?? [];
+    expect(e2e).toContain(
+      'run: ./node_modules/.bin/playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}',
+    );
+    const shards = e2e
+      .find((line) => line.startsWith('shard: ['))
+      ?.slice('shard: ['.length, -1)
+      .split(', ')
+      .map(Number);
+    expect(shards?.length).toBeGreaterThan(1);
+    expect(shards).toEqual(shards?.map((_shard, index) => index + 1));
+    // Each shard keeps its own report of failed tests.
+    expect(e2e).toContain('name: playwright-report-${{ matrix.shard }}');
+  });
 });
 
 describe("the skeleton's own documentation link check", () => {

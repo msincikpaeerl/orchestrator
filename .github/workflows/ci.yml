@@ -108,9 +108,17 @@ jobs:
       - run: pnpm build
 
   e2e:
-    # End-to-end tests in the same pinned Playwright image as `pnpm test:e2e` (ADR 0021).
+    # End-to-end tests in the same pinned Playwright image as `pnpm test:e2e` (ADR 0021), in two
+    # shards on two runners (ADR 0036): Playwright gives each shard half the test files of each
+    # screen size. One job id for all shards, so `ci` needs `e2e` once.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      # Every shard runs to the end, so a failure in one does not hide those of the others.
+      fail-fast: false
+      matrix:
+        # 1 to N, in order: shard i runs `--shard=i/N`, N being the number of shards.
+        shard: [1, 2]
     container:
       # Keep in step with @playwright/test in apps/web (apps/web/e2e/image-version.test.ts).
       image: mcr.microsoft.com/playwright:v1.63.0-noble
@@ -151,13 +159,13 @@ jobs:
       # Same command as tools/e2e-docker.sh runs in the image locally.
       - name: End-to-end tests
         working-directory: apps/web
-        run: ./node_modules/.bin/playwright test
+        run: ./node_modules/.bin/playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       - name: Keep the report of failed tests
         if: failure()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             apps/web/playwright-report
             apps/web/test-results
