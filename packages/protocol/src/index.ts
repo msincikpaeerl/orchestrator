@@ -126,6 +126,7 @@ export {
   BranchKeptReason,
   BranchPushedAgain,
   MachineBranchCleanUp,
+  MachineBusy,
   MachineCleanUpWait,
   TicketBranchCleanUp,
   isTicketBranchName,

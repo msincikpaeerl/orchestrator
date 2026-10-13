@@ -135,9 +135,9 @@ describe('the local branch deleted on the machines after a merge', () => {
       { state: 'kept', reason: { kind: 'local_head_differs', head: 'c'.repeat(40) } },
     ],
     [
-      'in use by a worktree',
-      { outcome: 'in_use', by: 'worktree' },
-      { state: 'kept', reason: { kind: 'in_use', by: 'worktree' } },
+      "in use as the bare clone's HEAD",
+      { outcome: 'in_use', by: 'bare_head' },
+      { state: 'kept', reason: { kind: 'bare_head' } },
     ],
     [
       'not a ticket branch',
@@ -165,6 +165,66 @@ describe('the local branch deleted on the machines after a merge', () => {
         payload: { machine: 'Laptop', reason: row.reason },
       });
     }
+  });
+
+  it.each(['run', 'worktree'] as const)(
+    'asks a machine busy with the branch (%s) again at the next check, with a new message and no event, then deletes it',
+    async (busy) => {
+      const { daemon } = await inReview();
+      h.github.mergePullRequest(repo(), 1);
+      await h.t.ciTick();
+      const first = await deleteOf(daemon);
+      daemon.send({
+        type: 'branch.delete_result',
+        id: first.id,
+        payload: { outcome: 'in_use', by: busy },
+      });
+      await eventually('the busy answer stored', async () => {
+        expect(await machines()).toMatchObject([
+          { state: 'wanted', waiting: 'busy', busy, sentAt: null, decidedAt: null, reason: null },
+        ]);
+      });
+      expect(await events()).toEqual([]);
+      expect(deletes(daemon)).toHaveLength(1);
+
+      // The next check: a new message, since the first one was answered.
+      await h.t.ciTick();
+      await eventually('the second message', () => {
+        expect(deletes(daemon)).toHaveLength(2);
+      });
+      const second = deletes(daemon)[1];
+      expect(second?.id).not.toBe(first.id);
+      expect(second?.payload).toEqual(first.payload);
+      expect(await machines()).toMatchObject([{ waiting: 'answer', busy }]);
+      // A late copy of the first answer changes nothing.
+      daemon.send({
+        type: 'branch.delete_result',
+        id: first.id,
+        payload: { outcome: 'not_a_ticket_branch' },
+      });
+      // The run ended on the machine meanwhile: deleted.
+      await answered(daemon, second?.id ?? '', { outcome: 'deleted' });
+      expect(await machines()).toMatchObject([{ state: 'deleted', busy: null, waiting: null }]);
+      expect(await events()).toMatchObject([{ type: 'ticket.machine_branch_deleted' }]);
+    },
+  );
+
+  it("keeps a branch that is the bare clone's HEAD for good, with no second message", async () => {
+    const { daemon } = await inReview();
+    h.github.mergePullRequest(repo(), 1);
+    await h.t.ciTick();
+    const message = await deleteOf(daemon);
+    await answered(daemon, message.id, { outcome: 'in_use', by: 'bare_head' });
+    ahead = 200_000;
+    await h.t.ciTick();
+    await h.t.ciTick();
+    expect(deletes(daemon)).toHaveLength(1);
+    expect(await machines()).toMatchObject([
+      { state: 'kept', reason: { kind: 'bare_head' }, busy: null },
+    ]);
+    expect(await events()).toMatchObject([
+      { type: 'ticket.machine_branch_kept', payload: { reason: { kind: 'bare_head' } } },
+    ]);
   });
 
   it('sends the same message again after Machine answer timeout, and applies its answer once', async () => {

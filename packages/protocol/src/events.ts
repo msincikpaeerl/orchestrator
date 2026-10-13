@@ -402,7 +402,10 @@ export const EventPayloads = {
     machine: z.string(),
     notFound: z.enum(['repository', 'branch']).nullable(),
   }),
-  /** The local ticket branch kept on a machine after the merge, never asked again (J2b). */
+  /**
+   * The local ticket branch kept on a machine after the merge, never asked again (J2b). A machine
+   * busy with the branch (a worktree, a run of the repository) is not an event: asked again.
+   */
   'ticket.machine_branch_kept': z.object({
     ...TicketFacts,
     branch: z.string(),

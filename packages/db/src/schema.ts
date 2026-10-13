@@ -771,6 +771,11 @@ export const branchCleanUps = pgTable(
     messageId: uuid('message_id'),
     /** When the machine's `branch.delete` was last sent; its answer is awaited from then. */
     sentAt: timestamp('sent_at', { withTimezone: true }),
+    /**
+     * A machine row's latest `in_use` answer that is not final (`worktree` or `run`): asked again
+     * at the next check with a new message; null otherwise (lot 3 step J2b).
+     */
+    busy: text('busy'),
     triedAt: timestamp('tried_at', { withTimezone: true }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

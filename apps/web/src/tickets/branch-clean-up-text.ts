@@ -1,4 +1,4 @@
-import type { BranchKeptReason, MachineCleanUpWait } from '@orchestrator/protocol';
+import type { BranchKeptReason, MachineBusy, MachineCleanUpWait } from '@orchestrator/protocol';
 
 // The clean-up after a merge in the owner's words (lot 3 step J2): why a ticket branch was kept
 // on GitHub or on a machine, and what a machine's clean-up waits for, from the facts the server
@@ -65,12 +65,8 @@ export function keptReasonText(reason: BranchKeptReason, context: KeptContext): 
       return `GitHub refused to delete it: ${reason.message.replace(/[.\s]+$/, '')}`;
     case 'local_head_differs':
       return `its head ${short(reason.head)} is not the merged head ${short(context.mergedHead)}`;
-    case 'in_use':
-      return reason.by === 'worktree'
-        ? 'a run waiting for an answer or paused still has it checked out'
-        : reason.by === 'run'
-          ? 'a run of the same repository was working on the machine'
-          : "it is the current branch of the machine's copy of the repository";
+    case 'bare_head':
+      return "it is the current branch of the machine's copy of the repository";
     case 'machine_revoked':
       return 'the machine was revoked';
   }
@@ -78,9 +74,14 @@ export function keptReasonText(reason: BranchKeptReason, context: KeptContext): 
 
 /**
  * What a machine's clean-up waits for, as the end of "Branch t/12-… not deleted on machine laptop
- * yet: …", without a full stop. `offlineSince` is already in the owner's words.
+ * yet: …", without a full stop. `offlineSince` is already in the owner's words; `busy`, the
+ * machine's latest answer that it is busy with the branch.
  */
-export function machineWaitText(wait: MachineCleanUpWait, offlineSince: string | null): string {
+export function machineWaitText(
+  wait: MachineCleanUpWait,
+  offlineSince: string | null,
+  busy: MachineBusy | null = null,
+): string {
   switch (wait) {
     case 'runs_ending':
       return 'a run stopped by the merge has not reported its end yet';
@@ -90,6 +91,10 @@ export function machineWaitText(wait: MachineCleanUpWait, offlineSince: string |
         : `the machine is offline since ${offlineSince}; it is asked when it reconnects`;
     case 'daemon_outdated':
       return "the machine's daemon is too old to be asked; it is asked once the daemon is updated";
+    case 'busy':
+      return busy === 'worktree'
+        ? 'a run waiting for an answer or paused has it checked out; it is asked again at the next check'
+        : 'a run of the same repository was working on the machine; it is asked again at the next check';
     case 'next_check':
       return 'it is asked at the next check';
     case 'answer':

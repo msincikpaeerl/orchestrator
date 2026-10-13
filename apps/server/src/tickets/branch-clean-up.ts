@@ -5,6 +5,7 @@ import {
   BranchCleanUpState,
   BranchKeptReason,
   BranchPushedAgain,
+  MachineBusy,
   PROTOCOL_VERSION,
   ServerMessage,
   isTicketBranchName,
@@ -213,6 +214,7 @@ async function machineCleanUps(
       waiting: wanted ? await machineWait(db, ticketId, cleanUp, machine) : null,
       offlineSince: offline ? (machine.lastHeartbeatAt?.toISOString() ?? null) : null,
       sentAt: cleanUp.sentAt?.toISOString() ?? null,
+      busy: wanted && cleanUp.busy !== null ? MachineBusy.parse(cleanUp.busy) : null,
     });
   }
   return found;
@@ -228,7 +230,8 @@ async function machineWait(
   if ((await runsThatCanPush(db, ticketId, machine.id)).length > 0) return 'runs_ending';
   if (outdated(machine)) return 'daemon_outdated';
   if (machine.revokedAt === null && machine.status !== 'online') return 'offline';
-  return cleanUp.sentAt === null ? 'next_check' : 'answer';
+  if (cleanUp.sentAt !== null) return 'answer';
+  return cleanUp.busy === null ? 'next_check' : 'busy';
 }
 
 /** A daemon of an earlier protocol, which does not know `branch.delete` (0.3.0). */
@@ -355,8 +358,11 @@ function ticketChanged(
   return null;
 }
 
-/** A machine's answer as the row keeps it. */
-function machineOutcome(answer: BranchDeleteResult['payload']): MachineDecision {
+/**
+ * A machine's final answer as the row keeps it. A worktree having the branch or a run of the
+ * repository working is not final (`busy`): the machine is asked again (owner's answer 1, J2b).
+ */
+function machineOutcome(answer: BranchDeleteResult['payload']): MachineDecision | MachineBusy {
   switch (answer.outcome) {
     case 'deleted':
       return { decided: 'deleted', notFound: null };
@@ -365,7 +371,10 @@ function machineOutcome(answer: BranchDeleteResult['payload']): MachineDecision 
     case 'kept':
       return { decided: 'kept', reason: { kind: 'local_head_differs', head: answer.head } };
     case 'in_use':
-      return { decided: 'kept', reason: { kind: 'in_use', by: answer.by } };
+      // The bare clone's HEAD changes by nothing by itself: asking again would never end.
+      return answer.by === 'bare_head'
+        ? { decided: 'kept', reason: { kind: 'bare_head' } }
+        : answer.by;
     case 'not_a_ticket_branch':
       return { decided: 'kept', reason: { kind: 'not_a_ticket_branch' } };
   }
@@ -709,7 +718,41 @@ export class BranchCleanUp {
       );
     // An answer to nothing sent, or a copy of one stored already: nothing changes.
     if (row?.cleanUp.state !== 'wanted') return;
-    await this.recordMachine(row, machineOutcome(result.payload));
+    const outcome = machineOutcome(result.payload);
+    if (typeof outcome === 'string') await this.recordBusy(row, result.id, outcome);
+    else await this.recordMachine(row, outcome);
+  }
+
+  /**
+   * The machine is busy with the branch: no decision and no event; the message is done with, and
+   * the next check sends a new one (owner's answer 1 of step J2b).
+   */
+  private async recordBusy(row: MachineCleanUpRow, id: string, busy: MachineBusy): Promise<void> {
+    const now = this.now();
+    const { cleanUp, project, machine } = row;
+    await this.options.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ state: schema.branchCleanUps.state, messageId: schema.branchCleanUps.messageId })
+        .from(schema.branchCleanUps)
+        .where(eq(schema.branchCleanUps.id, cleanUp.id))
+        .for('update');
+      if (current?.state !== 'wanted' || current.messageId !== id) return;
+      await tx
+        .update(schema.branchCleanUps)
+        .set({ busy, messageId: null, sentAt: null, triedAt: now })
+        .where(eq(schema.branchCleanUps.id, cleanUp.id));
+      const [ticket] = await tx
+        .select({ id: schema.tickets.id, projectId: schema.tickets.projectId })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, cleanUp.ticketId));
+      if (ticket) {
+        await notifyChange(tx, { entity: 'ticket', id: ticket.id, projectId: ticket.projectId });
+      }
+    });
+    this.options.log.info(
+      { project: project.key, machine: machine.name, branch: cleanUp.branch, busy },
+      'branch in use on the machine: asked again at the next check',
+    );
   }
 
   private async tryMachine(row: MachineCleanUpRow, reconnected: boolean): Promise<void> {
@@ -807,7 +850,14 @@ export class BranchCleanUp {
       const reason = outcome.decided === 'kept' ? outcome.reason : null;
       await tx
         .update(schema.branchCleanUps)
-        .set({ state: outcome.decided, reason, failure: null, triedAt: now, decidedAt: now })
+        .set({
+          state: outcome.decided,
+          reason,
+          failure: null,
+          busy: null,
+          triedAt: now,
+          decidedAt: now,
+        })
         .where(eq(schema.branchCleanUps.id, cleanUp.id));
       const facts = {
         project: project.key,

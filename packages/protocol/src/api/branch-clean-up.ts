@@ -40,8 +40,9 @@ export function isTicketBranchName(name: string, ticket?: number): boolean {
  *
  * - `local_head_differs`: the local branch's head is `head`, not the merged head (commits not
  *   pushed, or the branch moved).
- * - `in_use`: the bare clone's `HEAD` names it (`bare_head`), a worktree has it (`worktree`), or a
- *   run of the repository was active on the machine (`run`).
+ * - `bare_head`: the bare clone's `HEAD` names it, which nothing changes by itself. A worktree
+ *   having it or a run of the repository active is not a reason to keep it: the machine is asked
+ *   again (`MachineBranchCleanUp.busy`).
  * - `machine_revoked`: the machine was revoked before it was asked.
  */
 export const BranchKeptReason = z.discriminatedUnion('kind', [
@@ -64,7 +65,7 @@ export const BranchKeptReason = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('refused'), message: z.string() }),
   z.object({ kind: z.literal('local_head_differs'), head: z.string() }),
-  z.object({ kind: z.literal('in_use'), by: z.enum(['bare_head', 'worktree', 'run']) }),
+  z.object({ kind: z.literal('bare_head') }),
   z.object({ kind: z.literal('machine_revoked') }),
 ]);
 export type BranchKeptReason = z.infer<typeof BranchKeptReason>;
@@ -104,6 +105,10 @@ export const BranchCleanUpWait = z.object({
 });
 export type BranchCleanUpWait = z.infer<typeof BranchCleanUpWait>;
 
+/** Why a machine answered that the branch is in use, a wait and not a decision (lot 3 step J2b). */
+export const MachineBusy = z.enum(['worktree', 'run']);
+export type MachineBusy = z.infer<typeof MachineBusy>;
+
 /**
  * What a machine's clean-up waits for, while wanted (lot 3 step J2b):
  *
@@ -111,6 +116,8 @@ export type BranchCleanUpWait = z.infer<typeof BranchCleanUpWait>;
  * - `offline`: it is offline, and gets the message at its reconnection (`offlineSince`);
  * - `daemon_outdated`: its daemon is of an earlier protocol, which cannot be asked; it gets the
  *   message once its daemon is updated;
+ * - `busy`: the machine answered that a worktree has the branch or a run of the repository was
+ *   working (`busy` says which); it is asked again, with a new message, at the next check;
  * - `next_check`: nothing left to wait for; it is sent at the next check (**GitHub check
  *   interval**);
  * - `answer`: the message was sent (`sentAt`), its answer is awaited.
@@ -119,6 +126,7 @@ export const MachineCleanUpWait = z.enum([
   'runs_ending',
   'offline',
   'daemon_outdated',
+  'busy',
   'next_check',
   'answer',
 ]);
@@ -137,6 +145,12 @@ export const MachineBranchCleanUp = z.object({
   offlineSince: z.iso.datetime().nullable(),
   /** When the message was last sent; null before. */
   sentAt: z.iso.datetime().nullable(),
+  /**
+   * While wanted: the machine's latest answer that it is busy, asked again at the next check: a
+   * worktree of a waiting or paused run has the branch (`worktree`), or a run of the repository
+   * was working (`run`); null otherwise.
+   */
+  busy: MachineBusy.nullable(),
 });
 export type MachineBranchCleanUp = z.infer<typeof MachineBranchCleanUp>;
 
