@@ -168,6 +168,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'This ticket has no question waiting for an answer: it may have been answered already. Reload the page.',
   no_pull_request_wanted: () =>
     'This ticket no longer waits for its pull request: it was opened already, or the ticket is done or cancelled. Reload the page.',
+  pull_request_not_closed: () =>
+    'This pull request is not closed without merging any more, or the ticket is done or cancelled. Reload the page.',
   ci_check_refused: ({ ciRefusal }) => checkCiAgainRefusalText(ciRefusal),
   review_active: () =>
     'Quality is reviewing this ticket now: wait for the review to end, or stop its run first.',

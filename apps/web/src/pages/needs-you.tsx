@@ -47,6 +47,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'pull_request_not_opened':
     case 'ci_timeout':
     case 'ticket_stopped':
+    case 'pull_request_closed':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -353,6 +354,29 @@ function PullRequestNotOpenedCard({
 }
 
 /**
+ * The ticket's pull request closed on GitHub without merging, or merged into another base (lot 3
+ * step J3a): a plain card for now; its words and buttons come with step J4.
+ */
+function PullRequestClosedCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'pull_request_closed' }>;
+}) {
+  const reference = `${item.ticket.projectKey}-${String(item.ticket.number)}`;
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">
+        {item.mergedInto === null
+          ? `Pull request closed without merging for ${reference}`
+          : `Pull request merged into ${item.mergedInto} for ${reference}`}
+      </h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+    </Card>
+  );
+}
+
+/**
  * A run ended at **CI wait at submission** (04, section 3.1; owner's answer 1, lot 3 step G2c):
  * "CI did not finish" with **Check CI again**, or a failure or a conflict the agent did not get,
  * with **Run now**.
@@ -555,6 +579,8 @@ export function NeedsYouPage() {
                 <PushFailedCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
                 <PullRequestNotOpenedCard item={item} />
+              ) : item.type === 'pull_request_closed' ? (
+                <PullRequestClosedCard item={item} />
               ) : item.type === 'ci_timeout' ? (
                 <CiTimeoutCard item={item} onAccepted={setAccepted} />
               ) : item.type === 'ticket_stopped' ? (
