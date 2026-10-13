@@ -122,6 +122,11 @@ const daemonExamples = {
     id,
     payload: { runId, repository: { owner: 'owner-login', name: 'bakery' }, command: 'push' },
   },
+  'branch.delete_result': {
+    type: 'branch.delete_result',
+    id,
+    payload: { outcome: 'kept', head: hash },
+  },
 } as const;
 
 /** One valid example of every message the server sends. */
@@ -197,6 +202,16 @@ const serverExamples = {
     type: 'git.credential',
     id,
     payload: { ok: true, username: 'x-access-token', password: 'github_pat_x' },
+  },
+  'branch.delete': {
+    type: 'branch.delete',
+    id,
+    payload: {
+      repository: { owner: 'owner-login', name: 'bakery' },
+      ticket: 'BAK-12',
+      branch: 't/12-contact-form',
+      mergedHead: hash,
+    },
   },
 } as const;
 
@@ -418,6 +433,26 @@ describe('payload checks', () => {
       (p) => (p.reviewCommit = 'a'.repeat(40)),
     ],
     ['run.input with a number as text', serverExamples['run.input'], (p) => (p.text = 42)],
+    [
+      'branch.delete of a name read as an option',
+      serverExamples['branch.delete'],
+      (p) => (p.branch = '--delete'),
+    ],
+    [
+      'branch.delete with an abbreviated merged head',
+      serverExamples['branch.delete'],
+      (p) => (p.mergedHead = 'abc1234'),
+    ],
+    [
+      'branch.delete of a repository path',
+      serverExamples['branch.delete'],
+      (p) => (p.repository = { owner: '../owner', name: 'bakery' }),
+    ],
+    [
+      'branch.delete_result kept without the head',
+      daemonExamples['branch.delete_result'],
+      (p) => delete p.head,
+    ],
     [
       'run.resume without the session id',
       serverExamples['run.resume'],

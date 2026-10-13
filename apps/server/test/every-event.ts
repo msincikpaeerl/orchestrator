@@ -591,16 +591,40 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     .select()
     .from(schema.tickets)
     .where(eq(schema.tickets.number, 1));
-  await t.db.insert(schema.branchCleanUps).values({
+  const shop1CleanUp = {
     ticketId: mergedElsewhere?.id ?? '',
-    target: 'github',
     pullRequestNumber: 1,
     branch: mergedElsewhere?.branchName ?? 't/1',
     mergedHead: 'e'.repeat(40),
     mergedInto: 'main',
     defaultBranch: 'main',
-  });
+  };
+  await t.db.insert(schema.branchCleanUps).values({ ...shop1CleanUp, target: 'github' });
+  // The same on Laptop (`ticket.machine_branch_kept`; lot 3 step J2b).
+  await t.db
+    .insert(schema.branchCleanUps)
+    .values({ ...shop1CleanUp, target: 'machine', machineId: machine.id });
   await t.ciTick();
+  // SHOP-2's local branch on Laptop, asked at the check that found the merge, deleted there
+  // (`ticket.machine_branch_deleted`).
+  const branchDelete = await daemon.find(
+    (message) => message.type === 'branch.delete',
+    'branch.delete',
+  );
+  daemon.send({
+    type: 'branch.delete_result',
+    id: branchDelete.id,
+    payload: { outcome: 'deleted' },
+  });
+  for (let tries = 0; ; tries++) {
+    const [row] = await t.db
+      .select({ state: schema.branchCleanUps.state })
+      .from(schema.branchCleanUps)
+      .where(eq(schema.branchCleanUps.messageId, branchDelete.id));
+    if (row?.state === 'deleted') break;
+    if (tries === 100) throw new Error('the answer to branch.delete was not stored');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

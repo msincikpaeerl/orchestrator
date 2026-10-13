@@ -22,6 +22,7 @@ import { recordEvent } from '../events.js';
 import { resolveSettings } from '../settings/store.js';
 import { hashCredential } from './credentials.js';
 import type { RunService } from '../runs/service.js';
+import type { BranchCleanUp } from '../tickets/branch-clean-up.js';
 import { daemonInstallCommand, doctorErrors, type MachineRow } from './model.js';
 
 /** The protocol versions the server accepts, for the refusal message: `1`, or `1 or 2`. */
@@ -109,6 +110,7 @@ export async function markAllOffline(db: Database): Promise<number> {
  */
 export class DaemonGateway {
   private runs: RunService | undefined;
+  private branchCleanUps: BranchCleanUp | undefined;
   private readonly connections = new Map<string, Connection>();
   /** Work on one machine's status runs one at a time, in order of arrival. */
   private readonly queues = new Map<string, Promise<void>>();
@@ -126,6 +128,11 @@ export class DaemonGateway {
   /** The run service handles the run messages; the two know each other. */
   attachRuns(runs: RunService): void {
     this.runs = runs;
+  }
+
+  /** The clean-up after a merge sends `branch.delete` and gets its answers (lot 3 step J2b). */
+  attachBranchCleanUps(cleanUps: BranchCleanUp): void {
+    this.branchCleanUps = cleanUps;
   }
 
   /** Sends to the machine's current connection, once welcomed; false when there is none. */
@@ -373,6 +380,9 @@ export class DaemonGateway {
         }
         return;
       }
+      case 'branch.delete_result':
+        await this.branchCleanUps?.answered(machineId, message);
+        return;
     }
   }
 
@@ -584,6 +594,8 @@ export class DaemonGateway {
       payload: { accepted: true, protocolVersion: PROTOCOL_VERSION, heartbeatIntervalSeconds },
     });
     await this.runs?.reconcile(machine.id, payload.runs);
+    // An offline machine gets its `branch.delete` at its reconnection (lot 3 step J2b).
+    await this.branchCleanUps?.machineConnected(machine.id);
     log.info(
       {
         daemonVersion: payload.daemonVersion,

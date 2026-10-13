@@ -160,6 +160,8 @@ describe('events of every type', () => {
       // Its branch deleted on GitHub at the same check, then a push recorded after (step J2a).
       'ticket.branch_deleted',
       'ticket.branch_pushed_again',
+      // Its local branch deleted on Laptop, which answered at the next check (step J2b).
+      'ticket.machine_branch_deleted',
     ]);
 
     const settings = await readAll(t, cookie, 'entity=setting');

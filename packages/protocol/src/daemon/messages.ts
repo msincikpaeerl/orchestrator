@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BranchDelete, BranchDeleteResult } from './branches.js';
 import { Hello, Heartbeat, MachineDoctor, Welcome } from './connection.js';
 import { Ack } from './envelope.js';
 import { GitCredential, GitCredentialRequest, McpCall, McpResult } from './relay.js';
@@ -23,6 +24,7 @@ export const DaemonMessage = z.discriminatedUnion('type', [
   RunQuotaLimited,
   McpCall,
   GitCredentialRequest,
+  BranchDeleteResult,
 ]);
 export type DaemonMessage = z.infer<typeof DaemonMessage>;
 
@@ -36,5 +38,6 @@ export const ServerMessage = z.discriminatedUnion('type', [
   RunStop,
   McpResult,
   GitCredential,
+  BranchDelete,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;

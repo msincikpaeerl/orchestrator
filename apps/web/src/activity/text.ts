@@ -67,6 +67,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.branch_deleted': 'Ticket branch deleted on GitHub',
   'ticket.branch_kept': 'Ticket branch kept on GitHub',
   'ticket.branch_pushed_again': 'Ticket branch on GitHub again',
+  'ticket.machine_branch_deleted': 'Ticket branch deleted on a machine',
+  'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
   'account.created': 'Claude account added',
@@ -403,6 +405,22 @@ const describe: { [T in EventType]: Describe<T> } = {
   'ticket.branch_pushed_again': (p, c) => [
     c.ticket,
     `: branch ${p.branch} is on GitHub again: ${p.machine} pushed ${p.head.slice(0, 7)} after its deletion; it is kept`,
+  ],
+  'ticket.machine_branch_deleted': (p, c) => [
+    c.ticket,
+    p.notFound === null
+      ? `: branch ${p.branch} deleted on machine ${p.machine} after the merge of pull request #${String(p.pullRequest)}`
+      : p.notFound === 'branch'
+        ? `: machine ${p.machine} had no branch ${p.branch} left after the merge of pull request #${String(p.pullRequest)}`
+        : `: machine ${p.machine} has no copy of the repository: no branch ${p.branch} to delete after the merge of pull request #${String(p.pullRequest)}`,
+  ],
+  'ticket.machine_branch_kept': (p, c) => [
+    c.ticket,
+    `: branch ${p.branch} kept on machine ${p.machine}: ${keptReasonText(p.reason, {
+      ticket: p.ticket,
+      pullRequest: p.pullRequest,
+      mergedHead: p.head,
+    })}`,
   ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,

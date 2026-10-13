@@ -34,6 +34,16 @@ export function isTicketBranchName(name: string, ticket?: number): boolean {
  * - `read_failed`: a read GitHub refused or answered in a way that cannot be read (`what` read,
  *   GitHub's `message`).
  * - `refused`: GitHub refused the deletion (a protected branch, for example), with its words.
+ *
+ * On a machine (lot 3 step J2b), besides `ticket_reopened`, `another_pull_request` and
+ * `not_a_ticket_branch` (the daemon's own check of the name):
+ *
+ * - `local_head_differs`: the local branch's head is `head`, not the merged head (commits not
+ *   pushed, or the branch moved).
+ * - `bare_head`: the bare clone's `HEAD` names it, which nothing changes by itself. A worktree
+ *   having it or a run of the repository active is not a reason to keep it: the machine is asked
+ *   again (`MachineBranchCleanUp.busy`).
+ * - `machine_revoked`: the machine was revoked before it was asked.
  */
 export const BranchKeptReason = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('ticket_reopened') }),
@@ -54,6 +64,9 @@ export const BranchKeptReason = z.discriminatedUnion('kind', [
     message: z.string(),
   }),
   z.object({ kind: z.literal('refused'), message: z.string() }),
+  z.object({ kind: z.literal('local_head_differs'), head: z.string() }),
+  z.object({ kind: z.literal('bare_head') }),
+  z.object({ kind: z.literal('machine_revoked') }),
 ]);
 export type BranchKeptReason = z.infer<typeof BranchKeptReason>;
 
@@ -92,6 +105,55 @@ export const BranchCleanUpWait = z.object({
 });
 export type BranchCleanUpWait = z.infer<typeof BranchCleanUpWait>;
 
+/** Why a machine answered that the branch is in use, a wait and not a decision (lot 3 step J2b). */
+export const MachineBusy = z.enum(['worktree', 'run']);
+export type MachineBusy = z.infer<typeof MachineBusy>;
+
+/**
+ * What a machine's clean-up waits for, while wanted (lot 3 step J2b):
+ *
+ * - `runs_ending`: a run of the ticket on it has not reported its end (`waitingFor` says which);
+ * - `offline`: it is offline, and gets the message at its reconnection (`offlineSince`);
+ * - `daemon_outdated`: its daemon is of an earlier protocol, which cannot be asked; it gets the
+ *   message once its daemon is updated;
+ * - `busy`: the machine answered that a worktree has the branch or a run of the repository was
+ *   working (`busy` says which); it is asked again, with a new message, at the next check;
+ * - `next_check`: nothing left to wait for; it is sent at the next check (**GitHub check
+ *   interval**);
+ * - `answer`: the message was sent (`sentAt`), its answer is awaited.
+ */
+export const MachineCleanUpWait = z.enum([
+  'runs_ending',
+  'offline',
+  'daemon_outdated',
+  'busy',
+  'next_check',
+  'answer',
+]);
+export type MachineCleanUpWait = z.infer<typeof MachineCleanUpWait>;
+
+/** The ticket branch's clean-up on one machine whose runs had it (lot 3 step J2b). */
+export const MachineBranchCleanUp = z.object({
+  machine: z.object({ id: z.uuid(), name: z.string() }),
+  /** `already_gone`: the machine had no such branch, or no clone of the repository. */
+  state: BranchCleanUpState,
+  decidedAt: z.iso.datetime().nullable(),
+  reason: BranchKeptReason.nullable(),
+  /** While wanted: what it waits for; null once decided. */
+  waiting: MachineCleanUpWait.nullable(),
+  /** While wanted and the machine is offline: since when. */
+  offlineSince: z.iso.datetime().nullable(),
+  /** When the message was last sent; null before. */
+  sentAt: z.iso.datetime().nullable(),
+  /**
+   * While wanted: the machine's latest answer that it is busy, asked again at the next check: a
+   * worktree of a waiting or paused run has the branch (`worktree`), or a run of the repository
+   * was working (`run`); null otherwise.
+   */
+  busy: MachineBusy.nullable(),
+});
+export type MachineBranchCleanUp = z.infer<typeof MachineBranchCleanUp>;
+
 /** The ticket branch's clean-up on GitHub after the latest recorded merge (lot 3 step J2a). */
 export const TicketBranchCleanUp = z.object({
   branch: z.string(),
@@ -106,5 +168,7 @@ export const TicketBranchCleanUp = z.object({
   /** While wanted: the latest try that could not end. */
   failure: BranchCleanUpFailure.nullable(),
   pushedAgain: BranchPushedAgain.nullable(),
+  /** The same merge's clean-up on each machine whose runs had the branch (lot 3 step J2b). */
+  machines: z.array(MachineBranchCleanUp),
 });
 export type TicketBranchCleanUp = z.infer<typeof TicketBranchCleanUp>;

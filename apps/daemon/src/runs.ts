@@ -8,6 +8,7 @@ import type {
   RunStart,
   RunStop,
 } from '@orchestrator/protocol';
+import { BranchDeletes } from './branch-deletes.js';
 import { Outbox } from './outbox.js';
 import { RunStateFile, readJson, stateFilePath } from './run-files.js';
 import { runFolder } from './run-socket.js';
@@ -32,6 +33,8 @@ export class RunManager {
    */
   private readonly inFlight = new Map<string, Promise<Ack['payload']>>();
   readonly outbox: Outbox;
+  /** The local ticket branches deleted after their merge (lot 3 step J2b). */
+  readonly branches: BranchDeletes;
   private readonly context: RunContext;
 
   constructor(context: Omit<RunContext, 'outbox' | 'onEnded'>) {
@@ -43,6 +46,12 @@ export class RunManager {
         if (this.outbox.isEmpty(run.runId)) void this.drained(run.runId);
       },
     };
+    this.branches = new BranchDeletes({
+      paths: context.paths,
+      workspaces: context.workspaces,
+      activeRepositories: () => this.list().map((run) => run.repository),
+      log: context.log,
+    });
   }
 
   private async drained(runId: string): Promise<void> {

@@ -125,6 +125,8 @@ export function daemon(
     credentials?: CredentialSource;
     /** Another machine's data folder (`ORCHESTRATOR_HOME`), apart from the test home's own. */
     paths?: DaemonPaths;
+    /** Another `git` executable for the daemon's own Git commands (a wrapper). */
+    git?: string;
   } = {},
 ): RunManager {
   const log = options.log ?? captureLogger().log;
@@ -145,7 +147,7 @@ export function daemon(
     trust,
     workspaces: new Workspaces({
       paths,
-      git: new Git(join(home.bin, 'git'), home.env),
+      git: new Git(options.git ?? join(home.bin, 'git'), home.env),
       trust,
       credentials:
         options.credentials ??

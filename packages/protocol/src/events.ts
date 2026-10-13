@@ -95,6 +95,8 @@ export const EventType = z.enum([
   'ticket.branch_deleted',
   'ticket.branch_kept',
   'ticket.branch_pushed_again',
+  'ticket.machine_branch_deleted',
+  'ticket.machine_branch_kept',
   'setting.changed',
   'setting.reset',
   'account.created',
@@ -387,6 +389,30 @@ export const EventPayloads = {
     pullRequest: z.int().positive(),
     machine: z.string(),
     head: z.string(),
+  }),
+  /**
+   * The local ticket branch deleted on a machine after the merge (lot 3 step J2b), or found
+   * absent there (`notFound`: no clone of the repository, or no such branch).
+   */
+  'ticket.machine_branch_deleted': z.object({
+    ...TicketFacts,
+    branch: z.string(),
+    pullRequest: z.int().positive(),
+    head: z.string(),
+    machine: z.string(),
+    notFound: z.enum(['repository', 'branch']).nullable(),
+  }),
+  /**
+   * The local ticket branch kept on a machine after the merge, never asked again (J2b). A machine
+   * busy with the branch (a worktree, a run of the repository) is not an event: asked again.
+   */
+  'ticket.machine_branch_kept': z.object({
+    ...TicketFacts,
+    branch: z.string(),
+    pullRequest: z.int().positive(),
+    head: z.string(),
+    machine: z.string(),
+    reason: BranchKeptReason,
   }),
   /**
    * The owner's **Check CI again** (04, section 3.1; lot 3 step G2c): what it found, or why it was

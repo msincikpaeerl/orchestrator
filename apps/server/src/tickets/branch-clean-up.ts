@@ -1,13 +1,33 @@
+import { randomUUID } from 'node:crypto';
 import { schema } from '@orchestrator/db';
 import {
   BranchCleanUpFailure,
   BranchCleanUpState,
   BranchKeptReason,
   BranchPushedAgain,
+  MachineBusy,
+  PROTOCOL_VERSION,
+  ServerMessage,
+  isTicketBranchName,
   type BranchCleanUpWait,
+  type BranchDeleteResult,
+  type MachineBranchCleanUp,
+  type MachineCleanUpWait,
   type TicketBranchCleanUp,
 } from '@orchestrator/protocol';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -21,6 +41,7 @@ import {
 } from '../github/pull-requests.js';
 import { notifyChange } from '../realtime/changes.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
+import { resolveSettings } from '../settings/store.js';
 import { deleteMergedTicketBranch, ownRefusal, type OwnRefusal } from './branch-delete.js';
 import { ticketEntity, ticketReference, type TicketRow } from './model.js';
 
@@ -30,10 +51,13 @@ import { ticketEntity, ticketReference, type TicketRow } from './model.js';
 // facts; at every **GitHub check interval**, after the CI waits, each one wanted is tried again
 // from fresh reads: nothing is decided from what an earlier try saw. It waits first for the end
 // of every run of the ticket that could still push. Any doubt or failed read keeps the branch.
-// The machines' own clean-up is step J2b's.
+// On the machines (step J2b), one row per machine whose runs had the branch: once that machine's
+// runs of the ticket reported their end, it gets `branch.delete` while connected, the same
+// message each time until it answers; the daemon checks everything again itself.
 
 type ProjectRow = typeof schema.projects.$inferSelect;
 type CleanUpRow = typeof schema.branchCleanUps.$inferSelect;
+type MachineRow = typeof schema.machines.$inferSelect;
 
 /** The merge's facts the clean-up keeps its own copy of. */
 export interface RecordedMerge {
@@ -55,17 +79,35 @@ export async function cleanUpWanted(
 ): Promise<void> {
   if (project.defaultBranch === null || merge.into !== project.defaultBranch) return;
   if (ticket.branchName === null) return;
+  const facts = {
+    ticketId: ticket.id,
+    pullRequestNumber: merge.number,
+    branch: ticket.branchName,
+    mergedHead: merge.head,
+    mergedInto: merge.into,
+    defaultBranch: project.defaultBranch,
+  };
   await tx
     .insert(schema.branchCleanUps)
-    .values({
-      ticketId: ticket.id,
-      target: 'github',
-      pullRequestNumber: merge.number,
-      branch: ticket.branchName,
-      mergedHead: merge.head,
-      mergedInto: merge.into,
-      defaultBranch: project.defaultBranch,
-    })
+    .values({ ...facts, target: 'github' })
+    .onConflictDoNothing();
+  // Every machine where a run of the ticket that works on its branch started: the run stopped by
+  // the merge reports the branch only at its end, which the machine's row waits for.
+  const started = await tx
+    .select({ id: schema.runs.machineId })
+    .from(schema.runs)
+    .where(
+      and(
+        eq(schema.runs.ticketId, ticket.id),
+        ne(schema.runs.purpose, 'review'),
+        isNotNull(schema.runs.acknowledgedAt),
+      ),
+    );
+  const machines = [...new Set(started.map((run) => run.id))];
+  if (machines.length === 0) return;
+  await tx
+    .insert(schema.branchCleanUps)
+    .values(machines.map((machineId) => ({ ...facts, target: 'machine', machineId })))
     .onConflictDoNothing();
 }
 
@@ -78,6 +120,7 @@ export async function cleanUpWanted(
 export async function runsThatCanPush(
   db: Executor,
   ticketId: string,
+  machineId?: string,
 ): Promise<BranchCleanUpWait[]> {
   const rows = await db
     .select({
@@ -92,6 +135,7 @@ export async function runsThatCanPush(
     .where(
       and(
         eq(schema.runs.ticketId, ticketId),
+        ...(machineId === undefined ? [] : [eq(schema.runs.machineId, machineId)]),
         ne(schema.runs.purpose, 'review'),
         isNotNull(schema.runs.acknowledgedAt),
         isNull(schema.runs.endReportedAt),
@@ -135,7 +179,64 @@ export async function ticketBranchCleanUp(
     failure:
       state === 'wanted' && row.failure !== null ? BranchCleanUpFailure.parse(row.failure) : null,
     pushedAgain: row.pushedAgain === null ? null : BranchPushedAgain.parse(row.pushedAgain),
+    machines: await machineCleanUps(db, ticketId, row.pullRequestNumber),
   };
+}
+
+/** The same merge's clean-up on each machine, by machine name (lot 3 step J2b). */
+async function machineCleanUps(
+  db: Executor,
+  ticketId: string,
+  pullRequest: number,
+): Promise<MachineBranchCleanUp[]> {
+  const rows = await db
+    .select({ cleanUp: schema.branchCleanUps, machine: schema.machines })
+    .from(schema.branchCleanUps)
+    .innerJoin(schema.machines, eq(schema.machines.id, schema.branchCleanUps.machineId))
+    .where(
+      and(
+        eq(schema.branchCleanUps.ticketId, ticketId),
+        eq(schema.branchCleanUps.target, 'machine'),
+        eq(schema.branchCleanUps.pullRequestNumber, pullRequest),
+      ),
+    )
+    .orderBy(asc(schema.machines.name));
+  const found: MachineBranchCleanUp[] = [];
+  for (const { cleanUp, machine } of rows) {
+    const state = BranchCleanUpState.parse(cleanUp.state);
+    const wanted = state === 'wanted';
+    const offline = wanted && machine.status !== 'online';
+    found.push({
+      machine: { id: machine.id, name: machine.name },
+      state,
+      decidedAt: cleanUp.decidedAt?.toISOString() ?? null,
+      reason: cleanUp.reason === null ? null : BranchKeptReason.parse(cleanUp.reason),
+      waiting: wanted ? await machineWait(db, ticketId, cleanUp, machine) : null,
+      offlineSince: offline ? (machine.lastHeartbeatAt?.toISOString() ?? null) : null,
+      sentAt: cleanUp.sentAt?.toISOString() ?? null,
+      busy: wanted && cleanUp.busy !== null ? MachineBusy.parse(cleanUp.busy) : null,
+    });
+  }
+  return found;
+}
+
+/** What a machine's clean-up still wanted waits for, as the ticket page says it. */
+async function machineWait(
+  db: Executor,
+  ticketId: string,
+  cleanUp: CleanUpRow,
+  machine: MachineRow,
+): Promise<MachineCleanUpWait> {
+  if ((await runsThatCanPush(db, ticketId, machine.id)).length > 0) return 'runs_ending';
+  if (outdated(machine)) return 'daemon_outdated';
+  if (machine.revokedAt === null && machine.status !== 'online') return 'offline';
+  if (cleanUp.sentAt !== null) return 'answer';
+  return cleanUp.busy === null ? 'next_check' : 'busy';
+}
+
+/** A daemon of an earlier protocol, which does not know `branch.delete` (0.3.0). */
+function outdated(machine: MachineRow): boolean {
+  return machine.protocolVersion === null || machine.protocolVersion < PROTOCOL_VERSION;
 }
 
 /**
@@ -200,11 +301,19 @@ export async function branchPushedAgain(
   });
 }
 
+/** The daemon connections, which `branch.delete` goes through (the daemon gateway). */
+export interface DaemonLink {
+  send(machineId: string, message: ServerMessage): boolean;
+  isConnected(machineId: string): boolean;
+}
+
 export interface BranchCleanUpOptions {
   db: Database;
   key: SecretKey;
   apiUrl: string;
   log: FastifyBaseLogger;
+  /** Without it, nothing is sent to the machines (tests of the GitHub side alone). */
+  daemons?: DaemonLink;
   now?: () => Date;
 }
 
@@ -225,6 +334,63 @@ const OWN_REASONS: Record<OwnRefusal, BranchKeptReason> = {
 
 const kept = (reason: BranchKeptReason): Outcome => ({ decided: 'kept', reason });
 
+/**
+ * Whether the ticket is no longer done with the merge the row was written for: the reason to keep
+ * the branch, or null when it still is.
+ */
+function ticketChanged(
+  ticket: TicketRow | undefined,
+  cleanUp: CleanUpRow,
+): BranchKeptReason | null {
+  if (!ticket || ticket.status !== 'done') return { kind: 'ticket_reopened' };
+  if (
+    ticket.pullRequestNumber !== cleanUp.pullRequestNumber ||
+    ticket.pullRequestMergedAt === null ||
+    ticket.pullRequestMergedHead !== cleanUp.mergedHead ||
+    ticket.pullRequestMergedInto !== cleanUp.mergedInto
+  ) {
+    return {
+      kind: 'another_pull_request',
+      number:
+        ticket.pullRequestNumber === cleanUp.pullRequestNumber ? null : ticket.pullRequestNumber,
+    };
+  }
+  return null;
+}
+
+/**
+ * A machine's final answer as the row keeps it. A worktree having the branch or a run of the
+ * repository working is not final (`busy`): the machine is asked again (owner's answer 1, J2b).
+ */
+function machineOutcome(answer: BranchDeleteResult['payload']): MachineDecision | MachineBusy {
+  switch (answer.outcome) {
+    case 'deleted':
+      return { decided: 'deleted', notFound: null };
+    case 'not_found':
+      return { decided: 'already_gone', notFound: answer.what };
+    case 'kept':
+      return { decided: 'kept', reason: { kind: 'local_head_differs', head: answer.head } };
+    case 'in_use':
+      // The bare clone's HEAD changes by nothing by itself: asking again would never end.
+      return answer.by === 'bare_head'
+        ? { decided: 'kept', reason: { kind: 'bare_head' } }
+        : answer.by;
+    case 'not_a_ticket_branch':
+      return { decided: 'kept', reason: { kind: 'not_a_ticket_branch' } };
+  }
+}
+
+/** How a machine's clean-up ended. */
+type MachineDecision =
+  | { decided: 'deleted' | 'already_gone'; notFound: 'repository' | 'branch' | null }
+  | { decided: 'kept'; reason: BranchKeptReason };
+
+interface MachineCleanUpRow {
+  cleanUp: CleanUpRow;
+  project: ProjectRow;
+  machine: MachineRow;
+}
+
 export class BranchCleanUp {
   constructor(private readonly options: BranchCleanUpOptions) {}
 
@@ -237,6 +403,7 @@ export class BranchCleanUp {
    * after its request limit, which holds the tick; null otherwise.
    */
   async check(): Promise<Date | null> {
+    await this.machines();
     const { db, log } = this.options;
     const wanted = await db
       .select({
@@ -304,19 +471,8 @@ export class BranchCleanUp {
       .select()
       .from(schema.tickets)
       .where(eq(schema.tickets.id, cleanUp.ticketId));
-    if (!ticket || ticket.status !== 'done') return kept({ kind: 'ticket_reopened' });
-    if (
-      ticket.pullRequestNumber !== cleanUp.pullRequestNumber ||
-      ticket.pullRequestMergedAt === null ||
-      ticket.pullRequestMergedHead !== cleanUp.mergedHead ||
-      ticket.pullRequestMergedInto !== cleanUp.mergedInto
-    ) {
-      return kept({
-        kind: 'another_pull_request',
-        number:
-          ticket.pullRequestNumber === cleanUp.pullRequestNumber ? null : ticket.pullRequestNumber,
-      });
-    }
+    const changed = ticketChanged(ticket, cleanUp);
+    if (changed !== null || !ticket) return kept(changed ?? { kind: 'ticket_reopened' });
     // The stopped runs' end first (end push included): no request until then.
     if ((await runsThatCanPush(this.options.db, ticket.id)).length > 0) return { waiting: true };
 
@@ -475,6 +631,262 @@ export class BranchCleanUp {
       this.options.log.info(
         { ticket: facts.ticket, branch: cleanUp.branch, outcome: outcome.decided, reason },
         'branch clean-up on GitHub',
+      );
+    });
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // On the machines (lot 3 step J2b)
+
+  /**
+   * Every machine clean-up wanted (`where` narrows them): decided when the machine was revoked or
+   * the ticket changed, else sent once nothing is left to wait for.
+   */
+  async machines(where?: SQL, reconnected = false): Promise<void> {
+    try {
+      await this.machinesWanted(where, reconnected);
+    } catch (error) {
+      // Never thrown to the caller (an end report, a `hello`): tried again at the next check.
+      this.options.log.error({ err: error }, 'branch clean-ups on the machines not tried');
+    }
+  }
+
+  private async machinesWanted(where: SQL | undefined, reconnected: boolean): Promise<void> {
+    if (!this.options.daemons) return;
+    const rows = await this.options.db
+      .select({
+        cleanUp: schema.branchCleanUps,
+        project: schema.projects,
+        machine: schema.machines,
+      })
+      .from(schema.branchCleanUps)
+      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.branchCleanUps.ticketId))
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+      .innerJoin(schema.machines, eq(schema.machines.id, schema.branchCleanUps.machineId))
+      .where(
+        and(
+          eq(schema.branchCleanUps.target, 'machine'),
+          eq(schema.branchCleanUps.state, 'wanted'),
+          eq(schema.projects.status, 'active'),
+          where,
+        ),
+      )
+      .orderBy(asc(schema.branchCleanUps.createdAt));
+    for (const row of rows) {
+      try {
+        await this.tryMachine(row, reconnected);
+      } catch (error) {
+        // One clean-up never blocks the others: tried again at the next check.
+        this.options.log.error(
+          { err: error, machine: row.machine.name, branch: row.cleanUp.branch },
+          'branch clean-up on a machine not tried',
+        );
+      }
+    }
+  }
+
+  /**
+   * A machine connected (after `hello`): an offline machine gets its messages now, and a message
+   * sent before, maybe on the connection that was lost, is sent again at once, the same one.
+   */
+  machineConnected(machineId: string): Promise<void> {
+    return this.machines(eq(schema.branchCleanUps.machineId, machineId), true);
+  }
+
+  /** A run of the ticket reported its end: its machine's message may go now. */
+  runEnded(ticketId: string): Promise<void> {
+    return this.machines(eq(schema.branchCleanUps.ticketId, ticketId));
+  }
+
+  /** The daemon's answer to a `branch.delete`: stored once, with its event. */
+  async answered(machineId: string, result: BranchDeleteResult): Promise<void> {
+    const [row] = await this.options.db
+      .select({
+        cleanUp: schema.branchCleanUps,
+        project: schema.projects,
+        machine: schema.machines,
+      })
+      .from(schema.branchCleanUps)
+      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.branchCleanUps.ticketId))
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+      .innerJoin(schema.machines, eq(schema.machines.id, schema.branchCleanUps.machineId))
+      .where(
+        and(
+          eq(schema.branchCleanUps.messageId, result.id),
+          eq(schema.branchCleanUps.machineId, machineId),
+        ),
+      );
+    // An answer to nothing sent, or a copy of one stored already: nothing changes.
+    if (row?.cleanUp.state !== 'wanted') return;
+    const outcome = machineOutcome(result.payload);
+    if (typeof outcome === 'string') await this.recordBusy(row, result.id, outcome);
+    else await this.recordMachine(row, outcome);
+  }
+
+  /**
+   * The machine is busy with the branch: no decision and no event; the message is done with, and
+   * the next check sends a new one (owner's answer 1 of step J2b).
+   */
+  private async recordBusy(row: MachineCleanUpRow, id: string, busy: MachineBusy): Promise<void> {
+    const now = this.now();
+    const { cleanUp, project, machine } = row;
+    await this.options.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ state: schema.branchCleanUps.state, messageId: schema.branchCleanUps.messageId })
+        .from(schema.branchCleanUps)
+        .where(eq(schema.branchCleanUps.id, cleanUp.id))
+        .for('update');
+      if (current?.state !== 'wanted' || current.messageId !== id) return;
+      await tx
+        .update(schema.branchCleanUps)
+        .set({ busy, messageId: null, sentAt: null, triedAt: now })
+        .where(eq(schema.branchCleanUps.id, cleanUp.id));
+      const [ticket] = await tx
+        .select({ id: schema.tickets.id, projectId: schema.tickets.projectId })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, cleanUp.ticketId));
+      if (ticket) {
+        await notifyChange(tx, { entity: 'ticket', id: ticket.id, projectId: ticket.projectId });
+      }
+    });
+    this.options.log.info(
+      { project: project.key, machine: machine.name, branch: cleanUp.branch, busy },
+      'branch in use on the machine: asked again at the next check',
+    );
+  }
+
+  private async tryMachine(row: MachineCleanUpRow, reconnected: boolean): Promise<void> {
+    const { db, daemons } = this.options;
+    const { cleanUp, project, machine } = row;
+    // A revoked machine gets nothing (owner's answer 5 of step J2).
+    if (machine.revokedAt !== null) {
+      await this.recordMachine(row, { decided: 'kept', reason: { kind: 'machine_revoked' } });
+      return;
+    }
+    const [ticket] = await db
+      .select()
+      .from(schema.tickets)
+      .where(eq(schema.tickets.id, cleanUp.ticketId));
+    const changed = ticketChanged(ticket, cleanUp);
+    if (changed !== null || !ticket) {
+      await this.recordMachine(row, {
+        decided: 'kept',
+        reason: changed ?? { kind: 'ticket_reopened' },
+      });
+      return;
+    }
+    if (!isTicketBranchName(cleanUp.branch, ticket.number)) {
+      await this.recordMachine(row, { decided: 'kept', reason: { kind: 'not_a_ticket_branch' } });
+      return;
+    }
+    // Once every run of the ticket on that machine reported its end (its end push included).
+    if ((await runsThatCanPush(db, ticket.id, machine.id)).length > 0) return;
+    // A 0.3.0 daemon would ignore the message: it is sent once the daemon is updated.
+    if (outdated(machine) || !daemons?.isConnected(machine.id)) return;
+    const now = this.now();
+    // Sent and not answered: the same message again after **Machine answer timeout**.
+    if (cleanUp.sentAt !== null && !reconnected) {
+      const { dispatchAckTimeoutSeconds } = await resolveSettings(db, [
+        'dispatchAckTimeoutSeconds',
+      ]);
+      if (now.getTime() - cleanUp.sentAt.getTime() < dispatchAckTimeoutSeconds * 1000) return;
+    }
+    // One id for the row, whoever sends first: a copy is applied once by the daemon.
+    const [stored] = await db
+      .update(schema.branchCleanUps)
+      .set({ messageId: sql`coalesce(${schema.branchCleanUps.messageId}, ${randomUUID()})` })
+      .where(
+        and(eq(schema.branchCleanUps.id, cleanUp.id), eq(schema.branchCleanUps.state, 'wanted')),
+      )
+      .returning({ messageId: schema.branchCleanUps.messageId });
+    if (!stored?.messageId) return;
+    const message = ServerMessage.safeParse({
+      type: 'branch.delete',
+      id: stored.messageId,
+      payload: {
+        repository: { owner: project.repoOwner, name: project.repoName },
+        ticket: ticketReference(project.key, ticket.number),
+        branch: cleanUp.branch,
+        mergedHead: cleanUp.mergedHead,
+      },
+    });
+    if (!message.success) {
+      this.options.log.error(
+        { machine: machine.name, branch: cleanUp.branch, issues: message.error.issues },
+        'branch.delete not sent: its facts do not fit the message',
+      );
+      return;
+    }
+    if (!daemons.send(machine.id, message.data)) return;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.branchCleanUps)
+        .set({ sentAt: now, triedAt: now })
+        .where(eq(schema.branchCleanUps.id, cleanUp.id));
+      await notifyChange(tx, { entity: 'ticket', id: ticket.id, projectId: ticket.projectId });
+    });
+    this.options.log.info(
+      { ticket: ticketReference(project.key, ticket.number), machine: machine.name },
+      `branch ${cleanUp.branch}: delete sent to the machine`,
+    );
+  }
+
+  /** A machine's clean-up decided, with its event, once. */
+  private async recordMachine(row: MachineCleanUpRow, outcome: MachineDecision): Promise<void> {
+    const now = this.now();
+    const { cleanUp, project, machine } = row;
+    await this.options.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ state: schema.branchCleanUps.state })
+        .from(schema.branchCleanUps)
+        .where(eq(schema.branchCleanUps.id, cleanUp.id))
+        .for('update');
+      if (current?.state !== 'wanted') return;
+      const [ticket] = await tx
+        .select()
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, cleanUp.ticketId));
+      if (!ticket) return;
+      const reason = outcome.decided === 'kept' ? outcome.reason : null;
+      await tx
+        .update(schema.branchCleanUps)
+        .set({
+          state: outcome.decided,
+          reason,
+          failure: null,
+          busy: null,
+          triedAt: now,
+          decidedAt: now,
+        })
+        .where(eq(schema.branchCleanUps.id, cleanUp.id));
+      const facts = {
+        project: project.key,
+        ticket: ticketReference(project.key, ticket.number),
+        branch: cleanUp.branch,
+        pullRequest: cleanUp.pullRequestNumber,
+        head: cleanUp.mergedHead,
+        machine: machine.name,
+      };
+      if (outcome.decided === 'kept') {
+        await recordEvent(tx, {
+          actor: 'system',
+          ...ticketEntity(ticket),
+          type: 'ticket.machine_branch_kept',
+          payload: { ...facts, reason: outcome.reason },
+          at: now,
+        });
+      } else {
+        await recordEvent(tx, {
+          actor: 'system',
+          ...ticketEntity(ticket),
+          type: 'ticket.machine_branch_deleted',
+          payload: { ...facts, notFound: outcome.notFound },
+          at: now,
+        });
+      }
+      this.options.log.info(
+        { ticket: facts.ticket, branch: cleanUp.branch, machine: machine.name, ...outcome },
+        'branch clean-up on a machine',
       );
     });
   }

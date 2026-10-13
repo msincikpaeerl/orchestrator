@@ -167,6 +167,8 @@ export interface RunServiceOptions {
   pullRequestWanted?: (ticketId: string) => void;
   /** After Quality's decision is applied: post its comment review (lot 3 step H3). */
   reviewPostWanted?: (runId: string) => void;
+  /** After a run of a ticket reported its end: its machine's clean-up may go (lot 3 step J2b). */
+  endReported?: (ticketId: string) => void;
 }
 
 /** Everything about one run, locked for the rest of the transaction. */
@@ -2986,6 +2988,13 @@ export class RunService {
       };
 
       if (payload.state === 'ended') {
+        const ticketId = locked.ticket?.id;
+        if (ticketId !== undefined) {
+          after.push(() => {
+            this.options.endReported?.(ticketId);
+            return Promise.resolve();
+          });
+        }
         if (payload.gitConfigRestored !== null) {
           // Information only: never a "Needs you" item, never a refusal (lot 3 step D2).
           await recordEvent(tx, {
