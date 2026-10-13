@@ -45,7 +45,7 @@ Stop them with `docker compose -f docker/compose.dev.yml down`; add `-v` to dele
 | `ORCHESTRATOR_TEST_SYSTEMD=1 pnpm exec vitest run --project apps/daemon test/systemd.test.ts` | The daemon's systemd scope tests, on a host with a systemd user session (WSL with systemd): they create transient `od-test-*` units only and stop them (`docs/dev/testing.md`). Skipped otherwise, and in CI. |
 | `pnpm build` | Build every package into its `dist/`; the daemon's is its package, `orchestrator-daemon-<version>.tgz` (ADR 0026). |
 | `pnpm docs:links` | Check relative links and headings in all Markdown files. |
-| `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`). Needs the test PostgreSQL. |
+| `pnpm test:e2e` | End-to-end tests in the Playwright Docker image, as CI runs them (`docs/dev/testing.md`); `pnpm test:e2e --shard=1/2` runs one of CI's two shards (ADR 0036). Needs the test PostgreSQL. |
 | `pnpm test:e2e:host` | The same on the host, with Chromium downloaded into `.playwright-browsers/`; needs Chromium's system libraries. |
 | `pnpm dev` | Server from the TypeScript sources, restarted on change, with the root `.env`, and the UI with Vite on `http://localhost:5173`. |
 | `pnpm --filter server orchestrator reset-password` | The `orchestrator reset-password` command of the image, on the database of the root `.env` (09, section 7.4). |
