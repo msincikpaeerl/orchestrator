@@ -112,6 +112,12 @@ const CLOSED_STATES: readonly DaemonRunState[] = ['waiting_human', 'quota_paused
 /** States whose time counts as working time (05, section 5). */
 const WORKING: readonly DaemonRunState[] = ['starting', 'working', 'idle'];
 
+/** The end a failed preparation or launch asks for, applied once the set-up is over. */
+interface StartFailure {
+  reason: RunEndReason;
+  detail: string;
+}
+
 export class Run {
   private readonly log: Logger;
   private socket: Server | null = null;
@@ -131,6 +137,11 @@ export class Run {
   /** Between a turn's `Stop` and `afterTurn`: messages wait for `afterTurn`. */
   private turnEnding = false;
   private ending: Promise<void> | null = null;
+  /**
+   * The set-up in flight (a preparation, a download before `run.resume`, a launch): the end waits
+   * for it, so a stop that lands meanwhile wins (lot 3 step J2s).
+   */
+  private settingUp: Promise<unknown> | null = null;
   /** GitHub's head of the ticket branch when a review's preparation found it moved. */
   private movedHead: string | null = null;
   /** Set when the daemon stops: this object no longer acts, the session goes on. */
@@ -331,28 +342,64 @@ export class Run {
   private async prepareAndLaunch(): Promise<void> {
     this.report('preparing');
     const { start } = this.data;
-    try {
-      const folder = createRunFolder(this.context.paths, this.runId);
-      const workspace = await this.context.workspaces.prepare(start, folder);
-      this.data.bare = workspace.bare;
-      this.data.worktree = workspace.worktree;
-      this.data.reviewStart = workspace.review;
-      this.save();
-    } catch (error) {
-      if (error instanceof ReviewCommitMoved) {
-        this.log.warn({ err: error }, 'review commit no longer the head on GitHub');
-        this.movedHead = error.head;
-        await this.end('review_branch_moved', error.message);
-        return;
+    const failure = await this.setUp(async (): Promise<StartFailure | null> => {
+      try {
+        const folder = createRunFolder(this.context.paths, this.runId);
+        const workspace = await this.context.workspaces.prepare(start, folder);
+        this.data.bare = workspace.bare;
+        this.data.worktree = workspace.worktree;
+        this.data.reviewStart = workspace.review;
+        this.save();
+      } catch (error) {
+        if (this.stopping()) return null;
+        if (error instanceof ReviewCommitMoved) {
+          this.log.warn({ err: error }, 'review commit no longer the head on GitHub');
+          this.movedHead = error.head;
+          return { reason: 'review_branch_moved', detail: error.message };
+        }
+        this.log.error({ err: error }, 'workspace not prepared');
+        return {
+          reason: 'crashed',
+          detail: `The workspace could not be prepared: ${(error as Error).message}`,
+        };
       }
-      this.log.error({ err: error }, 'workspace not prepared');
-      await this.end('crashed', `The workspace could not be prepared: ${(error as Error).message}`);
-      return;
-    }
-    await this.launch(start.initialPrompt, start.resumeSessionId);
+      return this.launch(start.initialPrompt, start.resumeSessionId);
+    });
+    if (failure) await this.end(failure.reason, failure.detail);
   }
 
-  private async launch(message: string, resumeSessionId: string | null): Promise<void> {
+  /**
+   * The run was stopped or has ended: nothing more is set up. A method, read again after every
+   * `await`, where a property would stay narrowed.
+   */
+  private stopping(): boolean {
+    return this.ending !== null;
+  }
+
+  /**
+   * Runs `work`, a set-up before the session runs, as the set-up in flight that the end waits
+   * for. `work` checks `stopping` after each step and never awaits the end: it returns the end it
+   * asks for, applied by its caller once the set-up is over.
+   */
+  private async setUp<T>(work: () => Promise<T>): Promise<T> {
+    const running = work();
+    this.settingUp = running.catch(() => undefined);
+    try {
+      return await running;
+    } finally {
+      this.settingUp = null;
+    }
+  }
+
+  /**
+   * Launches the session, unless the run is stopping: checked after each step and just before
+   * the launch itself. Returns the end it asks for when the launch fails; called within `setUp`.
+   */
+  private async launch(
+    message: string,
+    resumeSessionId: string | null,
+  ): Promise<StartFailure | null> {
+    if (this.stopping()) return null;
     const { start } = this.data;
     const claude = findExecutable('claude', this.context.toolPath);
     const version = claude
@@ -364,18 +411,18 @@ export class Run {
           null) ||
         null
       : null;
+    if (this.stopping()) return null;
     this.data.state = 'starting';
     this.save();
     this.report('starting', version);
     const support = claudeCodeSupport(version);
     if (!claude || support === 'missing' || support === 'below_minimum') {
-      await this.end(
-        'claude_code_unsupported',
-        claude
+      return {
+        reason: 'claude_code_unsupported',
+        detail: claude
           ? `Claude Code ${version ?? '(unknown version)'} is older than ${CLAUDE_CODE_MIN_VERSION}, the oldest version the Orchestrator supports: update Claude Code on this machine.`
           : "Claude Code (claude) was not found in the daemon's PATH.",
-      );
-      return;
+      };
     }
     try {
       const files = writeRunFiles(this.context.paths, start, this.context.selfCommand);
@@ -383,6 +430,9 @@ export class Run {
       await this.context.trust.ensure(this.data.bare ?? '');
       this.releaseStart = await this.context.trust.beginStart();
       await Promise.all(Object.values(this.scopeFiles).map((file) => rm(file, { force: true })));
+      // The last moment a stop can keep the session from being launched; one landing during the
+      // launch closes it at the end, which waits for this set-up.
+      if (this.stopping()) return null;
       await this.context.tmux.newSession({
         name: this.name,
         cwd: this.data.worktree ?? '',
@@ -411,19 +461,20 @@ export class Run {
     } catch (error) {
       this.log.error({ err: error }, 'session not launched');
       // systemd-run refused the tmux server's scope (05, section 2).
-      if (error instanceof ScopeRefused) {
-        await this.scopeFailed(error.reason);
-        return;
-      }
-      await this.end('crashed', `Claude Code could not be launched: ${(error as Error).message}`);
-      return;
+      if (error instanceof ScopeRefused) return this.scopeFailed(error.reason);
+      return {
+        reason: 'crashed',
+        detail: `Claude Code could not be launched: ${(error as Error).message}`,
+      };
     }
     this.sessionAlive = true;
+    if (this.stopping()) return null;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
     this.newTurn();
     this.addEvent({ at: new Date().toISOString(), kind: 'input', tool: null, text: message });
     this.startTimer();
     this.log.info({ session: this.name, version }, 'session launched');
+    return null;
   }
 
   /** The run's systemd scope (05, section 4.11). */
@@ -497,16 +548,16 @@ export class Run {
   }
 
   /**
-   * The run's scope could not be created (05, section 2): the run fails with the reason, and
-   * the daemon starts no more sessions until it is restarted.
+   * The run's scope could not be created (05, section 2): the run fails with the reason it
+   * returns, and the daemon starts no more sessions until it is restarted.
    */
-  private async scopeFailed(reason: string): Promise<void> {
+  private scopeFailed(reason: string): StartFailure {
     this.log.error({ reason }, "the run's process scope could not be created");
     this.context.scopes.fail(reason);
-    await this.end(
-      'process_scope_failed',
-      `Claude Code could not be started in the run's process scope (${reason}). The machine takes no runs until this is fixed: see its problem in Needs you.`,
-    );
+    return {
+      reason: 'process_scope_failed',
+      detail: `Claude Code could not be started in the run's process scope (${reason}). The machine takes no runs until this is fixed: see its problem in Needs you.`,
+    };
   }
 
   /**
@@ -891,7 +942,8 @@ export class Run {
 
   /**
    * `run.resume`: launches the closed session again with `--resume` and `message` (05, section
-   * 4.3). Refused while the session is alive.
+   * 4.3). Refused while the session is alive. The download and the launch are a set-up: a stop
+   * landing during them wins.
    */
   async resume(
     id: string,
@@ -901,17 +953,23 @@ export class Run {
   ): Promise<string | null> {
     const refused = this.resumeRefused() ?? this.fetchBaseRefused(fetchBase);
     if (refused !== null) return refused;
-    if (fetchBase) {
-      const failed = await this.fetchBase();
-      if (failed !== null) return failed;
-      const meanwhile = this.resumeRefused();
-      if (meanwhile !== null) return meanwhile;
-    }
-    this.data.claudeSessionId = claudeSessionId;
-    this.remember(id);
-    this.save();
-    await this.launch(message, claudeSessionId);
-    return null;
+    // Assigned in the set-up: a plain `null` would narrow it for good.
+    let failure = null as StartFailure | null;
+    const answer = await this.setUp(async () => {
+      if (fetchBase) {
+        const failed = await this.fetchBase();
+        if (failed !== null) return failed;
+        const meanwhile = this.resumeRefused();
+        if (meanwhile !== null) return meanwhile;
+      }
+      this.data.claudeSessionId = claudeSessionId;
+      this.remember(id);
+      this.save();
+      failure = await this.launch(message, claudeSessionId);
+      return null;
+    });
+    if (failure) await this.end(failure.reason, failure.detail);
+    return answer;
   }
 
   /** Whether the `run.input` or `run.resume` of this id was given already (lot 3 step G2b). */
@@ -1064,7 +1122,8 @@ export class Run {
       this.sessionAlive = false;
       const refused = this.context.systemd ? this.scopeRefusal() : null;
       if (refused !== null) {
-        await this.scopeFailed(refused);
+        const failure = this.scopeFailed(refused);
+        await this.end(failure.reason, failure.detail);
         return;
       }
       await this.end('crashed', 'Claude Code exited before the end of the run.');
@@ -1078,12 +1137,16 @@ export class Run {
    * nothing of the run still works in the worktree or holds it; then the branch read (for a review
    * run, whether its head moved), the worktree removed, the bare clone's Git configuration
    * restored, and the best-effort end push; the end is reported last, with the push's result. A
-   * slow push only delays the report: the session, the processes and the worktree are gone.
+   * slow push only delays the report: the session, the processes and the worktree are gone. A
+   * set-up in flight is waited for first: it launches nothing once the end was asked for.
    */
   private end(endReason: RunEndReason, endDetail: string | null): Promise<void> {
     this.ending ??= (async () => {
       let reason = endReason;
       let detail = endDetail;
+      // A set-up in flight sees the end and stops before the launch; what it made (a worktree,
+      // a session launched meanwhile) is then known here, and closed or removed below.
+      await this.settingUp;
       clearInterval(this.timer);
       this.releaseStart?.();
       this.releaseStart = null;
