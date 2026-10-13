@@ -123,6 +123,8 @@ async function stopWhileHeld(
     30_000,
     'the end of the run',
   );
+  // Its folder goes once its reports are acknowledged.
+  await waitFor(() => !existsSync(runFolder(home.paths, runId)), 30_000, "the run's folder gone");
   // Whatever the set-up still had to do is over: the daemon awaits it as it stops.
   await manager.shutdown();
 
@@ -133,7 +135,7 @@ async function stopWhileHeld(
   expect(await tmux.hasSession(sessionName(runId))).toBe(false);
   expect(markedProcesses(runId)).toEqual([]);
   expect(existsSync(worktreePath(home.paths, runId))).toBe(false);
-  // Its folder went once its reports were acknowledged, and nothing wrote it again.
+  // Nothing wrote it again.
   expect(existsSync(runFolder(home.paths, runId))).toBe(false);
 }
 
