@@ -1,6 +1,5 @@
 import { GITHUB_TOKEN_LIST_URL, type TicketDetail } from '@orchestrator/protocol';
 import { Link } from 'react-router';
-import { HelpLink } from '../components/ui';
 import { ReopenPullRequestAction } from './actions';
 import {
   closeWantedText,
@@ -46,6 +45,15 @@ export function HeadMovedLines({
       )}
       {text.notPart && <p>{text.notPart}</p>}
     </div>
+  );
+}
+
+/** Whether the ticket page shows any line of what GitHub said of the pull request since. */
+export function showsGitHubLines(pullRequest: TicketDetail['pullRequest']): boolean {
+  const { opened, closed, close, conflict, headMoved, watchFailure } = pullRequest;
+  return (
+    opened !== null &&
+    [closed, close, conflict, headMoved, watchFailure].some((fact) => fact !== null)
   );
 }
 
@@ -121,13 +129,6 @@ export function PullRequestGitHubLines({
       {watchFailure && (
         <p aria-label="Not checked on GitHub" className={warningClass}>
           {watchFailureText(watchFailure)}
-        </p>
-      )}
-      {(closed !== null || close !== null || conflict !== null || headMoved !== null) && (
-        <p className="text-sm text-slate-600">
-          <HelpLink page="tickets#when-github-changes-the-pull-request">
-            When GitHub changes the pull request
-          </HelpLink>
         </p>
       )}
     </>

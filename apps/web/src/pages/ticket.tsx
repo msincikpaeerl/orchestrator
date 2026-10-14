@@ -39,7 +39,7 @@ import { BlockedBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
-import { PullRequestGitHubLines } from '../tickets/pull-request-lines';
+import { PullRequestGitHubLines, showsGitHubLines } from '../tickets/pull-request-lines';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
@@ -442,10 +442,15 @@ function PullRequest({ ticket, canChange }: { ticket: TicketDetail; canChange: b
           <p className="break-words text-slate-700">{flag.detail}</p>
         </div>
       )}
-      <p className="text-sm text-slate-600">
+      <p className="flex flex-wrap gap-4 text-sm text-slate-600">
         <HelpLink page="tickets#submission-and-the-pull-request">
           Submission and the pull request
         </HelpLink>
+        {showsGitHubLines(ticket.pullRequest) && (
+          <HelpLink page="tickets#when-github-changes-the-pull-request">
+            When GitHub changes the pull request
+          </HelpLink>
+        )}
       </p>
     </Card>
   );
