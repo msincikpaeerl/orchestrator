@@ -1,8 +1,14 @@
-import type { NeedsYouItem, PullRequestReopenFailure } from '@orchestrator/protocol';
+import type {
+  NeedsYouItem,
+  PullRequestFailure,
+  PullRequestReopenFailure,
+} from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { formatDateTime } from '../github/text';
 import {
+  closeWantedText,
   closedItemText,
+  closedStateText,
   conflictFlagText,
   headMovedText,
   reopenFailureText,
@@ -209,5 +215,51 @@ describe("the closed item (owner's answers 1 and 4 of step J)", () => {
       `Pull request #12 was merged into release on GitHub at ${formatDateTime(AT)}, not into the project's default branch, so the work is not done. The ticket is unchanged (In review). GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch. If the work is done this way, mark the ticket as done; if not, cancel it.`,
     );
     expect(text.reopenFailure).toBeNull();
+  });
+});
+
+describe('the closed state on the ticket page (lot 3 step J4b)', () => {
+  it("closed on GitHub: the closed item's words while the ticket goes on", () => {
+    expect(closedStateText({ at: AT, by: 'github' }, 12, 'BAK-12', 'in_review')).toBe(
+      `Pull request #12 was closed on GitHub at ${formatDateTime(AT)} without merging. The ticket is unchanged (In review). Reopen it to go on with this pull request, or cancel the ticket.`,
+    );
+    expect(closedStateText({ at: null, by: 'github' }, 12, 'BAK-12', 'done')).toBe(
+      'Pull request #12 was closed on GitHub without merging.',
+    );
+  });
+
+  it('closed at Cancel, then the ticket reopened', () => {
+    expect(closedStateText({ at: AT, by: 'orchestrator' }, 12, 'BAK-12', 'cancelled')).toBe(
+      `Pull request #12 was closed on GitHub at ${formatDateTime(AT)} without merging, since BAK-12 was cancelled.`,
+    );
+    expect(closedStateText({ at: AT, by: 'orchestrator' }, 12, 'BAK-12', 'todo')).toBe(
+      `Pull request #12 was closed on GitHub at ${formatDateTime(AT)} without merging, since BAK-12 was cancelled. BAK-12 was reopened since: the pull request stays closed until the next accepted submission, which reopens it.`,
+    );
+  });
+
+  it("Cancel's close under way, failed with GitHub's words, or another reason", () => {
+    expect(closeWantedText({ since: AT, failure: null }, 12, 'BAK-12')).toEqual({
+      sentence: `Closing pull request #12 on GitHub, since BAK-12 was cancelled at ${formatDateTime(AT)}.`,
+      where: null,
+    });
+    const refused: PullRequestFailure = {
+      reason: 'refused',
+      message: 'Validation Failed: state cannot be changed.',
+      permission: null,
+      fields: [],
+      at: LATER,
+    };
+    expect(closeWantedText({ since: AT, failure: refused }, 12, 'BAK-12').sentence).toBe(
+      `Pull request #12 not closed on GitHub yet, though BAK-12 was cancelled at ${formatDateTime(AT)}: at ${formatDateTime(LATER)}, GitHub refused it: Validation Failed: state cannot be changed. The Orchestrator tries again at each GitHub check.`,
+    );
+    const permission = {
+      ...refused,
+      reason: 'permission_missing' as const,
+      permission: 'pull_requests' as const,
+    };
+    expect(closeWantedText({ since: AT, failure: permission }, 12, 'BAK-12')).toEqual({
+      sentence: `Pull request #12 not closed on GitHub yet, though BAK-12 was cancelled at ${formatDateTime(AT)}: at ${formatDateTime(LATER)}, the token needs Pull requests (Read and write). The Orchestrator tries again at each GitHub check.`,
+      where: 'tokens',
+    });
   });
 });

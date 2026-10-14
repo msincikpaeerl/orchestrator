@@ -1,107 +1,20 @@
-import type { Page } from '@playwright/test';
+import { expect, expectFitsScreen, openSection, screenshot, test } from './fixtures';
 import {
-  COMMITS,
-  callTool,
-  ciPasses,
-  controlUrl,
-  expect,
-  expectFitsScreen,
-  openSection,
-  readyForRuns,
-  reportState,
-  runNow,
-  screenshot,
-  startRun,
-  test,
-} from './fixtures';
+  CONFLICT_REQUEST,
+  SUMMARY,
+  approved,
+  control,
+  inReview,
+  item,
+  short,
+  skipped,
+} from './pull-request-steps';
 
 // "Needs you" pull requests to merge and closed pull requests (02, section 4; owner's answers 1,
 // 3 and 4 of step J, lot 3 step J4a): the item, its conflict flag with Request changes filled
 // in, the moved head, the watch's failure, the merge found without reloading the page, and the
 // closed item with its buttons. Each test saves pictures of the screen for the owner
 // (apps/web/e2e-screenshots/).
-
-const BRANCH = 't/1-contact-form';
-const REPORT = {
-  criteria: [
-    { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-    { index: 1, status: 'met', justification: 'An invalid address is refused.' },
-  ],
-  tests: { paths: ['src/contact.test.ts'], justification: null },
-  docs: { paths: ['docs/user/contact.md'], justification: null },
-  adrs: [],
-  summary: 'Adds the contact form with its checks.',
-};
-const CHANGED = ['docs/user/contact.md', 'src/contact.test.ts', 'src/contact.ts'];
-const SUMMARY =
-  'The form checks the e-mail address, the tests cover both criteria and the user documentation describes the page.';
-const CONFLICT_REQUEST =
-  'Pull request #1 conflicts with main. Merge main into the branch with `git merge origin/main`, resolve the conflicts keeping the approved work, then hand it in again.';
-
-type GitHubCommit = (commit: {
-  repository: string;
-  branch: string;
-  files: Record<string, string | null>;
-  message: string;
-  from?: string;
-}) => Promise<string>;
-
-const short = (commit: string) => commit.slice(0, 7);
-
-async function control(page: Page, path: string, data: Record<string, unknown> = {}) {
-  const response = await page.request.post(`${controlUrl}${path}`, { data });
-  expect(response.ok(), path).toBe(true);
-}
-
-/** `WEB-1` implemented, its work accepted and CI passed: in review, with pull request #1. */
-async function inReview(page: Page, gitHubCommit: GitHubCommit): Promise<string> {
-  const ticketPage = await readyForRuns(page);
-  await page.goto(ticketPage);
-  const runId = await runNow(page);
-  const runToken = await startRun(page, runId);
-  const head = await gitHubCommit({
-    repository: 'bakery',
-    branch: BRANCH,
-    files: { 'src/contact.ts': 'export {};\n' },
-    message: 'Add the contact form',
-    from: 'main',
-  });
-  const answer = await callTool(page, runToken, 'ticket_submit', REPORT, {
-    clean: true,
-    branch: { name: BRANCH, head, commitsAhead: COMMITS },
-    push: { status: 'pushed', head },
-    changedFiles: { listed: CHANGED, count: CHANGED.length },
-  });
-  expect(answer).toMatchObject({ result: 'pending_ci' });
-  await ciPasses(page, runId);
-  await page.goto(ticketPage);
-  await expect(page.getByText('In review', { exact: true }).first()).toBeVisible();
-  return head;
-}
-
-/** Quality's review approving the work from the ticket page: the ticket on Awaiting merge. */
-async function approved(page: Page) {
-  await page.getByRole('button', { name: 'Start review' }).first().click();
-  await expect(page).toHaveURL(/\/activity\/runs\/[0-9a-f-]{36}$/);
-  const runId = page.url().split('/').at(-1) ?? '';
-  const runToken = await startRun(page, runId);
-  await callTool(page, runToken, 'review_approve', { summary: SUMMARY });
-  await reportState(page, runId, 'ended');
-}
-
-/** **Skip review** from the ticket page: the ticket on Awaiting merge. */
-async function skipped(page: Page) {
-  await page.getByRole('button', { name: 'Skip review' }).click();
-  await page
-    .getByRole('dialog', { name: 'Skip the review of WEB-1?' })
-    .getByRole('button', { name: 'Skip review' })
-    .click();
-  await expect(page.getByText('Awaiting merge', { exact: true }).first()).toBeVisible();
-}
-
-function item(page: Page, title: string) {
-  return page.getByRole('listitem').filter({ hasText: title });
-}
 
 test('a pull request to merge: the approval, the moved head, then done after the merge without reload', async ({
   page,

@@ -156,7 +156,7 @@ export function runRefusalText(refusal: RunRefusal): string {
     case 'pull_request_not_open':
       return refusal.merged
         ? `Pull request #${String(refusal.pullRequest)} was merged on GitHub. Use Mark as done manually.`
-        : `Pull request #${String(refusal.pullRequest)} is closed on GitHub, so there is nothing to review.`;
+        : `Pull request #${String(refusal.pullRequest)} is closed on GitHub, so there is nothing to review. Reopen it first, with Reopen pull request on the ticket page or in Needs you.`;
     case 'github_problem':
       return `GitHub could not be read to check the pull request (${refusal.message.replace(/\.$/, '')}). Try again in a moment.`;
   }

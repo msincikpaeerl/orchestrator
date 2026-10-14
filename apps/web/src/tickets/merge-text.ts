@@ -3,6 +3,7 @@ import type {
   PullRequestHeadMoved,
   PullRequestReopenFailure,
   PullRequestWatchFailure,
+  TicketPullRequest,
   TicketStatus,
 } from '@orchestrator/protocol';
 import { formatDateTime } from '../github/text';
@@ -145,5 +146,66 @@ export function closedItemText(item: ClosedItem): {
     title: `Pull request closed without merging for ${ref}: ${item.ticket.title}`,
     detail: `${pull} was closed on GitHub at ${at} without merging. ${unchanged(item.status)}`,
     reopenFailure: item.reopenFailure === null ? null : reopenFailureText(ref, item.reopenFailure),
+  };
+}
+
+/** Whether a ticket still goes on: neither done nor cancelled. */
+function goesOn(status: TicketStatus): boolean {
+  return status !== 'done' && status !== 'cancelled';
+}
+
+/**
+ * The closed state on the ticket page (02, section 6.4; lot 3 step J4b): closed on GitHub, with
+ * the closed item's words while the ticket goes on, or closed by the Orchestrator at **Cancel**,
+ * which a reopened ticket keeps until its next accepted submission. GitHub's time when it gave one.
+ */
+export function closedStateText(
+  closed: NonNullable<TicketPullRequest['closed']>,
+  pullRequest: number,
+  ref: string,
+  status: TicketStatus,
+): string {
+  const pull = `Pull request #${String(pullRequest)}`;
+  const at = closed.at === null ? '' : ` at ${formatDateTime(closed.at)}`;
+  if (closed.by === 'github') {
+    const said = `${pull} was closed on GitHub${at} without merging.`;
+    return goesOn(status)
+      ? `${said} ${unchanged(status)} Reopen it to go on with this pull request, or cancel the ticket.`
+      : said;
+  }
+  const said = `${pull} was closed on GitHub${at} without merging, since ${ref} was cancelled.`;
+  return goesOn(status)
+    ? `${said} ${ref} was reopened since: the pull request stays closed until the next accepted submission, which reopens it.`
+    : said;
+}
+
+/**
+ * **Cancel**'s close not done yet (lot 3 step J4b): under way, or failed with the reason and when,
+ * tried again at each GitHub check (no fixed duration: the interval is a setting).
+ */
+export function closeWantedText(
+  close: NonNullable<TicketPullRequest['close']>,
+  pullRequest: number,
+  ref: string,
+): { sentence: string; where: 'tokens' | 'settings' | null } {
+  const pull = `Pull request #${String(pullRequest)}`;
+  const cancelled = `${ref} was cancelled at ${formatDateTime(close.since)}`;
+  const failure = close.failure;
+  if (failure === null) {
+    return {
+      sentence: `Closing pull request #${String(pullRequest)} on GitHub, since ${cancelled}.`,
+      where: null,
+    };
+  }
+  const refusedByGitHub =
+    failure.reason === 'refused' ||
+    (failure.reason === 'permission_missing' && failure.permission === null);
+  const { reason, where } = pullRequestFailureText(ref, failure, null);
+  const why = refusedByGitHub
+    ? `GitHub refused it: ${failure.message.trim().replace(/\.$/, '')}`
+    : reason;
+  return {
+    sentence: `${pull} not closed on GitHub yet, though ${cancelled}: at ${formatDateTime(failure.at)}, ${why}. The Orchestrator tries again at each GitHub check.`,
+    where,
   };
 }
