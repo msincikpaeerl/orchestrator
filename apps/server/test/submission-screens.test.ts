@@ -77,6 +77,9 @@ describe('the ticket page (02, section 6.4)', () => {
         close: null,
         reopenFailure: null,
         watchFailure: null,
+        // Lot 3 step J3b: no conflict known, the head not moved after an approval.
+        conflict: null,
+        headMoved: null,
       });
     });
   });
