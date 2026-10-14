@@ -207,6 +207,11 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 }
 
 const HoldInput = z.object({ hold: z.boolean() });
+const ChangeBase = z.object({
+  repository: z.string(),
+  pullRequest: z.int().positive(),
+  base: z.string(),
+});
 const FailNext = z.object({
   method: z.string(),
   path: z.string(),
@@ -266,6 +271,22 @@ async function handle(
       return { status: failure.status, body: { message: 'Failure requested by the test' } };
     };
     return 204;
+  }
+  if (request.method === 'POST' && request.url === '/github/change-base') {
+    // The owner changes a pull request's base on GitHub's site: through the fake's own API.
+    const { repository, pullRequest, base } = ChangeBase.parse(await readJson(request));
+    const response = await fetch(
+      `${github.url}/repos/octo-owner/${repository}/pulls/${String(pullRequest)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: 'Bearer github_pat_e2e_full_0123456789',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ base }),
+      },
+    );
+    return response.ok ? 204 : 409;
   }
   if (request.method === 'POST' && GITHUB_CONTROLS.includes(request.url ?? '')) {
     return githubControl(github, request.url ?? '', await readJson(request)) ?? 404;

@@ -1,5 +1,6 @@
 import {
   MarkDoneRequest,
+  PullRequestReopenResponse,
   RejectRequest,
   RequestChangesRequest,
   Run,
@@ -370,11 +371,18 @@ export function RequestChangesAction({
   ticket,
   onRequested,
   text = requestChangesText('in_review', null),
+  filledIn = '',
 }: {
   ticket: TicketAddress;
   onRequested: () => void;
   /** What happens, from `requestChangesText`: on Awaiting merge it names the approval or skip. */
   text?: string;
+  /**
+   * The comment the dialog opens with, which the owner may edit: on a conflict, the text the API
+   * gives (owner's answer 4 of step J). The server marks a conflict from GitHub's stored fact,
+   * never from this text.
+   */
+  filledIn?: string;
 }) {
   const [asking, setAsking] = useState(false);
   const [comment, setComment] = useState('');
@@ -398,6 +406,7 @@ export function RequestChangesAction({
         onClick={() => {
           request.reset();
           setMissing(false);
+          if (comment === '') setComment(filledIn);
           setAsking(true);
         }}
       >
@@ -441,6 +450,35 @@ export function RequestChangesAction({
             }}
           />
         </ConfirmDialog>
+      )}
+    </>
+  );
+}
+
+/**
+ * **Reopen pull request** on a pull request closed on GitHub without merging (lot 3 step J3a): one
+ * attempt, answered once made. A refusal is kept on the ticket and shown by the item.
+ */
+export function ReopenPullRequestAction({ ticket }: { ticket: TicketAddress }) {
+  const reopen = useMutation({
+    mutationFn: () =>
+      api('POST', ticketApi(ticket, '/pull-request/reopen'), PullRequestReopenResponse),
+    onSettled: () => ticketsChanged(),
+  });
+  return (
+    <>
+      <Button
+        onClick={() => {
+          reopen.mutate();
+        }}
+        disabled={reopen.isPending}
+      >
+        {reopen.isPending ? 'Reopening…' : 'Reopen pull request'}
+      </Button>
+      {reopen.error && (
+        <div className="w-full">
+          <ErrorMessage>{refusalText(reopen.error)}</ErrorMessage>
+        </div>
       )}
     </>
   );
