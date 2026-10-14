@@ -511,6 +511,49 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       }
     }
 
+    // "Compare two commits" ("REST API endpoints for commits",
+    // https://docs.github.com/en/rest/commits/commits): `git log BASE..HEAD`, oldest first, at
+    // most 250 commits without paging, the last the most recent; `status` ahead, behind,
+    // identical or diverged. Contents (Read). A commit or branch it does not have: 404.
+    const compareMatch = /^\/compare\/([^/]+)\.\.\.([^/]+)$/.exec(rest);
+    if (method === 'GET' && compareMatch) {
+      if (!has(account, 'contents', 'read')) return refuse(account, ['contents=read']);
+      const resolve = (name: string) =>
+        store.commit(decodeURIComponent(name))?.sha ?? store.branch(decodeURIComponent(name));
+      const base = resolve(compareMatch[1] ?? '');
+      const head = resolve(compareMatch[2] ?? '');
+      if (base === undefined || head === undefined) return notFound;
+      const ahead = store.commitsBetween(base, head);
+      const behind = store.commitsBetween(head, base);
+      const status =
+        ahead.length === 0 && behind.length === 0
+          ? 'identical'
+          : behind.length === 0
+            ? 'ahead'
+            : ahead.length === 0
+              ? 'behind'
+              : 'diverged';
+      const json = (sha: string) => {
+        const commit = store.commit(sha);
+        return {
+          sha,
+          commit: { message: commit?.message ?? '' },
+          parents: (commit?.parents ?? []).map((parent) => ({ sha: parent })),
+        };
+      };
+      return {
+        status: 200,
+        body: {
+          base_commit: json(base),
+          status,
+          ahead_by: ahead.length,
+          behind_by: behind.length,
+          total_commits: ahead.length,
+          commits: ahead.slice(-250).map(json),
+        },
+      };
+    }
+
     if (method === 'GET' && rest === '/rulesets') {
       if (repo.private && account.plan !== 'pro') return upgradeRequired;
       return {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GitHubResult } from '../src/github/answers.js';
 import { listCommitRuns, listRunJobs, readCommitStatus } from '../src/github/ci.js';
 import type { GitHubClient } from '../src/github/client.js';
+import { compareCommits } from '../src/github/compare.js';
 import {
   closePullRequest,
   findPullRequests,
@@ -117,6 +118,10 @@ describe.each<Filling>(['nulls', 'inner'])(
         sha: 'documented',
       });
       read(await postReview(client, REPO, 1, { event: 'COMMENT', body: 'c' }));
+      // The moved head's comparison (lot 3 step J3b).
+      const comparison = read(await compareCommits(client, REPO, 'abc', 'def'));
+      expect(comparison.status).toBe('diverged');
+      expect(comparison.commits).toEqual([{ sha: 'documented', title: 'documented' }]);
     });
 
     it('Actions runs, jobs and commit statuses', async () => {
