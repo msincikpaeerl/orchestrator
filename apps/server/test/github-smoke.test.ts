@@ -151,6 +151,10 @@ interface OwnerPlay {
   close?: 'close' | 'delete-branch' | 'nothing';
   /** Step 10, "give the second token Contents write". */
   token?: 'contents' | 'workflows' | 'regenerate' | 'nothing';
+  /** Step 11, "merge pull request #n with "Rebase and merge"": the default does so. */
+  rebase?: 'rebase' | 'squash' | 'nothing';
+  /** Step 11, "merge pull request #n with "Squash and merge"": the default does so. */
+  squash?: 'squash' | 'nothing';
 }
 
 /** Plays the owner on GitHub's site when the script asks (its "Your turn on GitHub" lines). */
@@ -163,8 +167,21 @@ function playOwner(child: ChildProcessWithoutNullStreams, play: OwnerPlay = {}):
     // As a person would: a moment after the script has asked.
     setTimeout(action, 100);
   };
+  /** Step 11's merges: the pull request's number read from the script's words. */
+  const merging = (button: string, play: string) => {
+    const found = new RegExp(
+      `Your turn on GitHub: merge pull request #(\\d+) with "${button}"\\.`,
+    ).exec(output);
+    if (!found) return;
+    const number = Number(found[1]);
+    once(found[0], () => {
+      if (play === 'squash' || play === 'rebase') github.mergePullRequest(repo, number, play);
+    });
+  };
   child.stdout.on('data', (chunk: string) => {
     output += chunk;
+    merging('Rebase and merge', play.rebase ?? 'rebase');
+    merging('Squash and merge', play.squash ?? 'squash');
     once('Your turn on GitHub: merge pull request #1.', () => {
       const merge = play.merge ?? 'merge';
       if (merge === 'merge' || merge === 'squash') github.mergePullRequest(repo, 1, merge);
@@ -302,7 +319,7 @@ describe('the guard of the GitHub smoke script', () => {
     for (const answer of ['no\n', '', 'YES\n']) {
       const { code, output } = await run(dryRun(), answer);
       expect(output).toMatch(
-        /This acts on your real GitHub: in octo-owner\/smoke-test, branches orchestrator-smoke-<time>, two pull requests/,
+        /This acts on your real GitHub: in octo-owner\/smoke-test, branches orchestrator-smoke-<time>, five pull requests \(you merge three, one by squash and one by rebase; two stay closed\)/,
       );
       expect(output).toMatch(/REFUSED: not confirmed\./);
       expect(code).toBe(3);
@@ -571,10 +588,12 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toContain(
         'Second token: of octo-owner too, and it sees octo-owner/smoke-test.',
       );
-      for (let step = 1; step <= 10; step++) {
+      for (let step = 1; step <= 11; step++) {
         expect(output).toContain(`Step ${String(step)}: PASS`);
       }
-      for (let number = 1; number <= 26; number++) {
+      for (let number = 1; number <= 38; number++) {
+        // A27 to A29 are the owner's checks of step N, by eye.
+        if (number >= 27 && number <= 29) continue;
         const assumption = `A${String(number)}`;
         // A7 is not checked: nothing relies on it.
         const verdict = assumption === 'A7' ? 'NOT ATTEMPTED' : 'PASS';
@@ -651,12 +670,64 @@ describe('the dry run of the GitHub smoke script', () => {
         /GitHub's answer for a commit not in the pull request \([0-9a-f]{7}\): accepted/,
       );
       expect([...github.branches(repo).keys()]).toEqual(['main']);
-      expect(github.runs(repo).map((each) => each.event)).toEqual([
-        'pull_request',
-        'pull_request',
-        'pull_request',
-        'push',
-      ]);
+      // Steps 3 to 5 and 8: three pull_request runs and the merge's push run. Step 11: the two
+      // pull requests to merge, the squash one again after Update branch, and the push runs of
+      // both merges; none for the pull request based on the squash branch, which conflicts.
+      const events = github.runs(repo).map((each) => each.event);
+      expect(events.filter((event) => event === 'pull_request')).toHaveLength(6);
+      expect(events.filter((event) => event === 'push')).toHaveLength(3);
+      expect(
+        github.runs(repo).some((each) => each.headSha === github.pullRequest(repo, 5).headSha),
+      ).toBe(false);
+
+      // Step 11 (lot 3 step J4c): squash and rebase, Update branch, the lists and the reads.
+      expect(github.pullRequest(repo, 3)).toMatchObject({ state: 'closed', merged: true });
+      expect(github.pullRequest(repo, 4)).toMatchObject({ state: 'closed', merged: true });
+      expect(github.pullRequest(repo, 5)).toMatchObject({ state: 'closed', merged: false });
+      expect(github.pullRequest(repo, 5).base).toMatch(/^orchestrator-smoke-\S+-squash-merge$/);
+      expect(output).toContain(`1. Open ${github.url}/octo-owner/smoke-test/pull/4`);
+      expect(output).toContain(
+        'Your turn on GitHub: merge pull request #4 with "Rebase and merge".',
+      );
+      expect(output).toContain('choose "Rebase and merge"');
+      expect(output).toContain('Click "Rebase and merge", then "Confirm rebase and merge".');
+      expect(output).toContain(
+        'Your turn on GitHub: merge pull request #3 with "Squash and merge".',
+      );
+      expect(output).toContain('Click "Squash and merge", then "Confirm squash and merge".');
+      expect(output).toMatch(
+        /PASS {2}A37: git\/ref\/heads\/orchestrator-smoke-\S+-squash, which only \S+-squash-merge starts with: 404/,
+      );
+      expect(output).toMatch(/PASS {2}A34: pulls\?base=\S+-squash-merge finds pull request #5/);
+      expect(output).toMatch(/PASS {2}A36: PATCH state=closed closes pull request #5/);
+      expect(output).toMatch(
+        /PASS {2}A32: the open list \(every page\) holds pull requests #3 and #4/,
+      );
+      expect(output).toMatch(
+        /PASS {2}A32: after the merges, the open list no longer holds pull requests #3 and #4/,
+      );
+      expect(output).toMatch(/PASS {2}A33: after a rebase merge: merged true/);
+      expect(output).toMatch(/PASS {2}A33: after a squash merge: merged true/);
+      expect(output).toMatch(
+        /PASS {2}A21: the squash commit's message: "Orchestrator smoke test \S+: merged by squash \(#3\)"/,
+      );
+      expect(output).toMatch(
+        /PASS {2}A35: branch orchestrator-smoke-\S+-rebase-merge read after its deletion/,
+      );
+      expect(output).toMatch(
+        // Everything the default branch got since step 1: step 8's merge (three commits and the
+        // merge commit), the two rebased commits, then Update branch's merge commit.
+        /^Step 11: after Update branch, the comparison reads status ahead with 7 commits: .*[0-9a-f]{7} "Orchestrator smoke test: merged by rebase, 2 of 2", [0-9a-f]{7} "Merge branch 'main' into orchestrator-smoke-\S+-squash-merge"\.$/m,
+      );
+      expect(output).toMatch(/^Step 11: pull request #4 merged by a rebase; /m);
+      expect(output).toMatch(/^Step 11: pull request #3 merged by a squash commit; /m);
+      expect(output).toMatch(
+        /- the rebase of pull request #4 into main, with docs\/orchestrator-smoke-rebase\.md: /,
+      );
+      expect(output).toMatch(
+        /- the squash of pull request #3 into main, with docs\/orchestrator-smoke-squash\.md: /,
+      );
+      expect(output).toMatch(/- pull request #5, closed \(A34, A36\): /);
       // The log was downloaded without the API's Authorization (A13).
       expect(github.logRequests.length).toBeGreaterThan(0);
       expect(github.logRequests.every((request) => request.authorization === undefined)).toBe(true);
@@ -672,7 +743,7 @@ describe('the dry run of the GitHub smoke script', () => {
       playOwner(child);
       const { code, output } = await finished;
       stopActions();
-      for (let step = 1; step <= 9; step++) {
+      for (const step of [1, 2, 3, 4, 5, 6, 7, 8, 9, 11]) {
         expect(output, output).toContain(`Step ${String(step)}: PASS`);
       }
       expect(output).toContain('Step 10: NOT ATTEMPTED (no second token: add --restricted-token');
@@ -726,7 +797,9 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/Nothing of this run is left on GitHub\./);
       expect(code).toBe(1);
       expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: false });
-      expect(() => github.pullRequest(repo, 2)).toThrow();
+      // No conflicting pull request of step 9: the next one is step 11's.
+      expect(github.pullRequest(repo, 2).head).toMatch(/-squash-merge$/);
+      expect(output).toMatch(/^Step 11: PASS/m);
       expect([...github.branches(repo).keys()]).toEqual(['main']);
     },
     TIMEOUT,
@@ -741,7 +814,7 @@ describe('the dry run of the GitHub smoke script', () => {
         [...dryRun(), '--restricted-token', '--owner-wait-minutes', '1'],
         `yes\n${TOKEN}\n${RESTRICTED_TOKEN}\n`,
       );
-      playOwner(child, { merge: 'nothing', token: 'nothing' });
+      playOwner(child, { merge: 'nothing', token: 'nothing', rebase: 'nothing' });
       const { code, output } = await finished;
       stopActions();
       expect(output, output).toMatch(/FAIL {2}pull request #1 was not merged within 1 minutes/);
@@ -750,9 +823,16 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/NOT ATTEMPTED {2}A2: Contents write was not given within 1 minutes/);
       expect(output).toMatch(/^A2: NOT ATTEMPTED$/m);
       expect(output).toMatch(/^A3: PASS$/m);
+      // Step 11: the rebase wait runs out too; the script closes both of its pull requests.
+      expect(output).toMatch(/FAIL {2}pull request #3 was not merged within 1 minutes/);
+      expect(output).toMatch(/NOT ATTEMPTED {2}A38: it needs the rebase merge/);
+      expect(output).toMatch(/^Step 11: FAIL/m);
       expect(output).toMatch(/Nothing of this run is left on GitHub\./);
       expect(output).not.toContain(RESTRICTED_PROBE);
       expect(code).toBe(1);
+      for (const number of [2, 3, 4]) {
+        expect(github.pullRequest(repo, number)).toMatchObject({ state: 'closed', merged: false });
+      }
       expect(github.pullRequest(repo, 1)).toMatchObject({ state: 'closed', merged: false });
       expect([...github.branches(repo).keys()]).toEqual(['main']);
     },
@@ -1064,6 +1144,127 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/- branch orchestrator-smoke-\S+: /);
       expect(code).toBe(1);
       expect(github.pullRequest(repo, 1).state).toBe('open');
+    },
+    TIMEOUT,
+  );
+
+  it('stops before anything is made when squash or rebase merging is off, naming the box', async () => {
+    const cases: [Partial<FakeRepository>, string][] = [
+      [
+        { allowSquashMerge: false },
+        'does not allow squash merging. Open REPO/settings and, under "Pull Requests", tick "Allow squash merging"',
+      ],
+      [
+        { allowRebaseMerge: false },
+        'does not allow rebase merging. Open REPO/settings and, under "Pull Requests", tick "Allow rebase merging"',
+      ],
+      [
+        { allowSquashMerge: false, allowRebaseMerge: false },
+        'does not allow either. Open REPO/settings and, under "Pull Requests", tick "Allow squash merging" and "Allow rebase merging"',
+      ],
+    ];
+    for (const [settings, words] of cases) {
+      Object.assign(repo, { allowSquashMerge: true, allowRebaseMerge: true }, settings);
+      const { code, output } = await run(dryRun(), `yes\n${TOKEN}\n`);
+      expect(output).toContain(
+        `STOPPED: step 11 asks you to merge one pull request by squash and one by rebase, and octo-owner/smoke-test ${words.replace('REPO', `${github.url}/octo-owner/smoke-test`)} (GitHub saves it at once), then run the script again. Nothing was done on GitHub.`,
+      );
+      expect(output).not.toContain(PROBE);
+      expect(code).toBe(3);
+    }
+    expect(github.requests.every((request) => request.method === 'GET')).toBe(true);
+    expect(github.gitRequests).toEqual([]);
+  });
+
+  it(
+    'says when GitHub hides the merge settings, and fails step 11 when the owner merges another way',
+    async () => {
+      // GitHub may leave the settings out of a token's answer: the script says to check them.
+      github.alter = (request, reply) => {
+        if (request.method !== 'GET' || request.path !== '/repos/octo-owner/smoke-test') {
+          return reply;
+        }
+        const body = { ...(reply.body as Record<string, unknown>) };
+        delete body.allow_squash_merge;
+        delete body.allow_rebase_merge;
+        return { ...reply, body };
+      };
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      // "Squash and merge" where the script asked for "Rebase and merge".
+      playOwner(child, { rebase: 'squash' });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toContain(
+        `GitHub did not say whether octo-owner/smoke-test allows squash and rebase merging: before step 11, check that "Allow squash merging" and "Allow rebase merging" are ticked under "Pull Requests" in its settings: ${github.url}/octo-owner/smoke-test/settings`,
+      );
+      expect(output).toMatch(
+        /FAIL {2}pull request #4 merged by a rebase\n {6}\| GitHub's default branch shows a squash commit/,
+      );
+      expect(output).toMatch(/^Step 11: pull request #4 merged by a squash commit; /m);
+      // The rest of the step still runs: A33 holds whatever the method, and Update branch.
+      expect(output).toMatch(/PASS {2}A33: after a rebase merge/);
+      expect(output).toMatch(/PASS {2}A38: /);
+      expect(output).toMatch(/^Step 11: FAIL/m);
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(1);
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'fails step 11 naming the box when rebase merging is turned off during the run, and cleans up',
+    async () => {
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child);
+      void waitForOutput(child, 'Your turn on GitHub: close pull request #2').then(() => {
+        repo.allowRebaseMerge = false;
+      });
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toContain(
+        `FAIL  "Allow rebase merging" is not ticked any more: Open ${github.url}/octo-owner/smoke-test/settings and, under "Pull Requests", tick "Allow rebase merging" (GitHub saves it at once), then run the script again`,
+      );
+      expect(output).toMatch(/^Step 11: FAIL/m);
+      expect(output).toMatch(/^A32: NOT ATTEMPTED$/m);
+      expect(output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(code).toBe(1);
+      expect(() => github.pullRequest(repo, 3)).toThrow();
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'says what step 11 left on GitHub when stopped with Ctrl+C during its wait',
+    async () => {
+      const stopActions = playActions();
+      const { child, finished } = start(dryRun(), `yes\n${TOKEN}\n`);
+      playOwner(child, { rebase: 'nothing' });
+      await waitForOutput(child, 'with "Rebase and merge".');
+      process.kill(-(child.pid ?? 0), 'SIGINT');
+      const { code, output } = await finished;
+      stopActions();
+      expect(output, output).toMatch(/Left on GitHub by this run, to remove by hand:/);
+      for (const number of [3, 4]) {
+        expect(output).toContain(
+          `- pull request #${String(number)}: ${github.url}/octo-owner/smoke-test/pull/${String(number)} ("Close pull request" at the bottom of its page`,
+        );
+      }
+      // Pull request #5 is closed already (A36).
+      expect(output).not.toMatch(/- pull request #5:/);
+      for (const suffix of ['', '-conflict', '-squash-merge', '-rebase-merge', '-base-list']) {
+        expect(output).toMatch(
+          new RegExp(
+            `- branch orchestrator-smoke-\\d{8}-\\d{6}Z${suffix}: .*/branches \\(the bin icon on its line\\)`,
+          ),
+        );
+      }
+      expect(output).not.toContain(PROBE);
+      expect(code).toBe(3);
+      expect(await leftInTemporaryFolder()).toEqual([]);
     },
     TIMEOUT,
   );
