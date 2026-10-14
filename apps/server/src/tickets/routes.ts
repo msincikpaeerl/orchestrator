@@ -26,7 +26,6 @@ import {
   PullRequestFailure,
   PullRequestReopenFailure,
   PullRequestState,
-  PullRequestWatchFailure,
   WorkflowReason,
   type PullRequestReopenResponse,
   type PullRequestTryAgainResponse,
@@ -47,7 +46,7 @@ import { ticketCi } from '../runs/ci-outcome.js';
 import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
 import type { PullRequestWatcher } from './merge-watch.js';
-import { conflictRequestText, currentConflict, headMoved } from './pull-request-facts.js';
+import { headMoved, ticketConflict, ticketWatchFailure } from './pull-request-facts.js';
 import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
 import {
@@ -83,10 +82,6 @@ async function ticketPullRequest(
   const { pullRequestNumber: number, pullRequestUrl: url, pullRequestState: state } = ticket;
   const failure = (stored: unknown) =>
     stored === null ? null : maskStrings(PullRequestFailure.parse(stored));
-  const watch =
-    project.pullRequestWatchFailure === null
-      ? null
-      : PullRequestWatchFailure.parse(project.pullRequestWatchFailure);
   return {
     opened:
       number === null || url === null || state === null
@@ -112,26 +107,10 @@ async function ticketPullRequest(
       ticket.pullRequestReopenFailure === null
         ? null
         : maskStrings(PullRequestReopenFailure.parse(ticket.pullRequestReopenFailure)),
-    watchFailure:
-      watch !== null && number !== null && watch.pullRequests.includes(number)
-        ? maskStrings(watch)
-        : null,
+    watchFailure: ticketWatchFailure(project, ticket),
     conflict: ticketConflict(ticket),
     headMoved: await headMoved(executor, ticket),
   };
-}
-
-/** GitHub's conflict fact for the open pull request's current head, with **Request changes**' text. */
-function ticketConflict(ticket: TicketRow): TicketPullRequest['conflict'] {
-  const conflict = currentConflict(ticket);
-  if (
-    conflict === null ||
-    ticket.pullRequestState !== 'open' ||
-    ticket.pullRequestNumber === null
-  ) {
-    return null;
-  }
-  return { ...conflict, request: conflictRequestText(ticket.pullRequestNumber, conflict.base) };
 }
 
 export interface TicketRoutesOptions {

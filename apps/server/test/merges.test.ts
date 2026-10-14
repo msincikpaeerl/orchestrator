@@ -772,6 +772,7 @@ describe('Needs you after a merge', () => {
       'Stopped',
       'CI',
       'Closed',
+      'To merge',
     ];
     for (const title of titles) await h.createTicket({ title });
     /** Submitted, CI started: its pull request open. */
@@ -802,6 +803,15 @@ describe('Needs you after a merge', () => {
       await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
       h.github.closePullRequest(repo(), 8);
       await h.t.ciTick();
+    }
+    // 9: its review skipped, its pull request to merge (lot 3 step J4a).
+    {
+      const { runId, commit } = await handedIn(9);
+      for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
+      await h.t.ciTick();
+      await h.report(daemon, state(runId, { state: 'ended', reason: 'submitted' }));
+      const skipped = await h.call('POST', '/api/projects/WEB/tickets/9/skip-review');
+      expect(skipped.statusCode, skipped.body).toBe(200);
     }
     // 4: your request for changes, then a run whose push failed at its submission.
     const asked = await h.call('POST', '/api/projects/WEB/tickets/4/request-changes', {
@@ -882,6 +892,6 @@ describe('Needs you after a merge', () => {
     }
     const tied = (await items()).filter((item) => 'ticket' in item || 'tickets' in item);
     expect(tied).toEqual([]);
-    // Seven tickets through their runs: about 4 seconds on an idle machine.
+    // Eight tickets through their runs: about 4 seconds on an idle machine.
   }, 30_000);
 });

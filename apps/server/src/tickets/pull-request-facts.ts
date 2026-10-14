@@ -3,17 +3,21 @@ import {
   MOVED_HEAD_TITLE_MAX_CHARS,
   MOVED_HEAD_TITLES_MAX,
   PullRequestConflict,
+  PullRequestWatchFailure,
   maskSecrets,
   type HeadComparisonResult,
   type PullRequestHeadMoved,
+  type TicketPullRequest,
 } from '@orchestrator/protocol';
 import type { Executor } from '../database.js';
+import { maskStrings } from '../event-log.js';
 import type { GitHubRefusal, GitHubResult } from '../github/answers.js';
 import type { CommitComparison } from '../github/compare.js';
 import type { PullRequest, PullRequestSummary } from '../github/pull-requests.js';
 import { failureOf } from '../runs/ci-wait.js';
 import { ticketReview } from '../runs/review-view.js';
 import { acceptedCommit, requestAfter } from './changes.js';
+import type { ProjectRow } from '../projects/model.js';
 import type { TicketRow } from './model.js';
 
 // What a read of the ticket's pull request says beyond its state and head (lot 3 step J3b):
@@ -66,6 +70,32 @@ export function currentConflict(
 /** The text **Request changes** is filled in with on a conflict (owner's answer 4 of step J). */
 export function conflictRequestText(number: number, base: string): string {
   return `Pull request #${String(number)} conflicts with ${base}. Merge ${base} into the branch with \`git merge origin/${base}\`, resolve the conflicts keeping the approved work, then hand it in again.`;
+}
+
+/** GitHub's conflict fact for the open pull request's current head, with **Request changes**' text. */
+export function ticketConflict(ticket: TicketRow): TicketPullRequest['conflict'] {
+  const conflict = currentConflict(ticket);
+  if (
+    conflict === null ||
+    ticket.pullRequestState !== 'open' ||
+    ticket.pullRequestNumber === null
+  ) {
+    return null;
+  }
+  return { ...conflict, request: conflictRequestText(ticket.pullRequestNumber, conflict.base) };
+}
+
+/**
+ * The project's watch failure when its latest check left this ticket's pull request unread (lot 3
+ * step J3a); null otherwise.
+ */
+export function ticketWatchFailure(
+  project: Pick<ProjectRow, 'pullRequestWatchFailure'>,
+  ticket: Pick<TicketRow, 'pullRequestNumber'>,
+): PullRequestWatchFailure | null {
+  if (project.pullRequestWatchFailure === null || ticket.pullRequestNumber === null) return null;
+  const watch = PullRequestWatchFailure.parse(project.pullRequestWatchFailure);
+  return watch.pullRequests.includes(ticket.pullRequestNumber) ? maskStrings(watch) : null;
 }
 
 /**

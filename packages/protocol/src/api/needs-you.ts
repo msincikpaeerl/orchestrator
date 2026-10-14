@@ -5,7 +5,13 @@ import { AgentLink } from './agents.js';
 import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
-import { PullRequestFailure, PullRequestReopenFailure } from './pull-requests.js';
+import {
+  PullRequestConflict,
+  PullRequestFailure,
+  PullRequestHeadMoved,
+  PullRequestReopenFailure,
+  PullRequestWatchFailure,
+} from './pull-requests.js';
 import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
@@ -265,6 +271,52 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** The latest failed **Reopen pull request**; null when none. */
     reopenFailure: PullRequestReopenFailure.nullable(),
     /** GitHub's time of the close or the merge; when the server found it if GitHub gave none. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * A pull request to merge (02, section 4; lot 3 step J4a): a ticket on **Awaiting merge** whose
+   * pull request is open as last read. The owner merges it on GitHub; the ticket goes to `done`
+   * when the merge is found (step J1), and the item with it. **Request changes** is the ticket
+   * page's, filled in with `conflict.request` on a conflict.
+   */
+  z.object({
+    type: z.literal('pull_request_to_merge'),
+    ticket: TicketRef,
+    pullRequest: z.object({ number: z.int().positive(), url: z.url() }),
+    /**
+     * Quality's approval (its summary, agent text masked) or the owner's **Skip review**, the
+     * latest of the two; null when neither is recorded.
+     */
+    review: z
+      .discriminatedUnion('kind', [
+        z.object({
+          kind: z.literal('approved'),
+          commit: GitHash,
+          summary: z.string().nullable(),
+          at: z.iso.datetime(),
+        }),
+        z.object({ kind: z.literal('skipped'), at: z.iso.datetime() }),
+      ])
+      .nullable(),
+    /**
+     * The CI result of the work: passed in the run, passed when **Check CI again** read it, or "No
+     * CI found", for the commit CI checked; null when none is recorded.
+     */
+    ci: z
+      .object({
+        result: z.enum(['passed', 'passed_later', 'no_ci']),
+        commit: GitHash,
+        checkedAgainAt: z.iso.datetime().nullable(),
+      })
+      .nullable(),
+    workflowFlag: WorkflowFlag.nullable(),
+    /** GitHub's conflict fact for the current head, with **Request changes**' filled-in text. */
+    conflict: PullRequestConflict.extend({ request: z.string() }).nullable(),
+    /** The head moved after the approval or the skip (step J3b). */
+    headMoved: PullRequestHeadMoved.nullable(),
+    /** The watch could not read this pull request at its latest check (step J3a). */
+    watchFailure: PullRequestWatchFailure.nullable(),
+    /** When the ticket entered **Awaiting merge**. */
     since: z.iso.datetime(),
   }),
   /** A run paused on a usage limit, detected or suspected: **Resume** or **Stop run**. */
