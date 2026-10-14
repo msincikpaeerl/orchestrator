@@ -159,8 +159,16 @@ export type CiRead =
        * (lot 3 step J3a).
        */
       pullRequestClosed?: true;
+      /**
+       * Passed on statuses alone, and not decided (lot 3 step J3b): GitHub had not said whether
+       * the pull request conflicts, or it conflicts while it is closed.
+       */
+      statusesOnly?: CiStatusesOnly;
     }
   | { ok: false; failure: Omit<CiCheckFailure, 'since' | 'at'>; retryAt?: Date };
+
+/** Why green statuses alone did not decide (lot 3 step J3b). */
+export type CiStatusesOnly = 'mergeable_unknown' | 'conflict_closed';
 
 /** A refusal of GitHub's as a failed check: its words masked, never a value of an answer. */
 export function failureOf(refusal: GitHubRefusal): Omit<CiCheckFailure, 'since' | 'at'> {
@@ -469,9 +477,11 @@ export class CiWatcher {
         commit,
         check.pullRequestClosed && ticket.pullRequestNumber !== null
           ? `no CI run or status appeared, and pull request #${String(ticket.pullRequestNumber)} is closed on GitHub`
-          : result.checks.length === 0
-            ? 'no CI run or status appeared yet'
-            : 'CI had not finished',
+          : check.statusesOnly !== undefined && ticket.pullRequestNumber !== null
+            ? statusesOnlyDetail(check.statusesOnly, ticket.pullRequestNumber, run.baseBranch)
+            : result.checks.length === 0
+              ? 'no CI run or status appeared yet'
+              : 'CI had not finished',
       );
     }
     return null;
@@ -569,6 +579,7 @@ export class CiWatcher {
     let decided: CiState;
     let pullRequestHead: string | null = null;
     let pullRequestClosed = false;
+    let statusesOnly: CiStatusesOnly | undefined;
     let pullRead: PullRequest | undefined;
     const readPull = async (number: number) => {
       const read = await readPullRequest(client, repo, number);
@@ -592,13 +603,37 @@ export class CiWatcher {
         // Null while GitHub computes it (A5): read again at the next check. While the pull
         // request is closed, "No CI found" never accepts the work (owner's addition, lot 3 step
         // J3a): GitHub starts no CI for it, and the wait ends at **CI wait at submission**.
+        // A conflict decides nothing either while it is closed (lot 3 step J3b): no round can
+        // make it mergeable while nothing can be merged.
         pullRequestClosed = read.value.state === 'closed' && !read.value.merged;
         decided =
-          read.value.mergeable === null || (read.value.mergeable && pullRequestClosed)
+          read.value.mergeable === null || pullRequestClosed
             ? 'pending'
             : read.value.mergeable
               ? 'no_ci'
               : 'conflict';
+      }
+    } else if (
+      state === 'passed' &&
+      pullRequest !== null &&
+      !checks.some((check) => check.kind === 'workflow_run')
+    ) {
+      // Passed on statuses alone (another service's): GitHub starts no `pull_request` run on a
+      // conflict (A18), so the pull request's `mergeable` decides (owner's answer 6 of step J,
+      // lot 3 step J3b). False: a conflict, a CI round; null or a failed read: nothing decided
+      // until the next check; while the pull request is closed, a conflict decides nothing.
+      const read = await readPull(pullRequest);
+      if (!read.ok) return refused(read.refusal);
+      if (read.value.headSha !== commit) pullRequestHead = read.value.headSha;
+      const closed = read.value.state === 'closed' && !read.value.merged;
+      if (read.value.mergeable === null) {
+        decided = 'pending';
+        statusesOnly = 'mergeable_unknown';
+      } else if (!read.value.mergeable) {
+        decided = closed ? 'pending' : 'conflict';
+        if (closed) statusesOnly = 'conflict_closed';
+      } else {
+        decided = 'passed';
       }
     } else {
       decided = state;
@@ -630,7 +665,15 @@ export class CiWatcher {
       pullRequestHead,
       branchMoved: false,
       ...(pullRequestClosed ? { pullRequestClosed: true as const } : {}),
+      ...(statusesOnly === undefined ? {} : { statusesOnly }),
       ...(pullRead === undefined ? {} : { pullRequest: pullRead }),
     };
   }
+}
+
+/** The `ci_timeout` detail when green statuses alone did not decide (lot 3 step J3b). */
+function statusesOnlyDetail(why: CiStatusesOnly, pullRequest: number, base: string): string {
+  return why === 'conflict_closed'
+    ? `only statuses from other services passed, and pull request #${String(pullRequest)} conflicts with ${base} while it is closed on GitHub`
+    : `only statuses from other services passed, and GitHub had not said whether pull request #${String(pullRequest)} conflicts with ${base}`;
 }
