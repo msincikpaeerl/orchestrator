@@ -96,6 +96,14 @@ async function ticketPullRequest(
             by: PullRequestClosedBy.parse(ticket.pullRequestClosedBy ?? 'github'),
           }
         : null,
+    merged:
+      state === 'merged' && ticket.pullRequestMergedInto !== null
+        ? {
+            into: ticket.pullRequestMergedInto,
+            at: ticket.pullRequestMergedAt?.toISOString() ?? null,
+            intoDefaultBranch: ticket.pullRequestMergedInto === project.defaultBranch,
+          }
+        : null,
     close:
       ticket.pullRequestCloseWantedAt === null
         ? null

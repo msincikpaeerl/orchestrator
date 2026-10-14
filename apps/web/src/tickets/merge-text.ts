@@ -138,7 +138,11 @@ export function closedItemText(item: ClosedItem): {
   if (item.mergedInto !== null) {
     return {
       title: `Pull request merged into ${item.mergedInto} for ${ref}: ${item.ticket.title}`,
-      detail: `${pull} was merged into ${item.mergedInto} on GitHub at ${at}, not into the project's default branch, so the work is not done. ${unchanged(item.status)} GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch. If the work is done this way, mark the ticket as done; if not, cancel it.`,
+      detail: mergedElsewhereText(
+        { into: item.mergedInto, at: item.since },
+        item.pullRequest.number,
+        item.status,
+      ),
       reopenFailure: null,
     };
   }
@@ -152,6 +156,23 @@ export function closedItemText(item: ClosedItem): {
 /** Whether a ticket still goes on: neither done nor cancelled. */
 function goesOn(status: TicketStatus): boolean {
   return status !== 'done' && status !== 'cancelled';
+}
+
+/**
+ * A pull request merged into another branch than the project's default one (owner's answer 1 of
+ * step J), in the closed item's words; on the ticket page (lot 3 step J4c) only the first sentence
+ * once the ticket is done or cancelled, and without GitHub's time when GitHub gave none.
+ */
+export function mergedElsewhereText(
+  merged: { into: string; at: string | null },
+  pullRequest: number,
+  status: TicketStatus,
+): string {
+  const at = merged.at === null ? '' : ` at ${formatDateTime(merged.at)}`;
+  const said = `Pull request #${String(pullRequest)} was merged into ${merged.into} on GitHub${at}, not into the project's default branch`;
+  return goesOn(status)
+    ? `${said}, so the work is not done. ${unchanged(status)} GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch. If the work is done this way, mark the ticket as done; if not, cancel it.`
+    : `${said}.`;
 }
 
 /**

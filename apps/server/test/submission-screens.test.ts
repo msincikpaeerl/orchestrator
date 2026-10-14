@@ -74,6 +74,8 @@ describe('the ticket page (02, section 6.4)', () => {
         failure: null,
         // Lot 3 step J3a: nothing closed, no close wanted, no reopen failed, the watch read it.
         closed: null,
+        // Lot 3 step J4c: not merged.
+        merged: null,
         close: null,
         reopenFailure: null,
         watchFailure: null,

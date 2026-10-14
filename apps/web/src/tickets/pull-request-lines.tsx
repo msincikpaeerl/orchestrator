@@ -6,6 +6,7 @@ import {
   closedStateText,
   conflictFlagText,
   headMovedText,
+  mergedElsewhereText,
   reopenFailureText,
   watchFailureText,
 } from './merge-text';
@@ -50,10 +51,11 @@ export function HeadMovedLines({
 
 /** Whether the ticket page shows any line of what GitHub said of the pull request since. */
 export function showsGitHubLines(pullRequest: TicketDetail['pullRequest']): boolean {
-  const { opened, closed, close, conflict, headMoved, watchFailure } = pullRequest;
+  const { opened, closed, close, conflict, headMoved, watchFailure, merged } = pullRequest;
   return (
     opened !== null &&
-    [closed, close, conflict, headMoved, watchFailure].some((fact) => fact !== null)
+    ([closed, close, conflict, headMoved, watchFailure].some((fact) => fact !== null) ||
+      merged?.intoDefaultBranch === false)
   );
 }
 
@@ -70,7 +72,7 @@ export function PullRequestGitHubLines({
   ticket: TicketDetail;
   canChange: boolean;
 }) {
-  const { opened, closed, close, reopenFailure, watchFailure, conflict, headMoved } =
+  const { opened, closed, close, reopenFailure, watchFailure, conflict, headMoved, merged } =
     ticket.pullRequest;
   if (!opened) return null;
   const ref = ticketRef(ticket.projectKey, ticket.number);
@@ -94,6 +96,11 @@ export function PullRequestGitHubLines({
             </div>
           )}
         </div>
+      )}
+      {merged && !merged.intoDefaultBranch && opened.state === 'merged' && (
+        <p aria-label="Merged elsewhere" className="break-words text-slate-700">
+          {mergedElsewhereText(merged, opened.number, ticket.status)}
+        </p>
       )}
       {closeText && (
         <div

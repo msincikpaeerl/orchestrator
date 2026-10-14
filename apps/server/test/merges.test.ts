@@ -144,6 +144,12 @@ describe('a merge into the default branch', () => {
       const ticket = await h.ticket();
       expect(ticket.status).toBe('done');
       expect(ticket.pullRequest.opened).toMatchObject({ number: 1, state: 'merged' });
+      // Lot 3 step J4c: where it was merged, on the ticket's API.
+      expect(ticket.pullRequest.merged).toEqual({
+        into: 'main',
+        at: mergedAt.toISOString(),
+        intoDefaultBranch: true,
+      });
       expect(comments(ticket).at(-1)).toMatchObject({
         author: 'system',
         kind: 'status_change',
@@ -538,9 +544,16 @@ describe('what is not a merge into the default branch', () => {
     await reviewed(daemon, 'approve');
     h.github.commit(repo(), 'release', { 'RELEASE.md': 'Next\n' }, 'Release branch', 'main');
     await onGitHub(1, { base: 'release' });
-    merge();
+    const mergedAt = merge();
     await h.t.ciTick();
-    expect((await h.ticket()).status).toBe('awaiting_merge');
+    const ticket = await h.ticket();
+    expect(ticket.status).toBe('awaiting_merge');
+    // Lot 3 step J4c: the ticket page reads where it was merged from the ticket's API.
+    expect(ticket.pullRequest.merged).toEqual({
+      into: 'release',
+      at: mergedAt.toISOString(),
+      intoDefaultBranch: false,
+    });
     expect(await ticketRow()).toMatchObject({
       pullRequestState: 'merged',
       pullRequestMergedInto: 'release',
