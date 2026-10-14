@@ -113,8 +113,14 @@ export {
   PushPermission,
 } from './api/needs-you.js';
 export {
+  HeadComparison,
+  HeadComparisonResult,
+  MOVED_HEAD_TITLE_MAX_CHARS,
+  MOVED_HEAD_TITLES_MAX,
   PULL_REQUEST_PERMISSION_WORDS,
   PullRequestClosedBy,
+  PullRequestConflict,
+  PullRequestHeadMoved,
   PullRequestFailure,
   PullRequestFailureReason,
   PullRequestReopenFailure,

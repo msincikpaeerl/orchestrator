@@ -30,6 +30,7 @@ export const OPERATIONS: [string, string][] = [
   ['GET /repos/{owner}/{repo}/actions/jobs/{job_id}', '200'],
   ['GET /repos/{owner}/{repo}/commits/{ref}/status', '200'],
   ['GET /repos/{owner}/{repo}/commits/{ref}/statuses', '200'],
+  ['GET /repos/{owner}/{repo}/compare/{basehead}', '200'],
   // Refusals the Orchestrator or the owner's smoke script reads, where GitHub documents them:
   // the 422 bodies, and the 403 for a missing permission (GitHub documents none for the runs
   // and the status of a commit; there the fake answers the same "basic-error").

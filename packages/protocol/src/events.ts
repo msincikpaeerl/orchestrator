@@ -91,6 +91,8 @@ export const EventType = z.enum([
   'ticket.pull_request_closed',
   'ticket.pull_request_not_closed',
   'ticket.pull_request_not_reopened',
+  'ticket.pull_request_conflict',
+  'ticket.pull_request_conflict_gone',
   'ticket.review_posted',
   'ticket.review_not_posted',
   'ticket.ci_checked_again',
@@ -320,6 +322,29 @@ export const EventPayloads = {
     reason: PullRequestFailureReason,
     message: z.string(),
     branchGone: z.boolean(),
+  }),
+  /**
+   * GitHub said the pull request's head conflicts with its base (`mergeable` false, lot 3 step
+   * J3b): once per head.
+   */
+  'ticket.pull_request_conflict': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
+    head: z.string(),
+    base: z.string(),
+  }),
+  /**
+   * The conflict fact is gone: GitHub said the head is mergeable, or the head moved
+   * (`headMoved`), whose own `mergeable` GitHub had not given yet.
+   */
+  'ticket.pull_request_conflict_gone': z.object({
+    ...TicketFacts,
+    number: z.int(),
+    url: z.string(),
+    head: z.string(),
+    base: z.string(),
+    headMoved: z.boolean(),
   }),
   /** The open pull request's title and description updated with the latest accepted report. */
   'ticket.pull_request_updated': z.object({ ...TicketFacts, number: z.int(), url: z.string() }),

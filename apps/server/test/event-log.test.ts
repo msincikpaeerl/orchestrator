@@ -150,14 +150,21 @@ describe('events of every type', () => {
       'ticket.pull_request_updated',
       'ticket.pull_request_merged',
       'ticket.pull_request_opened',
+      // GitHub's conflict fact from the CI wait's read of the conflicting pull request (step J3b).
+      'ticket.pull_request_conflict',
       'ticket.status_changed',
       // Check CI again on the ended run, refused (lot 3 step G2c).
       'ticket.ci_checked_again',
+      // The conflict gone at a later read, mergeable (step J3b).
+      'ticket.pull_request_conflict_gone',
       // Its pull request closed on GitHub, Reopen pull request refused then done (step J3a),
       // then merged there: done (step J1).
       'ticket.pull_request_closed',
       'ticket.pull_request_not_reopened',
       'ticket.pull_request_reopened',
+      // On Awaiting merge, in conflict with main, then mergeable again (step J3b).
+      'ticket.pull_request_conflict',
+      'ticket.pull_request_conflict_gone',
       'ticket.status_changed',
       'ticket.pull_request_merged',
       // Its branch deleted on GitHub at the same check, then a push recorded after (step J2a).

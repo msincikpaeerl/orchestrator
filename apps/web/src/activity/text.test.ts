@@ -296,6 +296,23 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     message: 'Validation Failed',
     branchGone: true,
   },
+  'ticket.pull_request_conflict': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    head: 'abc1234def',
+    base: 'main',
+  },
+  'ticket.pull_request_conflict_gone': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    head: 'abc1234def',
+    base: 'main',
+    headMoved: false,
+  },
   'ticket.branch_deleted': {
     project: 'WEB',
     ticket: 'WEB-12',

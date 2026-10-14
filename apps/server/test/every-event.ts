@@ -596,6 +596,20 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   await call('POST', '/api/projects/SHOP/tickets/2/pull-request/reopen');
   github.alter = undefined;
   await call('POST', '/api/projects/SHOP/tickets/2/pull-request/reopen');
+  // SHOP-2 on Awaiting merge (set directly): its pull request read by itself for `mergeable` at
+  // each check, found in conflict with main (`ticket.pull_request_conflict`), then mergeable once
+  // main is reverted (`ticket.pull_request_conflict_gone`; lot 3 step J3b). GitHub answers null
+  // at the first read after main moved.
+  await t.db
+    .update(schema.tickets)
+    .set({ status: 'awaiting_merge' })
+    .where(eq(schema.tickets.number, 2));
+  github.commit(shop, 'main', { 'src/more.ts': 'other\n' }, 'Conflicting work');
+  await t.ciTick();
+  await t.ciTick();
+  github.commit(shop, 'main', { 'src/more.ts': null }, 'Revert the conflicting work');
+  await t.ciTick();
+  await t.ciTick();
   github.mergePullRequest(shop, 2);
   await t.ciTick();
   // Its branch deleted after the merge, at the check that found it (`ticket.branch_deleted`;

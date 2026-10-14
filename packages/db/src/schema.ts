@@ -352,6 +352,19 @@ export const tickets = pgTable(
      */
     pullRequestReopenFailure: jsonb('pull_request_reopen_failure'),
     /**
+     * GitHub's conflict fact (`PullRequestConflict`, lot 3 step J3b): the pull request's head
+     * GitHub said conflicts with its base (`mergeable` false), since and last read; cleared when
+     * GitHub says it is mergeable or the head moves. **Request changes** is marked as a conflict
+     * from it.
+     */
+    pullRequestConflict: jsonb('pull_request_conflict'),
+    /**
+     * The one comparison of the approved (or skipped) commit with the pull request's head
+     * (`HeadComparison`, lot 3 step J3b), made when the head changed; never made twice for the
+     * same two commits.
+     */
+    pullRequestComparison: jsonb('pull_request_comparison'),
+    /**
      * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
      * opened or updated with it, or when the ticket is done or cancelled.
      */

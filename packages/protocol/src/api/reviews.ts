@@ -211,6 +211,12 @@ export const ChangeRequest = z.discriminatedUnion('by', [
     commentId: z.uuid(),
     /** On **Awaiting merge**: what the request came after, Quality's approval or the skip. */
     after: z.enum(['approved', 'skipped']).nullable(),
+    /**
+     * GitHub reported the pull request in conflict with `base` when the request was made (lot 3
+     * step J3b): the `fix_review` run is told to merge it, whatever the comment says. Null when
+     * not, and for the requests made before 0.4.0.
+     */
+    conflict: z.object({ base: z.string() }).nullable().default(null),
     at: z.iso.datetime(),
   }),
 ]);

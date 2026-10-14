@@ -1162,17 +1162,21 @@ export class RunService {
         previous?.ciResult === null || previous === undefined
           ? null
           : CiResult.parse(previous.ciResult).state;
+      // The owner's request made while GitHub reported a conflict (lot 3 step J3b): the same
+      // conflict part as after a CI round's conflict, whatever the comment says.
       const previousCi =
-        previous === undefined
-          ? null
-          : (previous.failureReason === 'ci_failed' || previous.failureReason === 'ci_timeout') &&
-              previousResult === 'conflict'
-            ? { kind: 'conflict' as const, base: previous.baseBranch }
-            : previous.failureReason === 'ci_failed'
-              ? { kind: 'failed' as const }
-              : previous.failureReason === 'ci_timeout' && previousResult === 'failed'
-                ? { kind: 'failed_unsent' as const }
-                : null;
+        request?.by === 'owner' && request.conflict !== null
+          ? { kind: 'conflict' as const, base: request.conflict.base }
+          : previous === undefined
+            ? null
+            : (previous.failureReason === 'ci_failed' || previous.failureReason === 'ci_timeout') &&
+                previousResult === 'conflict'
+              ? { kind: 'conflict' as const, base: previous.baseBranch }
+              : previous.failureReason === 'ci_failed'
+                ? { kind: 'failed' as const }
+                : previous.failureReason === 'ci_timeout' && previousResult === 'failed'
+                  ? { kind: 'failed_unsent' as const }
+                  : null;
       let initialPrompt: string;
       try {
         const implement = {

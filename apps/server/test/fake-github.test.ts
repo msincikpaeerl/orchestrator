@@ -676,6 +676,52 @@ describe('the owner on GitHub', () => {
     expect(() => github.mergePullRequest(repo, 1)).toThrow('conflicts');
   });
 
+  it('compares two commits: ahead after Update branch, diverged after a rewrite, 404 unknown', async () => {
+    await cloneWithToken();
+    const approved = await pushCommit('t/1-cart', { 'cart.md': 'Cart\n' });
+    await openPull('t/1-cart');
+    github.commit(repo, 'main', { 'other.md': 'Other\n' }, 'Other change\n\nIts body');
+    const updated = github.updatePullRequestBranch(repo, 1);
+    const ahead = await api('GET', `${REPO}/compare/${approved}...${updated}`);
+    expect(ahead.status).toBe(200);
+    const comparison = json(ahead);
+    expect(comparison).toMatchObject({ status: 'ahead', ahead_by: 2, behind_by: 0 });
+    expect(comparison.total_commits).toBe(2);
+    // Oldest first, the last the most recent; the shape completed as GitHub documents it.
+    const commits = comparison.commits as JsonObject[];
+    expect(commits.map((each) => (each.commit as JsonObject).message)).toEqual([
+      'Other change\n\nIts body',
+      "Merge branch 'main' into t/1-cart",
+    ]);
+    expect(commits[1]?.sha).toBe(updated);
+    expect(
+      shapeProblems(
+        documentedBody('GET /repos/{owner}/{repo}/compare/{basehead}', 200),
+        comparison,
+      ),
+    ).toEqual([]);
+    expect(json(await api('GET', `${REPO}/compare/${updated}...${approved}`)).status).toBe(
+      'behind',
+    );
+    expect(json(await api('GET', `${REPO}/compare/${approved}...${approved}`)).status).toBe(
+      'identical',
+    );
+
+    // The branch rewritten from main: the approved commit is no longer part of it.
+    await git(work, 'checkout', '--quiet', '-B', 'rewrite', approved + '^');
+    await writeFile(join(work, 'cart.md'), 'Cart again\n');
+    await git(work, 'add', '-A');
+    await git(work, 'commit', '--quiet', '-m', 'Again');
+    await git(work, 'push', '--quiet', '--force', 'origin', 'HEAD:refs/heads/t/1-cart');
+    const rewritten = await git(work, 'rev-parse', 'HEAD');
+    expect(json(await api('GET', `${REPO}/compare/${approved}...${rewritten}`))).toMatchObject({
+      status: 'diverged',
+      ahead_by: 1,
+      behind_by: 1,
+    });
+    expect((await api('GET', `${REPO}/compare/${'0'.repeat(40)}...${rewritten}`)).status).toBe(404);
+  });
+
   it('Update branch through the API: 202 when behind, 422 when not behind or in conflict', async () => {
     await cloneWithToken();
     const head = await pushCommit('t/1-cart', { 'cart.md': 'Cart\n' });
