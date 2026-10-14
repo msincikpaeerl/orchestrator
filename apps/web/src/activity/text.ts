@@ -45,6 +45,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'project.harness_checked': 'Harness elements checked',
   'project.archived': 'Project archived',
   'project.unarchived': 'Project unarchived',
+  'project.pull_request_watch_failed': 'Pull requests not checked on GitHub',
+  'project.pull_request_watch_recovered': 'Pull requests checked on GitHub again',
   'ticket.created': 'Ticket created',
   'ticket.updated': 'Ticket edited',
   'ticket.status_changed': 'Ticket status changed',
@@ -59,6 +61,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_not_opened': 'Pull request not opened or updated',
   'ticket.pull_request_merged': 'Pull request merged',
   'ticket.pull_request_closed': 'Pull request closed without merging',
+  'ticket.pull_request_not_closed': 'Pull request not closed',
+  'ticket.pull_request_not_reopened': 'Pull request not reopened',
   'ticket.review_posted': "Quality's review posted on GitHub",
   'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
@@ -258,6 +262,14 @@ const describe: { [T in EventType]: Describe<T> } = {
   ],
   'project.archived': (p, c) => [c.project, ' archived'],
   'project.unarchived': (p, c) => [c.project, ' unarchived'],
+  'project.pull_request_watch_failed': (p, c) => [
+    c.project,
+    `: ${p.pullRequests.length === 1 ? `pull request #${String(p.pullRequests[0] ?? 0)}` : `pull requests ${p.pullRequests.map((n) => `#${String(n)}`).join(', ')}`} could not be checked on GitHub — ${shorten(p.message)}`,
+  ],
+  'project.pull_request_watch_recovered': (p, c) => [
+    c.project,
+    ': its pull requests are checked on GitHub again',
+  ],
   'ticket.created': (p, c) => {
     const pieces: Piece[] = [
       c.ticket,
@@ -375,7 +387,14 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.ticket,
     p.seen === true
       ? `: pull request #${String(p.number)} was reopened on GitHub`
-      : `: pull request #${String(p.number)}, closed without merging, reopened on GitHub with the latest submission`,
+      : p.owner === true
+        ? `: pull request #${String(p.number)} reopened on GitHub`
+        : `: pull request #${String(p.number)}, closed without merging, reopened on GitHub with the latest submission`,
+  ],
+  'ticket.pull_request_not_reopened': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} could not be reopened on GitHub — ${shorten(p.message)}`,
+    ...(p.branchGone ? ['; its branch is gone from GitHub'] : []),
   ],
   'ticket.pull_request_merged': (p, c) => [
     c.ticket,
@@ -424,7 +443,13 @@ const describe: { [T in EventType]: Describe<T> } = {
   ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,
-    `: pull request #${String(p.number)} was closed on GitHub without merging`,
+    p.by === 'orchestrator'
+      ? `: pull request #${String(p.number)} closed on GitHub without merging, since the ticket was cancelled`
+      : `: pull request #${String(p.number)} was closed on GitHub without merging`,
+  ],
+  'ticket.pull_request_not_closed': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} could not be closed on GitHub after the cancellation — ${shorten(p.message)}`,
   ],
   'ticket.pull_request_updated': (p, c) => [
     c.ticket,

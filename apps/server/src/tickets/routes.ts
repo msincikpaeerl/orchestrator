@@ -22,9 +22,13 @@ import {
   type TicketDetail,
   type TicketListResponse,
   type TimelineEntry,
+  PullRequestClosedBy,
   PullRequestFailure,
+  PullRequestReopenFailure,
   PullRequestState,
+  PullRequestWatchFailure,
   WorkflowReason,
+  type PullRequestReopenResponse,
   type PullRequestTryAgainResponse,
   type TicketPullRequest,
 } from '@orchestrator/protocol';
@@ -42,6 +46,7 @@ import type { CiCheckAgain } from '../runs/ci-again.js';
 import { ticketCi } from '../runs/ci-outcome.js';
 import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
+import type { PullRequestWatcher } from './merge-watch.js';
 import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
 import {
@@ -69,18 +74,43 @@ import {
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
 /** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
-function ticketPullRequest(ticket: TicketRow): TicketPullRequest {
+function ticketPullRequest(project: ProjectRow, ticket: TicketRow): TicketPullRequest {
   const { pullRequestNumber: number, pullRequestUrl: url, pullRequestState: state } = ticket;
+  const failure = (stored: unknown) =>
+    stored === null ? null : maskStrings(PullRequestFailure.parse(stored));
+  const watch =
+    project.pullRequestWatchFailure === null
+      ? null
+      : PullRequestWatchFailure.parse(project.pullRequestWatchFailure);
   return {
     opened:
       number === null || url === null || state === null
         ? null
         : { number, url, state: PullRequestState.parse(state) },
     wanted: ticket.pullRequestWantedSince !== null,
-    failure:
-      ticket.pullRequestFailure === null
+    failure: failure(ticket.pullRequestFailure),
+    closed:
+      state === 'closed'
+        ? {
+            at: ticket.pullRequestClosedAt?.toISOString() ?? null,
+            by: PullRequestClosedBy.parse(ticket.pullRequestClosedBy ?? 'github'),
+          }
+        : null,
+    close:
+      ticket.pullRequestCloseWantedAt === null
         ? null
-        : maskStrings(PullRequestFailure.parse(ticket.pullRequestFailure)),
+        : {
+            since: ticket.pullRequestCloseWantedAt.toISOString(),
+            failure: failure(ticket.pullRequestCloseFailure),
+          },
+    reopenFailure:
+      ticket.pullRequestReopenFailure === null
+        ? null
+        : maskStrings(PullRequestReopenFailure.parse(ticket.pullRequestReopenFailure)),
+    watchFailure:
+      watch !== null && number !== null && watch.pullRequests.includes(number)
+        ? maskStrings(watch)
+        : null,
   };
 }
 
@@ -92,6 +122,8 @@ export interface TicketRoutesOptions {
   pullRequests: PullRequestOpener;
   /** **Check CI again** (lot 3 step G2c). */
   ciAgain: CiCheckAgain;
+  /** **Cancel**'s close of the pull request and **Reopen pull request** (lot 3 step J3a). */
+  watcher: Pick<PullRequestWatcher, 'close' | 'reopen'>;
   now?: () => Date;
 }
 
@@ -384,7 +416,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           ? 'not_kept'
           : WorkflowReason.parse(ticket.workflowReason)
         : null,
-      pullRequest: ticketPullRequest(ticket),
+      pullRequest: ticketPullRequest(project, ticket),
       ci: await ticketCi(executor, ticket),
       review: (await ticketReview(executor, ticket)).review,
       reviewRounds: ticket.reviewRounds,
@@ -753,6 +785,8 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       const text = comment(request.body);
       if (text !== undefined) await checkCommentLength(text, 'comment');
       let afterCommit: () => Promise<void> = () => Promise.resolve();
+      // Set inside the transaction's callback: a holder, so the type stays `string | null`.
+      const closeWanted: { ticketId: string | null } = { ticketId: null };
       const result = await change(request.params.key, async (tx, project) => {
         const ticket = await findTicket(tx, project.id, request.params.number);
         if (
@@ -813,7 +847,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
                     : null,
               }
             : undefined;
-        const updated = await applyOwnerAction(tx, {
+        let updated = await applyOwnerAction(tx, {
           projectKey: project.key,
           ticket,
           action,
@@ -821,6 +855,26 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           changeRequest,
           now: now(),
         });
+        const close =
+          action === 'cancel' &&
+          updated.status === 'cancelled' &&
+          ticket.pullRequestState === 'open'
+            ? { pullRequestCloseWantedAt: now(), pullRequestCloseFailure: null }
+            : // Reopened: nothing is closed any more; a pull request already closed stays closed
+              // until the next accepted submission (lot 3 step J3a).
+              action === 'reopen' && ticket.pullRequestCloseWantedAt !== null
+              ? { pullRequestCloseWantedAt: null, pullRequestCloseFailure: null }
+              : null;
+        if (close !== null) {
+          // **Cancel** closes the pull request, after this transaction (04, section 2).
+          const [changed] = await tx
+            .update(schema.tickets)
+            .set(close)
+            .where(eq(schema.tickets.id, ticket.id))
+            .returning();
+          if (changed) updated = changed;
+          if (close.pullRequestCloseWantedAt !== null) closeWanted.ticketId = ticket.id;
+        }
         if (
           action === 'mark_done' &&
           updated.status === 'done' &&
@@ -840,6 +894,9 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         return detail(tx, project, updated);
       });
       await afterCommit();
+      // Not awaited: GitHub's answer never delays the owner's Cancel; a failure is kept on the
+      // ticket and tried again at the next check.
+      if (closeWanted.ticketId !== null) void options.watcher.close(closeWanted.ticketId);
       request.log.info(
         { project: result.projectKey, ticket: result.number, action, status: result.status },
         'ticket status changed by the owner',
@@ -943,6 +1000,38 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
             : PullRequestFailure.parse(after.failure),
         url: after?.url ?? null,
       } satisfies PullRequestTryAgainResponse;
+    },
+  );
+
+  // **Reopen pull request** (lot 3 step J3a): the ticket's pull request closed without merging,
+  // on a ticket neither done nor cancelled; one attempt, answered once made.
+  app.post<TicketParams>(
+    '/api/projects/:key/tickets/:number/pull-request/reopen',
+    async (request) => {
+      await requireSession(db, request);
+      const project = await findProject(request.params.key);
+      const ticket = await findTicket(db, project.id, request.params.number);
+      if (['done', 'cancelled'].includes(ticket.status)) {
+        throw new HttpError(
+          409,
+          'pull_request_not_closed',
+          'This ticket is done or cancelled: its pull request is not reopened',
+        );
+      }
+      if (ticket.pullRequestState !== 'closed' || ticket.pullRequestNumber === null) {
+        throw new HttpError(
+          409,
+          'pull_request_not_closed',
+          'This ticket has no pull request closed without merging',
+        );
+      }
+      request.log.info(
+        { project: project.key, ticket: ticket.number, pullRequest: ticket.pullRequestNumber },
+        'pull request reopened by the owner',
+      );
+      return {
+        failure: await options.watcher.reopen(ticket.id),
+      } satisfies PullRequestReopenResponse;
     },
   );
 

@@ -30,6 +30,7 @@ const PullRequestSimple = z.object({
   head: Branch,
   base: Branch,
   merged_at: z.string().nullable(),
+  closed_at: z.string().nullable(),
 });
 
 /**
@@ -61,6 +62,8 @@ export interface PullRequestSummary {
   baseBranch: string;
   /** When it was merged; null when it was not (open, or closed without merging). */
   mergedAt: string | null;
+  /** When it was closed or merged; null while it is open (lot 3 step J3a). */
+  closedAt: string | null;
 }
 
 export interface PullRequest extends PullRequestSummary {
@@ -86,6 +89,7 @@ function summary(body: z.infer<typeof PullRequestSimple>): PullRequestSummary {
     headSha: body.head.sha,
     baseBranch: body.base.ref,
     mergedAt: body.merged_at,
+    closedAt: body.closed_at,
   };
 }
 

@@ -2,25 +2,32 @@ import { schema } from '@orchestrator/db';
 import {
   ACTIVE_RUN_STATUSES,
   ChangeRequest,
+  PullRequestFailure,
+  PullRequestWatchFailure,
   ReviewDecision,
   TicketStatus,
+  type PullRequestReopenFailure,
   type RunCiOutcome,
 } from '@orchestrator/protocol';
 import { and, desc, eq, inArray, isNotNull, notInArray, or } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import { retryAt, type GitHubRefusal } from '../github/answers.js';
+import { retryAt, type GitHubRefusal, type GitHubResult } from '../github/answers.js';
 import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
 import { storedTokenClient } from '../github/connection.js';
 import {
+  closePullRequest,
   listOpenPullRequests,
+  readBranchRef,
   readPullRequest,
+  reopenPullRequest,
   type PullRequest,
   type PullRequestSummary,
 } from '../github/pull-requests.js';
 import { notifyChange } from '../realtime/changes.js';
 import { ciOutcome } from '../runs/ci-outcome.js';
+import { failureOf as checkFailureOf } from '../runs/ci-wait.js';
 import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
@@ -32,6 +39,7 @@ import {
 } from './merge-comment.js';
 import { cleanUpWanted } from './branch-clean-up.js';
 import { ticketEntity, ticketReference, type TicketRow } from './model.js';
+import { failureOf as pullRequestFailureOf } from './pull-request.js';
 import { applyRunAction } from './transitions.js';
 
 // The ticket's pull request watched on GitHub (04, section 2; owner's answers 1 to 3, lot 3 step
@@ -47,6 +55,44 @@ import { applyRunAction } from './transitions.js';
 
 /** A pull request as read: in a list (no `merged`), or by itself. */
 export type PullRequestRead = PullRequestSummary | PullRequest;
+
+type WatchFound = Omit<PullRequestWatchFailure, 'since' | 'at'>;
+type ProjectRow = typeof schema.projects.$inferSelect;
+type Repo = { owner: string; name: string };
+
+/** GitHub not reached, in the words a failed check keeps. */
+const UNREACHABLE = 'GitHub could not be reached, or answered with a server error';
+
+/**
+ * What one check of a project's pull requests could not read (owner's note on step J1, lot 3 step
+ * J3a): the first failure's reason, and every watched pull request left unread.
+ */
+class ProjectWatch {
+  private readonly read = new Set<number>();
+  private readonly unread = new Set<number>();
+  private first: Omit<WatchFound, 'pullRequests'> | null = null;
+
+  constructor(private readonly numbers: readonly number[]) {}
+
+  seen(number: number): void {
+    this.read.add(number);
+  }
+
+  /** A read failed: for `numbers`, or for every one not read yet when the check stops there. */
+  failed(failure: Omit<WatchFound, 'pullRequests'>, numbers: readonly number[] | 'rest'): void {
+    this.first ??= failure;
+    const left = numbers === 'rest' ? this.numbers.filter((n) => !this.read.has(n)) : numbers;
+    for (const number of left) this.unread.add(number);
+  }
+
+  get failure(): WatchFound | null {
+    if (this.first === null) return null;
+    return { ...this.first, pullRequests: [...this.unread].sort((a, b) => a - b) };
+  }
+}
+
+/** Who saw the pull request reopened: on GitHub, or the owner's **Reopen pull request**. */
+type ReopenedBy = 'github' | 'owner';
 
 export interface PullRequestWatcherOptions {
   db: Database;
@@ -107,45 +153,132 @@ export class PullRequestWatcher {
     for (const rows of byProject.values()) {
       const project = rows[0]?.project;
       if (!project) continue;
+      const watch = new ProjectWatch(rows.flatMap(({ ticket }) => ticket.pullRequestNumber ?? []));
+      let limited: Date | null = null;
+      let checked = true;
       try {
-        const limited = await this.checkProject(client, project, rows);
-        if (limited !== null) return limited;
+        limited = await this.checkProject(client, project, rows, watch);
       } catch (error) {
         if (error instanceof GitHubUnreachableError) {
           // Unreachable: nothing decided for this project, the next tick reads it again.
           log.warn({ project: project.key }, 'pull requests not checked: GitHub unreachable');
+          watch.failed(
+            { reason: 'unreachable', message: UNREACHABLE, fields: [], retryAt: null },
+            'rest',
+          );
         } else {
-          // Any other error stops this project only: the others, and the CI waits, go on.
+          // Any other error stops this project only: the others, and the CI waits, go on. It is
+          // not GitHub's: the watch's stored failure is left as it was.
           log.error({ err: error, project: project.key }, 'pull requests not checked');
+          checked = false;
         }
       }
+      if (checked) {
+        await this.recordWatch(project.id, watch.failure).catch((error: unknown) => {
+          log.error({ err: error, project: project.key }, 'pull request watch not recorded');
+        });
+      }
+      if (limited !== null) return limited;
     }
     return null;
   }
 
+  /**
+   * The watch's failure kept on the project, as the CI wait keeps its failed check (owner's note
+   * on step J1, lot 3 step J3a): its first time and its latest, one event when it starts failing
+   * or its reason changes, and one when a check reads every pull request again.
+   */
+  private async recordWatch(projectId: string, found: WatchFound | null): Promise<void> {
+    await this.options.db.transaction(async (tx) => {
+      const [project] = await tx
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, projectId))
+        .for('no key update');
+      if (!project) return;
+      const previous =
+        project.pullRequestWatchFailure === null
+          ? null
+          : PullRequestWatchFailure.parse(project.pullRequestWatchFailure);
+      const now = this.now();
+      const entity = { entityType: 'project' as const, entityId: project.id, projectId };
+      if (found === null) {
+        if (previous === null) return;
+        await tx
+          .update(schema.projects)
+          .set({ pullRequestWatchFailure: null })
+          .where(eq(schema.projects.id, projectId));
+        await recordEvent(tx, {
+          actor: 'system',
+          ...entity,
+          type: 'project.pull_request_watch_recovered',
+          payload: { key: project.key },
+          at: now,
+        });
+        return;
+      }
+      const same = previous !== null && previous.reason === found.reason;
+      const failure: PullRequestWatchFailure = {
+        ...found,
+        since: same ? previous.since : now.toISOString(),
+        at: now.toISOString(),
+      };
+      await tx
+        .update(schema.projects)
+        .set({ pullRequestWatchFailure: failure })
+        .where(eq(schema.projects.id, projectId));
+      if (same) {
+        // Repeated failures are quiet; the pages read it again when the unread ones change.
+        if (previous.pullRequests.join() !== failure.pullRequests.join()) {
+          await notifyChange(tx, { entity: 'project', id: projectId, projectId });
+        }
+        return;
+      }
+      await recordEvent(tx, {
+        actor: 'system',
+        ...entity,
+        type: 'project.pull_request_watch_failed',
+        payload: {
+          key: project.key,
+          reason: failure.reason,
+          message: failure.message,
+          pullRequests: failure.pullRequests,
+        },
+        at: now,
+      });
+    });
+  }
+
   private async checkProject(
     client: GitHubClient,
-    project: typeof schema.projects.$inferSelect,
+    project: ProjectRow,
     rows: { ticket: TicketRow }[],
+    watch: ProjectWatch,
   ): Promise<Date | null> {
     const repo = { owner: project.repoOwner, name: project.repoName };
-    const refused = (refusal: GitHubRefusal, what: string): Date | null => {
+    const refused: Refused = (refusal, what, numbers) => {
       this.options.log.warn(
         { project: project.key, reason: refusal.kind, message: refusal.message },
         `pull requests not checked: ${what}`,
       );
-      return retryAt(refusal, this.now());
+      const until = retryAt(refusal, this.now());
+      // The request limit holds the whole tick: every pull request after it is left unread.
+      watch.failed(
+        { ...checkFailureOf(refusal), retryAt: until?.toISOString() ?? null },
+        until === null ? numbers : 'rest',
+      );
+      return until;
     };
     let open: Map<number, PullRequestSummary> | null = null;
     if (rows.some(({ ticket }) => ticket.pullRequestState === 'open')) {
       const listed = await listOpenPullRequests(client, repo);
       // A list that fails decides nothing for the project (owner's addition).
-      if (!listed.ok) return refused(listed.refusal, 'the list of open pull requests');
+      if (!listed.ok) return refused(listed.refusal, 'the list of open pull requests', 'rest');
       open = new Map(listed.value.map((pull) => [pull.number, pull]));
     }
     for (const { ticket } of rows) {
       try {
-        const limited = await this.checkTicket(client, repo, ticket, open, refused);
+        const limited = await this.checkTicket(client, repo, ticket, open, refused, watch);
         if (limited !== null) return limited;
       } catch (error) {
         if (error instanceof GitHubUnreachableError) throw error;
@@ -160,34 +293,262 @@ export class PullRequestWatcher {
     return null;
   }
 
-  /** One watched ticket's pull request: found in the list, or read by itself. */
+  /**
+   * One watched ticket's pull request: found in the list, or read by itself; then **Cancel**'s
+   * close of it, when it is wanted.
+   */
   private async checkTicket(
     client: GitHubClient,
-    repo: { owner: string; name: string },
+    repo: Repo,
     ticket: TicketRow,
     open: Map<number, PullRequestSummary> | null,
-    refused: (refusal: GitHubRefusal, what: string) => Date | null,
+    refused: Refused,
+    watch: ProjectWatch,
   ): Promise<Date | null> {
     const number = ticket.pullRequestNumber;
     if (number === null) return null;
     const listed = open?.get(number);
     if (listed) {
       await this.seen(ticket.id, listed);
+    } else {
+      // Missing from the list, or closed: only its own read decides.
+      const read = await readPullRequest(client, repo, number);
+      if (!read.ok) return refused(read.refusal, `pull request #${String(number)}`, [number]);
+      await this.seen(ticket.id, read.value);
+    }
+    watch.seen(number);
+    // Read first: a pull request found merged is never closed (the cancel race, answer 2).
+    if (ticket.pullRequestCloseWantedAt === null) return null;
+    return this.closeWith(client, repo, ticket.id);
+  }
+
+  /**
+   * **Cancel**'s close of the ticket's pull request (04, section 2; lot 3 step J3a): one attempt,
+   * made after the cancel's transaction; a failure is kept on the ticket and tried again at each
+   * check, until it is closed, found merged, or the ticket is reopened. Never throws.
+   */
+  async close(ticketId: string): Promise<void> {
+    try {
+      const row = await this.ticketWithProject(ticketId);
+      if (!row || !wantsClose(row.ticket)) return;
+      const client = await this.clientFor();
+      if ('failure' in client) {
+        await this.closeFailed(ticketId, client.failure);
+        return;
+      }
+      await this.closeWith(client.client, repoOf(row.project), ticketId);
+    } catch (error) {
+      this.options.log.error({ err: error, ticketId }, 'pull request not closed');
+    }
+  }
+
+  private async closeWith(
+    client: GitHubClient,
+    repo: Repo,
+    ticketId: string,
+  ): Promise<Date | null> {
+    const row = await this.ticketWithProject(ticketId);
+    if (!row || !wantsClose(row.ticket) || row.ticket.pullRequestNumber === null) return null;
+    const number = row.ticket.pullRequestNumber;
+    let closed: GitHubResult<PullRequest>;
+    try {
+      closed = await closePullRequest(client, repo, number);
+    } catch (error) {
+      if (!(error instanceof GitHubUnreachableError)) throw error;
+      await this.closeFailed(ticketId, unreachableFailure());
       return null;
     }
-    // Missing from the list, or closed: only its own read decides.
-    const read = await readPullRequest(client, repo, number);
-    if (!read.ok) return refused(read.refusal, `pull request #${String(number)}`);
-    await this.seen(ticket.id, read.value);
-    return null;
+    // Closed, or merged already (GitHub leaves a merged one as it is): the read decides.
+    if (closed.ok) {
+      await this.seen(ticketId, closed.value);
+      return null;
+    }
+    if (closed.refusal.kind === 'invalid') {
+      // GitHub may refuse to close a merged pull request: its own read records the merge.
+      const read = await readPullRequest(client, repo, number);
+      if (read.ok && read.value.state === 'closed') {
+        await this.seen(ticketId, read.value);
+        return null;
+      }
+    }
+    await this.closeFailed(ticketId, pullRequestFailureOf(closed.refusal, repo));
+    return retryAt(closed.refusal, this.now());
+  }
+
+  /** The latest failed close kept on the ticket, with one event when it starts or changes. */
+  private async closeFailed(
+    ticketId: string,
+    found: Omit<PullRequestFailure, 'at' | 'since'>,
+  ): Promise<void> {
+    await this.options.db.transaction(async (tx) => {
+      const locked = await lockTicket(tx, ticketId);
+      if (!locked || !wantsClose(locked.ticket) || locked.ticket.pullRequestNumber === null) return;
+      const { project, ticket } = locked;
+      const now = this.now();
+      const previous =
+        ticket.pullRequestCloseFailure === null
+          ? null
+          : PullRequestFailure.parse(ticket.pullRequestCloseFailure);
+      const failure: PullRequestFailure = {
+        ...found,
+        at: now.toISOString(),
+        since: previous?.since ?? previous?.at ?? now.toISOString(),
+      };
+      await tx
+        .update(schema.tickets)
+        .set({ pullRequestCloseFailure: failure, updatedAt: now })
+        .where(eq(schema.tickets.id, ticketId));
+      if (previous?.reason === failure.reason) return;
+      await recordEvent(tx, {
+        actor: 'system',
+        ...ticketEntity(ticket),
+        type: 'ticket.pull_request_not_closed',
+        payload: {
+          project: project.key,
+          ticket: ticketReference(project.key, ticket.number),
+          number: ticket.pullRequestNumber,
+          reason: failure.reason,
+          message: failure.message,
+        },
+        at: now,
+      });
+    });
+  }
+
+  /**
+   * **Reopen pull request** (lot 3 step J3a): one attempt. Reopened, the pull request is open
+   * again at once; refused, GitHub's reason is kept on the ticket, with whether its branch is gone
+   * (the next accepted submission then opens a new pull request). Returns the failure, or null.
+   */
+  async reopen(ticketId: string): Promise<PullRequestReopenFailure | null> {
+    const row = await this.ticketWithProject(ticketId);
+    if (!row || row.ticket.pullRequestNumber === null) return null;
+    const { project, ticket } = row;
+    const number = row.ticket.pullRequestNumber;
+    const repo = repoOf(project);
+    const client = await this.clientFor();
+    let failure: PullRequestReopenFailure | null;
+    if ('failure' in client) {
+      failure = { ...client.failure, branchGone: false, at: this.now().toISOString() };
+    } else {
+      try {
+        failure = await this.reopenWith(client.client, repo, ticket, number);
+      } catch (error) {
+        if (!(error instanceof GitHubUnreachableError)) throw error;
+        failure = { ...unreachableFailure(), branchGone: false, at: this.now().toISOString() };
+      }
+    }
+    if (failure !== null) await this.reopenFailed(ticketId, number, failure);
+    return failure;
+  }
+
+  private async reopenWith(
+    client: GitHubClient,
+    repo: Repo,
+    ticket: TicketRow,
+    number: number,
+  ): Promise<PullRequestReopenFailure | null> {
+    const reopened = await reopenPullRequest(client, repo, number);
+    if (reopened.ok) {
+      await this.seen(ticket.id, reopened.value, 'owner');
+      return null;
+    }
+    let branchGone = false;
+    if (reopened.refusal.kind === 'invalid') {
+      // Merged meanwhile (GitHub never reopens a merged one): its read records the merge.
+      const read = await readPullRequest(client, repo, number);
+      if (read.ok && read.value.merged) {
+        await this.seen(ticket.id, read.value);
+        return null;
+      }
+      if (read.ok) {
+        const branch = await readBranchRef(client, repo, read.value.headBranch);
+        branchGone = branch.ok && branch.value === null;
+      }
+    }
+    return {
+      ...pullRequestFailureOf(reopened.refusal, repo),
+      branchGone,
+      at: this.now().toISOString(),
+    };
+  }
+
+  private async reopenFailed(
+    ticketId: string,
+    number: number,
+    failure: PullRequestReopenFailure,
+  ): Promise<void> {
+    await this.options.db.transaction(async (tx) => {
+      const locked = await lockTicket(tx, ticketId);
+      if (!locked || locked.ticket.pullRequestNumber !== number) return;
+      const { project, ticket } = locked;
+      await tx
+        .update(schema.tickets)
+        .set({ pullRequestReopenFailure: failure, updatedAt: this.now() })
+        .where(eq(schema.tickets.id, ticketId));
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...ticketEntity(ticket),
+        type: 'ticket.pull_request_not_reopened',
+        payload: {
+          project: project.key,
+          ticket: ticketReference(project.key, ticket.number),
+          number,
+          reason: failure.reason,
+          message: failure.message,
+          branchGone: failure.branchGone,
+        },
+        at: this.now(),
+      });
+    });
+  }
+
+  private async ticketWithProject(
+    ticketId: string,
+  ): Promise<{ ticket: TicketRow; project: ProjectRow } | undefined> {
+    const [row] = await this.options.db
+      .select({ ticket: schema.tickets, project: schema.projects })
+      .from(schema.tickets)
+      .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+      .where(eq(schema.tickets.id, ticketId));
+    return row;
+  }
+
+  /** The stored token's client, or why there is none, as a failed attempt keeps it. */
+  private async clientFor(): Promise<
+    { client: GitHubClient } | { failure: Omit<PullRequestFailure, 'at' | 'since'> }
+  > {
+    try {
+      const client = await storedTokenClient({ ...this.options, log: this.options.log });
+      if (client !== null) return { client };
+      return {
+        failure: {
+          reason: 'no_token',
+          message: 'No GitHub token is saved: connect GitHub in Settings',
+          permission: null,
+          fields: [],
+        },
+      };
+    } catch (error) {
+      if (!(error instanceof SecretUnreadableError)) throw error;
+      return {
+        failure: {
+          reason: 'token_unreadable',
+          message:
+            'The saved GitHub token cannot be decrypted (ORCHESTRATOR_SECRET_KEY changed): save the token again in Settings',
+          permission: null,
+          fields: [],
+        },
+      };
+    }
   }
 
   /**
    * A read of the ticket's pull request (this watcher's, or the CI wait's): the stored state and
    * head refreshed, and a merge or a close decided, in one transaction that locks the ticket.
    */
-  async seen(ticketId: string, pull: PullRequestRead): Promise<void> {
-    const after = await this.options.db.transaction((tx) => this.apply(tx, ticketId, pull));
+  async seen(ticketId: string, pull: PullRequestRead, by: ReopenedBy = 'github'): Promise<void> {
+    const after = await this.options.db.transaction((tx) => this.apply(tx, ticketId, pull, by));
     await after();
   }
 
@@ -195,6 +556,7 @@ export class PullRequestWatcher {
     tx: Executor,
     ticketId: string,
     pull: PullRequestRead,
+    by: ReopenedBy,
   ): Promise<() => Promise<void>> {
     const nothing = () => Promise.resolve();
     const [current] = await tx
@@ -233,24 +595,49 @@ export class PullRequestWatcher {
     const state = pull.state;
     const moved = ticket.pullRequestHead !== pull.headSha;
     if (ticket.pullRequestState === state && !moved) return nothing;
+    const closing = ticket.pullRequestState === 'open' && state === 'closed';
+    const reopening = ticket.pullRequestState === 'closed' && state === 'open';
+    // Closed while **Cancel** wants it closed: the Orchestrator's close, done (lot 3 step J3a).
+    const closedBy = ticket.pullRequestCloseWantedAt === null ? 'github' : 'orchestrator';
     await tx
       .update(schema.tickets)
-      .set({ pullRequestState: state, pullRequestHead: pull.headSha, updatedAt: now })
+      .set({
+        pullRequestState: state,
+        pullRequestHead: pull.headSha,
+        ...(closing
+          ? {
+              pullRequestClosedAt: pull.closedAt === null ? now : new Date(pull.closedAt),
+              pullRequestClosedBy: closedBy,
+              pullRequestCloseWantedAt: null,
+              pullRequestCloseFailure: null,
+            }
+          : {}),
+        ...(reopening
+          ? {
+              pullRequestClosedAt: null,
+              pullRequestClosedBy: null,
+              pullRequestReopenFailure: null,
+              // Open again: **Check CI again**'s "No CI found" counts from now (lot 3 step G2c).
+              pullRequestOpenedAt: now,
+            }
+          : {}),
+        updatedAt: now,
+      })
       .where(eq(schema.tickets.id, ticket.id));
-    if (ticket.pullRequestState === 'open' && state === 'closed') {
+    if (closing) {
       await recordEvent(tx, {
         actor: 'system',
         ...ticketEntity(ticket),
         type: 'ticket.pull_request_closed',
-        payload: facts,
+        payload: { ...facts, by: closedBy },
         at: now,
       });
-    } else if (ticket.pullRequestState === 'closed' && state === 'open') {
+    } else if (reopening) {
       await recordEvent(tx, {
-        actor: 'system',
+        actor: by === 'owner' ? 'owner' : 'system',
         ...ticketEntity(ticket),
         type: 'ticket.pull_request_reopened',
-        payload: { ...facts, seen: true },
+        payload: by === 'owner' ? { ...facts, owner: true } : { ...facts, seen: true },
         at: now,
       });
     } else {
@@ -280,6 +667,12 @@ export class PullRequestWatcher {
         pullRequestMergedAt: mergedAt,
         pullRequestMergedHead: head,
         pullRequestMergedInto: pull.baseBranch,
+        // Merged: nothing is left to close or reopen (the cancel race, owner's answer 2).
+        pullRequestClosedAt: null,
+        pullRequestClosedBy: null,
+        pullRequestCloseWantedAt: null,
+        pullRequestCloseFailure: null,
+        pullRequestReopenFailure: null,
         updatedAt: now,
       })
       .where(eq(schema.tickets.id, ticket.id));
@@ -427,4 +820,50 @@ async function reviewOf(
     }
   }
   return { kind: 'none' };
+}
+
+type Refused = (
+  refusal: GitHubRefusal,
+  what: string,
+  numbers: readonly number[] | 'rest',
+) => Date | null;
+
+function repoOf(project: ProjectRow): Repo {
+  return { owner: project.repoOwner, name: project.repoName };
+}
+
+/** **Cancel** wants the pull request closed, and nothing has changed that (lot 3 step J3a). */
+function wantsClose(ticket: TicketRow): boolean {
+  return (
+    ticket.pullRequestCloseWantedAt !== null &&
+    ticket.status === 'cancelled' &&
+    ticket.pullRequestState === 'open'
+  );
+}
+
+function unreachableFailure(): Omit<PullRequestFailure, 'at' | 'since'> {
+  return { reason: 'unreachable', message: UNREACHABLE, permission: null, fields: [] };
+}
+
+/** The project's row lock, then the ticket's: the order of every ticket change. */
+async function lockTicket(
+  tx: Executor,
+  ticketId: string,
+): Promise<{ ticket: TicketRow; project: ProjectRow } | undefined> {
+  const [current] = await tx
+    .select({ projectId: schema.tickets.projectId })
+    .from(schema.tickets)
+    .where(eq(schema.tickets.id, ticketId));
+  if (!current) return undefined;
+  const [project] = await tx
+    .select()
+    .from(schema.projects)
+    .where(eq(schema.projects.id, current.projectId))
+    .for('no key update');
+  const [ticket] = await tx
+    .select()
+    .from(schema.tickets)
+    .where(eq(schema.tickets.id, ticketId))
+    .for('update');
+  return project && ticket ? { project, ticket } : undefined;
 }

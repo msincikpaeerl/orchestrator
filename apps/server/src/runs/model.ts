@@ -14,6 +14,7 @@ import {
   WAITING_RUN_STATUSES,
   WORKING_RUN_STATUSES,
   type DaemonRunState,
+  type PullRequestState,
   type Run,
   type RunCiWait,
   SubmissionRecord,
@@ -166,7 +167,7 @@ export interface RunViewContext {
   /** For a run paused on a detected limit: when it can be resumed (02, section 4). */
   resumeAfter: { at: string; estimated: boolean } | null;
   /** The ticket's pull request and the project's default branch, for the wait for CI. */
-  pullRequest: { number: number; url: string } | null;
+  pullRequest: { number: number; url: string; state: PullRequestState } | null;
   base: string | null;
 }
 

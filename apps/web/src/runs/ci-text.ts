@@ -51,6 +51,14 @@ export function ciWaitText(ci: RunCiWait, now: Date): string[] {
     lines.push(
       `The pull request conflicts with ${baseName(ci)}, so GitHub started no CI and the work cannot be accepted: the agent is told to merge ${baseName(ci)} and resolve the conflict, then hand its work in again.`,
     );
+  } else if (
+    (result === null || result.checks.length === 0) &&
+    ci.pullRequest?.state === 'closed'
+  ) {
+    // While it is closed, "No CI found" never accepts the work (lot 3 step J3a).
+    lines.push(
+      `No CI run or status has appeared on GitHub, and pull request #${String(ci.pullRequest.number)} is closed on GitHub: the work is not accepted as “No CI found” while it is closed, so the run keeps waiting. Reopen the pull request on GitHub, or the run stops at ${deadline}.`,
+    );
   } else if (result === null || result.checks.length === 0) {
     const startDeadline = ci.startDeadline === null ? null : new Date(ci.startDeadline);
     lines.push(

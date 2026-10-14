@@ -88,6 +88,11 @@ export const ApiErrorCode = z.enum([
   /** **Try again** on a ticket that no longer waits for its pull request (lot 3 step F3). */
   'no_pull_request_wanted',
   /**
+   * **Reopen pull request** on a ticket whose pull request is not closed without merging, or that
+   * is done or cancelled (lot 3 step J3a).
+   */
+  'pull_request_not_closed',
+  /**
    * **Check CI again** refused (04, section 3.1; lot 3 step G2c): the message is the owner's words,
    * `ciRefusal` says why.
    */

@@ -36,7 +36,11 @@ function wait(changes: Partial<RunCiWait> = {}): RunCiWait {
     result: null,
     checkedAt: CHECKED,
     checkFailure: null,
-    pullRequest: { number: 12, url: 'https://github.com/octo-owner/bakery/pull/12' },
+    pullRequest: {
+      number: 12,
+      url: 'https://github.com/octo-owner/bakery/pull/12',
+      state: 'open',
+    },
     base: 'main',
     ...changes,
   };
@@ -132,6 +136,22 @@ describe('the CI card while a run waits for CI', () => {
     expect(ciWaitText(stateOf('a conflict being worked out'), AFTER_START_DEADLINE)[2]).toBe(
       'Nothing appeared on GitHub. GitHub is still working out whether the pull request conflicts with main; it is checked again shortly.',
     );
+  });
+
+  it('says the wait goes on while the pull request is closed, never "No CI found"', () => {
+    const closed = wait({
+      result: pending(0),
+      pullRequest: {
+        number: 12,
+        url: 'https://github.com/octo-owner/bakery/pull/12',
+        state: 'closed',
+      },
+    });
+    for (const now of [BEFORE_START_DEADLINE, AFTER_START_DEADLINE]) {
+      expect(ciWaitText(closed, now)[2]).toBe(
+        `No CI run or status has appeared on GitHub, and pull request #12 is closed on GitHub: the work is not accepted as “No CI found” while it is closed, so the run keeps waiting. Reopen the pull request on GitHub, or the run stops at ${formatDateTime(DEADLINE)}.`,
+      );
+    }
   });
 
   it('says a conflict keeps the work from being accepted', () => {

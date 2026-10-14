@@ -153,8 +153,11 @@ describe('events of every type', () => {
       'ticket.status_changed',
       // Check CI again on the ended run, refused (lot 3 step G2c).
       'ticket.ci_checked_again',
-      // Its pull request closed on GitHub, then reopened and merged there: done (step J1).
+      // Its pull request closed on GitHub, Reopen pull request refused then done (step J3a),
+      // then merged there: done (step J1).
       'ticket.pull_request_closed',
+      'ticket.pull_request_not_reopened',
+      'ticket.pull_request_reopened',
       'ticket.status_changed',
       'ticket.pull_request_merged',
       // Its branch deleted on GitHub at the same check, then a push recorded after (step J2a).

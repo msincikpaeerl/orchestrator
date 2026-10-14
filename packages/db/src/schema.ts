@@ -174,6 +174,11 @@ export const projects = pgTable(
      * is created, never decremented: numbers are never reused (01, section 3.4).
      */
     lastTicketNumber: integer('last_ticket_number').notNull().default(0),
+    /**
+     * The watch of the project's pull requests (lot 3 step J3a): its latest check that could not
+     * read GitHub (`PullRequestWatchFailure`), until a check reads every pull request again.
+     */
+    pullRequestWatchFailure: jsonb('pull_request_watch_failure'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -329,6 +334,24 @@ export const tickets = pgTable(
     pullRequestMergedHead: text('pull_request_merged_head'),
     pullRequestMergedInto: text('pull_request_merged_into'),
     /**
+     * The pull request closed without merging (lot 3 step J3a): GitHub's time, and who closed it
+     * (`github`, or `orchestrator` at **Cancel**); null while it is open or merged.
+     */
+    pullRequestClosedAt: timestamp('pull_request_closed_at', { withTimezone: true }),
+    pullRequestClosedBy: text('pull_request_closed_by'),
+    /**
+     * **Cancel**'s close of the open pull request, wanted since (set in the cancel's transaction),
+     * and its latest failure (`PullRequestFailure`); cleared when it is closed, found merged, or
+     * the ticket reopened.
+     */
+    pullRequestCloseWantedAt: timestamp('pull_request_close_wanted_at', { withTimezone: true }),
+    pullRequestCloseFailure: jsonb('pull_request_close_failure'),
+    /**
+     * The latest failed reopen (`PullRequestReopenFailure`), until the pull request is open again
+     * or another one is recorded.
+     */
+    pullRequestReopenFailure: jsonb('pull_request_reopen_failure'),
+    /**
      * Set by an accepted submission ("pull request wanted"), cleared when the pull request is
      * opened or updated with it, or when the ticket is done or cancelled.
      */
@@ -349,6 +372,10 @@ export const tickets = pgTable(
     check('tickets_attempt_count', sql`${table.attemptCount} >= 0`),
     check('tickets_review_rounds', sql`${table.reviewRounds} >= 0`),
     check('tickets_workflow_reason', sql`${table.workflowReason} IN ('changed', 'not_listed')`),
+    check(
+      'tickets_pull_request_closed_by',
+      sql`${table.pullRequestClosedBy} IN ('github', 'orchestrator')`,
+    ),
     check(
       'tickets_pull_request_state',
       sql`${table.pullRequestState} IN ('open', 'closed', 'merged')`,

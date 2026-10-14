@@ -55,6 +55,13 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   'project.harness_checked': { key: 'WEB', missing: ['claude_md', 'adrs'] },
   'project.archived': { key: 'WEB' },
   'project.unarchived': { key: 'WEB' },
+  'project.pull_request_watch_failed': {
+    key: 'WEB',
+    reason: 'refused',
+    message: 'Not Found',
+    pullRequests: [4],
+  },
+  'project.pull_request_watch_recovered': { key: 'WEB' },
   'ticket.created': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -274,6 +281,21 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     commentId: null,
   },
   'ticket.pull_request_closed': { project: 'WEB', ticket: 'WEB-12', number: 4, url: 'u' },
+  'ticket.pull_request_not_closed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    reason: 'unreachable',
+    message: 'GitHub could not be reached',
+  },
+  'ticket.pull_request_not_reopened': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    number: 4,
+    reason: 'refused',
+    message: 'Validation Failed',
+    branchGone: true,
+  },
   'ticket.branch_deleted': {
     project: 'WEB',
     ticket: 'WEB-12',

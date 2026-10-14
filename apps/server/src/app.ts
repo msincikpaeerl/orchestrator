@@ -247,7 +247,14 @@ export function buildApp(dependencies: AppDependencies) {
     };
     registerGitHubRoutes(scope, github);
     registerProjectRoutes(scope, { ...github, now: dependencies.now });
-    registerTicketRoutes(scope, { db, runs, pullRequests, ciAgain, now: dependencies.now });
+    registerTicketRoutes(scope, {
+      db,
+      runs,
+      pullRequests,
+      ciAgain,
+      watcher,
+      now: dependencies.now,
+    });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

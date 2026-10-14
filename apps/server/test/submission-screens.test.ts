@@ -72,6 +72,11 @@ describe('the ticket page (02, section 6.4)', () => {
         opened: { number: 1, url: expect.stringMatching(/\/pull\/1$/) as string, state: 'open' },
         wanted: false,
         failure: null,
+        // Lot 3 step J3a: nothing closed, no close wanted, no reopen failed, the watch read it.
+        closed: null,
+        close: null,
+        reopenFailure: null,
+        watchFailure: null,
       });
     });
   });

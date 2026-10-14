@@ -161,6 +161,21 @@ describe('database connections lost, as in a PostgreSQL restart', () => {
       // The realtime stream's listener, terminated with the others below.
       const listening = await listener();
       expect(listening).toBeDefined();
+      // One running a query, as the server's own work does (the GitHub check loop's queries):
+      // its loss was never logged (CI of lot 3 step J2c, pull request #70).
+      const running = server.pool.query('SELECT pg_sleep(30)').catch(() => undefined);
+      await waitFor(
+        async () =>
+          (
+            await admin.query(
+              `SELECT 1 FROM pg_stat_activity
+                WHERE datname = current_database() AND state = 'active'
+                  AND query = 'SELECT pg_sleep(30)'`,
+            )
+          ).rows.length === 1,
+        5000,
+        'the query running',
+      );
       const { rows } = await admin.query(
         `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
           WHERE datname = current_database() AND pid <> pg_backend_pid()`,
@@ -174,6 +189,7 @@ describe('database connections lost, as in a PostgreSQL restart', () => {
         `${String(rows.length)} "database connection lost" logs`,
       );
       expect(lost().map((entry) => entry.err?.code)).toEqual(rows.map(() => '57P01'));
+      await running;
       held.release(true);
       held = null;
 

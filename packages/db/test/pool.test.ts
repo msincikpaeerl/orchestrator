@@ -8,12 +8,19 @@ import { createTestDatabase } from '../src/testing.js';
 // and the pool emitted 57P01) and `reportConnectionErrors`.
 
 /** Waits for an effect that comes asynchronously, failing after `ms` (docs/dev/testing.md). */
-async function until(condition: () => boolean, ms: number, what: string): Promise<void> {
+async function until(
+  condition: () => boolean,
+  ms: number,
+  what: string,
+  poll?: () => Promise<void>,
+): Promise<void> {
   const deadline = Date.now() + ms;
+  await poll?.();
   while (!condition()) {
     if (Date.now() > deadline)
       throw new Error(`timed out after ${String(ms)} ms waiting for ${what}`);
     await new Promise((resolve) => setTimeout(resolve, 10));
+    await poll?.();
   }
 }
 
@@ -134,6 +141,53 @@ describe('reportConnectionErrors', () => {
       expect((await pool.query('SELECT 1 AS one')).rows).toEqual([{ one: 1 }]);
     } finally {
       if (!released) held.release(true);
+      await endPool(pool);
+      await database.drop();
+    }
+  }, 30_000);
+
+  it('reports a connection lost while one of its queries runs, once', async () => {
+    // CI of lot 3 step J2c (pull request #70): a query of the server's own work (the GitHub
+    // check loop) running when the connection was lost. PostgreSQL's error went to the query
+    // only, and the pool, released with that error, ended the client before its connection
+    // closed: the loss was never reported.
+    const database = await createTestDatabase();
+    const pool = createPool({ connectionString: database.url });
+    const reported: string[] = [];
+    reportConnectionErrors(pool, (error: Error & { code?: string }) => {
+      reported.push(error.code ?? error.message);
+    });
+    const admin = new pg.Client({ connectionString: database.url });
+    await admin.connect();
+    try {
+      const running = pool.query('SELECT pg_sleep(30)').then(
+        () => null,
+        (error: unknown) => error as Error & { code?: string },
+      );
+      let pid: number | undefined;
+      await until(
+        () => pid !== undefined,
+        5000,
+        'the query running',
+        async () => {
+          const { rows } = await admin.query<{ pid: number }>(
+            `SELECT pid FROM pg_stat_activity
+              WHERE datname = current_database() AND state = 'active'
+                AND query = 'SELECT pg_sleep(30)'`,
+          );
+          pid = rows[0]?.pid;
+        },
+      );
+      await admin.query('SELECT pg_terminate_backend($1)', [pid]);
+      expect((await running)?.code).toBe('57P01');
+      // The pool closes the client: wait for that, so that "once" is checked after it.
+      await until(() => pool.totalCount === 0, 5000, 'the lost connection out of the pool');
+      await until(() => reported.length >= 1, 5000, 'the loss reported');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(reported).toEqual(['57P01']);
+      expect((await pool.query('SELECT 1 AS one')).rows).toEqual([{ one: 1 }]);
+    } finally {
+      await admin.end();
       await endPool(pool);
       await database.drop();
     }

@@ -225,6 +225,13 @@
       "when": 1791844999041,
       "tag": "0031_machine_branch_deletes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791932179531,
+      "tag": "0032_closed_pull_requests",
+      "breakpoints": true
     }
   ]
 }

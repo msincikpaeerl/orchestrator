@@ -54,6 +54,11 @@ export async function endPool(pool: pg.Pool): Promise<void> {
  * connection checked out, as in a transaction waiting between two queries, reports on the client,
  * and an `error` event nobody listens to stops the process. So every connection gets a listener
  * when it is created, and each lost connection is reported once.
+ *
+ * A connection lost while one of its queries runs never raises the client's `error`: PostgreSQL's
+ * error goes to that query, and the pool, released with it, ends the client before the
+ * connection closes (lot 3 step J3a). PostgreSQL's FATAL or PANIC message, which comes before the
+ * connection closes, is therefore reported from the connection itself.
  */
 export function reportConnectionErrors(pool: pg.Pool, report: (error: Error) => void): void {
   // Required by pg-pool for idle connections; the connection's listener below reports them.
@@ -62,10 +67,15 @@ export function reportConnectionErrors(pool: pg.Pool, report: (error: Error) => 
     // A lost connection raises PostgreSQL's error, then "Connection terminated unexpectedly":
     // both are handled, the first is reported.
     let reported = false;
-    client.on('error', (error) => {
+    const once = (error: Error) => {
       if (reported) return;
       reported = true;
       report(error);
+    };
+    client.on('error', once);
+    // The pool's clients are `pg.Client`s (`createPool`'s own class), whose type has `connection`.
+    (client as pg.Client).connection.on('errorMessage', (error: pg.DatabaseError) => {
+      if (error.severity === 'FATAL' || error.severity === 'PANIC') once(error);
     });
   });
 }

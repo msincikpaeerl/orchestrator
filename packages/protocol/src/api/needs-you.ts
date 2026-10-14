@@ -5,10 +5,10 @@ import { AgentLink } from './agents.js';
 import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
-import { PullRequestFailure } from './pull-requests.js';
+import { PullRequestFailure, PullRequestReopenFailure } from './pull-requests.js';
 import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
 import { Run } from './runs.js';
-import { Comment, WorkflowFlag } from './tickets.js';
+import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
 
 const MachineRef = z.object({ id: z.uuid(), name: z.string() });
@@ -244,6 +244,27 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     base: z.string().nullable(),
     outcome: RunCiOutcome,
     /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * The ticket's pull request closed on GitHub without merging, or merged into another base than
+   * the project's default branch (04, section 2; lot 3 step J3a), while the ticket is neither done
+   * nor cancelled: the ticket is unchanged. Closed: **Reopen pull request** or **Cancel ticket**;
+   * merged elsewhere (`mergedInto`), which GitHub never reopens: **Cancel ticket** or **Mark as
+   * done manually**, and the next accepted submission opens a new pull request into the default
+   * branch. Not shown for a pull request the Orchestrator closed at **Cancel**. Goes when the pull
+   * request is found open again, or the ticket is done or cancelled.
+   */
+  z.object({
+    type: z.literal('pull_request_closed'),
+    ticket: TicketRef,
+    status: TicketStatus,
+    pullRequest: z.object({ number: z.int().positive(), url: z.url() }),
+    /** The base it was merged into; null when it was closed without merging. */
+    mergedInto: z.string().nullable(),
+    /** The latest failed **Reopen pull request**; null when none. */
+    reopenFailure: PullRequestReopenFailure.nullable(),
+    /** GitHub's time of the close or the merge; when the server found it if GitHub gave none. */
     since: z.iso.datetime(),
   }),
   /** A run paused on a usage limit, detected or suspected: **Resume** or **Stop run**. */
