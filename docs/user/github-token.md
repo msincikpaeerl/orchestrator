@@ -41,7 +41,7 @@ The button fills these in. They are listed here if you create the token by hand,
 |---|---|---|---|
 | Repository access | All repositories | Covers the repositories it creates later. | — |
 | Administration | Read and write | Creates repositories and protects their main branch. | — |
-| Contents | Read and write | Commits the first files of a new project. A machine pushes each ticket's branch with it, and downloads the project when a run starts. Deletes a ticket's branch on GitHub once its pull request is merged (see [What the Orchestrator deletes after a merge](tickets.md#what-the-orchestrator-deletes-after-a-merge)). | Contents (Read and write) |
+| Contents | Read and write | Commits the first files of a new project. A machine pushes each ticket's branch with it, and downloads the project when a run starts. Compares the commit Quality approved with a pull request changed on GitHub after the review. Deletes a ticket's branch on GitHub once its pull request is merged (see [What the Orchestrator deletes after a merge](tickets.md#what-the-orchestrator-deletes-after-a-merge)). | Contents (Read and write) |
 | Pull requests | Read and write | Opens, updates and reopens each ticket's pull request, posts the Quality agent's reviews as comments, and sees when you merge. | Pull requests (Read and write) |
 | Workflows | Read and write | Adds the automatic checks (GitHub Actions) to new projects. A machine needs it to push a ticket's branch that changes a file in `.github/workflows/`: GitHub refuses that push without it, and its message speaks of a "`workflow` scope". | Workflows (Read and write) |
 | Commit statuses | Read-only | Reads the result of automatic checks reported as commit statuses. | — |
