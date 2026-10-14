@@ -5,12 +5,13 @@
 In this version, it shows:
 
 - what agents' work leaves for you: questions, tickets they propose, work ready for review, tickets stopped after too many review rounds, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
+- pull requests to merge, and pull requests closed on GitHub without merging (see [Pull requests to merge](#pull-requests-to-merge) and [Closed pull requests](#closed-pull-requests));
 - runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
 
-Later versions add plans to approve and pull requests to merge.
+Plans to approve come with a later version.
 
-The setup still to do comes first. Every other item is listed oldest first, by the time its reason began: when the question was asked, the ticket proposed, the work submitted or the run paused.
+The setup still to do comes first. Every other item is listed oldest first, by the time its reason began: when the question was asked, the ticket proposed, the work submitted, the ticket moved to **Awaiting merge**, the pull request closed, or the run paused.
 
 ## Claude accounts
 
@@ -38,7 +39,37 @@ Each item links to its ticket; its buttons are the same as on the ticket page.
 | Run paused: Claude usage limit reached | The run stopped at the usage limit of its Claude account. The item says when you can resume it, "(estimated)" when Claude gave no reset time. | Wait for that time, then click **Resume**: the button becomes available by itself. Or **Stop run**. |
 | Run paused: possible Claude usage limit | The run stopped on an error that may be the usage limit, or Claude being overloaded, or a network problem. | Click **Resume** at once: the run may pause again if it was the limit. Or **Stop run**. |
 
-In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, reviewed or skipped, tried again or cancelled, resumed or stopped, the branch pushed to GitHub, or the pull request opened or updated.
+In this version nothing resumes by itself: a paused run waits for your **Resume**. An item disappears once it is handled: answered, accepted or rejected, marked as done or sent back, reviewed or skipped, tried again or cancelled, resumed or stopped, the branch pushed to GitHub, the pull request opened, updated, merged or reopened.
+
+## Pull requests to merge
+
+From version 0.4.0, each ticket on **Awaiting merge** whose pull request is open on GitHub is an item **Pull request to merge: …**. You merge it on GitHub yourself: the Orchestrator never merges. The item shows:
+
+- **Pull request #…**, a link to it on GitHub;
+- the review: "Quality approved commit …", with Quality's summary below it, or "Review skipped" when you used **Skip review** (then check the pull request yourself before merging);
+- the CI line, as on "Ready for review": "CI passed on GitHub for commit …", "(checked again by you at …)" after **Check CI again**, or "No CI found for commit …";
+- a line when the work changed workflow files, which decide what CI checks: look at them on the pull request before merging;
+- **Conflicts with main: GitHub cannot merge it as it is.** when GitHub says the pull request conflicts with its base branch;
+- a line when the pull request's head changed on GitHub after Quality's approval or your skip (someone pushed to the branch, or used **Update branch**): "Pull request #12's head on GitHub is now def5678, not abc1234, which Quality approved", with the titles of the commits added since (the five newest, then "and N more"), or a line saying the approved commit is no longer part of the pull request when its history was rewritten. Quality did not review those commits: look at them before merging, or use **Request changes**;
+- a line when GitHub could not be checked for this pull request (for example the token lost a permission): while it lasts, a merge is not found, and the ticket stays on **Awaiting merge** after you merged. The Orchestrator asks again at each **GitHub check interval** (see [Settings](settings.md#settings-reference)).
+
+| You want to | Do |
+|---|---|
+| Merge it | Merge the pull request on GitHub, with any merge method. At its next GitHub check the Orchestrator finds the merge: the ticket moves to **Done** and the item disappears by itself, without reloading the page. See [Merging the pull request](tickets.md#merging-the-pull-request). |
+| Send it back | **Request changes**, with a comment saying what to change: the ticket goes back to **To do** and its pull request stays open; a dialog offers **Run now**. When the item shows a conflict, the comment is already filled in, asking the agent to merge the base branch and resolve the conflicts; you can change it. The agent is told to merge the base branch whatever the comment says, since GitHub reported the conflict. |
+
+## Closed pull requests
+
+From version 0.4.0, when a ticket's pull request is closed on GitHub without merging while the ticket is neither done nor cancelled, the item **Pull request closed without merging for …** says when, and that the ticket is unchanged.
+
+| You want to | Do |
+|---|---|
+| Go on with the work | **Reopen pull request**: the Orchestrator reopens it on GitHub, and the item disappears. If GitHub refuses, the item shows GitHub's reason; when the branch is gone from GitHub, the next accepted submission opens a new pull request. |
+| Stop the work | **Cancel the ticket**. The pull request stays closed. |
+
+Reopening the pull request on GitHub yourself works too: the item disappears at the next GitHub check.
+
+A pull request merged into another branch than the project's default branch (its base changed on GitHub) is the same item, **Pull request merged into … for …**: the work did not reach the default branch, so the ticket is unchanged. GitHub never reopens a merged pull request, so the item offers **Cancel the ticket** and **Mark as done manually** (when the work is done this way); otherwise the next accepted submission opens a new pull request into the default branch.
 
 ## Pull request not opened
 

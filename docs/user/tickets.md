@@ -335,13 +335,13 @@ A review run can end without a decision applied: Quality gave up, its time ran o
 
 ### Merging the pull request
 
-You merge the pull request on GitHub, with the method you prefer: a merge commit, squash, or rebase. The Orchestrator checks GitHub every **GitHub check interval** (60 seconds by default, in [Settings > Limits](settings.md#settings-reference)); the ticket page's **Awaiting merge** line says the current value. At the first check after the merge:
+You merge the pull request on GitHub, with the method you prefer: a merge commit, squash, or rebase. While the ticket is on **Awaiting merge**, [Needs you](needs-you.md#pull-requests-to-merge) lists it as **Pull request to merge**, with the review, the CI result and anything to look at before merging. The Orchestrator checks GitHub every **GitHub check interval** (60 seconds by default, in [Settings > Limits](settings.md#settings-reference)); the ticket page's **Awaiting merge** line says the current value. At the first check after the merge:
 
 - The ticket moves to **Done**, from any state where its pull request was open, even before Quality's review. Tickets waiting for it are no longer blocked by it, and its items leave [Needs you](needs-you.md).
 - A run still working on the ticket (the agent, or Quality's review) is stopped. It does not count as a failed attempt.
 - A comment says when GitHub merged it and its latest commit then, for example "Pull request #12 was merged on GitHub at 2026-10-11 16:02 UTC (head def5678).", then what CI said of that commit ("CI passed for this commit.", or why the Orchestrator's CI result does not cover it), and Quality's review ("Quality approved this commit.", "It was merged before Quality's review.", or a request for changes that was not addressed). Times in comments are in UTC.
 
-Only a merge into the project's default branch counts. If you change the pull request's base on GitHub and merge it into another branch, the ticket does not change.
+Only a merge into the project's default branch counts. If you change the pull request's base on GitHub and merge it into another branch, the ticket does not change, and Needs you shows it with what you can do (see [Closed pull requests](needs-you.md#closed-pull-requests)).
 
 If the Orchestrator was stopped when you merged, it finds the merge when it starts again, and the comment gives GitHub's time of the merge. A ticket you already marked as done manually only gets a comment saying the pull request was merged after you marked it. A ticket you cancelled stays **Cancelled**: the comment says the pull request was merged anyway; to record it as done, use **Reopen**, then **Mark as done manually**.
 

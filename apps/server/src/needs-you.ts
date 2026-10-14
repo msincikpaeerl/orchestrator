@@ -32,11 +32,12 @@ import type { Database } from './database.js';
 import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.js';
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
-import { ciOutcome } from './runs/ci-outcome.js';
-import { ticketReview } from './runs/review-view.js';
+import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
+import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
-import { profileLinks, toComment } from './tickets/model.js';
+import { profileLinks, toComment, type TicketRow } from './tickets/model.js';
+import { headMoved, ticketConflict, ticketWatchFailure } from './tickets/pull-request-facts.js';
 
 type Items = NeedsYouResponse['items'];
 
@@ -111,11 +112,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
         commit: ready.commit,
         ci: ready.ci,
         checkedAgainAt: ready.checkedAgainAt,
-        workflowFlag: ticket.workflowChanges
-          ? ticket.workflowReason === null
-            ? 'not_kept'
-            : WorkflowReason.parse(ticket.workflowReason)
-          : null,
+        workflowFlag: workflowFlag(ticket),
         since: ready.since,
       });
     } else {
@@ -141,6 +138,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
   items.push(...(await pushFailedItems(db)));
   items.push(...(await pullRequestItems(db)));
   items.push(...(await closedPullRequestItems(db)));
+  items.push(...(await toMergeItems(db)));
   items.push(...(await ciTimeoutItems(db)));
   items.push(...(await stoppedItems(db)));
 
@@ -307,6 +305,88 @@ async function closedPullRequestItems(db: Database): Promise<Items> {
           ? null
           : PullRequestReopenFailure.parse(ticket.pullRequestReopenFailure),
       since: (since ?? ticket.updatedAt).toISOString(),
+    });
+  }
+  return items;
+}
+
+/** The workflow flag of the accepted submission, with its reason (lot 3 step F4). */
+function workflowFlag(ticket: TicketRow) {
+  if (!ticket.workflowChanges) return null;
+  return ticket.workflowReason === null ? 'not_kept' : WorkflowReason.parse(ticket.workflowReason);
+}
+
+/**
+ * Pull requests to merge (02, section 4; lot 3 step J4a): tickets on **Awaiting merge** whose pull
+ * request is open as last read, since they entered it. One closed or merged elsewhere is the
+ * closed item instead; a merge into the default branch makes the ticket done (step J1).
+ */
+async function toMergeItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ ticket: schema.tickets, project: schema.projects })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        eq(schema.tickets.status, 'awaiting_merge'),
+        eq(schema.tickets.pullRequestState, 'open'),
+        isNotNull(schema.tickets.pullRequestNumber),
+        isNotNull(schema.tickets.pullRequestUrl),
+      ),
+    )
+    // Items that began at the same time keep this order (the list's sort is stable).
+    .orderBy(asc(schema.projects.key), asc(schema.tickets.number));
+  const items: Items = [];
+  for (const { ticket, project } of rows) {
+    const { pullRequestNumber: number, pullRequestUrl: url } = ticket;
+    if (number === null || url === null) continue;
+    const { latest } = (await ticketReview(db, ticket)).review;
+    const source = await ciSourceRun(db, ticket.id);
+    const outcome = source === null ? null : ciOutcome(source);
+    const result = reviewCiOf(outcome);
+    // The latest move to Awaiting merge: Quality's approval applied, or the owner's skip.
+    const [entered] = await db
+      .select({ at: schema.events.createdAt })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.entityType, 'ticket'),
+          eq(schema.events.entityId, ticket.id),
+          eq(schema.events.type, 'ticket.status_changed'),
+          sql`${schema.events.payload}->>'to' = 'awaiting_merge'`,
+        ),
+      )
+      .orderBy(desc(schema.events.id))
+      .limit(1);
+    items.push({
+      type: 'pull_request_to_merge',
+      ticket: { projectKey: project.key, number: ticket.number, title: ticket.title },
+      pullRequest: { number, url },
+      review:
+        latest?.kind === 'skipped'
+          ? { kind: 'skipped', at: latest.at }
+          : latest?.kind === 'decision' && latest.decision.kind === 'approved'
+            ? {
+                kind: 'approved',
+                commit: latest.decision.commit,
+                summary: latest.decision.summary,
+                at: latest.decision.at,
+              }
+            : null,
+      ci:
+        outcome === null || result === null
+          ? null
+          : {
+              result,
+              commit: outcome.commit,
+              checkedAgainAt: outcome.acceptedLater?.at ?? null,
+            },
+      workflowFlag: workflowFlag(ticket),
+      conflict: ticketConflict(ticket),
+      headMoved: await headMoved(db, ticket),
+      watchFailure: ticketWatchFailure(project, ticket),
+      since: (entered?.at ?? ticket.updatedAt).toISOString(),
     });
   }
   return items;

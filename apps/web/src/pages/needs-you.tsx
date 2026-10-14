@@ -19,6 +19,7 @@ import {
   CancelAction,
   MarkDoneAction,
   RejectAction,
+  ReopenPullRequestAction,
   RequestChangesAction,
   RunNowAction,
   RunNowOffer,
@@ -27,7 +28,14 @@ import {
   TryAgainAction,
   type TicketAddress,
 } from '../tickets/actions';
-import { stopText } from '../tickets/change-text';
+import { awaitingMergeRequestText, stopText } from '../tickets/change-text';
+import {
+  closedItemText,
+  conflictFlagText,
+  headMovedText,
+  toMergeText,
+  watchFailureText,
+} from '../tickets/merge-text';
 import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
@@ -48,6 +56,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'ci_timeout':
     case 'ticket_stopped':
     case 'pull_request_closed':
+    case 'pull_request_to_merge':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
       return `${item.type}-${item.run.id}`;
@@ -353,25 +362,145 @@ function PullRequestNotOpenedCard({
   );
 }
 
+/** A warning line on an item: amber, as the workflow line of "Ready for review". */
+const warningClass = 'rounded border border-amber-300 bg-amber-50 p-2 break-words text-slate-800';
+
 /**
- * The ticket's pull request closed on GitHub without merging, or merged into another base (lot 3
- * step J3a): a plain card for now; its words and buttons come with step J4.
+ * A pull request to merge (02, section 4; lot 3 step J4a): the pull request, the review, the CI
+ * and workflow lines, the conflict flag with **Request changes** filled in, the moved head and
+ * the watch's failure. The owner merges on GitHub; the item goes when the merge is found.
+ */
+function ToMergeCard({
+  item,
+  onChangesRequested,
+}: {
+  item: Extract<NeedsYouItem, { type: 'pull_request_to_merge' }>;
+  onChangesRequested: (ticket: TicketAddress) => void;
+}) {
+  const text = toMergeText(item);
+  const moved = item.headMoved && headMovedText(item.headMoved, item.pullRequest.number);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p>
+        <a
+          href={item.pullRequest.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 underline"
+        >
+          Pull request #{item.pullRequest.number}
+        </a>
+      </p>
+      <p className="break-words text-slate-700">{text.review}</p>
+      {item.review?.kind === 'approved' && item.review.summary !== null && (
+        <section aria-label="Quality's summary" className="text-slate-800">
+          <UntrustedMarkdown>{item.review.summary}</UntrustedMarkdown>
+        </section>
+      )}
+      <p className="break-words text-slate-700">{text.ci}</p>
+      {text.workflows && <p className={warningClass}>{text.workflows}</p>}
+      {item.conflict && (
+        <p aria-label="Conflict" className={warningClass}>
+          {conflictFlagText(item.conflict.base)}
+        </p>
+      )}
+      {moved && (
+        <div aria-label="Head moved" className={`${warningClass} space-y-1`}>
+          <p>{moved.sentence}</p>
+          {moved.added.length > 0 && (
+            <>
+              <p>Commits added since, newest first:</p>
+              <ul className="list-disc pl-5">
+                {moved.added.map((title, index) => (
+                  <li key={`${String(index)} ${title}`} className="break-words">
+                    {title}
+                  </li>
+                ))}
+                {moved.more && <li>{moved.more}</li>}
+              </ul>
+            </>
+          )}
+          {moved.notPart && <p>{moved.notPart}</p>}
+        </div>
+      )}
+      {item.watchFailure && (
+        <p aria-label="Not checked on GitHub" className={warningClass}>
+          {watchFailureText(item.watchFailure)}
+        </p>
+      )}
+      <p className="break-words text-slate-700">{text.merge}</p>
+      <p className="text-sm text-slate-600">Waiting since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <RequestChangesAction
+          ticket={item.ticket}
+          text={awaitingMergeRequestText(item.review)}
+          filledIn={item.conflict?.request ?? ''}
+          onRequested={() => {
+            onChangesRequested(item.ticket);
+          }}
+        />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="tickets#merging-the-pull-request">Merging the pull request</HelpLink>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The ticket's pull request closed on GitHub without merging, with **Reopen pull request** and
+ * **Cancel**; or merged into another base, with **Cancel** and **Mark as done manually**, since
+ * GitHub never reopens a merged one (owner's answers 1 and 4 of step J, lot 3 step J4a).
  */
 function PullRequestClosedCard({
   item,
 }: {
   item: Extract<NeedsYouItem, { type: 'pull_request_closed' }>;
 }) {
-  const reference = `${item.ticket.projectKey}-${String(item.ticket.number)}`;
+  const text = closedItemText(item);
   return (
     <Card className="space-y-2">
-      <h2 className="font-semibold break-words text-slate-900">
-        {item.mergedInto === null
-          ? `Pull request closed without merging for ${reference}`
-          : `Pull request merged into ${item.mergedInto} for ${reference}`}
-      </h2>
+      <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
       <TicketTitle ticket={item.ticket} />
+      <p>
+        <a
+          href={item.pullRequest.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 underline"
+        >
+          Pull request #{item.pullRequest.number}
+        </a>
+      </p>
+      <p className="break-words text-slate-700">{text.detail}</p>
+      {text.reopenFailure && (
+        <p aria-label="Reopen refused" className={warningClass}>
+          {text.reopenFailure}
+        </p>
+      )}
       <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        {item.mergedInto === null && <ReopenPullRequestAction ticket={item.ticket} />}
+        <Cancel ticket={item.ticket} />
+        {item.mergedInto !== null && <MarkDone ticket={item.ticket} />}
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="needs-you#closed-pull-requests">What to do</HelpLink>
+      </div>
     </Card>
   );
 }
@@ -581,6 +710,13 @@ export function NeedsYouPage() {
                 <PullRequestNotOpenedCard item={item} />
               ) : item.type === 'pull_request_closed' ? (
                 <PullRequestClosedCard item={item} />
+              ) : item.type === 'pull_request_to_merge' ? (
+                <ToMergeCard
+                  item={item}
+                  onChangesRequested={(ticket) => {
+                    setOffer({ ticket, after: 'request_changes' });
+                  }}
+                />
               ) : item.type === 'ci_timeout' ? (
                 <CiTimeoutCard item={item} onAccepted={setAccepted} />
               ) : item.type === 'ticket_stopped' ? (

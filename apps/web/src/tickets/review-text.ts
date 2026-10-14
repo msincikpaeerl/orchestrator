@@ -27,15 +27,21 @@ function points(count: number): string {
   return `${String(count)} point${count === 1 ? '' : 's'}`;
 }
 
-/** The CI line of "Ready for review" (owner's answer 4, lot 3 step H). */
-function readyCiLine(item: Extract<NeedsYouItem, { type: 'ready_for_review' }>): string {
-  const commit = short(item.commit);
+/**
+ * The CI line of "Ready for review" (owner's answer 4, lot 3 step H) and of a pull request to
+ * merge (step J4a): with workflow files changed, "No CI found" says it in the same sentence.
+ */
+export function ciLine(
+  ci: 'passed' | 'passed_later' | 'no_ci',
+  fullCommit: string,
+  checkedAgainAt: string | null,
+  workflowFlag: WorkflowFlag | null,
+): string {
+  const commit = short(fullCommit);
   const again =
-    item.checkedAgainAt === null
-      ? ''
-      : ` (checked again by you at ${formatDateTime(item.checkedAgainAt)})`;
-  if (item.ci === 'no_ci') {
-    return item.workflowFlag === 'changed'
+    checkedAgainAt === null ? '' : ` (checked again by you at ${formatDateTime(checkedAgainAt)})`;
+  if (ci === 'no_ci') {
+    return workflowFlag === 'changed'
       ? `No CI found for commit ${commit}${again}, and this work changed files under .github/workflows/: it may have removed or weakened CI. Read them before reviewing or merging.`
       : `No CI found for commit ${commit}${again}`;
   }
@@ -43,7 +49,7 @@ function readyCiLine(item: Extract<NeedsYouItem, { type: 'ready_for_review' }>):
 }
 
 /** The workflow line, on its own unless the CI line already says it. */
-function workflowLine(flag: WorkflowFlag | null, saidWithCi: boolean): string | null {
+export function workflowLine(flag: WorkflowFlag | null, saidWithCi: boolean): string | null {
   if (flag === null || saidWithCi) return null;
   const look = 'Look at them on the pull request before reviewing or merging.';
   return flag === 'changed'
@@ -59,7 +65,7 @@ export function readyForReviewText(item: Extract<NeedsYouItem, { type: 'ready_fo
 } {
   return {
     title: `Ready for review: ${ticketRef(item.ticket.projectKey, item.ticket.number)} ${item.ticket.title}`,
-    ci: readyCiLine(item),
+    ci: ciLine(item.ci, item.commit, item.checkedAgainAt, item.workflowFlag),
     workflows: workflowLine(
       item.workflowFlag,
       item.ci === 'no_ci' && item.workflowFlag === 'changed',

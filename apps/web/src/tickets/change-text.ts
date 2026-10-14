@@ -45,10 +45,23 @@ export function requestChangesText(
   if (status !== 'awaiting_merge') {
     return 'The ticket goes back to To do with your comment. Its branch and commits are kept, and the next run continues from them with your comment in its instructions. This does not count as a failed attempt.';
   }
-  const after =
+  return awaitingMergeRequestText(
     latest?.kind === 'decision'
-      ? `Quality approved commit ${latest.decision.commit.slice(0, 7)}. `
+      ? { kind: 'approved', commit: latest.decision.commit }
       : latest?.kind === 'skipped'
+        ? { kind: 'skipped' }
+        : null,
+  );
+}
+
+/** What **Request changes** does on **Awaiting merge**, naming the approval or the skip. */
+export function awaitingMergeRequestText(
+  review: { kind: 'approved'; commit: string } | { kind: 'skipped' } | null,
+): string {
+  const after =
+    review?.kind === 'approved'
+      ? `Quality approved commit ${review.commit.slice(0, 7)}. `
+      : review?.kind === 'skipped'
         ? 'You skipped the review. '
         : '';
   return `${after}The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open.`;

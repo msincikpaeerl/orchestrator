@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A to I2 done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4; J0 done)
+> Status: in progress (steps A to J3b done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -1288,14 +1288,52 @@ Split approved by the owner on 2026-10-14 (J3a, J3b below; J4 unchanged), with t
 - **Help and CHANGELOG**: Tickets > "Waiting for CI"'s rows **Passed** and **Conflicts with the default branch** were made false and are rewritten; Connect GitHub's Contents row names the comparison. The "to merge" item, the ticket page lines and the rest of Help are J4's.
 - **Tests**: `apps/server/test/conflicts-moved-head.test.ts` (14), `src/tickets/pull-request-facts.test.ts` (6); `every-event.ts` writes the two new events (SHOP-2 set on Awaiting merge, main made to conflict then reverted), and `event-log.test.ts` lists them, with the conflict fact the scenario's scripted conflicting read now also writes. No assertion removed.
 
-### [ ] J4. Screens, Help, CHANGELOG
+### J4. Screens, Help, CHANGELOG and the smoke script, split in three (rule 15)
 
 - **The watch's failure** stored by J3 (owner's note on J1): shown on the ticket page and on the "to merge" item.
 - **The e2e job** (owner's note on J1): it takes 479 seconds on `main`; J4 adds end-to-end tests, so it splits the job in the same change if it passes 8 minutes.
 
 - "Needs you" pull requests to merge, the closed item, the conflict flag, the moved-head line; the ticket page lines; the rest of answer 7's Help rewrites; CHANGELOG; the smoke script's A32 to A38 and step 11 (answer 8).
 
-**Done when** Playwright on desktop and phone shows "Needs you" listing a pull request to merge that becomes `done` after the fake merge without reload, the closed item and the conflict flag, with screenshots and nothing scrolling sideways; the smoke script's dry run covers the new steps.
+**Done when** (whole of J4) Playwright on desktop and phone shows "Needs you" listing a pull request to merge that becomes `done` after the fake merge without reload, the closed item and the conflict flag, with screenshots and nothing scrolling sideways; the smoke script's dry run covers the new steps.
+
+Split approved by the owner on 2026-10-14 (J4a, J4b, J4c below), done in that order, each in its own session once the previous one is merged, with these answers. Found at the start: "Needs you" had no "to merge" item at all (J3b put its facts on the ticket's API only), so J4a builds a whole item kind.
+
+1. Three sub-steps, each on its own branch: `lot3/j4a-needs-you-merge`, `lot3/j4b-ticket-page-help`, `lot3/j4c-github-smoke`.
+2. The watch's failure on the "to merge" item: J4a, with the item.
+3. "Reopen it first" for **Start review** on a closed pull request: J4b.
+4. **Request changes** on the "to merge" item goes through the same action as on the ticket page, so the conflict mark still comes from GitHub's stored fact, never from the text; tested from the item with the filled-in comment edited (owner's addition).
+
+### [x] J4a. "Needs you": the pull requests to merge and the closed item
+
+- A new item for each ticket on **Awaiting merge**: the pull request link, the review summary or "review skipped", the CI line, the conflict flag ("Conflicts with main: GitHub cannot merge it as it is.") with **Request changes** filled in from the API (answer 4), the workflow flag, the moved-head line (the commits added, "no longer part of", or the comparison failed; answer 3), the watch's failure; ordered by when the wait began; gone when the ticket leaves **Awaiting merge** (done after a merge, without reload).
+- The closed item's words and buttons: **Reopen pull request** and **Cancel ticket**; merged into another base, **Cancel ticket** and **Mark as done manually** (answer 1); a refused reopen with GitHub's reason, and "The next accepted submission opens a new pull request." when its branch is gone.
+- Needs you's introduction rewritten (answer 7); Help > Needs you and CHANGELOG for these.
+
+**Done when** Playwright on desktop and phone shows a pull request to merge that becomes `done` after the fake merge without reload, the closed item with its buttons (closed, and merged into another base), the conflict flag with **Request changes** filled in (sent from the item with the comment edited, the conflict mark from the stored fact), the moved-head line and the watch's failure on the item, with screenshots, nothing scrolling sideways, each e2e shard under 8 minutes (a third shard if needed); server tests cover the item's facts and its order; `pnpm verify` and `pnpm test:e2e` pass.
+
+*Done 2026-10-14.* Choices made in the step:
+
+- **The item** (`pull_request_to_merge`, `apps/server/src/needs-you.ts`): every ticket on **Awaiting merge** of an active project whose pull request is open as last read; a closed one, or one merged into another base, is the closed item instead, and a merge into the default branch makes the ticket done (J1), so the item goes by itself. Its facts: the latest review (Quality's approval with its masked summary, or the skip; null when neither is recorded), the CI result of the accepted work (passed, passed when **Check CI again** read it, or "No CI found", with the commit), the workflow flag, and J3's facts through the ticket page's own functions (`ticketConflict`, `ticketWatchFailure`, moved from `tickets/routes.ts` to `tickets/pull-request-facts.ts`, and `headMoved`). **When the wait began** is the ticket's latest `ticket.status_changed` event to `awaiting_merge` (tickets keep no status time); items that began at the same time keep the order of project and number. Cost: no GitHub request (stored facts only).
+- **Words not given by the answers**, chosen here (02, section 4): the title "Pull request to merge: BAK-12 Contact form"; "Quality approved commit abc1234 at <time>." with the summary below; "Review skipped: you skipped Quality's review at <time>. Check the pull request yourself before merging it."; "No review by Quality is recorded…" and "No CI result is recorded for this work." for tickets with neither; "Merge it on GitHub: BAK-12 moves to Done by itself when the Orchestrator finds the merge, at its next GitHub check." (no duration: the interval is a setting); "Waiting since <time>"; the moved head's list introduced by "Commits added since, newest first:", and "…is no longer part of pull request #12: its history was rewritten on GitHub."; the watch's failure "GitHub could not be checked for this pull request at <time> (since <time>): <reason>. A merge is not found while this lasts; the Orchestrator asks again at each GitHub check." (the reasons are the CI wait's, `ciProblemReason`). The CI and workflow lines are "Ready for review"'s (`ciLine`, `workflowLine`, shared).
+- **Request changes** (answer 4 above): the ticket page's `RequestChangesAction`, given `filledIn` (the API's `conflict.request`) as the comment the dialog opens with; the server marks the conflict from its stored fact (J3b). Tested from the item with the comment edited (server and end-to-end). The ticket page does not fill it in yet: its conflict line is J4b's.
+- **The closed item**: "Pull request closed without merging for BAK-12: Contact form", "Pull request #12 was closed on GitHub at <time> without merging. The ticket is unchanged (Awaiting merge).", **Reopen pull request** (new `ReopenPullRequestAction`, one try, answered once made) and **Cancel the ticket**; a refusal "GitHub refused to reopen it: <GitHub's words>." and, its branch gone, "Its branch is gone from GitHub. The next accepted submission opens a new pull request."; a failure that is not GitHub's refusal (not reached, the token, the request limit) "Not reopened: <reason>. Try again later.", since "refused" would be wrong. Merged into another base: "Pull request merged into release for BAK-12: Contact form", the sentence saying it is not in the default branch and what happens next, **Cancel the ticket** and **Mark as done manually**. **The buttons keep the ticket page's labels** ("Cancel the ticket", as everywhere in the app, where answer 1 wrote "Cancel ticket"): the same action, the same dialog.
+- **Help**: Needs you's introduction rewritten (plans to approve still come later), "Pull requests to merge" and "Closed pull requests"; Tickets > "Merging the pull request" points to them. Spec 02 section 4 gains the words.
+- **End-to-end** (`apps/web/e2e/merge.e2e.ts`, desktop and phone, 8 tests, about 30 seconds): approved with the head moved by **Update branch**, then merged on the fake GitHub and the item gone without reload ("Nothing needs you right now."); the conflict and the watch's failure, **Request changes** filled in, edited and sent, the mark from the fact; closed, the reopen refused then done, the "to merge" item back; merged into another base, then **Mark as done manually**. The end-to-end server gains `POST /github/change-base` (the base changed through the fake's own API, as on GitHub's site). Screenshots: `needs-you-to-merge`, `needs-you-to-merge-conflict`, `needs-you-to-merge-request-changes`, `needs-you-pull-request-closed`, `needs-you-pull-request-merged-elsewhere`.
+- **Tests**: `apps/server/test/needs-you-merge.test.ts` (6: the facts and the merge, the skip and the order, the conflict and Request changes edited, the moved head, the watch's failure, the closed item taking over); `merges.test.ts` "every item kind" gains a ticket on **Awaiting merge** (the new kind fails it otherwise); `apps/web/src/tickets/merge-text.test.ts` (12). No assertion removed.
+
+### [ ] J4b. The ticket page and the rest of Help
+
+- Ticket page lines: the conflict, the moved head, the closed state (closed on GitHub or at **Cancel**, when), **Cancel**'s close failing, the refused reopen, the watch's failure; **Start review** refused with "Reopen it first" (answer 3 above).
+- Help: the rest of answer 7 (Tickets > "The pull request", Runs > "What on GitHub means", the states table's "Mark as done manually if it is right", `tickets.md`'s **Check CI again** sentence on a merged pull request); closed pull requests, conflicts, the moved head, the watch's failure; **Cancel** closes the pull request. CHANGELOG for what is still missing.
+
+**Done when** Playwright on desktop and phone shows these ticket page lines with screenshots and nothing scrolling sideways, the Help page reads the new sections, and `pnpm verify` and `pnpm test:e2e` pass.
+
+### [ ] J4c. The smoke script
+
+- `tools/smoke/github-smoke.sh`: A32 to A38 (answer 8 of step J); before step 11, the repository's merge settings read, naming the box to tick when squash or rebase merging is off; step 11, the owner merges one pull request by squash and one by rebase; every branch the script made deleted. What the fake GitHub lacks for the dry run, checked against GitHub's documented answers. Step J checked off.
+
+**Done when** the script's dry run against the fake GitHub covers every new step, A32 to A38 and the deletion of its branches, and `pnpm verify` and `pnpm test:e2e` pass. The owner runs it on the real GitHub after J4c is merged, before K.
 
 ### [ ] K. Failures and retries
 
