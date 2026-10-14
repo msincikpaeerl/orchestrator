@@ -18,7 +18,7 @@ What a change affects:
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
 - Every change is recorded in the [event log](activity.md#event-log).
 
-Limits marked "Used from version ..." belong to features of later versions (CI checks, the scheduler, plans). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
+Limits marked "Used from version ..." belong to features of later versions (the scheduler from version 0.5.0, plans from version 0.6.0). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
 
 ## Override a limit for one project
 
@@ -28,7 +28,7 @@ Some limits can have a different value for one project: the reference below says
 2. Each limit says whether the project uses the global value (the one in **Settings > Limits**) or its own value. Type a value and click **Save**: it applies to this project only.
 3. **Reset to default** removes the project's own value: the project uses the global value again, and follows it when you change it.
 
-The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In this version, **Most tickets an agent creates per run** is the only limit a project can override that already changes something; the others belong to later versions.
+The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In version 0.4.0, every limit a project can override already changes something (**Most tickets an agent creates per run**, **Failed attempts before asking you**, **CI wait at submission**, **Wait for CI to start**, **Most CI failures per run** and **Most review rounds per ticket**), except **Most tickets per plan**, which belongs to plans (version 0.6.0).
 
 ## Settings reference
 
