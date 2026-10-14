@@ -32,7 +32,6 @@ import { awaitingMergeRequestText, stopText } from '../tickets/change-text';
 import {
   closedItemText,
   conflictFlagText,
-  headMovedText,
   toMergeText,
   watchFailureText,
 } from '../tickets/merge-text';
@@ -40,6 +39,7 @@ import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-tex
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
+import { HeadMovedLines, warningClass } from '../tickets/pull-request-lines';
 import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
 
 function itemKey(item: NeedsYouItem): string {
@@ -362,9 +362,6 @@ function PullRequestNotOpenedCard({
   );
 }
 
-/** A warning line on an item: amber, as the workflow line of "Ready for review". */
-const warningClass = 'rounded border border-amber-300 bg-amber-50 p-2 break-words text-slate-800';
-
 /**
  * A pull request to merge (02, section 4; lot 3 step J4a): the pull request, the review, the CI
  * and workflow lines, the conflict flag with **Request changes** filled in, the moved head and
@@ -378,7 +375,6 @@ function ToMergeCard({
   onChangesRequested: (ticket: TicketAddress) => void;
 }) {
   const text = toMergeText(item);
-  const moved = item.headMoved && headMovedText(item.headMoved, item.pullRequest.number);
   return (
     <Card className="space-y-2">
       <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
@@ -406,24 +402,8 @@ function ToMergeCard({
           {conflictFlagText(item.conflict.base)}
         </p>
       )}
-      {moved && (
-        <div aria-label="Head moved" className={`${warningClass} space-y-1`}>
-          <p>{moved.sentence}</p>
-          {moved.added.length > 0 && (
-            <>
-              <p>Commits added since, newest first:</p>
-              <ul className="list-disc pl-5">
-                {moved.added.map((title, index) => (
-                  <li key={`${String(index)} ${title}`} className="break-words">
-                    {title}
-                  </li>
-                ))}
-                {moved.more && <li>{moved.more}</li>}
-              </ul>
-            </>
-          )}
-          {moved.notPart && <p>{moved.notPart}</p>}
-        </div>
+      {item.headMoved && (
+        <HeadMovedLines moved={item.headMoved} pullRequest={item.pullRequest.number} />
       )}
       {item.watchFailure && (
         <p aria-label="Not checked on GitHub" className={warningClass}>

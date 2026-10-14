@@ -74,6 +74,10 @@ describe('run refusals in plain words (07, section 3)', () => {
     expect(runRefusalText(refusals.blocked)).toBe(
       'This ticket waits for WEB-3, WEB-4, which are not done yet.',
     );
+    // "Reopen it first" (owner's answer 3 of step J4, lot 3 step J4b).
+    expect(runRefusalText(refusals.pull_request_not_open)).toBe(
+      'Pull request #12 is closed on GitHub, so there is nothing to review. Reopen it first, with Reopen pull request on the ticket page or in Needs you.',
+    );
   });
 });
 

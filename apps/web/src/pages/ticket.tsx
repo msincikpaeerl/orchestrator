@@ -39,6 +39,7 @@ import { BlockedBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
+import { PullRequestGitHubLines } from '../tickets/pull-request-lines';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
@@ -137,6 +138,9 @@ function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }
         <RequestChangesAction
           ticket={ticket}
           text={requestChangesText(ticket.status, ticket.review.latest)}
+          filledIn={
+            ticket.status === 'awaiting_merge' ? (ticket.pullRequest.conflict?.request ?? '') : ''
+          }
           onRequested={() => {
             setOfferRunNow(true);
           }}
@@ -402,9 +406,10 @@ function CiLine({ ticket }: { ticket: TicketDetail }) {
 /**
  * The ticket's pull request (02, section 6.4; lot 3 step F4): its link and state as last seen,
  * "Opening the pull request on GitHub…" while an accepted submission waits for it, "Pull request
- * not opened: <reason>" with **Try again**, and the workflow flag.
+ * not opened: <reason>" with **Try again**, the workflow flag, and what GitHub said of it since
+ * (closed, its close at **Cancel**, a conflict, the moved head, the watch's failure; step J4b).
  */
-function PullRequest({ ticket }: { ticket: TicketDetail }) {
+function PullRequest({ ticket, canChange }: { ticket: TicketDetail; canChange: boolean }) {
   const { opened, wanted, failure } = ticket.pullRequest;
   const flag = ticket.workflowFlag === null ? null : workflowFlagText(ticket.workflowFlag);
   if (!opened && !wanted && !failure && !flag && !ticket.ci) return null;
@@ -419,6 +424,7 @@ function PullRequest({ ticket }: { ticket: TicketDetail }) {
           · {pullRequestStateLabel[opened.state]}
         </p>
       )}
+      <PullRequestGitHubLines ticket={ticket} canChange={canChange} />
       {wanted && !failure && (
         <p role="status" className="text-slate-700">
           Opening the pull request on GitHub…
@@ -863,7 +869,7 @@ function TicketContent({ project, number }: { project: Project; number: number }
           </div>
         </Card>
         <Branch ticket={data} />
-        <PullRequest ticket={data} />
+        <PullRequest ticket={data} canChange={canChange(project)} />
         <BranchCleanUp ticket={data} />
         <Report ticket={data} />
         <Dependencies project={project} ticket={data} />
