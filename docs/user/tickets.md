@@ -97,6 +97,8 @@ Tickets are never deleted: a ticket created by mistake, or whose work is abandon
 
 The ticket moves to **Cancelled** with its history. Tickets waiting for it stay blocked (see [A ticket waits for a cancelled ticket](#a-ticket-waits-for-a-cancelled-ticket)). Any ticket that is not done or cancelled can be cancelled.
 
+From version 0.4.0, cancelling a ticket whose pull request is open also **closes the pull request** on GitHub, without merging it. Nothing else is deleted: the branch stays on GitHub and on the machines, so **Reopen** finds the work where it was. If GitHub cannot close it (for example it cannot be reached), the ticket is cancelled all the same, its page says why the pull request is not closed yet, and the Orchestrator tries again at each **GitHub check interval**; if it finds the pull request merged meanwhile, it stops trying (see [Merging the pull request](#merging-the-pull-request)). See [Closed at Cancel](#when-github-changes-the-pull-request).
+
 ## Mark as done manually
 
 Use **Mark as done manually** when the result exists but was done another way, for example you fixed it yourself. Tickets waiting for it are then unblocked. If the work is abandoned instead, [cancel the ticket](#cancel-a-ticket): tickets waiting for it stay blocked.
@@ -179,6 +181,7 @@ The ticket page shows it under **Pull request**:
 - **Opening the pull request on GitHub…**: the work was just accepted, and the pull request is being opened or updated.
 - **Pull request not opened**, with the reason, for example "Pull request not opened: GitHub could not be reached": GitHub could not open it. The work itself is safe on GitHub. The page says what to do, then click **Try again**. [Needs you](needs-you.md#pull-request-not-opened) lists the same, with every reason.
 - **Pull request not updated**, under an open pull request: a later accepted submission could not update it. The pull request is there, but its description still shows the report of the earlier submission; the new commits are on GitHub, in the pull request. Click **Try again** as above. A pull request closed without merging, or merged, says **Pull request not opened**, since the next try reopens it or opens a new one.
+- What GitHub said of the pull request since: closed without merging (with **Reopen pull request**), closed when you cancelled the ticket, a conflict with the default branch, a head that moved after Quality's review, or GitHub that could not be checked. Each is explained in [When GitHub changes the pull request](#when-github-changes-the-pull-request).
 
 ### Waiting for CI
 
@@ -332,6 +335,26 @@ When GitHub could not be read as Quality decided, the ticket page says "The pull
 A review run can end without a decision applied: Quality gave up, its time ran out, its session stopped, its machine went offline, you stopped it, or the work changed during the review (the pull request changed on GitHub, before or during the review, or the branch changed on the machine). The ticket stays **In review**, nothing counts as a failed attempt, and [Needs you](needs-you.md#agents-work) shows **Review did not finish**, saying why, or which decision Quality had made and why it was not applied. Use **Start review** to review again, or **Skip review**. When you stop a review before Quality decided anything, the item is plain **Ready for review** again.
 
 **Start review** is refused when it cannot start, saying why, for example when the pull request's latest commit on GitHub is not the one CI checked (someone pushed to it, or used **Update branch**): use **Skip review** and check it yourself, or **Request changes** so the agent continues.
+
+### When GitHub changes the pull request
+
+The Orchestrator reads the ticket's pull request at each **GitHub check interval** (in [Settings > Limits](settings.md#settings-reference)). When something changed on GitHub, the ticket page shows it under **Pull request**, in the same words as [Needs you](needs-you.md#pull-requests-to-merge). The page says when GitHub did it; how soon the Orchestrator sees it depends on that interval.
+
+**Closed without merging.** "Pull request #12 was closed on GitHub at … without merging. The ticket is unchanged (Awaiting merge)." Someone closed it on GitHub; the ticket keeps its state, and [Needs you](needs-you.md#closed-pull-requests) lists it too.
+
+- **Reopen pull request** reopens it on GitHub. If GitHub refuses, the page shows GitHub's reason ("GitHub refused to reopen it: …"); when the ticket's branch is gone from GitHub, the next accepted submission opens a new pull request instead.
+- Reopening it on GitHub yourself works too: the line goes at the next check.
+- **Start review** is refused while it is closed: "Pull request #12 is closed on GitHub, so there is nothing to review. Reopen it first, …". Reopen it, then start the review.
+- While it is closed, a run waiting for CI never accepts the work as "No CI found" (see [Waiting for CI](#waiting-for-ci)).
+- If the work is abandoned, [cancel the ticket](#cancel-a-ticket); the pull request stays closed.
+
+**Closed at Cancel.** "Pull request #12 was closed on GitHub at … without merging, since WEB-12 was cancelled." The Orchestrator closed it when you cancelled the ticket (see [Cancel a ticket](#cancel-a-ticket)). Until it has, the page says "Closing pull request #12 on GitHub…", or, when GitHub refused or could not be reached, "Pull request #12 not closed on GitHub yet, though WEB-12 was cancelled at …: at …, <reason>. The Orchestrator tries again at each GitHub check." When the reason is the token, the line links to your tokens on GitHub or to Settings > GitHub. If you [reopen the ticket](#reopen-a-cancelled-ticket), the pull request stays closed until the agent's next accepted submission, which reopens it; the page says so.
+
+**Conflicts with main.** "Conflicts with main: GitHub cannot merge it as it is." GitHub says the pull request conflicts with the project's default branch: other work changed the same lines since. On **Awaiting merge**, **Request changes** comes with its comment already written, asking the agent to merge the default branch and resolve the conflicts. You can change the comment: the agent is told to merge the default branch whatever it says, because GitHub reported the conflict when you sent it. The line goes when GitHub no longer reports a conflict, or when the pull request's head changes. While a run waits for CI, a conflict is sent to the agent by itself (see [Waiting for CI](#waiting-for-ci)).
+
+**The head moved.** On **Awaiting merge**: "Pull request #12's head on GitHub is now def5678, not abc1234, which Quality approved: it changed on GitHub since Quality's review." (or "…the commit you skipped the review of."). Someone pushed to the branch, or used **Update branch** on GitHub. The page lists the titles of the commits added since, newest first (the five newest, then "and N more"), or says the approved commit is no longer part of the pull request when its history was rewritten. If GitHub could not compare them, the sentence comes alone; the Orchestrator does not ask again for the same two commits. Quality did not review those commits: look at them on GitHub before merging, or use **Request changes**.
+
+**GitHub could not be checked.** "GitHub could not be checked for this pull request at … (since …): <reason>. A merge is not found while this lasts; the Orchestrator asks again at each GitHub check." The reason is the same as for CI: GitHub could not be reached, the token cannot be used or lacks a permission, GitHub's request limit, or an answer the Orchestrator could not read. Nothing is decided while it lasts: a merge, a close or a conflict is found at the first check that works. Fix the cause the line names, for example the token in [Settings > GitHub](github-token.md).
 
 ### Merging the pull request
 
