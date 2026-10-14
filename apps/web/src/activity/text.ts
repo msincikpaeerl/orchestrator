@@ -63,6 +63,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_closed': 'Pull request closed without merging',
   'ticket.pull_request_not_closed': 'Pull request not closed',
   'ticket.pull_request_not_reopened': 'Pull request not reopened',
+  'ticket.pull_request_conflict': 'Pull request in conflict',
+  'ticket.pull_request_conflict_gone': 'Pull request no longer in conflict',
   'ticket.review_posted': "Quality's review posted on GitHub",
   'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
@@ -395,6 +397,16 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.ticket,
     `: pull request #${String(p.number)} could not be reopened on GitHub — ${shorten(p.message)}`,
     ...(p.branchGone ? ['; its branch is gone from GitHub'] : []),
+  ],
+  'ticket.pull_request_conflict': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.number)} conflicts with ${p.base} on GitHub (head ${p.head.slice(0, 7)})`,
+  ],
+  'ticket.pull_request_conflict_gone': (p, c) => [
+    c.ticket,
+    p.headMoved
+      ? `: pull request #${String(p.number)}'s head moved since GitHub found it in conflict with ${p.base}`
+      : `: pull request #${String(p.number)} no longer conflicts with ${p.base} on GitHub`,
   ],
   'ticket.pull_request_merged': (p, c) => [
     c.ticket,

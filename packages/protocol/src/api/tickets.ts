@@ -4,7 +4,9 @@ import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import {
   PullRequestClosedBy,
+  PullRequestConflict,
   PullRequestFailure,
+  PullRequestHeadMoved,
   PullRequestReopenFailure,
   PullRequestState,
   PullRequestWatchFailure,
@@ -292,6 +294,13 @@ export const TicketPullRequest = z.object({
    * project's list, or this pull request's own read); null when it could.
    */
   watchFailure: PullRequestWatchFailure.nullable(),
+  /**
+   * GitHub's conflict fact for the pull request's current head (lot 3 step J3b), with the text
+   * **Request changes** is filled in with; null when GitHub did not say it conflicts.
+   */
+  conflict: PullRequestConflict.extend({ request: z.string() }).nullable(),
+  /** On **Awaiting merge**: the head moved after the approval or the skip (step J3b). */
+  headMoved: PullRequestHeadMoved.nullable(),
 });
 export type TicketPullRequest = z.infer<typeof TicketPullRequest>;
 

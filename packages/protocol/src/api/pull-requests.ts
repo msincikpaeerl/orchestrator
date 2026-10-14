@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { GitHash } from '../daemon/git.js';
 import { CiCheckFailureReason } from '../mcp/ci.js';
 
 /**
@@ -102,3 +103,66 @@ export type PullRequestTryAgainResponse = z.infer<typeof PullRequestTryAgainResp
  */
 export const PullRequestReopenResponse = z.object({ failure: PullRequestReopenFailure.nullable() });
 export type PullRequestReopenResponse = z.infer<typeof PullRequestReopenResponse>;
+
+/**
+ * GitHub's conflict fact on the ticket's pull request (lot 3 step J3b): a read of the pull request
+ * by itself answered `mergeable` false for `head` against `base`. Kept until GitHub answers
+ * `mergeable` true, or the head moves; `mergeable` null (GitHub still computing) or a failed read
+ * changes nothing. `since`: the first read saying so for this head.
+ */
+export const PullRequestConflict = z.object({
+  head: GitHash,
+  base: z.string(),
+  since: z.iso.datetime(),
+});
+export type PullRequestConflict = z.infer<typeof PullRequestConflict>;
+
+/** At most this many commit titles of a moved head are listed (owner's answer 3, step J). */
+export const MOVED_HEAD_TITLES_MAX = 5;
+/** Each listed title is cut to this many characters, with `…` (owner's answer 3, step J). */
+export const MOVED_HEAD_TITLE_MAX_CHARS = 72;
+
+/**
+ * The one comparison of the commit Quality approved (or whose review the owner skipped) with the
+ * pull request's head, when the head moved (owner's answer 3 of step J, lot 3 step J3b):
+ * - `ahead`: the head holds the approved commit and `more` + listed commits after it; `titles`,
+ *   the newest at most `MOVED_HEAD_TITLES_MAX`, newest first, each the first line of its
+ *   message, plain text, credentials masked, cut to `MOVED_HEAD_TITLE_MAX_CHARS`;
+ * - `not_part`: any other status of GitHub's (`diverged`, `behind`; history rewritten): the
+ *   approved commit is no longer part of the pull request;
+ * - `failed`: GitHub could not compare them (the reason, as a failed check keeps it); not tried
+ *   again for the same two commits.
+ */
+export const HeadComparisonResult = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('ahead'),
+    titles: z.array(z.string()).max(MOVED_HEAD_TITLES_MAX),
+    more: z.int().min(0),
+  }),
+  z.object({ kind: z.literal('not_part'), status: z.enum(['diverged', 'behind', 'identical']) }),
+  z.object({ kind: z.literal('failed'), reason: CiCheckFailureReason, message: z.string() }),
+]);
+export type HeadComparisonResult = z.infer<typeof HeadComparisonResult>;
+
+/** The comparison as kept on the ticket: of `approved...head`, made `at`. */
+export const HeadComparison = z.object({
+  approved: GitHash,
+  head: GitHash,
+  at: z.iso.datetime(),
+  result: HeadComparisonResult,
+});
+export type HeadComparison = z.infer<typeof HeadComparison>;
+
+/**
+ * The pull request's head moved after the approval (owner's answer 3 of step J, lot 3 step J3b),
+ * on **Awaiting merge**: the commit Quality approved (`approved`) or whose review the owner
+ * skipped (`skipped`), GitHub's head as last read, and the comparison (null until it is made, at
+ * the next check).
+ */
+export const PullRequestHeadMoved = z.object({
+  after: z.enum(['approved', 'skipped']),
+  commit: GitHash,
+  head: GitHash,
+  comparison: HeadComparisonResult.nullable(),
+});
+export type PullRequestHeadMoved = z.infer<typeof PullRequestHeadMoved>;

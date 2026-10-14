@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATUSES,
   ChangeRequest,
   PullRequestFailure,
+  type HeadComparison,
   PullRequestWatchFailure,
   ReviewDecision,
   TicketStatus,
@@ -15,6 +16,7 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { retryAt, type GitHubRefusal, type GitHubResult } from '../github/answers.js';
 import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
+import { compareCommits, type CommitComparison } from '../github/compare.js';
 import { storedTokenClient } from '../github/connection.js';
 import {
   closePullRequest,
@@ -40,6 +42,13 @@ import {
 import { cleanUpWanted } from './branch-clean-up.js';
 import { ticketEntity, ticketReference, type TicketRow } from './model.js';
 import { failureOf as pullRequestFailureOf } from './pull-request.js';
+import {
+  comparisonResult,
+  conflictAfter,
+  failedComparison,
+  headMoved,
+  storedConflict,
+} from './pull-request-facts.js';
 import { applyRunAction } from './transitions.js';
 
 // The ticket's pull request watched on GitHub (04, section 2; owner's answers 1 to 3, lot 3 step
@@ -308,7 +317,9 @@ export class PullRequestWatcher {
     const number = ticket.pullRequestNumber;
     if (number === null) return null;
     const listed = open?.get(number);
-    if (listed) {
+    // On **Awaiting merge**, read by itself for `mergeable`, which the list does not give (M in
+    // the cost of owner's answer 1, lot 3 step J3b): one read, also when it left the list.
+    if (listed && ticket.status !== 'awaiting_merge') {
       await this.seen(ticket.id, listed);
     } else {
       // Missing from the list, or closed: only its own read decides.
@@ -317,9 +328,65 @@ export class PullRequestWatcher {
       await this.seen(ticket.id, read.value);
     }
     watch.seen(number);
+    const compared = await this.compareMovedHead(client, repo, ticket.id);
+    if (compared !== null) return compared;
     // Read first: a pull request found merged is never closed (the cancel race, answer 2).
     if (ticket.pullRequestCloseWantedAt === null) return null;
     return this.closeWith(client, repo, ticket.id);
+  }
+
+  /**
+   * The head moved after the approval or the skip, on **Awaiting merge** (owner's answer 3 of
+   * step J, lot 3 step J3b): one comparison of that commit with the head, made once for the two
+   * commits, whatever GitHub answers; never tried again for them. Returns when GitHub allows
+   * requests again after its request limit.
+   */
+  private async compareMovedHead(
+    client: GitHubClient,
+    repo: Repo,
+    ticketId: string,
+  ): Promise<Date | null> {
+    const row = await this.ticketWithProject(ticketId);
+    if (!row) return null;
+    const moved = await headMoved(this.options.db, row.ticket);
+    if (moved === null || moved.comparison !== null) return null;
+    let read: GitHubResult<CommitComparison> | 'unreachable';
+    try {
+      read = await compareCommits(client, repo, moved.commit, moved.head);
+    } catch (error) {
+      if (!(error instanceof GitHubUnreachableError)) throw error;
+      read = 'unreachable';
+    }
+    const result =
+      read === 'unreachable' ? failedComparison('unreachable') : comparisonResult(read);
+    const at = this.now();
+    await this.options.db.transaction(async (tx) => {
+      const locked = await lockTicket(tx, ticketId);
+      // The head moved again meanwhile: the next check compares the new one.
+      if (!locked || locked.ticket.pullRequestHead !== moved.head) return;
+      const comparison: HeadComparison = {
+        approved: moved.commit,
+        head: moved.head,
+        at: at.toISOString(),
+        result,
+      };
+      await tx
+        .update(schema.tickets)
+        .set({ pullRequestComparison: comparison })
+        .where(eq(schema.tickets.id, ticketId));
+      await notifyChange(tx, {
+        entity: 'ticket',
+        id: ticketId,
+        projectId: locked.ticket.projectId,
+      });
+    });
+    if (result.kind === 'failed') {
+      this.options.log.warn(
+        { ticketId, reason: result.reason, message: result.message },
+        'moved head not compared',
+      );
+    }
+    return read !== 'unreachable' && !read.ok ? retryAt(read.refusal, at) : null;
   }
 
   /**
@@ -594,7 +661,11 @@ export class PullRequestWatcher {
     }
     const state = pull.state;
     const moved = ticket.pullRequestHead !== pull.headSha;
-    if (ticket.pullRequestState === state && !moved) return nothing;
+    // GitHub's conflict fact (lot 3 step J3b), from every read that gives `mergeable`.
+    const conflictBefore = storedConflict(ticket);
+    const conflict = conflictAfter(ticket, pull, now);
+    const conflictChanged = JSON.stringify(conflictBefore) !== JSON.stringify(conflict);
+    if (ticket.pullRequestState === state && !moved && !conflictChanged) return nothing;
     const closing = ticket.pullRequestState === 'open' && state === 'closed';
     const reopening = ticket.pullRequestState === 'closed' && state === 'open';
     // Closed while **Cancel** wants it closed: the Orchestrator's close, done (lot 3 step J3a).
@@ -604,6 +675,7 @@ export class PullRequestWatcher {
       .set({
         pullRequestState: state,
         pullRequestHead: pull.headSha,
+        pullRequestConflict: conflict,
         ...(closing
           ? {
               pullRequestClosedAt: pull.closedAt === null ? now : new Date(pull.closedAt),
@@ -624,6 +696,29 @@ export class PullRequestWatcher {
         updatedAt: now,
       })
       .where(eq(schema.tickets.id, ticket.id));
+    if (conflictChanged && conflict !== null && conflict.head !== conflictBefore?.head) {
+      await recordEvent(tx, {
+        actor: 'system',
+        ...ticketEntity(ticket),
+        type: 'ticket.pull_request_conflict',
+        payload: { ...facts, head: conflict.head, base: conflict.base },
+        at: now,
+      });
+    } else if (conflictChanged && conflict === null && conflictBefore !== null) {
+      await recordEvent(tx, {
+        actor: 'system',
+        ...ticketEntity(ticket),
+        type: 'ticket.pull_request_conflict_gone',
+        payload: {
+          ...facts,
+          head: conflictBefore.head,
+          base: conflictBefore.base,
+          // Mergeable now, or another head GitHub has not said anything of yet.
+          headMoved: conflictBefore.head !== pull.headSha,
+        },
+        at: now,
+      });
+    }
     if (closing) {
       await recordEvent(tx, {
         actor: 'system',
@@ -640,7 +735,7 @@ export class PullRequestWatcher {
         payload: by === 'owner' ? { ...facts, owner: true } : { ...facts, seen: true },
         at: now,
       });
-    } else {
+    } else if (!conflictChanged) {
       // Only the head moved: the ticket page reads it again.
       await notifyChange(tx, { entity: 'ticket', id: ticket.id, projectId: ticket.projectId });
     }
@@ -667,6 +762,7 @@ export class PullRequestWatcher {
         pullRequestMergedAt: mergedAt,
         pullRequestMergedHead: head,
         pullRequestMergedInto: pull.baseBranch,
+        pullRequestConflict: null,
         // Merged: nothing is left to close or reopen (the cancel race, owner's answer 2).
         pullRequestClosedAt: null,
         pullRequestClosedBy: null,

@@ -94,7 +94,12 @@ export interface OwnerAction {
    * For `request_changes` (lot 3 step I): the ticket's latest accepted commit, and on
    * `awaiting_merge` what the request came after. Kept on the ticket with the comment.
    */
-  changeRequest?: { commit: string | null; after: 'approved' | 'skipped' | null };
+  changeRequest?: {
+    commit: string | null;
+    after: 'approved' | 'skipped' | null;
+    /** The base GitHub said the pull request conflicts with, at this moment (lot 3 step J3b). */
+    conflict: string | null;
+  };
   now: Date;
 }
 
@@ -155,6 +160,7 @@ export async function applyOwnerAction(tx: Executor, input: OwnerAction): Promis
             commit: input.changeRequest?.commit ?? null,
             commentId,
             after: input.changeRequest?.after ?? null,
+            conflict: input.changeRequest?.conflict ? { base: input.changeRequest.conflict } : null,
             at: now.toISOString(),
           } satisfies ChangeRequest,
           changeRequestAnsweredAt: null,

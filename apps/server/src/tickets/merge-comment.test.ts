@@ -187,6 +187,7 @@ describe('the comment of a merge', () => {
               commit: null,
               commentId: '00000000-0000-4000-8000-000000000002',
               after: null,
+              conflict: null,
               at: '2026-10-11T16:00:00.000Z',
             },
           },

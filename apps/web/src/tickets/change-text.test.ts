@@ -21,7 +21,7 @@ const quality = (round: number, standing = true, limit = 2): TicketChangeRequest
   limit,
 });
 const owner = (after: 'approved' | 'skipped' | null, standing = true): TicketChangeRequest => ({
-  request: { by: 'owner', commit, commentId: crypto.randomUUID(), after, at },
+  request: { by: 'owner', commit, commentId: crypto.randomUUID(), after, conflict: null, at },
   standing,
   limit: 2,
 });

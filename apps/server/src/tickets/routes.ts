@@ -47,6 +47,7 @@ import { ticketCi } from '../runs/ci-outcome.js';
 import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
 import type { PullRequestWatcher } from './merge-watch.js';
+import { conflictRequestText, currentConflict, headMoved } from './pull-request-facts.js';
 import type { PullRequestOpener } from './pull-request.js';
 import { resolveSettings } from '../settings/store.js';
 import {
@@ -74,7 +75,11 @@ import {
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
 
 /** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
-function ticketPullRequest(project: ProjectRow, ticket: TicketRow): TicketPullRequest {
+async function ticketPullRequest(
+  executor: Executor,
+  project: ProjectRow,
+  ticket: TicketRow,
+): Promise<TicketPullRequest> {
   const { pullRequestNumber: number, pullRequestUrl: url, pullRequestState: state } = ticket;
   const failure = (stored: unknown) =>
     stored === null ? null : maskStrings(PullRequestFailure.parse(stored));
@@ -111,7 +116,22 @@ function ticketPullRequest(project: ProjectRow, ticket: TicketRow): TicketPullRe
       watch !== null && number !== null && watch.pullRequests.includes(number)
         ? maskStrings(watch)
         : null,
+    conflict: ticketConflict(ticket),
+    headMoved: await headMoved(executor, ticket),
   };
+}
+
+/** GitHub's conflict fact for the open pull request's current head, with **Request changes**' text. */
+function ticketConflict(ticket: TicketRow): TicketPullRequest['conflict'] {
+  const conflict = currentConflict(ticket);
+  if (
+    conflict === null ||
+    ticket.pullRequestState !== 'open' ||
+    ticket.pullRequestNumber === null
+  ) {
+    return null;
+  }
+  return { ...conflict, request: conflictRequestText(ticket.pullRequestNumber, conflict.base) };
 }
 
 export interface TicketRoutesOptions {
@@ -416,7 +436,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           ? 'not_kept'
           : WorkflowReason.parse(ticket.workflowReason)
         : null,
-      pullRequest: ticketPullRequest(project, ticket),
+      pullRequest: await ticketPullRequest(executor, project, ticket),
       ci: await ticketCi(executor, ticket),
       review: (await ticketReview(executor, ticket)).review,
       reviewRounds: ticket.reviewRounds,
@@ -844,6 +864,12 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
                 after:
                   ticket.status === 'awaiting_merge'
                     ? requestAfter((await ticketReview(tx, ticket)).review.latest)
+                    : null,
+                // GitHub's fact at this moment, never the comment's text (owner's addition to
+                // answer 4 of step J, lot 3 step J3b): it holds when the owner edits the text.
+                conflict:
+                  ticket.status === 'awaiting_merge'
+                    ? (ticketConflict(ticket)?.base ?? null)
                     : null,
               }
             : undefined;
