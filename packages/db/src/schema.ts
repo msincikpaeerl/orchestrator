@@ -656,6 +656,11 @@ export const runs = pgTable(
     push: jsonb('push'),
     pushAt: timestamp('push_at', { withTimezone: true }),
     /**
+     * Why the project's download at the run's start failed (`DownloadFailure`), for a run ended
+     * `download_failed`; null otherwise (lot 3 step K2).
+     */
+    downloadFailure: jsonb('download_failure'),
+    /**
      * The run's accepted submission and its latest refused one (`SubmissionRecord`: the report,
      * each check's result, the workflow flag; lot 3 step F, owner's addition). Each holds a DoD
      * report of at most 256 KiB (04, section 8), replaced at each refusal: a run keeps two at most.
@@ -757,7 +762,7 @@ export const runs = pgTable(
     ),
     check(
       'runs_failure_reason',
-      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved', 'push_failed', 'ci_cancelled')`,
+      sql`${table.failureReason} IN ('timeout', 'crash', 'agent_gave_up', 'dod_failed', 'machine_offline', 'machine_revoked', 'claude_code_unsupported', 'machine_problem', 'cancelled', 'ci_failed', 'ci_timeout', 'review_branch_moved', 'push_failed', 'ci_cancelled', 'download_failed')`,
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
     check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),

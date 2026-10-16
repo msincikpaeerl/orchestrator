@@ -1,4 +1,5 @@
 import { schema } from '@orchestrator/db';
+import { runDownload } from './download.js';
 import {
   ACTIVE_RUN_STATUSES,
   FailureReason,
@@ -60,6 +61,8 @@ export function reviewEnd(run: RunRow): ReviewEnd | null {
       if (where === 'github') return { why: 'moved_on_github', head: run.reviewMovedHead };
       return { why: 'moved_on_machine' };
     }
+    case 'download_failed':
+      return { why: 'download_failed', download: runDownload(run) };
     default:
       return { why: 'failed', failureReason };
   }

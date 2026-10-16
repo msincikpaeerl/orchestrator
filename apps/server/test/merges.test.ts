@@ -786,6 +786,7 @@ describe('Needs you after a merge', () => {
       'CI',
       'Closed',
       'To merge',
+      'Download',
     ];
     for (const title of titles) await h.createTicket({ title });
     /** Submitted, CI started: its pull request open. */
@@ -798,7 +799,7 @@ describe('Needs you after a merge', () => {
       });
       return { ...run, commit: h.lastPushed ?? '' };
     };
-    for (let number = 1; number <= 6; number++) {
+    for (const number of [1, 2, 3, 4, 5, 6, 10]) {
       const { runId, commit } = await handedIn(number);
       for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
       await h.t.ciTick();
@@ -841,6 +842,20 @@ describe('Needs you after a merge', () => {
     });
     expect(refused.ok).toBe(false);
     await h.report(daemon, state(fix.runId, { state: 'ended', reason: 'push_failed' }));
+    // 10: your request for changes, then a run whose download failed at its start (step K2).
+    const again = await h.call('POST', '/api/projects/WEB/tickets/10/request-changes', {
+      comment: 'Add the address.',
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const download = await h.running(daemon, 10);
+    await h.report(
+      daemon,
+      state(download.runId, {
+        state: 'ended',
+        reason: 'download_failed',
+        download: { reason: 'unreachable', message: 'Could not resolve host: github.com' },
+      }),
+    );
     // 1: Quality asks a question.
     const asking = await h.reviewing(daemon, 1);
     await h.ok(daemon, asking.runToken, 'ticket_ask', { question: 'Phone number too?' });
@@ -905,6 +920,6 @@ describe('Needs you after a merge', () => {
     }
     const tied = (await items()).filter((item) => 'ticket' in item || 'tickets' in item);
     expect(tied).toEqual([]);
-    // Eight tickets through their runs: about 4 seconds on an idle machine.
+    // Ten tickets through their runs: about 5 seconds on an idle machine.
   }, 30_000);
 });

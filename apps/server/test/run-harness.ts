@@ -14,6 +14,7 @@ import {
   type RunState,
   type SettingValues,
   type WorkspaceFacts,
+  type DownloadFailure,
 } from '@orchestrator/protocol';
 import { asc, eq, like } from 'drizzle-orm';
 import { expect } from 'vitest';
@@ -355,6 +356,8 @@ export function state(
         /** A review run's fact: GitHub's head found moved at preparation (lot 3 step H4). */
         movedHead?: string;
         detail?: string;
+        /** A run ended `download_failed`: why (lot 3 step K2). */
+        download?: DownloadFailure;
       },
   sessionAlive = payload.state !== 'ended',
 ): RunState {
@@ -373,6 +376,7 @@ export function state(
         headMoved: payload.headMoved ?? null,
         movedHead: payload.movedHead ?? null,
         gitConfigRestored: null,
+        download: payload.download ?? null,
       },
     };
   }

@@ -20,6 +20,7 @@ import {
   type RunState,
   type ServerMessage,
   type SettingValues,
+  type DownloadFailure,
 } from '@orchestrator/protocol';
 import { and, asc, desc, eq, like } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -196,6 +197,7 @@ function state(
         branch?: Reported | null;
         push?: PushResult | null;
         gitConfigRestored?: string | null;
+        download?: DownloadFailure | null;
       },
 ): RunState {
   const base = {
@@ -218,6 +220,7 @@ function state(
         headMoved: null,
         movedHead: null,
         gitConfigRestored: payload.gitConfigRestored ?? null,
+        download: payload.download ?? null,
       },
     };
   }

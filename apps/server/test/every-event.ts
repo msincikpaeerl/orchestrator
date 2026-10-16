@@ -483,6 +483,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         headMoved: false,
         movedHead: null,
         gitConfigRestored: null,
+        download: null,
       },
     });
   }
@@ -554,6 +555,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       headMoved: false,
       movedHead: null,
       gitConfigRestored: null,
+      download: null,
     },
   });
   await call('POST', `/api/projects/SHOP/tickets/${String(filters.number)}/try-again`);
