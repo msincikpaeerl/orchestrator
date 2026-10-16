@@ -326,6 +326,8 @@ const BASE_LIST_BRANCH = `${BRANCH}-base-list`;
 /** A37: a name that only a longer branch name starts with (the squash branch's). */
 const PREFIX_NAME = `${BRANCH}-squash`;
 const SQUASH_PAGE = 'docs/orchestrator-smoke-squash.md';
+/** Step 11's squash branch's one commit: GitHub may name the squash commit after it (A21). */
+const SQUASH_COMMIT_TITLE = 'Orchestrator smoke test: merged by squash';
 const REBASE_PAGE = 'docs/orchestrator-smoke-rebase.md';
 /** Every branch the run may push, for a pull request found by its branch at the clean-up. */
 const RUN_BRANCHES = () => [
@@ -1413,16 +1415,17 @@ async function stepEight(context: Context): Promise<void> {
     if (method === 'rebase') {
       notAttempted('A21', "a rebase keeps each commit's own message");
     } else {
-      const expected =
-        method === 'merge'
-          ? `Merge pull request #${String(number)} from ${OWNER}/${BRANCH}`
-          : `${context.pullTitle ?? ''} (#${String(number)})`;
-      check(
-        'A21',
-        firstLine === expected,
-        `the ${method === 'merge' ? 'merge' : 'squash'} commit's message: "${expected}"`,
-        firstLine,
-      );
+      if (method === 'merge') {
+        const expected = `Merge pull request #${String(number)} from ${OWNER}/${BRANCH}`;
+        check(
+          'A21',
+          firstLine === expected,
+          `the merge commit's message: "${expected}"`,
+          firstLine,
+        );
+      } else {
+        squashMessage(firstLine, number, { title: context.pullTitle ?? '' });
+      }
     }
     context.mergedHead = head;
   }
@@ -1932,7 +1935,7 @@ const METHOD_WORDS = { merge: 'a merge commit', squash: 'a squash commit', rebas
  */
 async function ownerMerges(
   context: Context,
-  pull: { number: number; url: string; title: string },
+  pull: { number: number; url: string; title: string; commitTitle?: string },
   branch: string,
   method: 'squash' | 'rebase',
   head: string,
@@ -2023,11 +2026,37 @@ async function ownerMerges(
   stays.push(
     `the ${method} of pull request #${String(number)} into ${context.baseBranch}, with ${method === 'squash' ? SQUASH_PAGE : REBASE_PAGE}: ${repoWeb}/commit/${after}`,
   );
-  if (method === 'squash' && found === 'squash') {
-    const expected = `${pull.title} (#${String(number)})`;
-    check('A21', firstLine === expected, `the squash commit's message: "${expected}"`, firstLine);
-  }
+  if (method === 'squash' && found === 'squash') squashMessage(firstLine, number, pull);
   return after;
+}
+
+/**
+ * A21 for a squash: GitHub's default message is the pull request's title, or its one commit's
+ * own title when it has a single commit (the owner's real run of 2026-10-16). Either passes, and
+ * the line says which one GitHub used.
+ */
+function squashMessage(
+  firstLine: string,
+  number: number,
+  pull: { title: string; commitTitle?: string },
+): void {
+  const suffix = ` (#${String(number)})`;
+  const fromPull = `${pull.title}${suffix}`;
+  const fromCommit = pull.commitTitle === undefined ? null : `${pull.commitTitle}${suffix}`;
+  const used =
+    firstLine === fromPull
+      ? "the pull request's title"
+      : firstLine === fromCommit
+        ? "its one commit's title"
+        : null;
+  check(
+    'A21',
+    used !== null,
+    used === null
+      ? `the squash commit's message: "${fromPull}"${fromCommit === null ? '' : ` or "${fromCommit}"`}`
+      : `the squash commit's message: "${firstLine}", ${used} with " (#${String(number)})"`,
+    firstLine,
+  );
 }
 
 /** Waits for CI on `head`; false (the step has failed) when it did not pass. */
@@ -2111,7 +2140,7 @@ async function mergesBySquashAndRebase(context: Context, first: Machine): Promis
     base,
     SQUASH_PAGE,
     page('merged by squash'),
-    'Orchestrator smoke test: merged by squash',
+    SQUASH_COMMIT_TITLE,
   );
   const rebaseFirst = await commitFile(
     first,
@@ -2302,7 +2331,7 @@ async function mergesBySquashAndRebase(context: Context, first: Machine): Promis
   if (!(await ciPassed(context, squashNow, squash.number))) return;
   const squashed = await ownerMerges(
     context,
-    { ...squash, title: squashTitle },
+    { ...squash, title: squashTitle, commitTitle: SQUASH_COMMIT_TITLE },
     SQUASH_BRANCH,
     'squash',
     squashNow,

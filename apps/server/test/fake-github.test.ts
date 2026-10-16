@@ -312,7 +312,8 @@ describe('pull requests', () => {
     expect((await api('GET', `${REPO}/pulls/1/merge`)).status).toBe(204);
     // Squashed: one commit on main holding the change, whose parent is the old main.
     const main = json(await api('GET', `${REPO}/git/commits/${merge}`));
-    expect(main.message).toBe('t/1-cart: work (#1)');
+    // One commit: GitHub's default message takes its title, not the pull request's (A21).
+    expect(main.message).toBe('Work (#1)');
     expect(main.parents).toHaveLength(1);
     expect(github.branches(repo).get('main')).toBe(merge);
     // A merged pull request cannot be reopened.

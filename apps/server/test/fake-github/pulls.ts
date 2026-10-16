@@ -459,7 +459,11 @@ export function mergePull(
             [base, pull.headSha],
             `Merge pull request #${String(number)} from ${state.owner}/${pull.head}\n\n${pull.title}`,
           )
-        : state.store.commitTree(tree, [base], `${pull.title} (#${String(number)})`);
+        : state.store.commitTree(
+            tree,
+            [base],
+            `${squashTitle(state, base, pull)} (#${String(number)})`,
+          );
   }
   state.store.setBranch(pull.base, sha, base);
   const time = ctx.now();
@@ -472,6 +476,20 @@ export function mergePull(
   });
   syncBranches(ctx, state);
   return sha;
+}
+
+/**
+ * The squash commit's title with GitHub's default message: the pull request's one commit's title
+ * when it has a single commit besides **Update branch**'s merge commits, else the pull request's
+ * title. Seen on the owner's real run of 2026-10-16 (A21): a one-commit pull request updated by
+ * Update branch was squashed with the commit's own title.
+ */
+function squashTitle(state: RepositoryState, base: string, pull: FakePullRequest): string {
+  const own = state.store
+    .commitsBetween(base, pull.headSha)
+    .map((sha) => state.store.commit(sha))
+    .filter((commit) => commit !== undefined && commit.parents.length === 1);
+  return own.length === 1 && own[0] ? (own[0].message.split('\n')[0] ?? pull.title) : pull.title;
 }
 
 /** Closes without merging. */
