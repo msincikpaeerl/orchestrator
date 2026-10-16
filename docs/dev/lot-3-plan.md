@@ -1407,11 +1407,20 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 - **Tests**: `failed-attempts.test.ts` (the stop at the limit, Run now's refusal, the item, Try again then a new count; a failure not counted never stopping; the setting read at the failure for a ticket over it), the lift in `ci-check-again.test.ts`, every failure reason counted or not in `src/runs/model.test.ts` (a new reason must be decided there), the words in the web unit tests; Playwright `failures.e2e.ts` (both viewports, screenshots `ticket-stopped-failures` and `needs-you-stopped-failures`).
 - **04 section 5** rewritten from the code: 5.1 "Counted or not" (one table, each reason with where it was decided) and 5.2 "The stop".
 
-### [ ] K2. A project download that fails at a run's start
+### [x] K2. A project download that fails at a run's start
 
 - The daemon's typed download failure and `download_failed` (answer 1); on the server not counted, the blocking item and when it goes (answer 2), true words on the run page and in the comment; the Help line of Machines > Troubleshooting corrected.
 
 **Done when** daemon tests cover the three causes against the Git test server; server tests show it is not counted and the item comes and goes; Playwright on both viewports shows the item.
+
+*Done 2026-10-17.* Choices made in the step (flagged to the owner):
+
+- **One download at a run's start.** The preparation runs one fetch of every branch (the bare clone's first one is its clone), which brings the base branch too: there is no separate fetch of the base branch at a run's start. The base branch's own download (`fetchBase`, step G2a) comes later, before a conflict's message, and keeps its refusal of the message (04 section 3.1), unchanged.
+- **The daemon's reasons** (`DownloadFailure` in `end`'s new `download`, protocol 2, no version change): `too_long` (Longest push), `refused` (the Orchestrator refused the credential, in its words; or GitHub's words read as for a push: authentication failed, HTTP 401, 403 or 404, "Repository not found") and `unreachable` (any other failure of the fetch command, with Git's masked words). Any other preparation failure (the pack not moved, the worktree, a disk full) stays `crashed`, counted. The run start's download now says the Orchestrator's refusal in its words, as the base branch's download already did; the base branch's download's other failures now give Git's masked words without the "git fetch failed:" prefix.
+- **The permission** (`runDownload` in `apps/server/src/runs/download.ts`): GitHub's "not found" or 403 at a download names Contents (Read and write), with "it needs access to <repository>", since a token without the repository among its repositories gets the same answer; a 401 (token not accepted) names none and shows GitHub's words.
+- **Where the words live**: the server keeps the machine's reason on the run (`runs.download_failure`, migration 0034, with the failure reason in the check constraint); the comment is built by the server, the screens word the same facts (`apps/web/src/runs/download-text.ts`): the item, the run page's "What to do" paragraph (with **Start review** for a review run) and "Review did not finish" (`ReviewEnd` gains `download_failed`). `PushPermission` and its words moved to `packages/protocol/src/api/token-permissions.ts` (re-exported) so the run's schema can use them without an import cycle.
+- **Help**: Machines > Troubleshooting's paragraph became the section "When the project cannot be downloaded from GitHub" (the item's **What to do** link); Needs you, Runs and Settings > Longest push point to it.
+- **Tests**: `apps/daemon/test/download-failure.test.ts` (unreachable on a closed port, GitHub refusing a wrong token, a repository not found, the Orchestrator's refusal, Longest push, and a worktree failure staying `crashed`; no session launched in each); `apps/server/test/download-failed.test.ts` (not counted at Failed attempts 1, the comment's words for each cause, the item going at a new run, a cancel, Mark as done and a revocation; a review run's "Review did not finish"); `merges.test.ts`'s every-kind check gained the item; web words in `download-text.test.ts`; Playwright `failures.e2e.ts` (screenshots `run-download-failed` and `needs-you-download-failed`).
 
 ### [ ] L. Carried from lot 2
 
