@@ -19,6 +19,7 @@ import { ciWatcherOf } from '../src/app.js';
 import { startServer } from '../src/server.js';
 import { defaultWebRoot } from '../src/web.js';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
+import { emptyTables } from './e2e-reset.js';
 import { installRealGitHubGuard } from '@orchestrator/daemon/testing/real-github-guard';
 import { GITHUB_CONTROLS, githubControl } from './fake-github-controls.js';
 import { fullAccount, startFakeGitHub } from './fake-github.js';
@@ -222,13 +223,8 @@ async function handle(
   request: IncomingMessage,
 ): Promise<number | { status: number; body: unknown }> {
   if (request.method === 'POST' && request.url === '/reset') {
-    const { rows } = await pool.query<{ tablename: string }>(
-      // The default agent profiles stay, as they are seeded before the first launch.
-      "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('schema_info', 'agent_profiles')",
-    );
-    const tables = rows.map((row) => `"${row.tablename}"`).join(', ');
     await disconnectDaemons();
-    await pool.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
+    await emptyTables(pool);
     resetGitHub();
     heldInputs = null;
     answeredDeletes.clear();
