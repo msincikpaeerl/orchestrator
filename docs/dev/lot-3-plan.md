@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A to J3b done; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
+> Status: in progress (steps A to J done; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -1363,7 +1363,9 @@ Split approved by the owner on 2026-10-14 (J4a, J4b, J4c below), done in that or
 - **What it costs the owner**: 5 more CI runs (3 on pull requests, 2 on the default branch), 2 more waits, 3 more commits on the default branch; 5 pull requests in all. About 25 to 30 minutes for the whole run (each CI run about 2 minutes; five waits for the owner with both tokens, four without).
 - **Tests**: `github-smoke.test.ts` plays the owner's two merges (`playOwner`, number read from the script's words); the full run now passes steps 1 to 11 and every assumption but A7 (A27 to A29 are step N's, by eye); new: the settings off at the start (each box and both, only reads made), the settings hidden with the wrong method used (step 11 fails naming it, the rest of the step still runs), rebase merging turned off during the run, Ctrl+C during step 11's wait (every branch and open pull request listed); the owner doing nothing now also covers step 11's wait. The fake reports both settings (`allowSquashMerge`, `allowRebaseMerge`, ticked by default); `github-documented.test.ts` reads GitHub's documented answer with them absent (null) and present.
 
-### [ ] K. Failures and retries
+### Step K: Failures and retries, split in two (rule 15)
+
+Split approved by the owner on 2026-10-16, each part in its own session after the previous one is merged. Scope of the whole step (as planned):
 
 - **Failed attempts before asking you** stops a ticket, as a second cause (`failed_attempts`) of the stop step I built for **Most review rounds per ticket** (owner's answer 2, step I): the same mark on the board and ticket page, **Run now**'s refusal naming the setting and its value, the `system` comment, the "Needs you" item ("Tickets stopped after repeated failures") with **Try again** (resets `attempt_count` and `review_rounds`), **Cancel** and **Mark as done manually**. Nothing of the stop is built again.
 - The counted and not counted failures of lot 3 (`ci_failed`, `ci_timeout`, `push_failed`, review failures), each with its `system` comment.
@@ -1374,9 +1376,31 @@ Split approved by the owner on 2026-10-14 (J4a, J4b, J4c below), done in that or
 
 - **From step G2c** (owner's answer 3d): **Check CI again** accepting a ticket's work after `ci_failed` takes that run's failed attempt back (`attempt_count` down by one). A ticket stopped after repeated failures whose work **Check CI again** then accepts must lose its stop mark and its "Needs you" item.
 
-- **Question for this step: "Push again"** (owner's note, step F2). A push refused for a permission, or because GitHub could not be reached, leaves the work committed on the machine, yet the only way out is a new run: a whole Claude Code session just to push again. This step considers a **Push again** action that starts no session: the holding machine pushes the ticket branch as an end push does, and when the push succeeds, the stored submission is checked again and accepted, like **Check CI again** in step G2. It would need a new daemon command (a protocol change), the holding machine online (else the action says so), and the stored submission's facts re-read by the daemon at the push. A diverged branch still needs a run, since the agent must merge. To be asked to the owner at the start of the step.
+- **Question for this step: "Push again"** (owner's note, step F2): answered at the start of the step, **not in lot 3**; the design is in "Carried to lot 4".
 
-**Done when** tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not as decided, and Run now's refusal naming the setting and its value. Playwright: **Try again** from "Needs you".
+**Done when (whole step)** tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not as decided, and Run now's refusal naming the setting and its value. Playwright: **Try again** from "Needs you".
+
+**The owner's answers (2026-10-16, start of the step)**:
+
+- **Push again**: not in lot 3 (written into "Carried to lot 4" with the design proposed). Once the token check is fixed, a refused push should be rare, and **Run now** already covers it.
+1. **`download_failed`**: a failure reason and end reason of its own for the bare clone's clone or fetch and the base branch's fetch at a run's start, when GitHub cannot be reached, the credential is refused or **Longest push** is reached. Any other preparation failure stays `crashed`, counted. Protocol 2 is not released: one more `RunEndReason` value, no version change.
+2. **Its "Needs you" item**, blocking: "<ticket> could not be downloaded from GitHub on <machine>: <title>", saying which of the three happened, with **Run now**; it goes when a new run starts, the ticket is done or cancelled, or the machine is revoked. A review run keeps "Review did not finish" with **Start review**, with the true words.
+3. **The stop after failed attempts** comes at the limit (04 section 5: after 2 with the default of 2), the setting read at the failure. The failure comment adds: "It counts as a failed attempt: 2 failed attempts, as many as Failed attempts before asking you allows (2), so the ticket is stopped. Use Try again to let it continue, or Cancel it, or Mark it as done manually." **Run now** refuses: "BAK-12 is stopped after 2 failed attempts (Failed attempts before asking you: 2): use Try again, Cancel or Mark as done manually." The card: "Stopped after repeated failures". No migration: a 0.3.0 ticket at or over the limit stops only at its next counted failure.
+4. **Check CI again** lifts only a `failed_attempts` stop, with the count down by one (G2c); its comment ends ", the failed attempt of that run no longer counts, and the ticket is no longer stopped."; no new event (`ticket.ci_checked_again` and the status event).
+5. **The token check's write probes** (small item 2) use a project's repository (the most recently updated project whose repository GitHub lists, never an archived one); the smoke script passes its `--repository`. With neither, a refusal reads Could not verify, naming the repository that may be outside the token's repositories, never Missing. The probes still change nothing on GitHub (invalid bodies only). Tested with the fake GitHub: a token limited to one repository, with and without a project.
+
+### [ ] K1. Stop after failed attempts, counted failures, and three small items
+
+- First, one commit each (owner's request): (a) the owner's real GitHub run of 2026-10-16 recorded in the assumptions table, and the script's A21 check accepting the pull request's title or the single commit's title with " (#<n>)", saying which one GitHub used; (b) the token check's write probes (answer 5); (c) the "deadlock detected" logged once on a Needs you request during J4c's e2e run: the two transactions found and their lock order fixed, with a test failing before the fix, or what was found recorded here.
+- The `failed_attempts` stop (answer 3), reusing step I's stop; each lot 3 failure counted or not, with its `system` comment; **Check CI again** lifting the stop (answer 4); 04 section 5 rewritten from the code; Help "When a ticket keeps failing"; CHANGELOG. Settings > Limits' "used in 0.4.0" for **Failed attempts before asking you** true at the end.
+
+**Done when** the smoke script's dry run reads A21 both ways; a fake GitHub test with a token limited to one repository shows Contents and Pull requests OK with a project and Could not verify without, never Missing; the deadlock has its test or its record; server tests cover a ticket stopped after its failed attempts then tried again (count reset, comment), each failure reason counted or not, Run now's refusal naming the setting and its value, and **Check CI again** lifting the stop; Playwright on both viewports uses **Try again** from "Needs you" on a ticket stopped after failed attempts.
+
+### [ ] K2. A project download that fails at a run's start
+
+- The daemon's typed download failure and `download_failed` (answer 1); on the server not counted, the blocking item and when it goes (answer 2), true words on the run page and in the comment; the Help line of Machines > Troubleshooting corrected.
+
+**Done when** daemon tests cover the three causes against the Git test server; server tests show it is not counted and the item comes and goes; Playwright on both viewports shows the item.
 
 ### [ ] L. Carried from lot 2
 
@@ -1443,3 +1467,4 @@ Split approved by the owner on 2026-10-14 (J4a, J4b, J4c below), done in that or
 - A failure that is not counted (`ci_timeout`, `push_failed`, a review that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop (written into 10, lot 4).
 - When reviews start by themselves (lot 3: **Start review** by the owner).
 - Whether waiting for CI should still count against the account's maximum concurrent runs once runs start by themselves.
+- **Push again** (owner's note, step F2; answered at the start of step K: not in lot 3). A push refused for a permission, or because GitHub could not be reached, leaves the work committed on the machine; today only **Run now** gets it to GitHub, at the cost of a session. The design proposed in step K: a **Push again** button on the `push_failed` "Needs you" item and the ticket page, never offered for a diverged branch (the agent must merge, which needs a run). The server sends the holding machine a new command (`branch.push`, built like `branch.delete`), with the commit it expects (the refused submission's head); the daemon pushes as an end push does (the explicit refspec, the credential, **Longest push**) only when the local branch is still at that commit, and answers `branch.push_result` (pushed, refused, unreachable, diverged, moved). On success the server checks the run's stored refused submission again and accepts it only when the push was its one failed check: the pull request opens or is updated, and since no session waits for CI, the ticket stays `todo` with G2c's "CI did not finish" item, so **Check CI again** takes over (and **Run now** with the result after a CI failure). Refused when the machine is offline or revoked, the branch moved or another run is active. A protocol change (a version raise once 0.4.0 is released).
