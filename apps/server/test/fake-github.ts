@@ -201,6 +201,9 @@ function repositoryJson(owner: string, repo: FakeRepository) {
     description: repo.description ?? null,
     default_branch: branchOf(repo),
     created_at: repo.createdAt ?? '2020-01-01T00:00:00Z',
+    allow_merge_commit: true,
+    allow_squash_merge: repo.allowSquashMerge ?? true,
+    allow_rebase_merge: repo.allowRebaseMerge ?? true,
   };
 }
 

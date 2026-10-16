@@ -97,3 +97,38 @@ export async function updatePullRequestBranch(
   );
   return updated.ok ? { ok: true, value: updated.value.message ?? '' } : updated;
 }
+
+/**
+ * "full-repository": whether squash and rebase merging are allowed (Settings > General > Pull
+ * Requests). Both optional in GitHub's description; absent (GitHub did not show them to this
+ * token) reads as null.
+ */
+const MergeSettings = z.object({
+  allow_squash_merge: z.boolean().optional(),
+  allow_rebase_merge: z.boolean().optional(),
+});
+
+export interface MergeSettings {
+  squash: boolean | null;
+  rebase: boolean | null;
+}
+
+/**
+ * The repository's merge settings ("Get a repository", https://docs.github.com/en/rest/repos/repos),
+ * read before step 11 (lot 3 step J4c), whose merges by squash and by rebase need them on.
+ */
+export async function readMergeSettings(
+  client: GitHubClient,
+  repo: RepositoryRef,
+): Promise<GitHubResult<MergeSettings>> {
+  const read = await ask(client, { method: 'GET', path: repoPath(repo) }, 200, MergeSettings);
+  return read.ok
+    ? {
+        ok: true,
+        value: {
+          squash: read.value.allow_squash_merge ?? null,
+          rebase: read.value.allow_rebase_merge ?? null,
+        },
+      }
+    : read;
+}

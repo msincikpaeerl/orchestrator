@@ -30,25 +30,31 @@ import {
 } from '../src/github/ci.js';
 import type { WorkflowJob, WorkflowRun } from '../src/github/ci.js';
 import { createGitHubClient, type GitHubClient } from '../src/github/client.js';
+import { compareCommits } from '../src/github/compare.js';
 import {
   closePullRequest,
   deleteBranch,
   findPullRequests,
   isPullRequestMerged,
+  listOpenPullRequests,
+  listOpenPullRequestsUsing,
   openPullRequest,
   postReview,
+  readBranchRef,
   readPullRequest,
   reopenPullRequest,
   type PullRequest,
 } from '../src/github/pull-requests.js';
-import { findRepository } from '../src/github/repositories.js';
+import { branchPath, findRepository, repoPath } from '../src/github/repositories.js';
 import { excerptHeading } from '../src/github/job-log.js';
 import { checkToken, inspectToken } from '../src/github/token-check.js';
 import {
   branchHead,
   mergeMethod,
   readCommit,
+  readMergeSettings,
   updatePullRequestBranch,
+  type MergeSettings,
 } from './github-smoke-reads.js';
 
 // The Node.js helper of tools/smoke/github-smoke.sh (lot 3 plan, step E): the owner's check of
@@ -137,11 +143,12 @@ const STEPS: [number, string][] = [
   [8, 'merge by you on GitHub, and its detection'],
   [9, 'a conflicting pull request, closed by you, found and reopened'],
   [10, 'the second, restricted token'],
+  [11, 'merges by squash and by rebase, Update branch, and the reads the merge watch relies on'],
 ];
 const ASSUMPTIONS = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13',
   'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26',
-  'A30', 'A31',
+  'A30', 'A31', 'A32', 'A33', 'A34', 'A35', 'A36', 'A37', 'A38',
 ]; // prettier-ignore
 
 const stepVerdicts = new Map<number, { verdict: Verdict; failures: string[] }>();
@@ -308,6 +315,26 @@ const stamp = new Date()
 const BRANCH = `orchestrator-smoke-${stamp}`;
 /** Step 9's branch, made from the default branch as it was before the merge of step 8. */
 const CONFLICT_BRANCH = `${BRANCH}-conflict`;
+/** Step 11's branches (lot 3 step J4c), made from the default branch as step 1 fetched it. */
+const SQUASH_BRANCH = `${BRANCH}-squash-merge`;
+const REBASE_BRANCH = `${BRANCH}-rebase-merge`;
+/**
+ * Step 11's pull request based on the squash branch (A34): it adds the squash branch's file with
+ * other content, so it conflicts with its base and GitHub starts no CI run for it.
+ */
+const BASE_LIST_BRANCH = `${BRANCH}-base-list`;
+/** A37: a name that only a longer branch name starts with (the squash branch's). */
+const PREFIX_NAME = `${BRANCH}-squash`;
+const SQUASH_PAGE = 'docs/orchestrator-smoke-squash.md';
+const REBASE_PAGE = 'docs/orchestrator-smoke-rebase.md';
+/** Every branch the run may push, for a pull request found by its branch at the clean-up. */
+const RUN_BRANCHES = () => [
+  BRANCH,
+  CONFLICT_BRANCH,
+  SQUASH_BRANCH,
+  REBASE_BRANCH,
+  BASE_LIST_BRANCH,
+];
 /** Step 10's branch, pushed with the second token: it adds a workflow file. */
 const WORKFLOW_BRANCH = `${BRANCH}-workflow`;
 const WORKFLOW_FILE = '.github/workflows/orchestrator-smoke.yml';
@@ -1034,9 +1061,13 @@ async function waitForOwner<T>(lines: string[], poll: () => Promise<T | null>): 
   }
 }
 
+/** Pull requests of the run closed or merged on GitHub: the open list must leave them out (A32). */
+const closedOrMerged = new Set<number>();
+
 /** Removes `number` from what is left on GitHub (it is closed). */
 function closedNow(number: number): void {
   left.pullRequests = left.pullRequests.filter((each) => each !== number);
+  closedOrMerged.add(number);
 }
 
 /**
@@ -1832,6 +1863,474 @@ async function stepTen(context: Context): Promise<void> {
   endStep();
 }
 
+// ---------------------------------------------------------------------------------------------
+// Step 11: merges by squash and by rebase (lot 3 step J4c, owner's answer 8 of step J)
+
+/** The boxes of the repository's Settings > General > Pull Requests, as GitHub's page names them. */
+const BOX = { squash: '"Allow squash merging"', rebase: '"Allow rebase merging"' };
+
+/** The boxes step 11 needs that GitHub says are not ticked. */
+function boxesOff(settings: MergeSettings): string[] {
+  return [
+    ...(settings.squash === false ? [BOX.squash] : []),
+    ...(settings.rebase === false ? [BOX.rebase] : []),
+  ];
+}
+
+function tickText(boxes: string[]): string {
+  return `Open ${repoWeb}/settings and, under "Pull Requests", tick ${boxes.join(' and ')} (GitHub saves it at once)`;
+}
+
+/**
+ * Opens a pull request of step 11. One GitHub created with an answer the layer cannot read is
+ * found by its branch; null (the step has failed) when it is not open.
+ */
+async function openStepPull(
+  context: Context,
+  head: string,
+  base: string,
+  title: string,
+): Promise<{ number: number; url: string } | null> {
+  const opening = await openPullRequest(context.client, REPO, {
+    head,
+    base,
+    title,
+    body: "Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh), step 11. Merge it only when the script asks you to, with the method it names; if the script stopped early, close this pull request and delete its branch.",
+  });
+  if (opening.ok) {
+    left.pullRequests.push(opening.value.number);
+    return { number: opening.value.number, url: opening.value.url };
+  }
+  if (!unreadable(opening.refusal)) {
+    check(
+      null,
+      false,
+      `open a pull request from ${head} into ${base}`,
+      refusalText(opening.refusal),
+    );
+    return null;
+  }
+  left.unknownPullRequest = true;
+  readable(opening, `open a pull request from ${head}`);
+  const found = readable(
+    await findPullRequests(context.client, REPO, head, 'open'),
+    `find the pull request of branch ${head}`,
+  );
+  const number = found?.[0]?.number;
+  if (number === undefined) return null;
+  left.unknownPullRequest = false;
+  left.pullRequests.push(number);
+  return { number, url: `${repoWeb}/pull/${String(number)}` };
+}
+
+const METHOD_WORDS = { merge: 'a merge commit', squash: 'a squash commit', rebase: 'a rebase' };
+
+/**
+ * Waits for the owner to merge `pull` with `method` (its button's words, with the link), then
+ * checks what a merged pull request reads (A33), the method GitHub used, and for a squash the
+ * commit's message (A21). The default branch's new head when it was merged, else null.
+ */
+async function ownerMerges(
+  context: Context,
+  pull: { number: number; url: string; title: string },
+  branch: string,
+  method: 'squash' | 'rebase',
+  head: string,
+): Promise<string | null> {
+  const number = pull.number;
+  const before = await githubHead(context.client, context.baseBranch);
+  const button = method === 'squash' ? 'Squash and merge' : 'Rebase and merge';
+  const seen = await waitForOwner(
+    [
+      `>>> Your turn on GitHub: merge pull request #${String(number)} with "${button}".`,
+      `  1. Open ${pull.url}`,
+      `  2. At the bottom of the page, click the arrow beside the green merge button and choose "${button}".`,
+      `  3. Click "${button}", then "Confirm ${method === 'squash' ? 'squash' : 'rebase'} and merge". Leave the branch: do not click "Delete branch" (the script deletes it).`,
+      `If you merge it another way, the result says which method GitHub used and step 11 fails. If you close it without merging, or the wait runs out (the script then closes it), step 11 fails and the script goes on with the clean-up.`,
+    ],
+    pullWatcher(context, number, branch),
+  );
+  if (seen === null) {
+    check(
+      null,
+      false,
+      `pull request #${String(number)} was not merged within ${String(OWNER_WAIT_MINUTES)} minutes`,
+    );
+    const closed = await closePullRequest(context.client, REPO, number);
+    if (closed.ok || unreadable(closed.refusal)) {
+      closedNow(number);
+      say(`  The script closed pull request #${String(number)}.`);
+      stays.push(`pull request #${String(number)}, closed: ${pull.url}`);
+    } else {
+      say(`  The script could not close it: ${refusalText(closed.refusal)}`);
+    }
+    return null;
+  }
+  closedNow(number);
+  stays.push(`pull request #${String(number)}, ${seen.merged ? 'merged' : 'closed'}: ${pull.url}`);
+  if (!seen.merged) {
+    check(null, false, `pull request #${String(number)} was closed without merging`);
+    notes.push(`Step 11: you closed pull request #${String(number)} without merging it.`);
+    return null;
+  }
+
+  // A33: merged, its time, and its head the branch's head as pushed (or as Update branch left it).
+  const read =
+    seen.pull ??
+    readable(
+      await readPullRequest(context.client, REPO, number),
+      `read pull request #${String(number)}`,
+    );
+  if (read === null) {
+    notAttempted('A33', `pull request #${String(number)} could not be read`);
+  } else {
+    check(
+      'A33',
+      read.merged && read.mergedAt !== null && read.headSha === head,
+      `after ${method === 'squash' ? 'a squash' : 'a rebase'} merge: merged true, merged_at set, head the branch's head ${head.slice(0, 7)}`,
+      `merged ${String(read.merged)}, merged_at ${read.mergedAt ?? 'null'}, head ${read.headSha}`,
+    );
+  }
+
+  // The method GitHub used, from the default branch's new head (printed, as at step 8).
+  const after = await githubHead(context.client, context.baseBranch);
+  const commit =
+    after === null
+      ? null
+      : readable(
+          await readCommit(context.client, REPO, after),
+          'read the new head of the default branch',
+        );
+  if (after === null || commit === null || before === null) {
+    check(null, false, "the default branch's new head could not be read");
+    if (method === 'squash') notAttempted('A21', "the default branch's new head could not be read");
+    return after;
+  }
+  const found = mergeMethod(commit, before);
+  const firstLine = commit.message.split('\n')[0] ?? '';
+  say(
+    `  ${context.baseBranch} is now at ${after.slice(0, 7)}: ${METHOD_WORDS[found]} (${String(commit.parents.length)} parent${commit.parents.length === 1 ? '' : 's'}), message "${firstLine}"`,
+  );
+  check(
+    null,
+    found === method,
+    `pull request #${String(number)} merged by ${METHOD_WORDS[method]}`,
+    `GitHub's default branch shows ${METHOD_WORDS[found]}`,
+  );
+  notes.push(
+    `Step 11: pull request #${String(number)} merged by ${METHOD_WORDS[found]}; the default branch's new head ${after} has ${String(commit.parents.length)} parent(s) and the message "${firstLine}".`,
+  );
+  stays.push(
+    `the ${method} of pull request #${String(number)} into ${context.baseBranch}, with ${method === 'squash' ? SQUASH_PAGE : REBASE_PAGE}: ${repoWeb}/commit/${after}`,
+  );
+  if (method === 'squash' && found === 'squash') {
+    const expected = `${pull.title} (#${String(number)})`;
+    check('A21', firstLine === expected, `the squash commit's message: "${expected}"`, firstLine);
+  }
+  return after;
+}
+
+/** Waits for CI on `head`; false (the step has failed) when it did not pass. */
+async function ciPassed(context: Context, head: string, pull: number): Promise<boolean> {
+  const runs = (await waitForCi(context.client, head, pull, false))?.runs;
+  if (!runs) return true;
+  return check(
+    null,
+    runs.every((run) => run.conclusion === 'success'),
+    `CI passed on pull request #${String(pull)} (the ci check your projects require to merge)`,
+    conclusions(runs),
+  );
+}
+
+/**
+ * The open list (A32): every open pull request of the repository, every page. Checks that it
+ * holds `open` with their heads and none of `gone`.
+ */
+async function checkOpenList(
+  context: Context,
+  open: { number: number; head: string }[],
+  gone: number[],
+  what: string,
+): Promise<void> {
+  const listed = readable(
+    await listOpenPullRequests(context.client, REPO),
+    'list the open pull requests',
+  );
+  if (listed === null) {
+    notAttempted('A32', 'the open list could not be read');
+    return;
+  }
+  const found = listed.map((pull) => `#${String(pull.number)} head ${pull.headSha.slice(0, 7)}`);
+  check(
+    'A32',
+    open.every((each) =>
+      listed.some((pull) => pull.number === each.number && pull.headSha === each.head),
+    ) && !listed.some((pull) => gone.includes(pull.number)),
+    what,
+    `listed: ${found.join(', ') || 'none'}`,
+  );
+}
+
+async function stepEleven(context: Context): Promise<void> {
+  const first = context.first;
+  if (!first) {
+    say();
+    say('Step 11: NOT ATTEMPTED (step 1 did not finish)');
+    return;
+  }
+  startStep(11);
+  await mergesBySquashAndRebase(context, first);
+  endStep();
+}
+
+/** Step 11's checks; a check that fails ends them early, the step's verdict saying so. */
+async function mergesBySquashAndRebase(context: Context, first: Machine): Promise<void> {
+  // Read again: the boxes may have been changed during the run.
+  const settings = readable(
+    await readMergeSettings(context.client, REPO),
+    'read the merge settings',
+  );
+  const boxes = settings === null ? [] : boxesOff(settings);
+  if (boxes.length > 0) {
+    check(
+      null,
+      false,
+      `${boxes.join(' and ')} ${boxes.length === 1 ? 'is' : 'are'} not ticked any more: ${tickText(boxes)}, then run the script again`,
+    );
+    return;
+  }
+
+  // Three branches from the default branch as step 1 fetched it, each changing its own file:
+  // the squash one, the rebase one (two commits, so a rebase reads as one), and A34's, which
+  // conflicts with the squash one.
+  const base = await baseAtStepOne(context, first);
+  const page = (what: string) =>
+    `# Orchestrator smoke test\n\nWritten by step 11 of the smoke test of ${stamp}: ${what}.\n`;
+  const squashHead = await commitFile(
+    first,
+    base,
+    SQUASH_PAGE,
+    page('merged by squash'),
+    'Orchestrator smoke test: merged by squash',
+  );
+  const rebaseFirst = await commitFile(
+    first,
+    base,
+    REBASE_PAGE,
+    page('merged by rebase, first commit'),
+    'Orchestrator smoke test: merged by rebase, 1 of 2',
+  );
+  const rebaseHead = await commitFile(
+    first,
+    rebaseFirst,
+    REBASE_PAGE,
+    page('merged by rebase, second commit'),
+    'Orchestrator smoke test: merged by rebase, 2 of 2',
+  );
+  const listHead = await commitFile(
+    first,
+    base,
+    SQUASH_PAGE,
+    page('a pull request based on the squash branch, which conflicts with it'),
+    'Orchestrator smoke test: based on the squash branch',
+  );
+  const pushes: [string, string][] = [
+    [SQUASH_BRANCH, squashHead],
+    [REBASE_BRANCH, rebaseHead],
+    [BASE_LIST_BRANCH, listHead],
+  ];
+  for (const [branch, head] of pushes) {
+    const start = runStart(context.account, context.baseBranch, NAME, branch);
+    const pushed = await first.spaces.push(start, first.bare, first.folder, head);
+    if (pushed.status !== 'pushed') {
+      check(null, false, `the push of ${branch}`, pushText(pushed));
+      return;
+    }
+    left.branches.push(branch);
+    say(`  Branch ${branch} at ${head.slice(0, 7)}`);
+  }
+
+  // A37: the singular reference read never answers for a longer name.
+  const prefix = await context.client.request({
+    method: 'GET',
+    path: `${repoPath(REPO)}/git/ref/heads/${branchPath(PREFIX_NAME)}`,
+  });
+  const answered = z.object({ ref: z.string() }).safeParse(prefix.body);
+  check(
+    'A37',
+    prefix.status === 404,
+    `git/ref/heads/${PREFIX_NAME}, which only ${SQUASH_BRANCH} starts with: 404`,
+    `HTTP ${String(prefix.status)}${answered.success ? `, ref ${answered.data.ref}` : ''}`,
+  );
+
+  const squashTitle = `Orchestrator smoke test ${stamp}: merged by squash`;
+  const squash = await openStepPull(context, SQUASH_BRANCH, context.baseBranch, squashTitle);
+  const rebase = await openStepPull(
+    context,
+    REBASE_BRANCH,
+    context.baseBranch,
+    `Orchestrator smoke test ${stamp}: merged by rebase`,
+  );
+  const based = await openStepPull(
+    context,
+    BASE_LIST_BRANCH,
+    SQUASH_BRANCH,
+    `Orchestrator smoke test ${stamp}: based on ${SQUASH_BRANCH}`,
+  );
+  if (squash === null || rebase === null || based === null) {
+    return;
+  }
+  for (const [what, pull] of [
+    ['to merge by squash', squash],
+    ['to merge by rebase', rebase],
+    [`based on ${SQUASH_BRANCH}`, based],
+  ] as const) {
+    say(`  Pull request #${String(pull.number)}, ${what}: ${pull.url}`);
+  }
+
+  // A34: found by its base; then A36: closed through the API.
+  const usingBase = readable(
+    await listOpenPullRequestsUsing(context.client, REPO, 'base', SQUASH_BRANCH),
+    `list the open pull requests based on ${SQUASH_BRANCH}`,
+  );
+  if (usingBase === null) {
+    notAttempted('A34', 'the list could not be read');
+  } else {
+    check(
+      'A34',
+      usingBase.some((pull) => pull.number === based.number) &&
+        usingBase.every((pull) => pull.baseBranch === SQUASH_BRANCH),
+      `pulls?base=${SQUASH_BRANCH} finds pull request #${String(based.number)}, based on it, and only pull requests based on it`,
+      usingBase.map((pull) => `#${String(pull.number)} base ${pull.baseBranch}`).join(', ') ||
+        'none',
+    );
+  }
+  const closing = await closePullRequest(context.client, REPO, based.number);
+  if (closing.ok || unreadable(closing.refusal)) closedNow(based.number);
+  const closed = readable(
+    await readPullRequest(context.client, REPO, based.number),
+    `read pull request #${String(based.number)} after closing it`,
+  );
+  check(
+    'A36',
+    closing.ok && closing.value.state === 'closed' && closed?.state === 'closed' && !closed.merged,
+    `PATCH state=closed closes pull request #${String(based.number)}: its answer and a later read say closed, not merged`,
+    `${closing.ok ? `answer: state ${closing.value.state}` : refusalText(closing.refusal)}; read: ${closed ? `state ${closed.state}, merged ${String(closed.merged)}` : 'unreadable'}`,
+  );
+  if (closing.ok || unreadable(closing.refusal)) {
+    stays.push(`pull request #${String(based.number)}, closed (A34, A36): ${based.url}`);
+  }
+
+  // The required ci check must pass before the owner can merge.
+  if (!(await ciPassed(context, squashHead, squash.number))) return;
+  if (!(await ciPassed(context, rebaseHead, rebase.number))) return;
+  await checkOpenList(
+    context,
+    [
+      { number: squash.number, head: squashHead },
+      { number: rebase.number, head: rebaseHead },
+    ],
+    [...closedOrMerged],
+    `the open list (every page) holds pull requests #${String(squash.number)} and #${String(rebase.number)} with their heads, and none of the run's closed or merged ones`,
+  );
+
+  const rebased = await ownerMerges(
+    context,
+    { ...rebase, title: '' },
+    REBASE_BRANCH,
+    'rebase',
+    rebaseHead,
+  );
+  if (rebased === null) {
+    notAttempted('A38', 'it needs the rebase merge, so that the other pull request is behind');
+    return;
+  }
+
+  // A38: Update branch on the squash pull request, now behind, then the comparison the ticket
+  // page's moved head reads (lot 3 step J3b).
+  let squashNow = squashHead;
+  const update = await updatePullRequestBranch(context.client, REPO, squash.number, squashHead);
+  if (!update.ok) {
+    check(
+      'A38',
+      false,
+      `Update branch through the API on pull request #${String(squash.number)}, behind ${context.baseBranch}`,
+      refusalText(update.refusal),
+    );
+  } else {
+    for (let read = 0; read < 30 && squashNow === squashHead; read++) {
+      await sleep(DRY_RUN ? POLL_MS : 2_000);
+      const again = readable(
+        await readPullRequest(context.client, REPO, squash.number),
+        `read pull request #${String(squash.number)}`,
+      );
+      if (again === null) break;
+      squashNow = again.headSha;
+    }
+    if (squashNow === squashHead) {
+      check('A38', false, 'the head moved after Update branch', 'still at the head before');
+    } else {
+      const comparison = readable(
+        await compareCommits(context.client, REPO, squashHead, squashNow),
+        `compare ${squashHead.slice(0, 7)}...${squashNow.slice(0, 7)}`,
+      );
+      if (comparison === null) {
+        notAttempted('A38', 'the comparison could not be read');
+      } else {
+        const listed = comparison.commits
+          .map((commit) => `${commit.sha.slice(0, 7)} "${commit.title}"`)
+          .join(', ');
+        say(
+          `  Update branch moved the head to ${squashNow.slice(0, 7)}; ${squashHead.slice(0, 7)}...${squashNow.slice(0, 7)}: status ${comparison.status}, ${String(comparison.totalCommits)} commits, oldest first: ${listed}`,
+        );
+        check(
+          'A38',
+          comparison.status === 'ahead' &&
+            comparison.totalCommits === comparison.commits.length &&
+            comparison.commits.at(-1)?.sha === squashNow &&
+            comparison.commits.some((commit) => commit.sha === rebased),
+          `the head moved by Update branch, compared with the head before: status ahead, the commits it brought (${context.baseBranch}'s head ${rebased.slice(0, 7)} among them), its merge commit last`,
+          `status ${comparison.status}, total ${String(comparison.totalCommits)}: ${listed}`,
+        );
+        notes.push(
+          `Step 11: after Update branch, the comparison reads status ${comparison.status} with ${String(comparison.totalCommits)} commits: ${listed}.`,
+        );
+      }
+    }
+  }
+
+  if (!(await ciPassed(context, squashNow, squash.number))) return;
+  const squashed = await ownerMerges(
+    context,
+    { ...squash, title: squashTitle },
+    SQUASH_BRANCH,
+    'squash',
+    squashNow,
+  );
+  if (squashed !== null) {
+    await checkOpenList(
+      context,
+      [],
+      [squash.number, rebase.number],
+      `after the merges, the open list no longer holds pull requests #${String(squash.number)} and #${String(rebase.number)}`,
+    );
+  }
+}
+
+/** A35: a deleted branch's reference reads 404 (`readBranchRef` gives null for it). */
+async function readDeleted(context: Context, branch: string): Promise<void> {
+  const read = await readBranchRef(context.client, REPO, branch);
+  currentStep = 0;
+  check(
+    'A35',
+    read.ok && read.value === null,
+    `branch ${branch} read after its deletion (git/ref/heads/${branch}): 404`,
+    read.ok
+      ? `still there: ${read.value?.ref ?? ''} at ${read.value?.sha ?? ''}`
+      : refusalText(read.refusal),
+  );
+}
+
 function cleanUpFailed(what: string, answer: string): void {
   say(`  FAIL  ${what}`);
   say(quoted(answer));
@@ -1847,7 +2346,7 @@ async function cleanUp(context: Context): Promise<void> {
   say('Clean-up');
   if (left.unknownPullRequest) {
     left.unknownPullRequest = false;
-    for (const branch of [BRANCH, CONFLICT_BRANCH]) {
+    for (const branch of RUN_BRANCHES()) {
       const found = await findPullRequests(context.client, REPO, branch, 'open');
       if (found.ok) {
         for (const pull of found.value) {
@@ -1879,6 +2378,7 @@ async function cleanUp(context: Context): Promise<void> {
       result.ok ? result.value : refusalText(result.refusal);
     if (deleted.ok) left.branches = left.branches.filter((each) => each !== branch);
     else cleanUpFailed(`delete branch ${branch}`, answer(deleted));
+    if (deleted.ok) await readDeleted(context, branch);
     if (branch !== BRANCH) {
       say(`  Branch ${branch}: ${answer(deleted)}`);
       continue;
@@ -2020,6 +2520,21 @@ async function main(): Promise<number> {
   }
   const second = RESTRICTED ? await restrictedToken(restricted, token, identity.account) : null;
   if (RESTRICTED && second === null) return 3;
+  // Step 11 needs both merge methods: refused now, before anything is made, rather than at the
+  // end of the run (owner's answer 8 of step J).
+  const merging = await readMergeSettings(client, REPO);
+  const boxes = merging.ok ? boxesOff(merging.value) : [];
+  if (boxes.length > 0) {
+    say(
+      `STOPPED: step 11 asks you to merge one pull request by squash and one by rebase, and ${OWNER}/${NAME} does not allow ${boxes.length === 2 ? 'either' : boxes[0] === BOX.squash ? 'squash merging' : 'rebase merging'}. ${tickText(boxes)}, then run the script again. Nothing was done on GitHub.`,
+    );
+    return 3;
+  }
+  if (!merging.ok || merging.value.squash === null || merging.value.rebase === null) {
+    say(
+      `GitHub did not say whether ${OWNER}/${NAME} allows squash and rebase merging${merging.ok ? '' : ` (${refusalText(merging.refusal)})`}: before step 11, check that ${BOX.squash} and ${BOX.rebase} are ticked under "Pull Requests" in its settings: ${repoWeb}/settings`,
+    );
+  }
   gitVersion = await readGitVersion();
   say(
     `Token of ${identity.account}; repository ${OWNER}/${NAME} (default branch ${repository.defaultBranch}, ${repository.private ? 'private' : 'public'}).`,
@@ -2056,6 +2571,7 @@ async function main(): Promise<number> {
     await stepEight(context);
     await stepNine(context);
     await stepTen(context);
+    await stepEleven(context);
   } catch (error) {
     if (!(error instanceof Stop)) {
       check(

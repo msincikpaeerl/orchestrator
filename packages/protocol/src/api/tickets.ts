@@ -282,6 +282,14 @@ export const TicketPullRequest = z.object({
    */
   closed: z.object({ at: z.iso.datetime().nullable(), by: PullRequestClosedBy }).nullable(),
   /**
+   * The pull request merged on GitHub: the branch it was merged into, GitHub's time, and whether
+   * that branch is the project's default branch (only a merge into it makes the ticket done;
+   * lot 3 step J4c); null while it is not merged.
+   */
+  merged: z
+    .object({ into: z.string(), at: z.iso.datetime().nullable(), intoDefaultBranch: z.boolean() })
+    .nullable(),
+  /**
    * **Cancel**'s close of the pull request, not done yet: since when, and the latest failure; it
    * is tried again at each **GitHub check interval** until it is closed, found merged, or the
    * ticket reopened. Null when none is wanted.

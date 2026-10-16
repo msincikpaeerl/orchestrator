@@ -11,6 +11,7 @@ import {
   closedStateText,
   conflictFlagText,
   headMovedText,
+  mergedElsewhereText,
   reopenFailureText,
   toMergeText,
   watchFailureText,
@@ -215,6 +216,20 @@ describe("the closed item (owner's answers 1 and 4 of step J)", () => {
       `Pull request #12 was merged into release on GitHub at ${formatDateTime(AT)}, not into the project's default branch, so the work is not done. The ticket is unchanged (In review). GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch. If the work is done this way, mark the ticket as done; if not, cancel it.`,
     );
     expect(text.reopenFailure).toBeNull();
+  });
+});
+
+describe('merged into another base on the ticket page (lot 3 step J4c)', () => {
+  it("the closed item's words while the ticket goes on, the first sentence once it is done", () => {
+    expect(mergedElsewhereText({ into: 'release', at: AT }, 12, 'awaiting_merge')).toBe(
+      `Pull request #12 was merged into release on GitHub at ${formatDateTime(AT)}, not into the project's default branch, so the work is not done. The ticket is unchanged (Awaiting merge). GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch. If the work is done this way, mark the ticket as done; if not, cancel it.`,
+    );
+    expect(mergedElsewhereText({ into: 'release', at: AT }, 12, 'done')).toBe(
+      `Pull request #12 was merged into release on GitHub at ${formatDateTime(AT)}, not into the project's default branch.`,
+    );
+    expect(mergedElsewhereText({ into: 'release', at: null }, 12, 'cancelled')).toBe(
+      "Pull request #12 was merged into release on GitHub, not into the project's default branch.",
+    );
   });
 });
 

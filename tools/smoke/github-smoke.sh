@@ -42,16 +42,23 @@
 # Node.js helper through a pipe, and never written to disk, put in an argument or in the
 # environment of another program, or printed: anything GitHub sends back is masked.
 #
+# Before anything is made, it reads the repository's merge settings: if squash or rebase merging
+# is off, it stops and names the box to tick in the repository's settings.
+#
 # What it does in the repository: a branch orchestrator-smoke-<time> with a few commits to
 # docs/orchestrator-smoke.md and its pull request, 3 CI runs (about 2 minutes each), reviews
 # (four comment reviews stay: GitHub never deletes a posted review), then asks you to merge it
 # (a 4th CI run starts on the default branch; the script does not wait for it). Then a second
 # branch from the default branch as it was before, whose pull request conflicts (no CI run): the
-# script asks you to close it, then posts one comment review on it. At the end it deletes its
-# branches. What stays: the merge on the default branch (with docs/orchestrator-smoke.md), the
-# two closed pull requests with their comment reviews, and the workflow runs. If it stops
-# early, it says what it left. You act on GitHub twice (three times with the second token); each
-# time the script says what to click, with the link.
+# script asks you to close it, then posts one comment review on it. Step 11: two small pull
+# requests, each adding its own page under docs/, which you merge, one with "Rebase and merge"
+# and one with "Squash and merge" (the script waits for their CI first; 3 CI runs, and 2 more on
+# the default branch), and a third one, based on the first of them, which it closes at once (it
+# conflicts: no CI run). At the end it deletes every branch it made. What stays: the merges on the
+# default branch (docs/orchestrator-smoke.md, then 3 commits with the two step 11 pages), the
+# closed pull requests with their comment reviews, and the workflow runs. If it stops early, it
+# says what it left and how to remove it. You act on GitHub four times (five with the second
+# token); each time the script says what to click, with the link.
 #
 # The result block at the end lists each step and assumption with PASS, FAIL or NOT ATTEMPTED;
 # paste it back. Exit code: 0 when everything attempted passes, 1 when something fails, 3 when the
@@ -83,7 +90,7 @@ while (($# > 0)); do
     --restricted-token) RESTRICTED=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --github-url) GITHUB_URL="${2:?--github-url needs a value}"; shift ;;
-    -h | --help) sed -n '2,58p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,65p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -139,7 +146,7 @@ if ((RESTRICTED)); then
 fi
 echo "Delete them when the script has finished: https://github.com/settings/personal-access-tokens"
 echo
-guard_confirm "in $REPOSITORY, branches orchestrator-smoke-<time>, two pull requests (you merge the first, the second stays closed), and 4 CI runs (Actions minutes, about 8 on a private repository); the merge stays on the default branch."
+guard_confirm "in $REPOSITORY, branches orchestrator-smoke-<time>, five pull requests (you merge three, one by squash and one by rebase; two stay closed), and 9 CI runs (Actions minutes, about 18 on a private repository); the merges stay on the default branch."
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/github-smoke.XXXXXX")" || stop "cannot create the scratch folder."
 chmod 700 "$SCRATCH"

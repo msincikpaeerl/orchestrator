@@ -28,6 +28,13 @@ export interface FakeRepository {
   createdAt?: string;
   /** Files of the first commit when not empty; default a README. */
   files?: Record<string, string>;
+  /**
+   * Settings > General > Pull Requests: "Allow squash merging" and "Allow rebase merging", both
+   * ticked by default, as GitHub has them for a new repository (only reported: the fake's merges
+   * are made by the tests).
+   */
+  allowSquashMerge?: boolean;
+  allowRebaseMerge?: boolean;
   /** Rulesets created on the repository, by name. */
   rulesets?: { name: string; body: unknown }[];
   /**

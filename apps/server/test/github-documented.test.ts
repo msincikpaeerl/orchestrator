@@ -28,6 +28,7 @@ import {
   branchHead,
   mergeMethod,
   readCommit,
+  readMergeSettings,
   updatePullRequestBranch,
 } from '../scripts/github-smoke-reads.js';
 import { documentedOperation, plainestBody } from './fake-github/documented.js';
@@ -141,12 +142,16 @@ describe.each<Filling>(['nulls', 'inner'])(
       ]);
     });
 
-    it("the smoke script's own reads: a branch's head, a commit, Update branch", async () => {
+    it("the smoke script's own reads: a branch's head, a commit, Update branch, merge settings", async () => {
       const client = documentedClient(filling);
       expect(read(await branchHead(client, REPO, 'main'))).toBe('documented');
       const commit = read(await readCommit(client, REPO, 'abc'));
       expect(commit.parents).toHaveLength(1);
       read(await updatePullRequestBranch(client, REPO, 1, 'abc'));
+      // The merge settings read before step 11 (lot 3 step J4c): optional, absent read as null.
+      const settings = read(await readMergeSettings(client, REPO));
+      if (filling === 'nulls') expect(settings).toEqual({ squash: null, rebase: null });
+      else expect([typeof settings.squash, typeof settings.rebase]).toEqual(['boolean', 'boolean']);
     });
 
     it('the token, repositories, branches, commits, trees and rulesets', async () => {

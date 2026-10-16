@@ -16,6 +16,8 @@ import {
 // closed item with its buttons. Each test saves pictures of the screen for the owner
 // (apps/web/e2e-screenshots/).
 
+const TICKET = '/projects/WEB/tickets/1';
+
 test('a pull request to merge: the approval, the moved head, then done after the merge without reload', async ({
   page,
   gitHubCommit,
@@ -195,6 +197,26 @@ test('a pull request merged into another base: Cancel the ticket or Mark as done
   await expectFitsScreen(page);
   await screenshot(merged, testInfo, 'needs-you-pull-request-merged-elsewhere');
 
+  // The ticket page says where it was merged, in the item's words (lot 3 step J4c).
+  await page.goto(TICKET);
+  const pullRequest = page.getByLabel('Pull request', { exact: true });
+  await expect(pullRequest).toContainText('Pull request #1 · Merged');
+  const elsewhere = page.getByLabel('Merged elsewhere');
+  await expect(elsewhere).toHaveText(
+    /^Pull request #1 was merged into release on GitHub at .+, not into the project's default branch, so the work is not done\. The ticket is unchanged \(Awaiting merge\)\. GitHub never reopens a merged pull request: the next accepted submission opens a new pull request into the default branch\. If the work is done this way, mark the ticket as done; if not, cancel it\.$/,
+  );
+  await expect(
+    page.getByRole('link', { name: 'When GitHub changes the pull request' }),
+  ).toBeVisible();
+  await expectFitsScreen(page);
+  const section = page
+    .getByRole('main')
+    .locator('section, div')
+    .filter({ has: page.getByRole('heading', { name: 'Pull request', exact: true }) })
+    .last();
+  await screenshot(section, testInfo, 'ticket-merged-elsewhere');
+
+  await openSection(page, 'Needs you');
   await merged.getByRole('button', { name: 'Mark as done manually' }).click();
   const dialog = page.getByRole('dialog', { name: 'Mark WEB-1 as done?' });
   await dialog
@@ -202,4 +224,10 @@ test('a pull request merged into another base: Cancel the ticket or Mark as done
     .fill('Released from the release branch.');
   await dialog.getByRole('button', { name: 'Mark as done' }).click();
   await expect(merged).toBeHidden();
+
+  // Done: only where it was merged stays on the ticket page.
+  await page.goto(TICKET);
+  await expect(page.getByLabel('Merged elsewhere')).toHaveText(
+    /^Pull request #1 was merged into release on GitHub at .+, not into the project's default branch\.$/,
+  );
 });
