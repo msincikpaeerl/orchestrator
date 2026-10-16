@@ -74,6 +74,17 @@ describe('run refusals in plain words (07, section 3)', () => {
     expect(runRefusalText(refusals.blocked)).toBe(
       'This ticket waits for WEB-3, WEB-4, which are not done yet.',
     );
+    // Owner's answer 3, lot 3 step K: the setting and its value.
+    for (const [count, words] of [
+      [2, '2 failed attempts'],
+      [1, '1 failed attempt'],
+    ] as const) {
+      expect(
+        runRefusalText({ reason: 'ticket_stopped', cause: 'failed_attempts', count, limit: count }),
+      ).toBe(
+        `This ticket is stopped after ${words} (Failed attempts before asking you: ${String(count)}): use Try again, Cancel or Mark as done manually.`,
+      );
+    }
     // "Reopen it first" (owner's answer 3 of step J4, lot 3 step J4b).
     expect(runRefusalText(refusals.pull_request_not_open)).toBe(
       'Pull request #12 is closed on GitHub, so there is nothing to review. Reopen it first, with Reopen pull request on the ticket page or in Needs you.',

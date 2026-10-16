@@ -237,6 +237,11 @@ export interface RunAction {
    * taken off `attempt_count`, never below 0 (owner's answer 3d, lot 3 step G2c).
    */
   attemptTakenBack?: boolean;
+  /**
+   * For `ci_checked_again` on a ticket stopped after failed attempts: the stop lifted (owner's
+   * answer 4, lot 3 step K).
+   */
+  stopLifted?: boolean;
   /** Posted by the system as a `status_change` comment, in the same transaction. */
   comment?: string;
   /** For `review_changes_requested`: Quality's request, kept on the ticket (lot 3 step I). */
@@ -283,6 +288,7 @@ export async function applyRunAction(tx: Executor, input: RunAction): Promise<Ti
       ...(input.attemptTakenBack === true
         ? { attemptCount: Math.max(0, ticket.attemptCount - 1) }
         : {}),
+      ...(input.stopLifted === true ? { stopped: null } : {}),
       // An accepted submission answers the standing request (owner's answer 3, lot 3 step I).
       ...(transition.to === 'in_review' &&
       (action === 'run_submitted' || action === 'ci_checked_again') &&

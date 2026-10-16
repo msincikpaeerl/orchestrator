@@ -48,7 +48,7 @@ const utc = (at: Date) => `${at.toISOString().slice(0, 16).replace('T', ' ')} UT
 
 async function working(
   ci: 'success' | 'queued' | 'none' = 'queued',
-  settings: { maxCiFailuresPerRun?: number } = {},
+  settings: { maxCiFailuresPerRun?: number; maxFailedAttempts?: number } = {},
 ) {
   clock = new Date('2026-10-10T10:00:00.000Z');
   await h.start({ now: () => clock, ci, settings });
@@ -503,6 +503,45 @@ describe('after ci_failed (owner answers 3c and 3d)', () => {
       (entry) => entry.type === 'comment' && entry.comment.body.startsWith('CI passed on GitHub'),
     );
     expect(comments).toHaveLength(1);
+  });
+
+  // Owner's answer 4, lot 3 step K: accepted work lifts the stop, and its "Needs you" item.
+  it('lifts the stop of a ticket stopped by that failed attempt, with its item', async () => {
+    const { daemon, runId, runToken, repo } = await working('queued', {
+      maxCiFailuresPerRun: 1,
+      maxFailedAttempts: 1,
+    });
+    const first = await submitted(daemon, runId, runToken);
+    failAll(repo, first);
+    await h.t.ciTick();
+    await confirmed(daemon, runId, await round(daemon, runId));
+    const second = await submitted(daemon, runId, runToken);
+    failAll(repo, second);
+    await h.t.ciTick();
+    await h.report(daemon, state(runId, { state: 'ended', reason: 'stopped' }));
+    expect(await h.ticket()).toMatchObject({
+      status: 'todo',
+      attemptCount: 1,
+      stop: { cause: 'failed_attempts', count: 1, limit: 1 },
+    });
+    expect(lastComment(await h.ticket())).toContain(
+      'It counts as a failed attempt: 1 failed attempt, as many as Failed attempts before asking you allows (1), so the ticket is stopped.',
+    );
+    const stoppedItems = async () =>
+      (await h.call('GET', '/api/needs-you'))
+        .json<NeedsYouResponse>()
+        .items.filter((item) => item.type === 'ticket_stopped');
+    expect(await stoppedItems()).toHaveLength(1);
+    expect((await h.ticket()).ci).toMatchObject({ checkCiAgain: true });
+
+    passAll(repo, second);
+    expect(await checked(runId)).toMatchObject({ outcome: 'accepted', attemptTakenBack: true });
+    const accepted = await h.ticket();
+    expect(accepted).toMatchObject({ status: 'in_review', attemptCount: 0, stop: null });
+    expect(lastComment(accepted)).toBe(
+      `CI passed on GitHub for commit ${second.slice(0, 7)} (checked again by the owner at ${utc(clock)}): the work was accepted without a session, the failed attempt of that run no longer counts, and the ticket is no longer stopped.`,
+    );
+    expect(await stoppedItems()).toEqual([]);
   });
 
   it('is not offered after a conflict ended the run', async () => {

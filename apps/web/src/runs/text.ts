@@ -109,10 +109,10 @@ export function runRefusalText(refusal: RunRefusal): string {
     case 'no_assignee':
       return 'Choose an assignee first: the agent that should do this ticket.';
     case 'ticket_stopped':
-      // Owner's answer 2, lot 3 step I; the failed attempts' words come with step K.
+      // Owner's answer 2, lot 3 step I; the failed attempts' words, owner's answer 3 of step K.
       return refusal.cause === 'review_rounds'
         ? `This ticket is stopped after ${String(refusal.count)} requests for changes by Quality (Most review rounds per ticket: ${String(refusal.limit)}): use Try again, Cancel or Mark as done manually.`
-        : `This ticket is stopped after ${String(refusal.count)} failed attempts (Failed attempts before asking you: ${String(refusal.limit)}): use Try again, Cancel or Mark as done manually.`;
+        : `This ticket is stopped after ${String(refusal.count)} failed attempt${refusal.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(refusal.limit)}): use Try again, Cancel or Mark as done manually.`;
     case 'blocked':
       return `This ticket waits for ${refusal.tickets.join(', ')}, which ${refusal.tickets.length === 1 ? 'is' : 'are'} not done yet.`;
     case 'project_archived':

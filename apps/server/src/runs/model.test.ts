@@ -1,5 +1,6 @@
+import { FailureReason } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { statusTimes } from './model.js';
+import { isCounted, statusTimes } from './model.js';
 
 // Working and waiting times of a run (01, section 3.7; owner's decision, lot 2 step L).
 
@@ -42,5 +43,30 @@ describe('statusTimes', () => {
         earlier,
       ),
     ).toEqual({ statusSince: earlier, workingMs: 1000, waitingMs: 0 });
+  });
+});
+
+// Which failures count as a failed attempt (04, section 5; owner's decisions, lot 2 steps A, C,
+// J and M2, lot 3 steps A and G2b): every reason is listed, so a new one must be decided here.
+describe('isCounted', () => {
+  const decided: Record<FailureReason, boolean> = {
+    timeout: true,
+    crash: true,
+    agent_gave_up: true,
+    dod_failed: true,
+    ci_failed: true,
+    machine_offline: false,
+    machine_revoked: false,
+    claude_code_unsupported: false,
+    machine_problem: false,
+    cancelled: false,
+    ci_timeout: false,
+    review_branch_moved: false,
+    push_failed: false,
+    ci_cancelled: false,
+  };
+
+  it.each(FailureReason.options)('%s as decided', (reason) => {
+    expect(isCounted(reason)).toBe(decided[reason]);
   });
 });
