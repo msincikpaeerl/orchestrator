@@ -90,6 +90,14 @@ export interface FakeAccount {
   id: number;
   permissions: Partial<Record<GitHubPermission, GitHubAccess>>;
   repositories: FakeRepository[];
+  /**
+   * "Only select repositories": the names of the repositories the token includes; every one of
+   * the account's when unset ("All repositories"). Outside them a private repository is not seen
+   * (404, not listed) and a public one is listed and read as anyone may, while every write is
+   * refused as for a missing permission (403 naming it), which made the owner's token check of
+   * 2026-10-16 read Missing (lot 3 step K1).
+   */
+  selectedRepositories?: string[];
   /** Value of the GitHub-Authentication-Token-Expiration header, if any. */
   expirationHeader?: string;
   /** Send X-Accepted-GitHub-Permissions on refusals (default true). */
@@ -222,6 +230,30 @@ export function has(
 ): boolean {
   const granted = account.permissions[permission];
   return granted === 'write' || granted === access;
+}
+
+/** Whether the token includes `repo` (`selectedRepositories`). */
+export function includes(account: FakeAccount, repo: FakeRepository): boolean {
+  return account.selectedRepositories?.includes(repo.name) ?? true;
+}
+
+/**
+ * The account as the token acts on `repo`: unchanged when the token includes it; outside its
+ * selected repositories, read access only to what anyone may read of a public repository.
+ */
+export function actingOn(account: FakeAccount, repo: FakeRepository): FakeAccount {
+  if (includes(account, repo)) return account;
+  const read = 'read' as const;
+  return {
+    ...account,
+    permissions: {
+      metadata: read,
+      contents: read,
+      pull_requests: read,
+      actions: read,
+      statuses: read,
+    },
+  };
 }
 
 /** 403 naming the permissions: `needed` sets are alternatives, each a list needed together. */

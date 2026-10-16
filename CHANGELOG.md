@@ -79,6 +79,7 @@ Lot 3, Full ticket lifecycle.
 - Tickets: a pull request merged on GitHub into another branch than the project's default one now says so on the ticket page, in the words of "Needs you" (where it was merged and when, and what you can do), instead of only "Merged".
 - Reviews: **Start review** on a pull request closed on GitHub now says to reopen it first, on the ticket page and on "Ready for review".
 - Help: "Tickets" > "Cancel a ticket" says that cancelling closes the pull request, and "Runs" > "Where the work is" says how the Orchestrator uses the pull request's latest commit.
+- Fixed: Settings > GitHub could show Contents and Pull requests **Missing** for a token made with "Only select repositories", because the check tried writing on another of your public repositories, which the token does not include. The check now tries on a project's repository; with no project yet, such a refusal shows **Could not verify** and says to create a project, then check again.
 
 ## 0.3.0 — 2026-10-03
 

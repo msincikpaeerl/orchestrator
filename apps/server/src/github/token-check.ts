@@ -109,8 +109,23 @@ const PROBE_REQUIRES: Partial<Record<GitHubPermission, GitHubPermission>> = {
 };
 const unverified = (reason: string): Outcome => ({ result: 'could_not_verify', reason });
 
-/** Validity, then each permission of 02, section 3.1 as OK, Missing or Could not verify. */
-export async function checkToken(client: GitHubClient, now = new Date()): Promise<TokenCheck> {
+/** A repository the write probes should use first: a project's, or the smoke script's. */
+export interface ProbeRepository {
+  owner: string;
+  name: string;
+}
+
+/**
+ * Validity, then each permission of 02, section 3.1 as OK, Missing or Could not verify. The write
+ * probes use the first of `preferred` that GitHub lists and that is not archived (lot 3 step K1):
+ * GitHub lists every public repository of the account, also those outside a fine-grained token's
+ * "Only select repositories", where every write is refused as for a missing permission.
+ */
+export async function checkToken(
+  client: GitHubClient,
+  now = new Date(),
+  preferred: readonly ProbeRepository[] = [],
+): Promise<TokenCheck> {
   const identity = await inspectToken(client, now);
   if (!identity.valid) return { valid: false };
 
@@ -159,12 +174,23 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
     }),
   );
 
-  // Write probes: a private repository when there is one, otherwise a public one.
-  const writeRepo = pick(
-    repositories,
-    (repo) => !repo.archived,
-    'No repository to test on that is not archived',
-  );
+  // Write probes: a preferred repository when GitHub lists one; otherwise a private repository
+  // when there is one (GitHub lists a private one only when the token includes it), else a
+  // public one, whose refusal may only mean that the token does not include it: never read as
+  // Missing then.
+  const chosen = preferredRepository(repositories, preferred);
+  const writeRepo =
+    chosen ??
+    pick(repositories, (repo) => !repo.archived, 'No repository to test on that is not archived');
+  const outside = (outcome: Outcome): Outcome =>
+    chosen === null &&
+    typeof writeRepo !== 'string' &&
+    !writeRepo.private &&
+    outcome.result === 'missing'
+      ? unverified(
+          `${writeRepo.owner.login}/${writeRepo.name} may not be among this token's repositories; create a project, then check again`,
+        )
+      : outcome;
   if (typeof writeRepo === 'string') {
     for (const permission of ['contents', 'pull_requests', 'workflows'] as const) {
       outcomes.set(permission, unverified(writeRepo));
@@ -175,32 +201,38 @@ export async function checkToken(client: GitHubClient, now = new Date()): Promis
     // Without `message` and `content`, GitHub cannot write the file.
     outcomes.set(
       'contents',
-      await probe(client, 'contents', 'write', {
-        method: 'PUT',
-        path: `${base}/contents/.orchestrator-token-check`,
-        body: {},
-      }),
+      outside(
+        await probe(client, 'contents', 'write', {
+          method: 'PUT',
+          path: `${base}/contents/.orchestrator-token-check`,
+          body: {},
+        }),
+      ),
     );
     // Without `head` and `base`, GitHub cannot open a pull request.
     outcomes.set(
       'pull_requests',
       both(
         pullRequestsRead,
-        await probe(client, 'pull_requests', 'write', {
-          method: 'POST',
-          path: `${base}/pulls`,
-          body: {},
-        }),
+        outside(
+          await probe(client, 'pull_requests', 'write', {
+            method: 'POST',
+            path: `${base}/pulls`,
+            body: {},
+          }),
+        ),
       ),
     );
     outcomes.set(
       'workflows',
-      await probeAfter(outcomes, 'workflows', () =>
-        probe(client, 'workflows', 'write', {
-          method: 'PUT',
-          path: `${base}/contents/.github/workflows/orchestrator-token-check.yml`,
-          body: {},
-        }),
+      outside(
+        await probeAfter(outcomes, 'workflows', () =>
+          probe(client, 'workflows', 'write', {
+            method: 'PUT',
+            path: `${base}/contents/.github/workflows/orchestrator-token-check.yml`,
+            body: {},
+          }),
+        ),
       ),
     );
   }
@@ -253,6 +285,23 @@ function pick(
   if (!Array.isArray(list)) return list.unavailable;
   const rank = (repo: Repository) => (repo.private ? 0 : 2) + (repo.archived ? 1 : 0);
   return list.filter(wanted).sort((a, b) => rank(a) - rank(b))[0] ?? noneReason;
+}
+
+/** The first of `preferred` that GitHub listed, not archived; null when none is. */
+function preferredRepository(
+  list: RepositoryList,
+  preferred: readonly ProbeRepository[],
+): Repository | null {
+  if (!Array.isArray(list)) return null;
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  for (const wanted of preferred) {
+    const found = list.find(
+      (repo) =>
+        !repo.archived && same(repo.owner.login, wanted.owner) && same(repo.name, wanted.name),
+    );
+    if (found) return found;
+  }
+  return null;
 }
 
 function repoPath(repo: Repository): string {

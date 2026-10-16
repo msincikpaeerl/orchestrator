@@ -30,6 +30,7 @@ GitHub cannot tell the Orchestrator which permissions a token has, so the Orches
 | **OK** | The permission is granted. |
 | **Missing** | The permission is not granted: the Orchestrator will fail when it needs it. Create a new token with the button (it fills in every permission) and enter it. |
 | **Could not verify** | The check could not tell, for example because your account has no private repository to test on, or GitHub could not be reached. This is not necessarily a problem: GitHub reports any missing permission when the Orchestrator really uses it, and "Needs you" then tells you. |
+| **Could not verify**, "… may not be among this token's repositories" | You have no project yet, and the check had to try writing on one of your public repositories that your token may not include (a token made with "Only select repositories"). Create a project, then **Check again**: the check then uses the project's repository. |
 | **Could not verify** for Pull requests | Pull requests is checked twice, once for reading (on one of your private repositories) and once for writing, and shows **OK** only when both are. Without a private repository, its reading cannot be checked. |
 | **Could not verify**, "Requires Contents (Read and write) first" | Workflows can only be checked once Contents is OK. Fix Contents first (a new token made with the button), then Workflows shows its real result. |
 

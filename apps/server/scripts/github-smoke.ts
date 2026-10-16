@@ -595,7 +595,8 @@ async function stepZero(context: Context): Promise<void> {
   say(
     '  Administration and Workflows read Missing with the dedicated token: it does not have them, and this script does not use them.',
   );
-  const result = await checkToken(context.client);
+  // The write probes use the test repository, the one the token was made for (lot 3 step K1).
+  const result = await checkToken(context.client, new Date(), [REPO]);
   if (!result.valid) throw new Stop('GitHub rejected the token in the middle of the check.');
   const labels = { ok: 'OK', missing: 'Missing', could_not_verify: 'Could not verify' };
   for (const { permission, label } of REQUIRED_GITHUB_PERMISSIONS) {
