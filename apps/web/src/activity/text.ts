@@ -502,7 +502,7 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.ticket,
     p.cause === 'review_rounds'
       ? `: stopped after ${String(p.count)} requests for changes by Quality (Most review rounds per ticket: ${String(p.limit)})`
-      : `: stopped after ${String(p.count)} failed attempts (Failed attempts before asking you: ${String(p.limit)})`,
+      : `: stopped after ${String(p.count)} failed attempt${p.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(p.limit)})`,
   ],
   'ticket.tried_again': (_p, c) => [c.ticket, ': you used Try again; its counts start again'],
   'ticket.ci_checked_again': (p, c) => {

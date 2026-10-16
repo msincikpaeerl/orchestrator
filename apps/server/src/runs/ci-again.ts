@@ -22,6 +22,7 @@ import { HttpError } from '../http.js';
 import { notifyChange } from '../realtime/changes.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { ticketEntity, ticketReference, type TicketRow } from '../tickets/model.js';
+import { ticketStop } from '../tickets/changes.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { checkCiAgainOffered, ciOutcome, ciSourceRun } from './ci-outcome.js';
 import type { CiRead } from './ci-wait.js';
@@ -316,11 +317,19 @@ export class CiCheckAgain {
       const now = this.now();
       const commit = current.ciCommit ?? '';
       const attemptTakenBack = current.failureReason === 'ci_failed';
+      // Accepted work lifts a stop after failed attempts, never one after review rounds (owner's
+      // answer 4, lot 3 step K).
+      const stopLifted = ticketStop(ticket)?.cause === 'failed_attempts';
       const workflow = state === 'no_ci' && ticket.workflowChanges;
+      const after = [
+        ...(attemptTakenBack ? ['the failed attempt of that run no longer counts'] : []),
+        ...(stopLifted ? ['the ticket is no longer stopped'] : []),
+      ];
+      const accepted = `the work was accepted without a session${after.map((part, index) => `${index === after.length - 1 ? ', and ' : ', '}${part}`).join('')}.`;
       const comment = [
         state === 'passed'
-          ? `CI passed on GitHub for commit ${commit.slice(0, 7)} (checked again by the owner at ${timestamp(now)}): the work was accepted without a session${attemptTakenBack ? ', and the failed attempt of that run no longer counts' : ''}.`
-          : `No CI found on GitHub for commit ${commit.slice(0, 7)} (checked again by the owner at ${timestamp(now)}): the work was accepted without a session${attemptTakenBack ? ', and the failed attempt of that run no longer counts' : ''}.`,
+          ? `CI passed on GitHub for commit ${commit.slice(0, 7)} (checked again by the owner at ${timestamp(now)}): ${accepted}`
+          : `No CI found on GitHub for commit ${commit.slice(0, 7)} (checked again by the owner at ${timestamp(now)}): ${accepted}`,
         ...(workflow
           ? [
               'The work changed workflow files: the agent may have removed or weakened CI. Read the changes in .github/workflows/ before merging.',
@@ -342,6 +351,7 @@ export class CiCheckAgain {
         actor: 'owner',
         runId: current.id,
         attemptTakenBack,
+        stopLifted,
         comment,
         now,
       });

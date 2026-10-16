@@ -1,8 +1,10 @@
+import { schema } from '@orchestrator/db';
 import {
   InspectGitHubTokenRequest,
   SaveGitHubTokenRequest,
   type InspectGitHubTokenResponse,
 } from '@orchestrator/protocol';
+import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database } from '../database.js';
@@ -18,7 +20,12 @@ import {
   saveCheck,
   saveToken,
 } from './connection.js';
-import { checkToken, inspectToken, isFineGrainedToken } from './token-check.js';
+import {
+  checkToken,
+  inspectToken,
+  isFineGrainedToken,
+  type ProbeRepository,
+} from './token-check.js';
 
 export interface GitHubRoutesOptions {
   db: Database;
@@ -38,6 +45,24 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
       'githubRequestTimeoutSeconds',
     ]);
     return createGitHubClient({ apiUrl, token, timeoutSeconds: githubRequestTimeoutSeconds });
+  }
+
+  /**
+   * The repositories of the active projects, the most recently updated first: the token check's
+   * write probes use the first one GitHub lists, so they never land on a repository outside the
+   * token's own (lot 3 step K1).
+   */
+  async function projectRepositories(): Promise<ProbeRepository[]> {
+    return db
+      .select({ owner: schema.projects.repoOwner, name: schema.projects.repoName })
+      .from(schema.projects)
+      .where(eq(schema.projects.status, 'active'))
+      .orderBy(desc(schema.projects.updatedAt));
+  }
+
+  async function checkWithProjects(token: string) {
+    const preferred = await projectRepositories();
+    return reachingGitHub(async () => checkToken(await clientFor(token), new Date(), preferred));
   }
 
   function requireFineGrained(token: string) {
@@ -93,7 +118,7 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
     if (expiresOn !== null && isPast(expiresOn)) {
       throw new HttpError(422, 'expiry_date_in_past', 'The expiry date is in the past');
     }
-    const check = await reachingGitHub(async () => checkToken(await clientFor(token)));
+    const check = await checkWithProjects(token);
     if (!check.valid) throw invalidToken();
     await saveToken(db, key, { token, expiresOn, ...check });
     request.log.info({ account: check.account }, 'GitHub token saved');
@@ -115,7 +140,7 @@ export function registerGitHubRoutes(app: FastifyInstance, options: GitHubRoutes
       );
     }
     if (token === null) throw new HttpError(409, 'github_not_connected', 'No GitHub token saved');
-    const check = await reachingGitHub(async () => checkToken(await clientFor(token)));
+    const check = await checkWithProjects(token);
     if (check.valid) await saveCheck(db, check);
     else await markTokenInvalid(db, 'owner', 'GET /user');
     return loadStatus(db);

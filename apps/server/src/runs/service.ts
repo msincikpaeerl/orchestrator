@@ -473,9 +473,11 @@ export class RunService {
       (failureReason === 'push_failed'
         ? await this.pushFailedComment(tx, locked.ticket.id, locked.run.id, locked.machine.name)
         : counted
-          ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. It counts as a failed attempt. ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
+          ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. ${COUNTED_SENTENCE} ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
           : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
-    await applyRunAction(tx, {
+    // The stop at **Failed attempts before asking you**, read now (04, section 5; lot 3 step K1).
+    const stop = counted ? await this.failedAttemptsStop(tx, locked) : null;
+    const updated = await applyRunAction(tx, {
       projectKey: locked.project.key,
       ticket: locked.ticket,
       action: 'run_ended',
@@ -483,8 +485,59 @@ export class RunService {
       runId: locked.run.id,
       failureReason,
       attemptCounted: counted,
-      comment,
+      comment:
+        stop === null
+          ? comment
+          : comment.replace(
+              COUNTED_SENTENCE,
+              `It counts as a failed attempt: ${String(stop.count)} failed attempt${stop.count === 1 ? '' : 's'}, ${stop.count > stop.limit ? 'more than' : 'as many as'} Failed attempts before asking you allows (${String(stop.limit)}), so the ticket is stopped. Use Try again to let it continue, or Cancel it, or Mark it as done manually.`,
+            ),
       now: this.now(),
+    });
+    if (updated !== null && stop !== null) await this.stopTicket(tx, locked, stop);
+  }
+
+  /**
+   * The stop a counted failure brings, before it is applied: when the ticket's failed attempts
+   * reach **Failed attempts before asking you** with it; null otherwise, or when the ticket is
+   * already stopped.
+   */
+  private async failedAttemptsStop(tx: Executor, locked: Locked): Promise<TicketStop | null> {
+    const { ticket } = locked;
+    if (!ticket || ticket.stopped !== null) return null;
+    const { maxFailedAttempts } = await resolveSettings(
+      tx,
+      ['maxFailedAttempts'],
+      locked.project.id,
+    );
+    const count = ticket.attemptCount + 1;
+    if (count < maxFailedAttempts) return null;
+    return {
+      cause: 'failed_attempts',
+      count,
+      limit: maxFailedAttempts,
+      at: this.now().toISOString(),
+    };
+  }
+
+  /** Marks the ticket stopped, with its `ticket.stopped` event (04, section 5; lot 3 step I). */
+  private async stopTicket(tx: Executor, locked: Locked, stop: TicketStop): Promise<void> {
+    const { ticket } = locked;
+    if (!ticket) return;
+    await tx.update(schema.tickets).set({ stopped: stop }).where(eq(schema.tickets.id, ticket.id));
+    await recordEvent(tx, {
+      actor: 'system',
+      ...ticketEntity(ticket),
+      type: 'ticket.stopped',
+      payload: {
+        project: locked.project.key,
+        ticket: this.reference(locked),
+        cause: stop.cause,
+        count: stop.count,
+        limit: stop.limit,
+        runId: locked.run.id,
+      },
+      at: new Date(stop.at),
     });
   }
 
@@ -666,7 +719,6 @@ export class RunService {
       limit: maxReviewRounds,
       at: now.toISOString(),
     };
-    await tx.update(schema.tickets).set({ stopped: stop }).where(eq(schema.tickets.id, ticket.id));
     const [comment] = await tx
       .insert(schema.comments)
       .values({
@@ -678,33 +730,19 @@ export class RunService {
       })
       .returning({ id: schema.comments.id });
     if (!comment) throw new Error('comment not inserted');
-    const reference = this.reference(locked);
     await recordEvent(tx, {
       actor: 'system',
       ...ticketEntity(ticket),
       type: 'ticket.commented',
       payload: {
         project: locked.project.key,
-        ticket: reference,
+        ticket: this.reference(locked),
         commentId: comment.id,
         kind: 'status_change',
       },
       at: now,
     });
-    await recordEvent(tx, {
-      actor: 'system',
-      ...ticketEntity(ticket),
-      type: 'ticket.stopped',
-      payload: {
-        project: locked.project.key,
-        ticket: reference,
-        cause: 'review_rounds',
-        count: round,
-        limit: maxReviewRounds,
-        runId: locked.run.id,
-      },
-      at: now,
-    });
+    await this.stopTicket(tx, locked, stop);
   }
 
   /** A decision of a review run that ended without applying it: kept, with its event (H2). */
@@ -2630,7 +2668,7 @@ export class RunService {
         : `CI failed on GitHub for the submitted commit ${commit.slice(0, 7)} (${names})`;
     await this.fail(tx, locked, 'ci_failed', 'ci_result', {
       detail: `${what.charAt(0).toUpperCase()}${what.slice(1)} ${sent}`,
-      comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${what} ${sent}. It counts as a failed attempt. The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
+      comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${what} ${sent}. ${COUNTED_SENTENCE} The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
     });
   }
 
@@ -3500,6 +3538,12 @@ function reviewEndComment(locked: Pick<Locked, 'run' | 'machine'>, why: string):
   const what = decision.kind === 'approved' ? 'The approval is' : 'The request for changes is';
   return `The review run on machine ${machine} ended before ${decisionWords(decision)} was applied: ${why}. ${what} not applied, and the ticket stays in review. It does not count as a failed attempt.`;
 }
+
+/**
+ * The sentence of a counted failure's comment; with the stop it brings, it says so instead (owner's
+ * answer 3, lot 3 step K).
+ */
+const COUNTED_SENTENCE = 'It counts as a failed attempt.';
 
 /** A point of a request for changes as its `review` comment: `src/contact.ts:42 — <point>`. */
 function pointText(point: ReviewDecision['points'][number]): string {

@@ -22,6 +22,8 @@ import {
   branchOf,
   has,
   invalid,
+  actingOn,
+  includes,
   isObject,
   notFound,
   refuse,
@@ -335,7 +337,7 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     }
     if (method === 'GET' && path === '/user/repos') {
       const visible = account.repositories.filter(
-        (repo) => !repo.private || has(account, 'metadata', 'read'),
+        (repo) => !repo.private || (includes(account, repo) && has(account, 'metadata', 'read')),
       );
       const perPage = Number(requestUrl.searchParams.get('per_page') ?? '30');
       const page = Number(requestUrl.searchParams.get('page') ?? '1');
@@ -379,7 +381,19 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
     const repoMatch = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(path);
     const repo = account.repositories.find((candidate) => candidate.name === repoMatch?.[2]);
     if (!repoMatch || repoMatch[1] !== account.login || !repo) return notFound;
-    const rest = repoMatch[3] ?? '';
+    if (repo.private && !includes(account, repo)) return notFound;
+    return answerRepo(actingOn(account, repo), repo, repoMatch[3] ?? '', method, requestUrl, body);
+  }
+
+  function answerRepo(
+    account: FakeAccount,
+    repo: FakeRepository,
+    restPath: string,
+    method: string,
+    requestUrl: URL,
+    body: Record<string, unknown>,
+  ): FakeReply {
+    const rest = restPath;
     const state = stateOf(account.login, repo);
     const { store } = state;
 
@@ -634,12 +648,15 @@ export async function startFakeGitHub(): Promise<FakeGitHub> {
       }
       return askForCredential();
     }
-    if (!found) {
+    if (!found || (found.private && !includes(account, found))) {
       record(404);
       return { status: 404, message: 'Repository not found.' };
     }
     const needed = request.access === 'push' ? 'write' : 'read';
-    if (!has(account, 'contents', needed) && (needed === 'write' || found.private)) {
+    if (
+      !has(actingOn(account, found), 'contents', needed) &&
+      (needed === 'write' || found.private)
+    ) {
       record(403);
       // GitHub's words for a fine-grained token (the owner's run, lot 3 step E3).
       return { status: 403, message: 'Write access to repository not granted.' };

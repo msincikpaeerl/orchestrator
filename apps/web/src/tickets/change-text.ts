@@ -80,7 +80,7 @@ export function stopText(stop: Pick<TicketStop, 'cause' | 'count' | 'limit' | 'a
     detail: `${
       review
         ? `Quality requested changes ${String(stop.count)} times, more than Most review rounds per ticket allows (${String(stop.limit)}).`
-        : `It failed ${String(stop.count)} times, more than Failed attempts before asking you allows (${String(stop.limit)}).`
+        : `It failed ${stop.count === 1 ? 'once' : `${String(stop.count)} times`}, ${stop.count > stop.limit ? 'more than' : 'as many as'} Failed attempts before asking you allows (${String(stop.limit)}).`
     } Use Try again to let it continue, or Cancel it, or Mark it as done manually.`,
     tryAgain:
       'Try again starts no session: the review rounds and failed attempts count from 0 again, and Run now can start the next run.',

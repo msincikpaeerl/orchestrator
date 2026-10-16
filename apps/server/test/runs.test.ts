@@ -1086,9 +1086,13 @@ async function crashed(
   return run(created.id);
 }
 
+// These tests end several runs of one ticket as failures to see where its branch is: the stop
+// after failed attempts (04, section 5; lot 3 step K) would refuse their next Run now.
+const MANY_ATTEMPTS = { settings: { maxFailedAttempts: 10 } };
+
 describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   it('no commits: nothing reported or pushed yet', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { daemon } = await laptop();
     expect((await ticket()).branch).toBeNull();
     await started(daemon);
@@ -1106,7 +1110,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('only on a machine, as tickets left by 0.3.0 read: Run now needs that machine', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     // A protocol 1 end report has no push field: nothing was pushed.
     const { run: created } = await started(daemon);
@@ -1143,7 +1147,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('only on a machine after a failed push, with the failure shown', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, daemon } = await laptop();
     const ended = await crashed(daemon, told(second, C2, C1), {
       status: 'failed',
@@ -1179,7 +1183,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('pushed: shown with its date, and Run now takes the branch from GitHub on another machine', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     // Read again after the push: nothing is left only on Laptop.
     const ended = await crashed(daemon, told(second), { status: 'pushed', head: C2 });
@@ -1220,7 +1224,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('part pushed: a commit made after an accepted submission stays on the machine', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     const { run: created, start: message } = await started(daemon);
     await connectedMachine('Desk', account.id);
@@ -1271,7 +1275,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it("diverged: the push refused because GitHub's branch has other commits; Run now needs the machine", async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     await connectedMachine('Desk', account.id);
@@ -1306,7 +1310,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('records the push made before a submission the server refuses', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { daemon } = await laptop();
     const { run: created, start: message } = await started(daemon);
     await working(daemon, created.id);
@@ -1324,7 +1328,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('a revoked machine loses only its commits not on GitHub; the run starts from GitHub', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     const desk = await connectedMachine('Desk', account.id);
@@ -1348,7 +1352,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   const updated = { name: 't/1-contact-form', head: M.hash, commitsAhead: [M, ONE] };
 
   it("a. a run that only took GitHub's Update branch leaves nothing on its machine", async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     await connectedMachine('Desk', account.id);
@@ -1368,7 +1372,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it("b. a review run reporting GitHub's head after Update branch makes its machine hold nothing", async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { account, daemon } = await laptop();
     await crashed(daemon, told(first), { status: 'pushed', head: C1 });
     const desk = await connectedMachine('Desk', account.id);
@@ -1385,7 +1389,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it('b. a review run on another machine leaves the commits the first one holds where they are', async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     // C1 pushed at the submission, then C2 committed in the same turn: Laptop holds C2.
     const { run: created, start: message } = await started(daemon);
@@ -1416,7 +1420,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
   });
 
   it(`counts the commits beyond the report's ceiling (${String(BRANCH_REPORT_MAX_COMMITS)}) as not on GitHub`, async () => {
-    await start();
+    await start(MANY_ATTEMPTS);
     const { id, account, daemon } = await laptop();
     const many = Array.from({ length: BRANCH_REPORT_MAX_COMMITS }, (_, index) => ({
       hash: index.toString(16).padStart(40, 'e'),

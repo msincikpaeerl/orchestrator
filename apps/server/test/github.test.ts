@@ -449,6 +449,101 @@ describe('ORCHESTRATOR_SECRET_KEY lost or changed', () => {
   });
 });
 
+// The owner's real run of 2026-10-16 (lot 3 step K1): a fine-grained token limited to its test
+// repository read Contents and Pull requests Missing, because the write probes ran on the
+// account's most recently pushed public repository, outside the token's repositories.
+describe('a token limited to one repository', () => {
+  const smokeToken = () =>
+    fullAccount({
+      permissions: {
+        metadata: 'read',
+        contents: 'write',
+        pull_requests: 'write',
+        actions: 'read',
+        statuses: 'read',
+      },
+      // GitHub lists the most recently pushed first.
+      repositories: [
+        { name: 'orchestrator', private: false },
+        { name: 'test-site', private: false },
+        { name: 'old-site', private: false, archived: true },
+      ],
+      selectedRepositories: ['test-site', 'old-site'],
+    });
+
+  async function seedProject(name: string, at: Date, status: 'active' | 'archived' = 'active') {
+    await t.db.insert(schema.projects).values({
+      key: name.replace(/-/g, '').slice(0, 6).toUpperCase(),
+      name,
+      slug: name,
+      description: '',
+      kind: 'web_app',
+      repoOwner: 'octo-owner',
+      repoName: name,
+      repoOrigin: 'linked',
+      repoPrivate: false,
+      defaultBranch: 'main',
+      setupStatus: 'ready',
+      branchProtection: 'applied',
+      status,
+      updatedAt: at,
+    });
+  }
+
+  const probed = () =>
+    github.requests
+      .filter((request) => request.method !== 'GET' && request.path !== '/user/repos')
+      .map((request) => request.path.split('/')[3]);
+
+  it("without a project, never reads Missing for a repository outside the token's", async () => {
+    const status = connected(await saveToken(smokeToken()));
+    const outside =
+      "octo-owner/orchestrator may not be among this token's repositories; create a project, then check again";
+    const find = (permission: string) =>
+      status.permissions.find((check) => check.permission === permission);
+    expect(find('contents')).toMatchObject({ result: 'could_not_verify', reason: outside });
+    expect(find('pull_requests')?.result).toBe('could_not_verify');
+    expect(find('workflows')?.result).toBe('could_not_verify');
+    expect(
+      status.permissions.filter((check) => check.result === 'missing').map((c) => c.permission),
+    ).toEqual(['administration']);
+  });
+
+  it("with a project, probes the project's repository, never an archived one", async () => {
+    // The archived repository (on GitHub) and the archived project are updated last: skipped.
+    await seedProject('test-site', new Date('2026-10-10T10:00:00Z'));
+    await seedProject('old-site', new Date('2026-10-12T10:00:00Z'));
+    await seedProject('orchestrator', new Date('2026-10-14T10:00:00Z'), 'archived');
+    const status = connected(await saveToken(smokeToken()));
+    expect(new Set(probed())).toEqual(new Set(['test-site']));
+    expect(results(status)).toMatchObject({
+      contents: 'ok',
+      // Its read probe needs a private repository, and the token includes none.
+      pull_requests: 'could_not_verify',
+      // Missing for real: the token does not have it, on a repository it includes.
+      workflows: 'missing',
+    });
+    // Still invalid requests only: nothing created or changed on GitHub.
+    expect(
+      github.requests.filter((request) => request.method !== 'GET').map((r) => r.body),
+    ).toEqual([{ name: '' }, {}, {}, {}]);
+  });
+
+  it('with a project and a private repository the token includes, reads OK', async () => {
+    const account = smokeToken();
+    account.repositories.push({ name: 'notes', private: true });
+    account.selectedRepositories?.push('notes');
+    await seedProject('test-site', new Date('2026-10-10T10:00:00Z'));
+    const status = connected(await saveToken(account));
+    expect(results(status)).toMatchObject({
+      contents: 'ok',
+      pull_requests: 'ok',
+      workflows: 'missing',
+    });
+    expect(new Set(probed())).toEqual(new Set(['test-site']));
+  });
+});
+
 describe('POST /api/github/token/check', () => {
   it('refuses when no token is saved', async () => {
     const response = await call('POST', '/api/github/token/check');

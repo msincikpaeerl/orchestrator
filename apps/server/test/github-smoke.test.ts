@@ -709,7 +709,8 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/PASS {2}A33: after a rebase merge: merged true/);
       expect(output).toMatch(/PASS {2}A33: after a squash merge: merged true/);
       expect(output).toMatch(
-        /PASS {2}A21: the squash commit's message: "Orchestrator smoke test \S+: merged by squash \(#3\)"/,
+        // GitHub's default for a one-commit pull request (the owner's run of 2026-10-16).
+        /PASS {2}A21: the squash commit's message: "Orchestrator smoke test: merged by squash \(#3\)", its one commit's title with " \(#3\)"/,
       );
       expect(output).toMatch(
         /PASS {2}A35: branch orchestrator-smoke-\S+-rebase-merge read after its deletion/,
@@ -768,7 +769,10 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(
         /^Step 8: merged by a squash commit; .* has 1 parent\(s\) and the message "Orchestrator smoke test \S+ \(#1\)"/m,
       );
-      expect(output).toMatch(/PASS {2}A21: the squash commit's message/);
+      // Three commits: the pull request's title.
+      expect(output).toMatch(
+        /PASS {2}A21: the squash commit's message: "Orchestrator smoke test \S+ \(#1\)", the pull request's title with " \(#1\)"/,
+      );
       expect(output).toContain('Step 9: PASS');
       expect(code).toBe(0);
     },

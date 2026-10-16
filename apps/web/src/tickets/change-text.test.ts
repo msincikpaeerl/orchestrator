@@ -114,6 +114,24 @@ describe('the stop (answer 2, step I2)', () => {
     });
   });
 
+  // Owner's answer 3, lot 3 step K: the stop at the limit, "more than" above it (a ticket 0.3.0
+  // left over it), "once" for one time.
+  it('says how often a ticket stopped after failed attempts failed', () => {
+    const failed = (count: number, limit: number) =>
+      stopText({ cause: 'failed_attempts', count, limit, at });
+    expect(failed(2, 2)).toMatchObject({
+      title: 'Stopped after repeated failures',
+      detail:
+        'It failed 2 times, as many as Failed attempts before asking you allows (2). Use Try again to let it continue, or Cancel it, or Mark it as done manually.',
+    });
+    expect(failed(4, 2).detail).toMatch(
+      /^It failed 4 times, more than Failed attempts before asking you allows \(2\)\./,
+    );
+    expect(failed(1, 1).detail).toMatch(
+      /^It failed once, as many as Failed attempts before asking you allows \(1\)\./,
+    );
+  });
+
   it('offers Run now after Try again', () => {
     expect(RUN_NOW_AFTER_TRY_AGAIN).toBe(
       'The review rounds and failed attempts count from 0 again. Start the next run now, or later from the ticket page.',

@@ -227,6 +227,10 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
 }) => {
   // Lot 3 step D3: each wording of the Branch card, from the pushes the daemon reports.
   const ticketPage = await readyForRuns(page);
+  // Its runs end as failures one after the other: the stop after failed attempts (lot 3 step K)
+  // would refuse the next Run now.
+  const room = await page.request.put('/api/settings/maxFailedAttempts', { data: { value: 10 } });
+  expect(room.status()).toBe(200);
   const branch = page.getByLabel('Branch', { exact: true });
   const hash = (digit: string) => digit.repeat(40);
   const commit = (digit: string, subject: string) => ({ hash: hash(digit), subject });

@@ -85,6 +85,6 @@ export function tryAgainComment(stop: TicketStop): string {
   const why =
     stop.cause === 'review_rounds'
       ? `${String(stop.count)} requests for changes by Quality (Most review rounds per ticket: ${String(stop.limit)})`
-      : `${String(stop.count)} failed attempts (Failed attempts before asking you: ${String(stop.limit)})`;
+      : `${String(stop.count)} failed attempt${stop.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(stop.limit)})`;
   return `The owner used Try again: the ticket was stopped after ${why}. Its failed attempts and review rounds count from 0 again.`;
 }
