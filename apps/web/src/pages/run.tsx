@@ -7,6 +7,7 @@ import { useRun, useTicket } from '../queries';
 import { CiHistoryCard, CiWaitCard } from '../runs/ci-card';
 import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/components';
 import { useRunLog } from '../runs/log';
+import { downloadRunText } from '../runs/download-text';
 import { acceptedAfterText, isActive, purposeLabel, runStateText, usageText } from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
 import { CheckList, ReportFiles } from '../tickets/submission';
@@ -111,6 +112,11 @@ function RunContent({ run }: { run: RunDetail }) {
           {run.endDetail && (run.status === 'failed' || run.status === 'cancelled') && (
             <p className="break-words whitespace-pre-wrap" aria-label="Why the run ended">
               {run.endDetail}
+            </p>
+          )}
+          {run.failureReason === 'download_failed' && (
+            <p className="break-words" aria-label="What to do">
+              {downloadRunText(run.download, run.machine.name, run.purpose === 'review')}
             </p>
           )}
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">

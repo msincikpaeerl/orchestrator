@@ -7,6 +7,7 @@ import type {
   WorkflowFlag,
 } from '@orchestrator/protocol';
 import { formatDate, formatDateTime } from '../github/text';
+import { downloadReason } from '../runs/download-text';
 import { failureText } from '../runs/text';
 import { sentence } from '../projects/text';
 import { ticketRef } from './text';
@@ -75,7 +76,7 @@ export function readyForReviewText(item: Extract<NeedsYouItem, { type: 'ready_fo
 }
 
 /** Why a review run ended without a decision (answer 5): the end of a sentence. */
-function withoutDecision(end: ReviewEnd): string {
+function withoutDecision(end: ReviewEnd, machine: string): string {
   switch (end.why) {
     case 'gave_up':
       return end.reason === null || end.reason.trim() === ''
@@ -89,6 +90,8 @@ function withoutDecision(end: ReviewEnd): string {
       return 'the branch changed on the machine during the review';
     case 'stopped':
       return 'you stopped the run';
+    case 'download_failed':
+      return `the project could not be downloaded from GitHub at its start, because ${downloadReason(end.download, machine)}`;
     case 'failed':
       return failureText[end.failureReason];
   }
@@ -107,7 +110,7 @@ function notAppliedWhy(end: ReviewEnd, machine: string): string {
         : `${failureText[end.failureReason]} before the run ended`;
     default:
       // A decision ends the agent's turn: no give-up or GitHub move can follow it.
-      return withoutDecision(end);
+      return withoutDecision(end, machine);
   }
 }
 
@@ -134,7 +137,7 @@ export function reviewNotFinishedText(
     title: `Review did not finish for ${ref}: ${item.ticket.title}`,
     detail:
       item.decision === null
-        ? `The review run on ${item.machine.name} ended without a decision: ${withoutDecision(item.end)}. ${NOT_COUNTED}`
+        ? `The review run on ${item.machine.name} ended without a decision: ${withoutDecision(item.end, item.machine.name)}. ${NOT_COUNTED}`
         : `${decisionNotApplied(item.decision, item.end, item.machine.name)}. ${NOT_COUNTED}`,
   };
 }
@@ -193,7 +196,7 @@ export function ticketReviewText(review: TicketReview): {
       return {
         heading: `Review did not finish: ${sentence(
           latest.decision === null
-            ? withoutDecision(latest.end)
+            ? withoutDecision(latest.end, latest.machine.name)
             : decisionNotApplied(latest.decision, latest.end, latest.machine.name),
         )}`,
         earlier: null,

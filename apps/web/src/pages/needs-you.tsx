@@ -38,6 +38,7 @@ import {
 import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
+import { downloadFailedText, showsGitHubWords } from '../runs/download-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
 import { HeadMovedLines, warningClass } from '../tickets/pull-request-lines';
 import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
@@ -52,6 +53,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'ready_for_review':
     case 'review_not_finished':
     case 'push_failed':
+    case 'download_failed':
     case 'pull_request_not_opened':
     case 'ci_timeout':
     case 'ticket_stopped':
@@ -288,6 +290,61 @@ function PushFailedCard({ item }: { item: Extract<NeedsYouItem, { type: 'push_fa
           Open the ticket
         </Link>
         <HelpLink page="tickets#when-the-work-cannot-be-pushed-to-github">What to do</HelpLink>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A project download that failed at a run's start (owner's answer 2, lot 3 step K2): which of the
+ * three causes, what to do, and **Run now**.
+ */
+function DownloadFailedCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'download_failed' }>;
+}) {
+  const { title, detail } = downloadFailedText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      {showsGitHubWords(item.download) && (
+        <pre
+          aria-label="GitHub's words"
+          className="overflow-x-auto rounded bg-slate-100 p-2 text-sm whitespace-pre-wrap break-words text-slate-800"
+        >
+          {item.download.message}
+        </pre>
+      )}
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <RunNowAction ticket={item.ticket} />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        {item.download.permission !== null && (
+          <a
+            href={GITHUB_TOKEN_LIST_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-700 underline"
+          >
+            Open your tokens on GitHub
+          </a>
+        )}
+        <Link to={runPath(item.runId)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="machines#when-the-project-cannot-be-downloaded-from-github">
+          What to do
+        </HelpLink>
       </div>
     </Card>
   );
@@ -686,6 +743,8 @@ export function NeedsYouPage() {
                 <ReviewNotFinishedCard item={item} />
               ) : item.type === 'push_failed' ? (
                 <PushFailedCard item={item} />
+              ) : item.type === 'download_failed' ? (
+                <DownloadFailedCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
                 <PullRequestNotOpenedCard item={item} />
               ) : item.type === 'pull_request_closed' ? (

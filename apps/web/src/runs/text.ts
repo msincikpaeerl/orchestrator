@@ -51,6 +51,7 @@ export const failureText: Record<FailureReason, string> = {
   review_branch_moved: 'the branch changed during the review',
   push_failed: 'its branch could not be pushed to GitHub',
   ci_cancelled: 'CI was cancelled on GitHub because the branch changed there',
+  download_failed: 'the project could not be downloaded from GitHub',
 };
 
 export const pauseText: Record<PauseReason, string> = {
