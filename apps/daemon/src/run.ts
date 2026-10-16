@@ -29,6 +29,7 @@ import {
   type RunSocketRequest,
   type RunStart,
   type RunStop,
+  type DownloadFailure,
 } from '@orchestrator/protocol';
 import type { Logger } from 'pino';
 import { findExecutable, runCommand } from './exec.js';
@@ -65,6 +66,7 @@ import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
 import { assessTurn, type Assessment, type TurnEnd } from './usage-limit.js';
+import { DownloadFailed } from './isolated-git.js';
 import { ReviewCommitMoved, type Workspaces } from './workspace.js';
 
 // One run on this machine (05, section 4): its workspace, its Claude Code session in tmux, the
@@ -144,6 +146,8 @@ export class Run {
   private settingUp: Promise<unknown> | null = null;
   /** GitHub's head of the ticket branch when a review's preparation found it moved. */
   private movedHead: string | null = null;
+  /** Why the project's download at the preparation failed (lot 3 step K2). */
+  private download: DownloadFailure | null = null;
   /** Set when the daemon stops: this object no longer acts, the session goes on. */
   private stopped = false;
 
@@ -352,6 +356,15 @@ export class Run {
         this.save();
       } catch (error) {
         if (this.stopping()) return null;
+        if (error instanceof DownloadFailed) {
+          // Not the agent's failure: GitHub, the credential or Longest push (lot 3 step K2).
+          this.log.warn({ err: error, download: error.failure }, 'project not downloaded');
+          this.download = error.failure;
+          return {
+            reason: 'download_failed',
+            detail: `The project could not be downloaded from GitHub: ${error.failure.message}`,
+          };
+        }
         if (error instanceof ReviewCommitMoved) {
           this.log.warn({ err: error }, 'review commit no longer the head on GitHub');
           this.movedHead = error.head;
@@ -1227,6 +1240,7 @@ export class Run {
           push,
           headMoved,
           movedHead: this.movedHead,
+          download: reason === 'download_failed' ? this.download : null,
           gitConfigRestored:
             gitConfigRestored === null
               ? null

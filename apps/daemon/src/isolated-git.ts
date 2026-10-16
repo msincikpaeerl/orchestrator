@@ -9,6 +9,7 @@ import {
   HIDDEN,
   TEXT_CEILING,
   maskSecrets,
+  type DownloadFailure,
   type GitCredentialRequest,
   type PushResult,
 } from '@orchestrator/protocol';
@@ -284,12 +285,28 @@ function masked(text: string, secret: string | null): string {
 }
 
 /**
+ * The download from GitHub failed (lot 3 step K2): GitHub could not be reached, the credential
+ * was refused, or **Longest push** was reached. Any other failure of a fetch (a disk full, the
+ * pack not moved) is a plain error.
+ */
+export class DownloadFailed extends Error {
+  readonly failure: DownloadFailure;
+
+  constructor(reason: DownloadFailure['reason'], message: string) {
+    super(message);
+    this.name = 'DownloadFailed';
+    this.failure = { reason, message: cutText(message, PUSH_MESSAGE_MAX_CHARACTERS, 'end') };
+  }
+}
+
+/**
  * Fetches GitHub's branches into the bare clone's `refs/remotes/origin/*`, deleting those no
  * longer on GitHub (05, section 4.2). The fetched pack is moved into the bare clone, then its
  * refs are set in one `update-ref` transaction; neither step holds the credential. With `only`,
  * that one branch is fetched and only its remote ref set: the base branch before a conflict is
- * sent back to a run waiting for CI (lot 3 step G2a). A credential the Orchestrator refused is
- * then said in those words.
+ * sent back to a run waiting for CI (lot 3 step G2a). A download that fails throws
+ * `DownloadFailed`, saying why: a credential the Orchestrator refused in those words, else Git's
+ * and GitHub's, masked.
  */
 export async function isolatedFetch(
   options: IsolatedGitOptions,
@@ -335,15 +352,24 @@ export async function isolatedFetch(
     );
     const { secret, refusal } = context.outcome();
     if (fetched.timedOut) {
-      throw new Error(
+      throw new DownloadFailed(
+        'too_long',
         `Downloading the project from GitHub took longer than Longest push (${seconds(options.timeoutSeconds)}, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.`,
       );
     }
     if (fetched.code !== 0) {
-      if (only !== null && refusal !== null) {
-        throw new Error(masked(`The Orchestrator refused the credential: ${refusal}`, null));
+      if (refusal !== null) {
+        throw new DownloadFailed(
+          'refused',
+          masked(`The Orchestrator refused the credential: ${refusal}`, null),
+        );
       }
-      throw new GitError(['fetch'], fetched.code, masked(fetched.stderr, secret));
+      // As for a push: GitHub answered and refused, or could not be reached (05, section 4.9).
+      throw new DownloadFailed(
+        REFUSED_BY_GITHUB.test(fetched.stderr) ? 'refused' : 'unreachable',
+        masked(fetched.stderr, secret) ||
+          `Git ended with code ${String(fetched.code)} without downloading.`,
+      );
     }
     await moveObjects(join(context.repository, 'objects'), join(bare, 'objects'));
     const refs = await context.run([
@@ -444,8 +470,9 @@ export async function isolatedPush(
 const DIVERGED = /\[rejected\] \((?:non-fast-forward|fetch first|stale info)\)/;
 
 /**
- * Git's words when GitHub answered and refused: a credential refused or missing, or a repository
- * that does not exist or the token cannot see (HTTP 404, "Repository not found", A24).
+ * Git's words when GitHub answered and refused a push or a download: a credential refused or
+ * missing, or a repository that does not exist or the token cannot see (HTTP 404, "Repository not
+ * found", A24).
  */
 const REFUSED_BY_GITHUB =
   /Authentication failed|could not read Username|could not read Password|terminal prompts disabled|The requested URL returned error: 40[134]|Permission to \S+ denied|Repository not found|repository '[^']*' not found/;

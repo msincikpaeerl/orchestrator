@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RunDownloadFailure } from './download-failure.js';
 import { PullRequestFailureReason } from './pull-requests.js';
 import { GitHash } from '../daemon/git.js';
 import { FailureReason } from './run-status.js';
@@ -126,6 +127,8 @@ export const ReviewEnd = z.discriminatedUnion('why', [
   z.object({ why: z.literal('moved_on_github'), head: GitHash.nullable() }),
   z.object({ why: z.literal('moved_on_machine') }),
   z.object({ why: z.literal('stopped') }),
+  /** The project could not be downloaded from GitHub at the review's start (lot 3 step K2). */
+  z.object({ why: z.literal('download_failed'), download: RunDownloadFailure.nullable() }),
   z.object({ why: z.literal('failed'), failureReason: FailureReason }),
 ]);
 export type ReviewEnd = z.infer<typeof ReviewEnd>;

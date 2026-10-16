@@ -69,5 +69,10 @@ export const FailureReason = z.enum([
    * request's head is another commit: the branch moved on GitHub (lot 3 step G2b).
    */
   'ci_cancelled',
+  /**
+   * The project could not be downloaded from GitHub at the run's start: GitHub unreachable, the
+   * credential refused, or **Longest push** reached (lot 3 step K2).
+   */
+  'download_failed',
 ]);
 export type FailureReason = z.infer<typeof FailureReason>;

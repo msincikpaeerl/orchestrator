@@ -112,6 +112,7 @@ export {
   PUSH_PERMISSION_WORDS,
   PushPermission,
 } from './api/needs-you.js';
+export { RunDownloadFailure } from './api/download-failure.js';
 export {
   HeadComparison,
   HeadComparisonResult,
@@ -288,6 +289,8 @@ export {
   GitBranchName,
   GitHash,
   NotOnGitHub,
+  DownloadFailure,
+  DownloadFailureReason,
   PushFailureReason,
   PushResult,
   RepositoryOwner,
