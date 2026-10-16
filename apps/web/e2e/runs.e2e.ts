@@ -387,14 +387,24 @@ test('a run whose download was stopped by Longest push says so on its page', asy
   const runId = await runNow(page);
   await runSent(page, runId);
   await reportState(page, runId, 'preparing');
-  const detail =
-    'The workspace could not be prepared: Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.';
-  await reportState(page, runId, 'ended', { reason: 'crashed', detail, branch: null });
+  const message =
+    'Downloading the project from GitHub took longer than Longest push (60 seconds, in Settings > Limits) and was stopped. The first download on a new machine takes the longest.';
+  const detail = `The project could not be downloaded from GitHub: ${message}`;
+  // Not counted from lot 3 step K2, with the true words.
+  await reportState(page, runId, 'ended', {
+    reason: 'download_failed',
+    detail,
+    branch: null,
+    download: { reason: 'too_long', message },
+  });
 
   await expect(runStatus(page)).toHaveText(
-    'Failed: its Claude Code session stopped unexpectedly or never started',
+    'Failed: the project could not be downloaded from GitHub',
   );
   await expect(page.getByLabel('Why the run ended')).toHaveText(detail);
+  await expect(page.getByLabel('What to do')).toHaveText(
+    'Machine Laptop could not download the project from GitHub when the run started, so the agent never started: the download took longer than Longest push and was stopped. It does not count as a failed attempt. The first download of a project on a new machine takes the longest. Press Run now to try again, or raise Longest push in Settings > Limits.',
+  );
   await expectFitsScreen(page);
 });
 
