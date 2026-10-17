@@ -71,6 +71,13 @@ export const Scenario = z.object({
   /** Never runs `SessionStart`, as when a startup dialog waits for a key. */
   noSessionStart: z.boolean().default(false),
   /**
+   * The permission mode the session reports, in its hook payloads and on the transcript line of
+   * each message, as Claude Code 2.1.287 records it (`permissionMode`). The fake refuses a launch
+   * without `--permission-mode dontAsk`: another value plays a Claude Code that ignored it (the
+   * probe's check 6, lot 3 step L).
+   */
+  permissionMode: z.string().default('dontAsk'),
+  /**
    * Turn `n` answers the `n`-th message: the first message (after `--`) is turn 0, each message
    * typed or pasted in the terminal the next one. Later messages get a turn saying "Done.".
    */

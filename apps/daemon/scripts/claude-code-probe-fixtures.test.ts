@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   credentialLikeFound,
   encodedPath,
   keptTranscript,
+  permissionModeCheck,
   personalDataFound,
   sanitise,
   sessionPersonalValues,
@@ -183,5 +185,43 @@ describe('probe fixtures', () => {
       `commit ${'a1b2c3d4e5'.repeat(4)}\n`,
     ].join('');
     expect(credentialLikeFound({ 'hooks.jsonl': capture })).toEqual([]);
+  });
+});
+
+describe("check 6, the session's permission mode (lot 3 step L)", () => {
+  const fixture = (version: string) =>
+    readFileSync(
+      new URL(`../test/fixtures/claude-code-${version}/transcript.jsonl`, import.meta.url),
+      'utf8',
+    );
+
+  it("passes on the transcripts the owner's probe runs recorded with Claude Code 2.1.283 and 2.1.287", () => {
+    for (const version of ['2.1.283', '2.1.287']) {
+      expect(permissionModeCheck(fixture(version)), version).toEqual({
+        verdict: 'PASS',
+        detail: 'dontAsk on 1 transcript line(s), no other mode',
+      });
+    }
+  });
+
+  it('fails when a line records another mode, or when none records a mode', () => {
+    const message = (permissionMode?: string) =>
+      line({ type: 'user', message: { role: 'user', content: 'Go.' }, permissionMode });
+    expect(permissionModeCheck(message('dontAsk') + message('auto'))).toEqual({
+      verdict: 'FAIL',
+      detail: 'recorded: auto (dontAsk on 1 of 2 lines)',
+    });
+    expect(permissionModeCheck(message('<b>"x"</b>'))).toEqual({
+      verdict: 'FAIL',
+      detail: 'recorded: <other> (dontAsk on 0 of 1 lines)',
+    });
+    expect(permissionModeCheck(message())).toEqual({
+      verdict: 'FAIL',
+      detail: 'no permission mode recorded in the transcript',
+    });
+    expect(permissionModeCheck(null)).toEqual({
+      verdict: 'FAIL',
+      detail: 'no transcript was found',
+    });
   });
 });

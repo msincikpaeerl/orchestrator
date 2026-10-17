@@ -52,13 +52,45 @@ export type McpAnswer = McpResult['payload'];
 /** What the socket answers: a hook's output, or a tool's result for the relay. */
 export type RunSocketAnswer = HookAnswer | McpAnswer | RunToolsAnswer;
 
-/** Listens on `path` (a stale file is replaced); `handle` answers each request. */
+/**
+ * A connection to a run's socket, from its opening until it closes: a hook or status line
+ * command, or the MCP relay. Kept so the daemon can log those still open when it kills the
+ * session (05, section 4.11; lot 3 decision Q32).
+ */
+export interface RunConnection {
+  /** `Date.now()` at the opening. */
+  since: number;
+  /** "hook Stop", "status_line", "mcp ticket_get", "tools"; null until a whole line is read. */
+  request: string | null;
+  /** Whether the daemon has sent its answer (the command may still be reading it or exiting). */
+  answered: boolean;
+}
+
+function describeRequest(request: RunSocketRequest): string {
+  switch (request.type) {
+    case 'hook':
+      return `hook ${request.event}`;
+    case 'mcp':
+      return `mcp ${request.tool}`;
+    default:
+      return request.type;
+  }
+}
+
+/**
+ * Listens on `path` (a stale file is replaced); `handle` answers each request. `open` holds the
+ * connections not closed yet.
+ */
 export async function serveRunSocket(
   path: string,
   handle: (request: RunSocketRequest) => Promise<RunSocketAnswer>,
+  open: Set<RunConnection> = new Set(),
 ): Promise<Server> {
   await rm(path, { force: true });
   const server = createServer((socket) => {
+    const connection: RunConnection = { since: Date.now(), request: null, answered: false };
+    open.add(connection);
+    socket.on('close', () => open.delete(connection));
     let buffer = '';
     socket.setEncoding('utf8');
     socket.on('data', (chunk: string) => {
@@ -67,13 +99,17 @@ export async function serveRunSocket(
       if (end < 0) return;
       socket.pause();
       const request = RunSocketRequest.safeParse(safeJson(buffer.slice(0, end)));
+      connection.request = request.success ? describeRequest(request.data) : 'not understood';
       const answer = request.success
         ? handle(request.data)
         : Promise.resolve<RunSocketAnswer>({ stdout: '', exitCode: 0 });
-      void answer.then(
-        (result) => socket.end(`${JSON.stringify(result)}\n`),
-        () => socket.end(`${JSON.stringify({ stdout: '', exitCode: 0 })}\n`),
-      );
+      const send = (result: unknown) => {
+        connection.answered = true;
+        socket.end(`${JSON.stringify(result)}\n`);
+      };
+      void answer.then(send, () => {
+        send({ stdout: '', exitCode: 0 });
+      });
     });
     socket.on('error', () => undefined);
   });

@@ -1,6 +1,6 @@
 import { RunRefusal, type MachineUnavailable } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { acceptedAfterText, runRefusalText, unavailableText } from './text';
+import { acceptedAfterText, runBranchText, runRefusalText, unavailableText } from './text';
 
 const account = { id: '3f1e0e8c-1111-4000-8000-000000000000', label: 'Personal' };
 const machine = { id: '3f1e0e8c-2222-4000-8000-000000000000', name: 'Laptop' };
@@ -105,5 +105,51 @@ describe("acceptedAfterText (owner's correction, step F4)", () => {
     expect(
       acceptedAfterText({ refusedSubmission, acceptedSubmissionAt: '2026-10-09T09:00:00.000Z' }),
     ).toBeNull();
+  });
+});
+
+describe('runBranchText (lot 3 step L, from step K2)', () => {
+  const name = 't/1-contact-form';
+  const head = 'c'.repeat(40);
+  const run = (
+    status: 'running' | 'failed' | 'succeeded',
+    endReason: 'download_failed' | 'crashed' | 'submitted' | null,
+    branchHead: string | null,
+  ) => ({
+    status,
+    endReason,
+    branch: { name, head: branchHead, commits: [] },
+    machine: { name: 'Laptop' },
+  });
+
+  it('says no branch was made when the run failed at its download on a new machine', () => {
+    expect(runBranchText(run('failed', 'download_failed', null))).toEqual({
+      text: 'No branch was made on machine Laptop: the run ended before the project was downloaded.',
+      commits: false,
+    });
+  });
+
+  it('shows the branch as it was before the run when it failed at its download', () => {
+    expect(runBranchText(run('failed', 'download_failed', head))).toEqual({
+      text: `${name} on machine Laptop, as it was before this run: the run ended before the project was downloaded, so it never worked on the branch.`,
+      commits: true,
+    });
+  });
+
+  it('says the machine reported no branch for another end without one', () => {
+    expect(runBranchText(run('failed', 'crashed', null))).toEqual({
+      text: `Machine Laptop reported no branch ${name} at the end of this run.`,
+      commits: false,
+    });
+  });
+
+  it('keeps "as this run left it" for a run that worked on the branch, and no end for an active run', () => {
+    expect(runBranchText(run('succeeded', 'submitted', head)).text).toBe(
+      `${name} on machine Laptop, as this run left it`,
+    );
+    expect(runBranchText(run('running', null, null))).toEqual({
+      text: `${name} on machine Laptop`,
+      commits: true,
+    });
   });
 });

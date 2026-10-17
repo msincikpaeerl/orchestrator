@@ -167,8 +167,11 @@ describe('Claude Code probe, dry run with the fake claude', () => {
       );
       const { code, output } = await runProbe();
       expect(output).toMatch(/Claude Code 2\.1\.282, model haiku/);
-      for (const check of [1, 2, 3, 4])
+      for (const check of [1, 2, 3, 4, 6])
         expect(output).toMatch(new RegExp(`^${String(check)}\\. PASS `, 'm'));
+      expect(output).toMatch(
+        /^6\. PASS +the session runs in dontAsk permission mode, as its transcript records it: dontAsk on \d+ transcript line\(s\), no other mode$/m,
+      );
       expect(output).toMatch(
         /^3\. PASS .*rule's message, while the control file next to it was read/m,
       );
@@ -305,6 +308,50 @@ describe('Claude Code probe, dry run with the fake claude', () => {
       );
       const { code, output } = await runProbe();
       expect(output).toMatch(/^3\. FAIL .*refused by dontAsk mode, not by the deny rule/m);
+      expect(code).toBe(1);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'fails check 6 when the transcript records another permission mode than dontAsk',
+    async () => {
+      await fake.play(control(true), 'control');
+      await fake.play(
+        {
+          // A Claude Code that ignored --permission-mode dontAsk (lot 3 step L).
+          ...probe([
+            {
+              do: 'tool',
+              name: 'Bash',
+              input: { command: './probe-marker.sh' },
+              result: dontAskRefusal,
+            },
+            {
+              do: 'tool',
+              name: 'Bash',
+              input: { command: 'cat ../../config.json' },
+              result: ruleRefusal('cat ../../config.json'),
+            },
+            { do: 'bash', command: 'cat ../../control.txt' },
+            { do: 'mcp', tool: 'ping' },
+            {
+              do: 'statusLine',
+              input: { rate_limits: {}, cost: { total_cost_usd: 0 } },
+            },
+            { do: 'text', text: 'DONE' },
+          ]),
+          permissionMode: 'default',
+        },
+        'probe',
+      );
+      const { code, output } = await runProbe();
+      for (const check of [1, 2, 3, 4])
+        expect(output).toMatch(new RegExp(`^${String(check)}\\. PASS `, 'm'));
+      expect(output).toMatch(
+        /^6\. FAIL +the session runs in dontAsk permission mode, as its transcript records it: recorded: default \(dontAsk on 0 of \d+ lines\)$/m,
+      );
+      expect(output).toMatch(/At least one check failed/);
       expect(code).toBe(1);
     },
     TIMEOUT,

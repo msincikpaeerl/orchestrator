@@ -68,22 +68,24 @@ export function settingsPermissions(
   return { allow, deny };
 }
 
-// Reasons the agent reads. They say what to do instead (06, section 6).
+// Reasons the agent reads. They say what to do instead (06, section 6), and each ends with the
+// common rules' sentence (03, section 3.2; 05, section 4.6; lot 3 decision Q29).
 
-const ASK = 'If you need it for your ticket, explain why with ticket_ask.';
+/** The end of every refusal reason: never ask the owner to allow a tool or a command. */
+export const REFUSAL_SUFFIX =
+  'Do not ask the owner to allow it. If your ticket cannot be done without it, say so in plain words with ticket_ask or ticket_give_up.';
 
 export const REASONS = {
-  remote: `Git commands that reach a remote, and gh or hub, are refused: the Orchestrator fetches and pushes the branch itself. Commit your work locally. ${ASK}`,
-  github: `Commands that reach GitHub are refused: the Orchestrator talks to GitHub itself. ${ASK}`,
-  containers: `Container commands (docker, docker-compose, podman, nerdctl, kubectl) are refused: they reach every container on this computer, the Orchestrator's own included. ${ASK}`,
-  tmux: 'tmux commands are refused: the Orchestrator runs your session in tmux and must be the only one driving it.',
-  claudeFolder: `Changes to the repository's .claude folder are refused (and Bash commands naming it): it configures Claude Code for the owner. ${ASK}`,
-  daemonFolder:
-    "Access to the Orchestrator's own folder is refused: it holds the machine's key and other runs' work.",
-  claudeConfig: "Access to Claude Code's configuration folders is refused: they hold its login.",
-  outside: `Access outside your worktree is refused. Work with paths inside the worktree (relative paths are best). ${ASK}`,
-  bashPath: `This command names a path outside your worktree, which is refused. Use paths inside the worktree (relative paths are best); /tmp, /dev/null and system folders such as /usr and /etc are allowed. ${ASK}`,
-  home: `This command names the home folder (~ or $HOME), which is refused. Use paths inside your worktree. ${ASK}`,
+  remote: `Git commands that reach a remote, and gh or hub, are refused: the Orchestrator fetches and pushes the branch itself. Commit your work locally. ${REFUSAL_SUFFIX}`,
+  github: `Commands that reach GitHub are refused: the Orchestrator talks to GitHub itself. ${REFUSAL_SUFFIX}`,
+  containers: `Container commands (docker, docker-compose, podman, nerdctl, kubectl) are refused: they reach every container on this computer, the Orchestrator's own included. ${REFUSAL_SUFFIX}`,
+  tmux: `tmux commands are refused: the Orchestrator runs your session in tmux and must be the only one driving it. ${REFUSAL_SUFFIX}`,
+  claudeFolder: `Changes to the repository's .claude folder are refused (and Bash commands naming it): it configures Claude Code for the owner. ${REFUSAL_SUFFIX}`,
+  daemonFolder: `Access to the Orchestrator's own folder is refused: it holds the machine's key and other runs' work. ${REFUSAL_SUFFIX}`,
+  claudeConfig: `Access to Claude Code's configuration folders is refused: they hold its login. ${REFUSAL_SUFFIX}`,
+  outside: `Access outside your worktree is refused. Work with paths inside the worktree (relative paths are best). ${REFUSAL_SUFFIX}`,
+  bashPath: `This command names a path outside your worktree, which is refused. Use paths inside the worktree (relative paths are best); /tmp, /dev/null and system folders such as /usr and /etc are allowed. ${REFUSAL_SUFFIX}`,
+  home: `This command names the home folder (~ or $HOME), which is refused. Use paths inside your worktree. ${REFUSAL_SUFFIX}`,
 } as const;
 
 // Paths.

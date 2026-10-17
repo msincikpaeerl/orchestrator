@@ -117,6 +117,7 @@ export const TEMPLATE_NAMES = [
   'ci-status',
   'ci-failed',
   'fix-review',
+  'mcp-tools',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 

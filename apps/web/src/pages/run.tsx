@@ -8,7 +8,14 @@ import { CiHistoryCard, CiWaitCard } from '../runs/ci-card';
 import { AnswerBox, CommitList, LogEntry, RunActions, RunTimes } from '../runs/components';
 import { useRunLog } from '../runs/log';
 import { downloadRunText } from '../runs/download-text';
-import { acceptedAfterText, isActive, purposeLabel, runStateText, usageText } from '../runs/text';
+import {
+  acceptedAfterText,
+  isActive,
+  purposeLabel,
+  runBranchText,
+  runStateText,
+  usageText,
+} from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
 import { CheckList, ReportFiles } from '../tickets/submission';
 import { RunReviewCard } from '../tickets/review';
@@ -86,6 +93,7 @@ function RefusedSubmission({ run }: { run: RunDetail }) {
 
 function RunContent({ run }: { run: RunDetail }) {
   const number = ticketNumber(run);
+  const branch = runBranchText(run);
   return (
     <>
       <PageHeader title={`Run of ${run.ticket} · attempt ${String(run.attempt)}`} help="runs" />
@@ -171,8 +179,7 @@ function RunContent({ run }: { run: RunDetail }) {
         <Card className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">Branch</h2>
           <p className="break-words" aria-label="Branch">
-            <code className="rounded bg-slate-100 px-1 text-sm">{run.branch.name}</code> on machine{' '}
-            {run.machine.name}, as this run left it
+            {branch.text}
           </p>
           {run.push && (
             <p className="break-words text-slate-700" aria-label="Push">
@@ -182,7 +189,7 @@ function RunContent({ run }: { run: RunDetail }) {
           {run.branch.head === null && isActive(run.status) ? (
             <p className="text-slate-700">The commits are shown when the run ends.</p>
           ) : (
-            <CommitList commits={run.branch.commits} />
+            branch.commits && <CommitList commits={run.branch.commits} />
           )}
         </Card>
         <RefusedSubmission run={run} />

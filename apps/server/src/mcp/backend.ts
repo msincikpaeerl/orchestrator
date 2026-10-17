@@ -53,7 +53,8 @@ import {
 import { standingRequest } from '../tickets/changes.js';
 import { recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
-import type { Templates } from '../agents/files.js';
+import type { Template, Templates } from '../agents/files.js';
+import { part } from '../agents/messages.js';
 import { cutToFit, fitPage, jsonLength } from './output.js';
 import { checkSubmission, criteriaOutOfRange, refusal } from './submission-checks.js';
 
@@ -106,6 +107,12 @@ class Refusal extends Error {
 const refuse = (code: McpError['code'], message: string, details?: McpErrorDetail[]) =>
   new Refusal({ code, message, ...(details ? { details } : {}) });
 
+/**
+ * The tools' texts other than `ticket_submit`'s, from `agents/templates/mcp-tools.md` (03,
+ * section 3.2; lot 3 step L): their refusals, the review decision's note and the cut notes.
+ */
+type Texts = Template;
+
 /** A submission refused by its checks: the run keeps it, outside the refused call's transaction. */
 class SubmissionRefused extends Refusal {
   constructor(
@@ -117,14 +124,24 @@ class SubmissionRefused extends Refusal {
   }
 }
 
-const ENDED_MESSAGE =
-  'This run has ended (it was stopped, or its time is over): its token is no longer valid. Stop working: nothing you do now will be recorded.';
+/** The refusal of a call whose run has ended: its token was revoked, or is unknown. */
+const ended = (texts: Texts) => refuse('FORBIDDEN', texts.main);
 
-function tooLong(field: string, setting: SettingName, max: number, unit = 'characters') {
+function tooLong(
+  texts: Texts,
+  field: string,
+  setting: SettingName,
+  max: number,
+  unit: 'characters' | 'criteria' = 'characters',
+) {
   return {
     field,
     setting,
-    message: `${field}: at most ${String(max)} ${unit} (setting "${SETTINGS[setting].label}": ${String(max)})`,
+    message: part(texts, `too-long-${unit}`, {
+      field,
+      max: String(max),
+      setting: SETTINGS[setting].label,
+    }),
   } satisfies McpErrorDetail;
 }
 
@@ -165,6 +182,8 @@ export class McpBackend {
   private readonly db: Database;
   private readonly log: FastifyBaseLogger;
   private readonly progressTimers = new Map<string, NodeJS.Timeout>();
+  /** Loaded by the first call, before any refusal can be written. */
+  private loadedTexts: Texts | null = null;
 
   constructor(private readonly options: McpBackendOptions) {
     this.db = options.db;
@@ -173,6 +192,11 @@ export class McpBackend {
 
   private now(): Date {
     return this.options.now();
+  }
+
+  private get texts(): Texts {
+    if (this.loadedTexts === null) throw new Error("the MCP tools' texts are not loaded");
+    return this.loadedTexts;
   }
 
   close(): void {
@@ -188,11 +212,12 @@ export class McpBackend {
     let reference: string | undefined;
     let code: string = 'ok';
     try {
+      this.loadedTexts ??= (await this.options.templates())['mcp-tools'];
       const [found] = await this.db
         .select({ id: schema.runs.id, machineId: schema.runs.machineId })
         .from(schema.runs)
         .where(eq(schema.runs.runTokenHash, hashCredential(message.payload.runToken)));
-      if (!found || found.machineId !== machineId) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+      if (!found || found.machineId !== machineId) throw ended(this.texts);
       runId = found.id;
       // The push happened whatever the answer to the call: recorded first, on its own.
       if (message.payload.tool === 'ticket_submit' && message.payload.workspace.push !== null) {
@@ -203,7 +228,17 @@ export class McpBackend {
       if (!parsed.success) {
         throw refuse(
           'VALIDATION_FAILED',
-          `The input of ${tool} is not valid: ${parsed.error.issues.map((issue) => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ')}`,
+          part(this.texts, 'input-invalid', {
+            tool,
+            issues: parsed.error.issues
+              .map((issue) =>
+                part(this.texts, 'input-issue', {
+                  field: issue.path.join('.') || 'input',
+                  message: issue.message,
+                }),
+              )
+              .join('; '),
+          }),
           parsed.error.issues.map((issue) => ({
             field: issue.path.join('.') || 'input',
             message: issue.message,
@@ -248,7 +283,7 @@ export class McpBackend {
     const runQuery = executor.select().from(schema.runs).where(eq(schema.runs.id, runId));
     const [run] = lock ? await runQuery.for('update') : await runQuery;
     if (!run || run.machineId !== machineId || run.runTokenRevokedAt !== null) {
-      throw refuse('FORBIDDEN', ENDED_MESSAGE);
+      throw ended(this.texts);
     }
     if (run.ticketId === null) throw new Error(`run ${run.id} has no ticket`);
     const [project] = await executor
@@ -318,7 +353,7 @@ export class McpBackend {
     if (!permissions.includes(tool)) {
       throw refuse(
         'FORBIDDEN',
-        `Your role (${AgentRole.parse(call.profile.role)}) does not allow ${tool}.`,
+        part(this.texts, 'role', { role: AgentRole.parse(call.profile.role), tool }),
       );
     }
   }
@@ -389,7 +424,7 @@ export class McpBackend {
     if (!row) {
       throw refuse(
         'NOT_FOUND',
-        `No ticket ${reference} in the project ${call.project.key}: use ticket_list to find tickets.`,
+        part(this.texts, 'ticket-unknown', { reference, project: call.project.key }),
       );
     }
     return row;
@@ -457,14 +492,14 @@ export class McpBackend {
     const description = cutToFit(
       full.description,
       MCP_OUTPUT_MAX_CHARACTERS,
-      'The rest of the description cannot be read through the tools; ask the owner with ticket_ask if you need it.',
+      part(this.texts, 'description-cut'),
       (candidate) => jsonLength({ ticket: { ...full, description: candidate } }),
     );
     return { ticket: { ...full, description } };
   }
 
   private async ticketList(call: Call, input: McpToolInput<'ticket_list'>) {
-    const after = input.cursor === undefined ? 0 : cursorNumber(input.cursor);
+    const after = input.cursor === undefined ? 0 : cursorNumber(this.texts, input.cursor);
     const conditions = [
       eq(schema.tickets.projectId, call.project.id),
       gt(schema.tickets.number, after),
@@ -477,7 +512,7 @@ export class McpBackend {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.key, input.assignee));
       if (!profile) {
-        throw refuse('NOT_FOUND', `No agent profile ${input.assignee}: use agent_list.`);
+        throw refuse('NOT_FOUND', part(this.texts, 'profile-unknown', { key: input.assignee }));
       }
       conditions.push(eq(schema.tickets.assigneeProfileId, profile.id));
     }
@@ -508,7 +543,7 @@ export class McpBackend {
 
   private async ticketComments(call: Call, input: McpToolInput<'ticket_comments'>) {
     const ticket = await this.findTicket(this.db, call, input.ticket);
-    const offset = input.cursor === undefined ? 0 : cursorNumber(input.cursor);
+    const offset = input.cursor === undefined ? 0 : cursorNumber(this.texts, input.cursor);
     const rows = await this.db
       .select()
       .from(schema.comments)
@@ -524,11 +559,8 @@ export class McpBackend {
     if (page.length === 1 && first && jsonLength(first) > room) {
       page[0] = {
         ...first,
-        body: cutToFit(
-          first.body,
-          room,
-          'The rest of this comment cannot be read through the tools; ask the owner with ticket_ask if you need it.',
-          (candidate) => jsonLength({ ...first, body: candidate }),
+        body: cutToFit(first.body, room, part(this.texts, 'comment-cut'), (candidate) =>
+          jsonLength({ ...first, body: candidate }),
         ),
       };
     }
@@ -577,7 +609,7 @@ export class McpBackend {
       .select({ projectId: schema.runs.projectId })
       .from(schema.runs)
       .where(eq(schema.runs.id, runId));
-    if (!projectRow) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+    if (!projectRow) throw ended(this.texts);
     const agentTicketsSetting = await resolveSettings(
       this.db,
       ['maxAgentTicketsPerRun'],
@@ -594,7 +626,7 @@ export class McpBackend {
         const call = await this.load(tx, runId, machineId, true);
         known(call);
         this.permit(call, tool);
-        if (!ACTIVE.has(call.run.status)) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+        if (!ACTIVE.has(call.run.status)) throw ended(this.texts);
         switch (tool) {
           case 'ticket_progress':
             return this.progress(tx, call, input as McpToolInput<'ticket_progress'>, settings);
@@ -658,7 +690,10 @@ export class McpBackend {
       await this.options.reviewHeadMoved(runId, read.head);
       throw refuse(
         'INVALID_TRANSITION',
-        `The pull request changed on GitHub during your review, now ${read.head.slice(0, 7)}: your review of ${commit.slice(0, 7)} no longer applies. End your turn.`,
+        part(this.texts, 'review-head-moved', {
+          head: read.head.slice(0, 7),
+          commit: commit.slice(0, 7),
+        }),
       );
     }
     const headChecked = read.read;
@@ -716,18 +751,21 @@ export class McpBackend {
         at,
       });
       const count = decision.points.length;
-      const what =
+      const short = { commit: commit.slice(0, 7) };
+      const note = [
         decision.kind === 'approved'
-          ? `Your approval of commit ${commit.slice(0, 7)} is recorded.`
-          : `Your request for changes on commit ${commit.slice(0, 7)} (${String(count)} point${count === 1 ? '' : 's'}) is recorded.`;
-      const unchecked = read.read
-        ? ''
-        : ` GitHub could not be read to check the pull request's head (${read.why}): the owner is told to check it before merging.`;
+          ? part(this.texts, 'decision-approved', short)
+          : count === 1
+            ? part(this.texts, 'decision-changes-one', short)
+            : part(this.texts, 'decision-changes', { ...short, count: String(count) }),
+        part(this.texts, 'decision-applied'),
+        ...(read.read ? [] : [part(this.texts, 'decision-head-unchecked', { why: read.why })]),
+      ].join(' ');
       return {
         decision: decision.kind,
         commit,
         head_checked: headChecked,
-        note: `${what} It is applied when your turn ends: end your turn now, without another tool call.${unchecked}`,
+        note,
       } satisfies McpToolOutput<'review_approve'>;
     });
   }
@@ -745,11 +783,11 @@ export class McpBackend {
     commentMaxLength: number,
   ): Promise<void> {
     this.permit(call, tool);
-    if (!ACTIVE.has(call.run.status)) throw refuse('FORBIDDEN', ENDED_MESSAGE);
+    if (!ACTIVE.has(call.run.status)) throw ended(this.texts);
     if (call.run.purpose !== 'review') {
       throw refuse(
         'INVALID_TRANSITION',
-        `${tool} is only for a review run of a ticket in in_review; the purpose of this run is ${call.run.purpose}.`,
+        part(this.texts, 'review-only', { tool, purpose: call.run.purpose }),
       );
     }
     this.requireReviewing(call, tool);
@@ -778,7 +816,7 @@ export class McpBackend {
     if (implemented) {
       throw refuse(
         'FORBIDDEN',
-        `${call.profile.name} implemented this ticket in an earlier run, so it cannot review it: end your turn without a decision.`,
+        part(this.texts, 'reviewer-implemented', { name: call.profile.name }),
       );
     }
   }
@@ -827,21 +865,18 @@ export class McpBackend {
   /** The ticket must be `in_progress`, with no decision taken yet in this run (05, section 4.8). */
   private requireWorking(call: Call, tool: McpToolName): void {
     if (call.run.decision === 'submitted') {
-      throw refuse('INVALID_TRANSITION', 'You already submitted this ticket: end your turn now.');
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'already-submitted'));
     }
     if (call.run.decision === 'gave_up') {
-      throw refuse('INVALID_TRANSITION', 'You already gave up this ticket: end your turn now.');
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'already-gave-up'));
     }
     if (call.ticket.status === 'waiting_human') {
-      throw refuse(
-        'INVALID_TRANSITION',
-        `You asked the owner a question and the ticket waits for the answer: ${tool} is not possible now. End your turn; the answer arrives as your next message.`,
-      );
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'waiting-answer', { tool }));
     }
     if (call.ticket.status !== 'in_progress') {
       throw refuse(
         'INVALID_TRANSITION',
-        `The ticket is ${call.ticket.status}: ${tool} needs it in_progress.`,
+        part(this.texts, 'needs-in-progress', { status: call.ticket.status, tool }),
       );
     }
   }
@@ -854,24 +889,24 @@ export class McpBackend {
     if (call.run.reviewDecision !== null) {
       throw refuse(
         'INVALID_TRANSITION',
-        ReviewDecision.parse(call.run.reviewDecision).kind === 'approved'
-          ? 'You already approved this ticket in this run: end your turn.'
-          : 'You already asked for changes on this ticket in this run: end your turn.',
+        part(
+          this.texts,
+          ReviewDecision.parse(call.run.reviewDecision).kind === 'approved'
+            ? 'already-approved'
+            : 'already-requested-changes',
+        ),
       );
     }
     if (call.run.decision === 'gave_up') {
-      throw refuse('INVALID_TRANSITION', 'You already gave up this review: end your turn now.');
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'already-gave-up-review'));
     }
     if (call.ticket.status === 'waiting_human') {
-      throw refuse(
-        'INVALID_TRANSITION',
-        `You asked the owner a question and the ticket waits for the answer: ${tool} is not possible now. End your turn; the answer arrives as your next message.`,
-      );
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'waiting-answer', { tool }));
     }
     if (call.ticket.status !== 'in_review') {
       throw refuse(
         'INVALID_TRANSITION',
-        `The ticket is ${call.ticket.status}: ${tool} needs it in_review.`,
+        part(this.texts, 'needs-in-review', { status: call.ticket.status, tool }),
       );
     }
   }
@@ -997,7 +1032,7 @@ export class McpBackend {
   }
 
   private checkComment(field: string, text: string, max: number): McpErrorDetail | null {
-    return text.length > max ? tooLong(field, 'commentMaxLength', max) : null;
+    return text.length > max ? tooLong(this.texts, field, 'commentMaxLength', max) : null;
   }
 
   private tooLongRefusal(details: (McpErrorDetail | null)[]): void {
@@ -1005,7 +1040,9 @@ export class McpBackend {
     if (found.length > 0) {
       throw refuse(
         'VALIDATION_FAILED',
-        `Too long: ${found.map((detail) => detail.message).join('; ')}.`,
+        part(this.texts, 'too-long', {
+          details: found.map((detail) => detail.message).join('; '),
+        }),
         found,
       );
     }
@@ -1101,16 +1138,10 @@ export class McpBackend {
   ) {
     const { project } = call;
     if (project.status === 'archived') {
-      throw refuse(
-        'INVALID_TRANSITION',
-        'The project is archived: no ticket can be created in it.',
-      );
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'project-archived'));
     }
     if (project.setupStatus !== 'ready') {
-      throw refuse(
-        'INVALID_TRANSITION',
-        'The repository setup of the project is not finished: no ticket can be created yet.',
-      );
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'project-not-ready'));
     }
     const [created] = await tx
       .select({ total: count() })
@@ -1120,24 +1151,33 @@ export class McpBackend {
     if ((created?.total ?? 0) >= limit) {
       throw refuse(
         'LIMIT_REACHED',
-        `Limit of ${String(limit)} tickets per run reached (setting "${SETTINGS.maxAgentTicketsPerRun.label}": ${String(limit)}). Record what you found with ticket_comment instead.`,
+        part(this.texts, 'ticket-limit', {
+          limit: String(limit),
+          setting: SETTINGS.maxAgentTicketsPerRun.label,
+        }),
         [
           {
             setting: 'maxAgentTicketsPerRun',
-            message: `at most ${String(limit)} tickets per run`,
+            message: part(this.texts, 'ticket-limit-field', { limit: String(limit) }),
           },
         ],
       );
     }
     this.tooLongRefusal([
       input.title.length > settings.ticketTitleMaxLength
-        ? tooLong('title', 'ticketTitleMaxLength', settings.ticketTitleMaxLength)
+        ? tooLong(this.texts, 'title', 'ticketTitleMaxLength', settings.ticketTitleMaxLength)
         : null,
       input.description.length > settings.ticketDescriptionMaxLength
-        ? tooLong('description', 'ticketDescriptionMaxLength', settings.ticketDescriptionMaxLength)
+        ? tooLong(
+            this.texts,
+            'description',
+            'ticketDescriptionMaxLength',
+            settings.ticketDescriptionMaxLength,
+          )
         : null,
       input.acceptance_criteria.length > settings.ticketMaxAcceptanceCriteria
         ? tooLong(
+            this.texts,
             'acceptance_criteria',
             'ticketMaxAcceptanceCriteria',
             settings.ticketMaxAcceptanceCriteria,
@@ -1147,6 +1187,7 @@ export class McpBackend {
       ...input.acceptance_criteria.map((criterion, index) =>
         criterion.length > settings.acceptanceCriterionMaxLength
           ? tooLong(
+              this.texts,
               `acceptance_criteria.${String(index)}`,
               'acceptanceCriterionMaxLength',
               settings.acceptanceCriterionMaxLength,
@@ -1162,16 +1203,16 @@ export class McpBackend {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.key, input.assignee));
       if (!assignee) {
-        throw refuse('NOT_FOUND', `No agent profile ${input.assignee}: use agent_list.`, [
-          { field: 'assignee', message: 'unknown agent profile' },
+        throw refuse('NOT_FOUND', part(this.texts, 'profile-unknown', { key: input.assignee }), [
+          { field: 'assignee', message: part(this.texts, 'profile-unknown-field') },
         ]);
       }
       // Only a builder or a writer implements a ticket (03, section 4; lot 3 step H1).
       if (assignee.role !== 'builder' && assignee.role !== 'writer') {
         throw refuse(
           'VALIDATION_FAILED',
-          `${assignee.name} reviews the work of other agents and cannot be assigned a ticket: choose a builder or a writer from agent_list, or leave the assignee out.`,
-          [{ field: 'assignee', message: 'this profile cannot be assigned a ticket' }],
+          part(this.texts, 'assignee-reviewer', { name: assignee.name }),
+          [{ field: 'assignee', message: part(this.texts, 'assignee-reviewer-field') }],
         );
       }
     }
@@ -1198,10 +1239,13 @@ export class McpBackend {
     if (missing.length > 0) {
       throw refuse(
         'NOT_FOUND',
-        `No ticket ${missing.join(', ')} in the project ${project.key}: blocked_by names tickets of the same project.`,
+        part(this.texts, 'blocked-by-unknown', {
+          references: missing.join(', '),
+          project: project.key,
+        }),
         missing.map((reference) => ({
           field: 'blocked_by',
-          message: `unknown ticket ${reference}`,
+          message: part(this.texts, 'blocked-by-unknown-field', { reference }),
         })),
       );
     }
@@ -1459,11 +1503,11 @@ function mcpComment(row: CommentRow, keys: ReadonlyMap<string, string>): McpComm
 }
 
 /** The number in a cursor (`after-12`); an unknown cursor is refused. */
-function cursorNumber(cursor: string): number {
+function cursorNumber(texts: Texts, cursor: string): number {
   const match = /^after-(\d{1,10})$/.exec(cursor);
   if (!match) {
-    throw refuse('VALIDATION_FAILED', 'cursor: pass back a next_cursor returned by this tool.', [
-      { field: 'cursor', message: 'unknown cursor' },
+    throw refuse('VALIDATION_FAILED', part(texts, 'cursor-unknown'), [
+      { field: 'cursor', message: part(texts, 'cursor-unknown-field') },
     ]);
   }
   return Number(match[1]);

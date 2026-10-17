@@ -107,6 +107,11 @@ test('a project that could not be downloaded from GitHub, then Run now from Need
   await expect(page.getByLabel('What to do')).toContainText(
     "Machine Laptop could not download the project from GitHub when the run started, so the agent never started: GitHub refused the token, which needs Contents (Read and write) on the project's repository. It does not count as a failed attempt.",
   );
+  // No branch was made: never "as this run left it", and no commit list (lot 3 step L).
+  await expect(page.getByLabel('Branch', { exact: true })).toHaveText(
+    'No branch was made on machine Laptop: the run ended before the project was downloaded.',
+  );
+  await expect(page.getByText('No commits yet.')).toBeHidden();
   await expectFitsScreen(page);
   await screenshot(page, testInfo, 'run-download-failed');
 

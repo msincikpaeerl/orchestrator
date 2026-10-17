@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   REASONS,
+  REFUSAL_SUFFIX,
   checkBash,
   checkToolCall,
   settingsPermissions,
@@ -291,4 +292,39 @@ describe('PreToolUse rules for file tools', () => {
     expect(tool('ToolSearch', { query: 'x' })).toBeNull();
     expect(checkToolCall(scope, 'Bash', 'not an object')).toBeNull();
   });
+});
+
+describe('the end of every refusal reason (lot 3 step L, decision Q29)', () => {
+  // The words of the common rules, written out: a change to the constant must fail here.
+  const SUFFIX =
+    'Do not ask the owner to allow it. If your ticket cannot be done without it, say so in plain words with ticket_ask or ticket_give_up.';
+
+  /** One call refused for each reason, as the hook checks it. */
+  const refused: Record<keyof typeof REASONS, () => string | null> = {
+    remote: () => bash('git push origin HEAD'),
+    github: () => bash('curl -s https://api.github.com/repos/o/n'),
+    containers: () => bash('docker ps'),
+    tmux: () => bash('tmux ls'),
+    claudeFolder: () => tool('Write', { file_path: '.claude/settings.json' }),
+    daemonFolder: () => tool('Read', { file_path: join(daemonHome, 'config.json') }),
+    claudeConfig: () => tool('Read', { file_path: join(userHome, '.claude.json') }),
+    outside: () => tool('Read', { file_path: '/etc/passwd' }),
+    bashPath: () => bash('cat /var/log/syslog'),
+    home: () => bash('ls ~'),
+  };
+
+  it('is the same sentence for every reason', () => {
+    expect(REFUSAL_SUFFIX).toBe(SUFFIX);
+  });
+
+  for (const [key, call] of Object.entries(refused)) {
+    it(`ends the ${key} refusal with it, once`, () => {
+      const reason = call();
+      expect(reason).toBe(REASONS[key as keyof typeof REASONS]);
+      expect(reason?.endsWith(` ${SUFFIX}`)).toBe(true);
+      expect(reason?.split(SUFFIX)).toHaveLength(2);
+      // The old ending of lot 2, which contradicted the common rules, is gone.
+      expect(reason).not.toContain('explain why with ticket_ask');
+    });
+  }
 });

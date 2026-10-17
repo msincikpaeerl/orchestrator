@@ -3,7 +3,8 @@ import { KNOWN_TRANSCRIPT_TYPES } from '../src/transcript.js';
 
 // Fixtures of the Claude Code probe (lot 2 plan, step H; owner's decisions after the first run):
 // what is kept of a real session, how it is sanitised, and the final guard that refuses to write
-// anything when the owner's personal data still appears.
+// anything when the owner's personal data still appears; and the checks read on a transcript
+// alone, so the fixtures of each Claude Code version can be read with them again.
 
 /**
  * The transcript entries the daemon reads (05, section 4.5). Everything else goes, above all the
@@ -189,4 +190,40 @@ export function credentialLikeFound(files: Record<string, string>): string[] {
     }
   }
   return [...found];
+}
+
+/**
+ * Check 6 of the probe (lot 3 decision Q31): whether the session ran in `dontAsk` mode, as its
+ * transcript records it. Claude Code writes the mode on the line of each message
+ * (`permissionMode`, seen in the 2.1.283 and 2.1.287 fixtures). Null: no transcript was found.
+ */
+export function permissionModeCheck(text: string | null): {
+  verdict: 'PASS' | 'FAIL';
+  detail: string;
+} {
+  if (text === null) return { verdict: 'FAIL', detail: 'no transcript was found' };
+  const modes = parsedLines(text)
+    .map((entry) => entry.permissionMode)
+    .filter((mode): mode is string => typeof mode === 'string');
+  if (modes.length === 0) {
+    return { verdict: 'FAIL', detail: 'no permission mode recorded in the transcript' };
+  }
+  const dontAsk = modes.filter((mode) => mode === 'dontAsk').length;
+  // A mode's name only: anything that does not look like one is not shown.
+  const others = [
+    ...new Set(
+      modes
+        .filter((mode) => mode !== 'dontAsk')
+        .map((mode) => (/^[A-Za-z]{1,40}$/.test(mode) ? mode : '<other>')),
+    ),
+  ];
+  return others.length > 0
+    ? {
+        verdict: 'FAIL',
+        detail: `recorded: ${others.join(', ')} (dontAsk on ${String(dontAsk)} of ${String(modes.length)} lines)`,
+      }
+    : {
+        verdict: 'PASS',
+        detail: `dontAsk on ${String(modes.length)} transcript line(s), no other mode`,
+      };
 }

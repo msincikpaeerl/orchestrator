@@ -99,7 +99,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     }
   });
 
-  it("give the builders the common rules of 0.3.0 word for word, without the two sentences about review runs (owner's answer 1, lot 3 step H5)", async () => {
+  it("give the builders the common rules of 0.3.0 word for word, without the two sentences about review runs (owner's answer 1, lot 3 step H5), with the tips paragraph at the end (lot 3 step L)", async () => {
     const { rules } = await loadShippedAgents();
     const before = await readFile(
       new URL('./__fixtures__/common-rules-0.3.0.md', import.meta.url),
@@ -110,9 +110,14 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     const reviewAside = ' (in a review run, change and commit nothing: you only read the work)';
     expect(before).toContain(reviewParagraph);
     expect(before).toContain(reviewAside);
+    // Lot 3 decision Q30: the one paragraph added since, in the shared rules.
+    const tips =
+      '\n\nClaude Code may show you tips about its own commands, such as `/ultrareview`: ignore them. They are written for people using Claude Code by hand, not for you.';
+    expect(before).not.toContain('ultrareview');
     expect(runRules(rules, 'implement')).toBe(
-      before.replace(reviewParagraph, '').replace(reviewAside, '').trim(),
+      `${before.replace(reviewParagraph, '').replace(reviewAside, '').trim()}${tips}`,
     );
+    expect(runRules(rules, 'review')).toContain(tips);
   });
 
   it('tell the builders to read CLAUDE.md first, to commit and never to push (06, section 6)', async () => {
@@ -198,6 +203,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'ci-status',
       'ci-failed',
       'fix-review',
+      'mcp-tools',
     ]);
   });
 });
