@@ -10,6 +10,7 @@
 #   5. INFO: no settings problem is reported for autoContinueAtUsageLimit (Claude Code does not
 #      report unknown keys either, which a control session with a made-up key shows; only the
 #      usage-limit capture proves the key)
+#   6. the session runs in dontAsk permission mode, as its transcript records it (lot 3 step L)
 #
 # Everything lives in a scratch folder under the temporary folder, with a Claude configuration
 # folder of its own: your ~/.claude and ~/.claude.json are never read or changed. The settings,
@@ -61,7 +62,7 @@ while (($# > 0)); do
       shift
       ;;
     --fixtures) FIXTURES="${2:?--fixtures needs a value}"; shift ;;
-    -h | --help) sed -n '2,34p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,35p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift

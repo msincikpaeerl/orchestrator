@@ -27,6 +27,7 @@ import { shellCommand } from '../src/self.js';
 import { TrustRegistry } from '../src/trust.js';
 import {
   keptTranscript,
+  permissionModeCheck,
   personalDataFound,
   sanitise,
   sessionPersonalValues,
@@ -552,6 +553,14 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
           },
     );
   }
+
+  // 6. The session runs in `dontAsk` mode (lot 3 decision Q31): Claude Code 2.1.288 announced
+  // auto mode as its default, and only `--permission-mode dontAsk` keeps it off. Resumed sessions
+  // are covered by the daemon's tests, not here.
+  checks.push({
+    title: 'the session runs in dontAsk permission mode, as its transcript records it',
+    ...permissionModeCheck(transcriptPath ? transcriptText : null),
+  });
   return { checks, transcriptPath };
 }
 

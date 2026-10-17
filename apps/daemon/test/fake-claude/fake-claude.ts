@@ -186,7 +186,7 @@ class Session {
       session_id: this.id,
       transcript_path: this.transcriptPath,
       cwd: this.cwd,
-      permission_mode: 'dontAsk',
+      permission_mode: this.scenario.permissionMode,
       hook_event_name: event,
       ...fields,
     };
@@ -369,7 +369,11 @@ class Session {
   async answer(message: string): Promise<boolean> {
     record({ event: 'message', text: message });
     await this.hook('UserPromptSubmit', { prompt: message });
-    this.write({ type: 'user', message: { role: 'user', content: message } });
+    this.write({
+      type: 'user',
+      message: { role: 'user', content: message },
+      permissionMode: this.scenario.permissionMode,
+    });
     const turn =
       this.scenario.turns[this.turn] ?? Turn.parse({ steps: [{ do: 'text', text: 'Done.' }] });
     this.turn++;
