@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: in progress (steps A to J and K1 done; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
+> Status: in progress (steps A to M done, version 0.4.0 prepared; step N waits for the owner's check; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -1502,6 +1502,58 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 - If the owner's checks pass on a newer Claude Code, `CLAUDE_CODE_VALIDATED_VERSION` is raised. Gaps found are fixed, each with its test; results recorded here.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 3 is closed as version 0.4.0.
+
+*Prepared 2026-10-17* (branch `lot3/n-release-0.4.0`), waiting for the owner's check:
+
+- **First, the flaky kill-log test** (own commit): "logs a kill with no connection open at the end of an ordinary run" stopped the run as soon as the daemon reported `working`, which it does as it answers the `SessionStart` hook, while that hook's command may still be exiting. A trace under CPU load showed the kill before the fake had recorded that hook's end in 3 runs of 12, so the connection open in step M's failure was the `SessionStart` hook, answered. It was not the status line or the MCP relay: the `hang` scenario makes neither call, and no hook is declared for the message. The test now waits for the fake to record that hook (recorded once its command has exited) before the stop: an ordinary run ends after the session's own calls. It passed 10 runs of 10 under the same load. The other test is unchanged.
+- **Version 0.4.0** (rule 14): every `package.json` and the `/version` test, a dated CHANGELOG section with a summary of lot 3, README.md's status line, CLAUDE.md's "Current state", the "(from version 0.4.0)" labels removed from `docs/user/settings.md`. Its note on the marks still names 0.5.0 (scheduler) and 0.6.0 (plans), the three marks left; it now also names the reference's own form, "(from version ...)", beside the screen's "Used from version ...".
+
+**The owner's checklist**, in order. Paste back what each step says to paste.
+
+1. **Server and daemon.** In the repository folder:
+
+   ```sh
+   git switch lot3/n-release-0.4.0
+   git log -1 --format=%h
+   docker compose -f docker/compose.yml up -d --build
+   docker compose -f docker/compose.yml ps
+   curl -s http://localhost:8080/version
+   ```
+
+   `git log` prints the head commit given in the step's summary; wait until `ps` shows `healthy`; `/version` shows `server` 0.4.0, `protocol` 2 and a `daemonBuild`. Your 0.3.0 daemon connects but gets no runs: "Needs you" shows **Update the daemon on …**. Copy the five commands from that item (or from the machine's page), which have your Orchestrator's address filled in, and type them in the machine's Ubuntu terminal:
+
+   ```sh
+   systemctl --user stop orchestrator-daemon
+   npm uninstall -g orchestrator-daemon
+   npm install -g --prefer-online <server URL>/downloads/orchestrator-daemon-0.4.0.tgz
+   orchestrator-daemon install-service
+   orchestrator-daemon doctor
+   ```
+
+   The machine's page must then show **Online**, daemon version 0.4.0, no check in **Error**, and the same **Daemon build** as **Build this Orchestrator provides** (the `daemonBuild` above); "Needs you" no longer shows "Update the daemon on …" nor "The daemon on … is not the one this Orchestrator provides". Paste: the `/version` line, `orchestrator-daemon --version`, and the end of `doctor`.
+2. **Probe, only if Claude Code changed.** Type `claude --version` (the machine's page also shows it). If it prints 2.1.287, skip this step. Otherwise, in the repository folder: `tools/smoke/claude-code-probe.sh`, type `yes` when asked. Every check must print `PASS` (check 5 `INFO`), including check 6 (`dontAsk` permission mode), which runs against the real Claude Code for the first time. It writes `apps/daemon/test/fixtures/claude-code-<version>/`: leave the folder for the next session to commit. Paste: the version and the whole report.
+3. **Allowlist smoke test**, in the repository folder, one after the other, typing `yes` each time:
+
+   ```sh
+   tools/smoke/allowlist-smoke.sh --profile architect
+   tools/smoke/allowlist-smoke.sh --profile quality
+   ```
+
+   Every line `PASS` (Quality also prints one `INFO` line, never a verdict). Paste: both reports.
+4. **The two tickets**, in the `test0.3.0` project (its CI is the skeleton's `docs-links` and `ci` jobs), following Help alone. Before ticket 1, set **Settings > Limits > GitHub check interval** to 600 seconds (step 6 says why).
+   - **Ticket 1** (as written above). Create it, then **Run now**. You see: the run page **Running**, then **Waiting for CI**; the ticket page "Pull request #… · Open" and its CI line waiting. Write down the run page's **Estimated usage** (A). CI fails on GitHub (the `docs-links` job, the link to `docs/user/faq.md`). At a GitHub check, the run page's **CI** card lists round 1 as sent back to the agent, the run log shows the CI failure message, the run is **Running** again, the agent adds `docs/user/faq.md` and submits again, and the run is **Waiting for CI** again: write down **Estimated usage** again (B), and set **GitHub check interval** back to 60 seconds. CI passes: the ticket is **In review**, "Needs you" shows **Ready for review**. Do step 6's command now. Then **Skip review**: **Awaiting merge** and "Pull request to merge: …". Merge the pull request on GitHub (any method). Within a minute or two, without reloading, the ticket shows **Done**, and its **Clean-up after the merge** section shows the branch deleted on GitHub and on the machine. Paste: the run page's **CI** card, the ticket page's **Pull request** and CI lines, A and B, the pull request's address.
+   - **Ticket 2** (as written above). **Run now**: **Waiting for CI**, CI passes, **In review**. **Start review**: a review run of Quality; then the ticket page's **Review** shows "Approved by Quality" with its summary, the ticket is **Awaiting merge**, and the pull request on GitHub has a comment review with the same text, posted with your account. (If Quality asks for changes instead: the ticket goes back to **To do** with its points; **Run now** starts a **Fix after review** run; then **Start review** again.) On **Awaiting merge**, **Request changes** with the comment `Also add this line after it: Changed on request.`: the ticket goes back to **To do**, nothing is posted on GitHub, and the ticket page keeps the approval with "You requested changes after this approval". **Run now**: a **Fix after review** run whose log starts with your comment; the agent adds the line and submits; CI passes; **In review**. **Skip review**, merge on GitHub, **Done**. Paste: the ticket page's **Review** section, the first message of the fix run (run log), the pull request's address, and the last lines of README.md on GitHub.
+   - Throughout, no Git command typed by you, and nothing on GitHub but the two merged pull requests (their branches deleted by the Orchestrator).
+5. **A27 and A28 by eye**, on both pull requests: in the title and the description, no `@name` is a link to a person, no `#12`, `GH-12` or `owner/repo#12` is a link to an issue or pull request, and the issue side shows no "linked pull request". As written, the two tickets' texts contain none of these characters, and their lengths are far below 256 and 65,536 characters: see the summary's questions before this step.
+6. **Ticket 1's CI failure round, in usage.** The agent's session stays open, idle, while its work waits for CI. Claude Code's prompt cache is assumed to last 5 minutes: when the CI result comes later, the next turn writes the whole context to the cache again instead of reading it (step G2's estimate: about 12 times a cached turn's input). The CI loop asks GitHub once per **GitHub check interval** for every waiting run, so 600 seconds makes a wait over 5 minutes likely but not certain; the transcript says which happened. Two measures:
+   - the run page's **Estimated usage**: B − A is the round's cost as Claude Code estimates it, in US dollars at API prices (with a Pro or Max plan you pay nothing more: it compares runs);
+   - the tokens of each turn, read from the session's transcript on the machine, once ticket 1 is **In review** and before any other run starts (it reads the most recent transcript; it changes nothing):
+
+     ```sh
+     node -e 'const fs=require("fs"),seen=new Set();for(const l of fs.readFileSync(process.argv[1],"utf8").split("\n")){let e;try{e=JSON.parse(l)}catch{continue}const m=e.message||{};if(e.type==="user"&&typeof m.content==="string")console.log(e.timestamp,"MESSAGE",m.content.slice(0,60).replace(/\s+/g," "));const u=m.usage;if(e.type==="assistant"&&u&&!seen.has(m.id)){seen.add(m.id);console.log(e.timestamp,"input",u.input_tokens,"cache-write",u.cache_creation_input_tokens,"cache-read",u.cache_read_input_tokens,"output",u.output_tokens)}}' "$(ls -t ~/.orchestrator/claude-config/projects/*/*.jsonl | head -1)"
+     ```
+
+     One line per message the agent received (`MESSAGE`, its first words) and one per model answer. The answer just after the CI failure's `MESSAGE` line shows whether the cache had expired: a `cache-write` close to the whole context and a small `cache-read`. Paste: the whole output.
 
 ## Carried to lot 4
 
