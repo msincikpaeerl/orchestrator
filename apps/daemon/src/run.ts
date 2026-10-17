@@ -52,6 +52,7 @@ import {
   runSocketPath,
   serveRunSocket,
   type McpAnswer,
+  type RunConnection,
   type RunSocketAnswer,
 } from './run-socket.js';
 import type { ProcessScopes } from './scopes.js';
@@ -132,6 +133,8 @@ export class Run {
   private lastTick = 0;
   /** Tool calls started (`PreToolUse`) and not finished (`PostToolUse`): the idle clock pauses. */
   private readonly toolsRunning = new Set<string>();
+  /** The connections to the run's socket not closed yet, logged at a session kill. */
+  private readonly connections = new Set<RunConnection>();
   private events: RunLogEvent[] = [];
   private ticking = false;
   /** Work started from a timer or a hook's answer, awaited when the daemon stops. */
@@ -439,7 +442,11 @@ export class Run {
     }
     try {
       const files = writeRunFiles(this.context.paths, start, this.context.selfCommand);
-      this.socket ??= await serveRunSocket(files.socket, (request) => this.onSocket(request));
+      this.socket ??= await serveRunSocket(
+        files.socket,
+        (request) => this.onSocket(request),
+        this.connections,
+      );
       await this.context.trust.ensure(this.data.bare ?? '');
       this.releaseStart = await this.context.trust.beginStart();
       await Promise.all(Object.values(this.scopeFiles).map((file) => rm(file, { force: true })));
@@ -890,6 +897,30 @@ export class Run {
    * Closes the tmux session and keeps the worktree and the Claude session id, for a run waiting
    * for the owner or paused on a usage limit (05, sections 4.8 and 4.10).
    */
+  /**
+   * Kills the tmux session, logging it and each connection to the run's socket still open at that
+   * moment (05, section 4.11; lot 3 decision Q32): a hook command killed with the session shows
+   * as a hook error in the session, which only these lines can explain afterwards.
+   */
+  private async killSession(why: string): Promise<void> {
+    const now = Date.now();
+    this.log.info(
+      { why, openConnections: this.connections.size },
+      'killing the Claude Code session',
+    );
+    for (const connection of this.connections) {
+      this.log.info(
+        {
+          request: connection.request ?? 'not read yet',
+          answered: connection.answered,
+          openMs: now - connection.since,
+        },
+        "connection to the run's socket still open as the session is killed",
+      );
+    }
+    await this.context.tmux.killSession(this.name);
+  }
+
   private async closeSession(): Promise<void> {
     clearInterval(this.timer);
     this.releaseStart?.();
@@ -897,7 +928,7 @@ export class Run {
     this.toolsRunning.clear();
     if (this.sessionAlive) {
       this.sessionAlive = false;
-      await this.context.tmux.killSession(this.name);
+      await this.killSession('the session closed, the run kept');
     }
     await this.stopProcesses();
     await this.readTranscript().catch(() => undefined);
@@ -1165,7 +1196,7 @@ export class Run {
       this.releaseStart = null;
       if (this.sessionAlive) {
         this.sessionAlive = false;
-        await this.context.tmux.killSession(this.name);
+        await this.killSession(`the run ends (${reason})`);
       }
       // Before the worktree is removed: nothing of the run may still work in it.
       await this.stopProcesses();
@@ -1285,8 +1316,10 @@ export class Run {
     }
     this.sessionAlive = true;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
-    this.socket = await serveRunSocket(runSocketPath(this.context.paths, this.runId), (request) =>
-      this.onSocket(request),
+    this.socket = await serveRunSocket(
+      runSocketPath(this.context.paths, this.runId),
+      (request) => this.onSocket(request),
+      this.connections,
     );
     this.startTimer();
     this.log.info({ state: this.data.state }, 'session found again after a daemon restart');
