@@ -33,6 +33,7 @@ import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
+import { runDownload } from './runs/download.js';
 import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
@@ -140,6 +141,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
   items.push(...(await closedPullRequestItems(db)));
   items.push(...(await toMergeItems(db)));
   items.push(...(await ciTimeoutItems(db)));
+  items.push(...(await downloadFailedItems(db)));
   items.push(...(await stoppedItems(db)));
 
   const paused = await runs.list(
@@ -435,6 +437,50 @@ async function ciTimeoutItems(db: Database): Promise<Items> {
       waitMinutes: run.ciWaitTimeoutMinutes,
       base: run.baseBranch,
       outcome,
+      since: run.endedAt.toISOString(),
+    });
+  }
+  return items;
+}
+
+/**
+ * Builder runs ended `download_failed` (owner's answer 2, lot 3 step K2): blocking, with **Run
+ * now**. Only the ticket's latest run, so the item goes when a new run starts; never for a done
+ * or cancelled ticket, or a revoked machine. A review run that fails so is "Review did not finish".
+ */
+async function downloadFailedItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({
+      run: schema.runs,
+      ticket: schema.tickets,
+      projectKey: schema.projects.key,
+      machine: { id: schema.machines.id, name: schema.machines.name },
+    })
+    .from(schema.runs)
+    .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+    .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        eq(schema.runs.failureReason, 'download_failed'),
+        inArray(schema.runs.purpose, ['implement', 'fix_review']),
+        isNull(schema.machines.revokedAt),
+        isNotNull(schema.runs.endedAt),
+        sql`${schema.runs.createdAt} = (SELECT max(r.created_at) FROM runs r WHERE r.ticket_id = ${schema.runs.ticketId})`,
+      ),
+    );
+  const items: Items = [];
+  for (const { run, ticket, projectKey, machine } of rows) {
+    const download = runDownload(run);
+    if (download === null || run.endedAt === null) continue;
+    items.push({
+      type: 'download_failed',
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      runId: run.id,
+      machine,
+      download,
       since: run.endedAt.toISOString(),
     });
   }

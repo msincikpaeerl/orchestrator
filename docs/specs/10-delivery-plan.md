@@ -86,7 +86,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Schedule windows, daily budget, manual pause.
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).
-- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs. Decide whether agents running under a separate system user from the daemon (lot 7) comes before runs start without the owner (owner's decision, lot 3 step D1).
+- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, `download_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs. Decide whether agents running under a separate system user from the daemon (lot 7) comes before runs start without the owner (owner's decision, lot 3 step D1).
 
 **Done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 

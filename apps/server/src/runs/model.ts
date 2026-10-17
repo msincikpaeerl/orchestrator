@@ -21,6 +21,7 @@ import {
 } from '@orchestrator/protocol';
 import { z } from 'zod';
 import { ciHistory } from './ci-outcome.js';
+import { runDownload } from './download.js';
 import { runReview } from './review-view.js';
 
 export type RunRow = typeof schema.runs.$inferSelect;
@@ -115,6 +116,7 @@ export function endOfReason(
     case 'ci_timeout':
     case 'review_branch_moved':
     case 'push_failed':
+    case 'download_failed':
       return { status: 'failed', failureReason: reason };
   }
 }
@@ -155,6 +157,8 @@ export function failureWords(reason: FailureReason): string {
       return 'its branch could not be pushed to GitHub';
     case 'ci_cancelled':
       return 'CI was cancelled on GitHub because the branch changed there';
+    case 'download_failed':
+      return 'the project could not be downloaded from GitHub';
   }
 }
 
@@ -193,6 +197,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
       row.push === null || row.pushAt === null
         ? null
         : { result: PushResult.parse(row.push), at: row.pushAt.toISOString() },
+    download: runDownload(row),
     estimatedUsageUsd: row.estimatedUsageUsd,
     progress:
       row.progressShown === null || row.progressShownAt === null

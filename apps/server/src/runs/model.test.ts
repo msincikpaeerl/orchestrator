@@ -47,7 +47,7 @@ describe('statusTimes', () => {
 });
 
 // Which failures count as a failed attempt (04, section 5; owner's decisions, lot 2 steps A, C,
-// J and M2, lot 3 steps A and G2b): every reason is listed, so a new one must be decided here.
+// J and M2, lot 3 steps A, G2b and K2): every reason is listed, so a new one must be decided here.
 describe('isCounted', () => {
   const decided: Record<FailureReason, boolean> = {
     timeout: true,
@@ -64,6 +64,7 @@ describe('isCounted', () => {
     review_branch_moved: false,
     push_failed: false,
     ci_cancelled: false,
+    download_failed: false,
   };
 
   it.each(FailureReason.options)('%s as decided', (reason) => {

@@ -283,10 +283,18 @@ Type these commands on the machine, in its Ubuntu terminal:
 | See whether the daemon runs (as the service or in a terminal), its version and build, its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
 
-If a run fails at its start with "Downloading the project from GitHub took longer than Longest push": the machine could not download the project from GitHub within that limit. The first download of a project on a new machine is the longest, since it brings the project's whole history; later runs download only what changed. Try **Run now** again, or raise **Longest push** in Settings > Limits (the MCP call timeout plus Longest push must stay below the Claude Code MCP tool timeout, so raise that one first if the Orchestrator refuses). Such a run counts as a failed attempt in this version.
-
 If a run fails at its start with "The ticket branch … is checked out by another run on this machine": a run of the same ticket on that machine still waits for your answer or is paused, holding the branch (this happens only when that run was stopped while the machine was offline). Its branch is left as it is. Wait until the machine is online again: the old run is stopped when it reconnects, and **Run now** works again.
 
 If the machine can reach GitHub only through a proxy: from version 0.4.0 the daemon ignores Git's own settings (`~/.gitconfig` and the computer's Git settings), so a proxy set there with `git config --global http.proxy` is not used when it fetches or pushes. Set the proxy in the daemon's environment instead (`https_proxy`, and `no_proxy` for the addresses to reach directly) and restart the daemon.
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.
+
+### When the project cannot be downloaded from GitHub
+
+At the start of every run, the machine downloads the project from GitHub. When it cannot, the agent never starts, and the run ends with "the project could not be downloaded from GitHub". Such a run does **not** count as a failed attempt, so it never stops the ticket. "Needs you" shows "<ticket> could not be downloaded from GitHub on <machine>", with **Run now**, and says which of three things happened:
+
+- **GitHub could not be reached** from the machine: check that it is connected to the internet and that GitHub works, then press **Run now**.
+- **GitHub refused the token**: when GitHub says the repository is not found, the token cannot see the project's repository. On GitHub's list of your tokens (the item links to it), open the Orchestrator's token, make sure it includes the repository with **Contents (Read and write)**, and save it; do not regenerate it. When the Orchestrator itself did not give the token, or GitHub gave other words, the item shows them: check Settings > GitHub. Then press **Run now**.
+- **The download took longer than Longest push**: the first download of a project on a new machine is the longest, since it brings the project's whole history; later runs download only what changed. Press **Run now** again, or raise **Longest push** in Settings > Limits (the MCP call timeout plus Longest push must stay below the Claude Code MCP tool timeout, so raise that one first if the Orchestrator refuses).
+
+The item goes when a new run of the ticket starts, when the ticket is done or cancelled, or when the machine is revoked. A review run that fails this way shows "Review did not finish" instead, with the same words and **Start review**. Any other failure while the machine prepares the run (a full disk, for example) still counts as a failed attempt.

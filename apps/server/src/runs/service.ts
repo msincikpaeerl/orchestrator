@@ -144,6 +144,7 @@ import {
   type AccountRow,
   type RunRow,
 } from './model.js';
+import { downloadWords, runDownload } from './download.js';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -455,7 +456,14 @@ export class RunService {
     if (!locked.ticket) return;
     if (locked.run.purpose === 'review') {
       // Never counted, and the ticket stays in review (owner's answer 6c, lot 3 step H2).
-      const why = facts.reviewWhy ?? this.reviewWhy(locked.run, failureReason, facts.detail);
+      const why =
+        facts.reviewWhy ??
+        this.reviewWhy(
+          locked.run,
+          failureReason,
+          facts.detail,
+          `${locked.project.repoOwner}/${locked.project.repoName}`,
+        );
       await this.reviewTicketBack(
         tx,
         locked,
@@ -472,9 +480,11 @@ export class RunService {
       facts.comment ??
       (failureReason === 'push_failed'
         ? await this.pushFailedComment(tx, locked.ticket.id, locked.run.id, locked.machine.name)
-        : counted
-          ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. ${COUNTED_SENTENCE} ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
-          : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
+        : failureReason === 'download_failed'
+          ? this.downloadFailedComment(locked)
+          : counted
+            ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. ${COUNTED_SENTENCE} ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
+            : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
     // The stop at **Failed attempts before asking you**, read now (04, section 5; lot 3 step K1).
     const stop = counted ? await this.failedAttemptsStop(tx, locked) : null;
     const updated = await applyRunAction(tx, {
@@ -542,12 +552,21 @@ export class RunService {
   }
 
   /** Why a review run ended without its decision applied, for its ticket's comment. */
-  private reviewWhy(run: RunRow, failureReason: FailureReason, detail?: string): string {
+  private reviewWhy(
+    run: RunRow,
+    failureReason: FailureReason,
+    detail: string | undefined,
+    repository: string,
+  ): string {
     if (failureReason === 'agent_gave_up') {
       return `Quality gave up: ${sentence(run.outcome ?? 'it gave no reason')}`;
     }
     if (failureReason === 'review_branch_moved') {
       return 'the branch changed on the machine during the review';
+    }
+    if (failureReason === 'download_failed') {
+      const { why } = downloadWords(runDownload(run), repository);
+      return `${failureWords(failureReason)} at its start${sentence(why)}`;
     }
     return `${failureWords(failureReason)}${detail ? ` (${sentence(detail)})` : ''}`;
   }
@@ -783,6 +802,16 @@ export class RunService {
       return locked.machine.id;
     });
     if (machineId) await this.sendStop(machineId, runId, 'not_active');
+  }
+
+  /**
+   * The `system` comment of a builder run ended `download_failed` (owner's answer 2, lot 3 step
+   * K2): which of the three causes, what to do, and that it is not counted.
+   */
+  private downloadFailedComment(locked: Locked): string {
+    const repository = `${locked.project.repoOwner}/${locked.project.repoName}`;
+    const { why, todo } = downloadWords(runDownload(locked.run), repository);
+    return `The run on machine ${locked.machine.name} ended: the project could not be downloaded from GitHub at its start${why} It does not count as a failed attempt. ${todo}`;
   }
 
   /**
@@ -3099,7 +3128,12 @@ export class RunService {
         }
         await tx
           .update(schema.runs)
-          .set({ ...session, ...branch, endReportedAt: this.now() })
+          .set({
+            ...session,
+            ...branch,
+            endReportedAt: this.now(),
+            ...(payload.reason === 'download_failed' ? { downloadFailure: payload.download } : {}),
+          })
           .where(eq(schema.runs.id, run.id));
         if (payload.reason === 'submitted' && run.ciCommit !== null) {
           // Only the CI result accepts a submission waiting for it: the run keeps waiting with

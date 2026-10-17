@@ -6,7 +6,14 @@ import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
 import { message } from './envelope.js';
 import { END_REPORT_TEXT_MAX_CHARACTERS, cutText } from './budgets.js';
 import { McpToolName } from '../mcp/tools.js';
-import { BranchReport, GitBranchName, GitHash, PushResult, RepositoryOwner } from './git.js';
+import {
+  BranchReport,
+  DownloadFailure,
+  GitBranchName,
+  GitHash,
+  PushResult,
+  RepositoryOwner,
+} from './git.js';
 
 export const RunId = z.uuid();
 export type RunId = z.infer<typeof RunId>;
@@ -75,6 +82,11 @@ export const RunEndReason = z.enum([
    * at the turn's end, since the agent cannot fix it (04, section 3.1; lot 3 step F).
    */
   'push_failed',
+  /**
+   * The project's download from GitHub at the run's start failed: GitHub unreachable, the
+   * credential refused, or **Longest push** reached (lot 3 step K2). Never a failed attempt.
+   */
+  'download_failed',
 ]);
 export type RunEndReason = z.infer<typeof RunEndReason>;
 
@@ -293,6 +305,8 @@ export const RunState = message(
        * protocol 1.
        */
       movedHead: GitHash.nullable().default(null),
+      /** A run ended `download_failed`: why (lot 3 step K2). Null otherwise. */
+      download: DownloadFailure.nullable().default(null),
       /**
        * What the daemon found changed in the bare clone's Git configuration and hooks at the
        * run's end, and restored, in plain words: the settings and hook files named, never their

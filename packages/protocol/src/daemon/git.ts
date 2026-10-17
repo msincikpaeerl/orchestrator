@@ -120,6 +120,25 @@ export const PushFailureReason = z.enum([
 export type PushFailureReason = z.infer<typeof PushFailureReason>;
 
 /**
+ * Why the project's download from GitHub at a run's start failed (04, section 5; owner's answer
+ * 1, lot 3 step K2): GitHub could not be reached, the credential was refused (by GitHub, or by the
+ * Orchestrator giving it), or **Longest push** was reached.
+ */
+export const DownloadFailureReason = z.enum(['unreachable', 'refused', 'too_long']);
+export type DownloadFailureReason = z.infer<typeof DownloadFailureReason>;
+
+/**
+ * A failed download at a run's start (lot 3 step K2): why, in the words of Git, GitHub or the
+ * server that refused the credential, masked and cut like a push's.
+ */
+export const DownloadFailure = z.object({
+  reason: DownloadFailureReason,
+  /** Cut by the daemon at `PUSH_MESSAGE_MAX_CHARACTERS`, keeping its end. */
+  message: requiredText(PUSH_MESSAGE_MAX_CHARACTERS),
+});
+export type DownloadFailure = z.infer<typeof DownloadFailure>;
+
+/**
  * A push of the ticket branch by the daemon (05, section 4.9; protocol 2): only that branch, by an
  * explicit refspec, never forced. `pushed` gives the head now on GitHub; `failed` says why, in
  * the words of Git or of the server that refused the credential.

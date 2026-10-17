@@ -10,6 +10,7 @@ import { UnusableReason } from './machines.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
 import { PullRequestState } from './pull-requests.js';
+import { RunDownloadFailure } from './download-failure.js';
 
 export {
   ACCOUNT_BUSY_RUN_STATUSES,
@@ -30,6 +31,7 @@ export const UNCOUNTED_FAILURES: readonly FailureReason[] = [
   'review_branch_moved',
   'push_failed',
   'ci_cancelled',
+  'download_failed',
 ];
 
 /** What made a run change status, for its events and the run page. */
@@ -144,6 +146,11 @@ export const Run = z.object({
    * reported; null when it pushed nothing (05, section 4.9; lot 3 step D3).
    */
   push: z.object({ result: PushResult, at: z.iso.datetime() }).nullable(),
+  /**
+   * Why the project's download at the run's start failed, with the permission the token needs
+   * when GitHub's words say which; null unless the run ended `download_failed` (lot 3 step K2).
+   */
+  download: RunDownloadFailure.nullable(),
   /** US dollars as Claude Code estimates them (05, section 4.5); null when unknown. */
   estimatedUsageUsd: z.number().nullable(),
   /**

@@ -16,24 +16,17 @@ import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
+import { RunDownloadFailure } from './download-failure.js';
+import {
+  GITHUB_TOKEN_LIST_URL,
+  PUSH_PERMISSION_WORDS,
+  PushPermission,
+} from './token-permissions.js';
 
 const MachineRef = z.object({ id: z.uuid(), name: z.string() });
 
-/**
- * A permission of the GitHub token a refused push lacked (lot 3 step F), shown as the token page
- * names it: "Contents (Read and write)", "Workflows (Read and write)".
- */
-export const PushPermission = z.enum(['contents', 'workflows']);
-export type PushPermission = z.infer<typeof PushPermission>;
+export { GITHUB_TOKEN_LIST_URL, PUSH_PERMISSION_WORDS, PushPermission };
 
-/** A push permission in the words of GitHub's token page (owner's note, lot 3 step E3). */
-export const PUSH_PERMISSION_WORDS: Readonly<Record<PushPermission, string>> = {
-  contents: 'Contents (Read and write)',
-  workflows: 'Workflows (Read and write)',
-};
-
-/** GitHub's list of the account's fine-grained tokens, where a token's permissions change. */
-export const GITHUB_TOKEN_LIST_URL = 'https://github.com/settings/personal-access-tokens';
 const TicketRef = z.object({ projectKey: ProjectKey, number: z.int(), title: z.string() });
 
 /**
@@ -211,6 +204,22 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     permission: PushPermission.nullable(),
     /** GitHub's or Git's words, masked. */
     message: z.string(),
+    /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * An `implement` or `fix_review` run ended `download_failed` (04, section 5; owner's answer 2,
+   * lot 3 step K2): the machine could not download the project from GitHub at the run's start.
+   * Blocking, with **Run now**; shown until a new run of the ticket starts, the ticket is done or
+   * cancelled, or the machine is revoked. A review run that fails so is "Review did not finish".
+   */
+  z.object({
+    type: z.literal('download_failed'),
+    ticket: TicketRef,
+    runId: z.uuid(),
+    machine: MachineRef,
+    /** Why, with Git's, GitHub's or the Orchestrator's words, masked. */
+    download: RunDownloadFailure,
     /** When the run ended. */
     since: z.iso.datetime(),
   }),

@@ -239,6 +239,13 @@
       "when": 1792010592248,
       "tag": "0033_conflicts_moved_head",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792190530479,
+      "tag": "0034_download_failed",
+      "breakpoints": true
     }
   ]
 }
