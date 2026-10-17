@@ -183,6 +183,35 @@ export function isActive(status: RunStatus): boolean {
   return ACTIVE_RUN_STATUSES.includes(status);
 }
 
+/**
+ * The run page's Branch sentence (02, section 7): the branch as the run left it, or what is true
+ * when the run ended without one on its machine, or at its download, before working on it (lot 3
+ * step L). `commits` is false when there is no branch whose commits could be listed.
+ */
+export function runBranchText(
+  run: Pick<Run, 'branch' | 'status' | 'endReason'> & { machine: { name: string } },
+): { text: string; commits: boolean } {
+  const { name, head } = run.branch;
+  const machine = run.machine.name;
+  if (isActive(run.status)) return { text: `${name} on machine ${machine}`, commits: true };
+  if (head === null) {
+    return {
+      text:
+        run.endReason === 'download_failed'
+          ? `No branch was made on machine ${machine}: the run ended before the project was downloaded.`
+          : `Machine ${machine} reported no branch ${name} at the end of this run.`,
+      commits: false,
+    };
+  }
+  if (run.endReason === 'download_failed') {
+    return {
+      text: `${name} on machine ${machine}, as it was before this run: the run ended before the project was downloaded, so it never worked on the branch.`,
+      commits: true,
+    };
+  }
+  return { text: `${name} on machine ${machine}, as this run left it`, commits: true };
+}
+
 /** "1 h 5 min", "3 min", "45 s": a run's working or waiting time. */
 export function durationText(ms: number): string {
   const seconds = Math.floor(ms / 1000);
