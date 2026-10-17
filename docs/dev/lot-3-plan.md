@@ -1442,7 +1442,7 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 - **The template** `agents/templates/mcp-tools.md` also takes the review decision's note (named with step L's gap in H2) and the two notes of a text cut to fit the tools' output, the other agent-facing texts of `backend.ts`; no word changed. The comment `ticket_give_up` writes for the owner stays in code. The daemon's own MCP answers ("This run has ended.", the relay's "does not answer") stay in the daemon, like the hook's reasons.
 - **Tests**: `apps/web/src/runs/text.test.ts` (4), `apps/daemon/src/permissions.test.ts` (one per reason), `apps/daemon/scripts/claude-code-probe-fixtures.test.ts` (fixtures and failures), `apps/daemon/test/claude-code-probe.test.ts` (dry run: 6 `PASS`, and 6 `FAIL` with `default`), `apps/daemon/test/session-kill-log.test.ts` (2), `apps/server/src/mcp/tool-texts.test.ts` (39). No assertion removed.
 
-### [ ] M. End-to-end lot 3 test
+### [x] M. End-to-end lot 3 test
 
 - `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub:
   - scenario D: `todo` → implement → push → pull request → CI failing once → fixed → CI passing → **Start review** → approved → merge on the fake → `done`;
@@ -1453,6 +1453,17 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 - **From step F4** (owner's note): `docs/user/github-token.md` describes steps G2, H and J (CI logs given to the agent, review comments, merge detection) before they were built: read the page again against what was really built.
 
 **Done when** the three scenarios pass in `pnpm test` (and in CI within the shards' 8 minutes).
+
+*Done 2026-10-17.* Choices made in the step (flagged to the owner):
+
+- **The owner's additions** (start of the step): scenario D also checks what step J built after the merge (the ticket `done` by the merge watch, never **Mark as done manually**, which is then refused; its `system` comment; the branch deleted on the fake GitHub; the local branch deleted by `branch.delete`, and `orchestrator-daemon status` without it); scenario E merges with a squash, so the local branch's deletion is proved without comparing commits with the base; every test of the file fails when a process or folder of its test home is left.
+- **The fake GitHub's own Git**: the run harness's `gitOnFakeGitHub` gives the daemon clone URLs on the fake GitHub, so the real daemon's pushes open real pull requests there, CI runs start on them (the project's CI `queued`, finished by the test) and the merge and the clean-up act on the same repository. Lot 2's scenarios keep their local Git server.
+- **Names**: the plan's letters D, E and F go to the new scenarios; step F2's scenario (a push refused as diverged) keeps its place in the lot 2 block, without a letter.
+- **Scenario F's clock**: the application's clock moves 21 minutes ahead (past **CI wait at submission**, 20 by default) for the check that ends the wait; the daemon's clock stays real, and nothing else in the scenario depends on the server's.
+- **What is left at the end**: the daemon and tmux stopped, a process of the test home still running 5 seconds later fails the test (its command line named) and is killed all the same; the home and the fake GitHub's folder must be gone. Checked by hand that a stray process started in the test home fails the test; an agent's background `nohup sleep` did not, since the daemon already ends every process of a run with its session (step M2 of lot 2). D and E also find no worktree and no run folder left on the machine.
+- **CI time**: `acceptance.test.ts` (shard 2 of 3) takes 67 s alone locally, 88 s under the shard's load; the four earlier scenarios take 43 s of it, so the three new ones add about 25 s. Shard 2 took 5.9 minutes in CI on `main` (PR #77): no shard added. Locally shard 1 is the longest (187 s, all of it `github-smoke.test.ts`), shard 2 91 s, shard 3 75 s.
+- **`docs/user/github-token.md`** read again against what was built: Pull requests also closes the pull request at Cancel, sees a close and a conflict, and lists the open pull requests before a branch's deletion; "may not be among this token's repositories" also needs no private repository the token includes; a download refused at a run's start is followed with **Run now**. The rest was true: CI logs given to the agent (Actions), Quality's review comments (Pull requests), merge detection, the deletion and the compare after a review (Contents), the probes changing nothing on GitHub.
+- **"later version", "not yet", "this version", "does not notice" in `docs/user/`**: two sentences about lot 3's own work were no longer true and are fixed (Needs you's list of what it shows, without five lot 3 item kinds; Help's home page ending with the work "on a branch of your machine"). `settings.md`'s note on the "Used from version ..." marks (scheduler 0.5.0, plans 0.6.0) is left for step N, which removes the 0.4.0 marks (rule 14). Every other sentence promises later lots' work (the scheduler and queue, plans, more agents and their screen, agents checked against tickets, project kinds, the Claude plan's use, isolation of agents) or states lot 3's real limits (an outdated daemon not asked, the token reachable by an agent).
 
 ### [ ] N. Lot 3 check by the owner
 

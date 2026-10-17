@@ -4,7 +4,7 @@
 
 In this version, it shows:
 
-- what agents' work leaves for you: questions, tickets they propose, work ready for review, tickets stopped after too many review rounds, finished work to check and runs paused by a usage limit (see [Agents' work](#agents-work));
+- what agents' work leaves for you: questions, tickets they propose, work ready for review, reviews that did not finish, tickets stopped after too many review rounds or after repeated failures, finished work to check, work that could not reach GitHub (a push refused, a project that could not be downloaded, a pull request not opened or not updated) and runs paused by a usage limit (see [Agents' work](#agents-work));
 - pull requests to merge, and pull requests closed on GitHub without merging (see [Pull requests to merge](#pull-requests-to-merge) and [Closed pull requests](#closed-pull-requests));
 - runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.

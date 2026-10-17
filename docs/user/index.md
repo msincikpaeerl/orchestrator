@@ -2,7 +2,7 @@
 
 The Orchestrator turns what you describe in plain words into web apps, websites and Android apps, by coordinating AI agents that work on your own computers. You describe what you want, approve the plan and merge the results on GitHub.
 
-This version sets up the Orchestrator (your account and the connection to GitHub), manages your projects, their GitHub repositories and their tickets, connects the machines where agents work, and runs agents on tickets: you start a run, watch it live, answer its questions and find its work on a branch of your machine.
+This version sets up the Orchestrator (your account and the connection to GitHub), manages your projects, their GitHub repositories and their tickets, connects the machines where agents work, and runs agents on tickets: you start a run, watch it live and answer its questions. The agent's work goes to GitHub as a pull request, whose automatic checks the agent fixes when they fail; the Quality agent reviews it when you ask; once you merge it on GitHub, the ticket is done and its branch deleted.
 
 ## Pages
 

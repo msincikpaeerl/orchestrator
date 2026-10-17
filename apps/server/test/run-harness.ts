@@ -53,6 +53,8 @@ export class RunHarness {
       daemonSecondMs?: number;
       streamKeepAliveMs?: number;
       gitBaseUrl?: string;
+      /** Clone URLs on the fake GitHub's own Git, for the real daemon (lot 3 step M). */
+      gitOnFakeGitHub?: boolean;
       /** The application's clock, for the CI checks' deadlines (lot 3 step G1a). */
       now?: () => Date;
       /** What the project's CI does by itself: it passes at once unless a test says otherwise. */
@@ -86,7 +88,7 @@ export class RunHarness {
       settings: options.settings,
       daemonSecondMs: options.daemonSecondMs,
       streamKeepAliveMs: options.streamKeepAliveMs,
-      gitBaseUrl: options.gitBaseUrl,
+      gitBaseUrl: options.gitOnFakeGitHub ? this.github.url : options.gitBaseUrl,
       now: options.now,
     });
     this.cookie = await createOwner(this.t.app);
