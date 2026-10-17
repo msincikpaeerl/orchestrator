@@ -18,7 +18,7 @@ What a change affects:
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
 - Every change is recorded in the [event log](activity.md#event-log).
 
-Limits marked "Used from version ..." belong to features of later versions (the scheduler from version 0.5.0, plans from version 0.6.0). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
+Limits marked "Used from version ..." in **Settings > Limits**, and "(from version ...)" in the reference below, belong to features of later versions (the scheduler from version 0.5.0, plans from version 0.6.0). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
 
 ## Override a limit for one project
 
@@ -49,7 +49,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | GitHub token expiry warning | 14 days | 1 to 90 | No | "Needs you" warns this many days before the GitHub token expires. |
 | GitHub request timeout | 15 seconds | 1 to 300 | No | How long the Orchestrator waits for GitHub to answer one request. |
 | GitHub clock tolerance | 120 seconds | 0 to 3,600 | No | Allowed difference between this computer's clock and GitHub's, when Try again checks whether a repository was created by an earlier attempt. |
-| GitHub check interval (from version 0.4.0) | 60 seconds | 15 to 600 | No | How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result, or a pull request waiting to be merged. |
+| GitHub check interval | 60 seconds | 15 to 600 | No | How often the Orchestrator asks GitHub about tickets that wait on it, such as a submission waiting for its CI result, or a pull request waiting to be merged. |
 
 ### Tickets
 
@@ -62,13 +62,13 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Longest comment | 20,000 characters | 1 to 100,000 | No | Most characters in one comment. |
 | Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan proposing more tickets than this is refused. |
 | Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
-| Failed attempts before asking you (from version 0.4.0) | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
-| CI wait at submission (from version 0.4.0) | 20 minutes | 1 to 240 | Yes | How long a run waits for CI on GitHub after the agent's work is accepted. When it is reached, the run stops without counting as a failed attempt, and Needs you offers Check CI again, or Run now when CI had failed or the pull request conflicts. |
-| Wait for CI to start (from version 0.4.0) | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch, or is closed on GitHub). |
-| Most CI failures per run (from version 0.4.0) | 2 failures | 1 to 10 | Yes | How many CI failures an agent gets back to fix in one run; a conflict with the default branch counts as one. One more ends the run as a failed attempt. |
-| Most review rounds per ticket (from version 0.4.0) | 2 rounds | 1 to 10 | Yes | How many times Quality may ask for changes on one ticket before it waits for you. One request more is applied, then stops the ticket until you use Try again, Cancel or Mark as done manually; Try again and Reopen count the rounds from 0 again. Your own Request changes never counts. See [Too many review rounds](tickets.md#too-many-review-rounds). |
-| Longest CI log excerpt (from version 0.4.0) | 4,000 characters | 500 to 20,000 | No | How much of each failed CI step's log an agent receives, keeping its end. |
-| Longest CI log read (from version 0.4.0) | 20 megabytes | 1 to 500 | No | How much of a failed CI job's log the Orchestrator downloads from GitHub to find each failed step's part. Beyond it, the agent gets the end of what was read and is told so. |
+| Failed attempts before asking you | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
+| CI wait at submission | 20 minutes | 1 to 240 | Yes | How long a run waits for CI on GitHub after the agent's work is accepted. When it is reached, the run stops without counting as a failed attempt, and Needs you offers Check CI again, or Run now when CI had failed or the pull request conflicts. |
+| Wait for CI to start | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch, or is closed on GitHub). |
+| Most CI failures per run | 2 failures | 1 to 10 | Yes | How many CI failures an agent gets back to fix in one run; a conflict with the default branch counts as one. One more ends the run as a failed attempt. |
+| Most review rounds per ticket | 2 rounds | 1 to 10 | Yes | How many times Quality may ask for changes on one ticket before it waits for you. One request more is applied, then stops the ticket until you use Try again, Cancel or Mark as done manually; Try again and Reopen count the rounds from 0 again. Your own Request changes never counts. See [Too many review rounds](tickets.md#too-many-review-rounds). |
+| Longest CI log excerpt | 4,000 characters | 500 to 20,000 | No | How much of each failed CI step's log an agent receives, keeping its end. |
+| Longest CI log read | 20 megabytes | 1 to 500 | No | How much of a failed CI job's log the Orchestrator downloads from GitHub to find each failed step's part. Beyond it, the agent gets the end of what was read and is told so. |
 
 ### Runs
 
@@ -81,7 +81,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Session start timeout | 30 seconds | 5 to 600 | No | How long a machine waits for Claude Code to start a run's session; after that the run fails (a startup dialog or a change in Claude Code is likely). |
 | MCP call timeout | 30 seconds | 5 to 300 | No | How long a machine waits for the Orchestrator's answer to an agent's tool call; after that the agent is told to try again later. Must be below the Claude Code MCP tool timeout. |
 | Claude Code MCP tool timeout | 120 seconds | 10 to 1,800 | No | How long Claude Code waits for an Orchestrator tool call before giving up on it. Must be above the MCP call timeout, so the machine always answers first: a value breaking this is refused, naming both limits and their values. |
-| Longest push (from version 0.4.0) | 60 seconds | 10 to 600 | No | How long a machine lets one push of a ticket branch take before stopping it; a push stopped this way is reported as "GitHub could not be reached". It also limits each download of the project from GitHub when a run starts: the first download on a new machine is the longest, and a run whose download is stopped fails without counting as a failed attempt, its page naming this limit (see [When the project cannot be downloaded from GitHub](machines.md#when-the-project-cannot-be-downloaded-from-github)). The MCP call timeout plus this limit must stay below the Claude Code MCP tool timeout, because the push at submission happens while the agent waits for its tool call: a value breaking this is refused, naming the three limits and their values. |
+| Longest push | 60 seconds | 10 to 600 | No | How long a machine lets one push of a ticket branch take before stopping it; a push stopped this way is reported as "GitHub could not be reached". It also limits each download of the project from GitHub when a run starts: the first download on a new machine is the longest, and a run whose download is stopped fails without counting as a failed attempt, its page naming this limit (see [When the project cannot be downloaded from GitHub](machines.md#when-the-project-cannot-be-downloaded-from-github)). The MCP call timeout plus this limit must stay below the Claude Code MCP tool timeout, because the push at submission happens while the agent waits for its tool call: a value breaking this is refused, naming the three limits and their values. |
 | Machine answer timeout | 60 seconds | 5 to 600 | No | How long the Orchestrator waits for a machine to confirm it starts a run; without an answer the run is cancelled and does not count as a failed attempt. |
 | Progress update interval | 60 seconds | 0 to 3,600 | No | Shortest time between two new progress lines shown for a run. The agent's updates are never refused: the latest one is shown when this time has passed. |
 | Longest stored log entry | 2,000 characters | 100 to 100,000 | No | Most characters kept of one entry of a run's log, such as a command's output; the rest is cut and the cut is marked. |

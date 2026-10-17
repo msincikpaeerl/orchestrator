@@ -2,9 +2,9 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
-## 0.4.0 — in progress
+## 0.4.0 — 2026-10-17
 
-Lot 3, Full ticket lifecycle.
+Lot 3, Full ticket lifecycle: a ticket now goes from **To do** to **Done** without you typing a Git command. When an agent hands its work in, its machine pushes the ticket's branch to GitHub and the Orchestrator opens the pull request; CI failures go back to the agent, which fixes them in the same session; **Start review** has the new Quality agent review the work and post its review on the pull request (or **Skip review**); you can **Request changes** on **In review** or **Awaiting merge**; and once you merge the pull request on GitHub, the ticket moves to **Done** by itself and the branch is deleted on GitHub, and on each machine whose copy holds nothing unmerged. "Needs you" lists what waits for you along the way (a review to start, a pull request to merge, a push or a download that failed, CI that did not finish, a ticket stopped after repeated failures). Update each machine's daemon from Help > Machines > "Update the daemon": a 0.3.0 daemon gets no runs. The scheduler, which starts runs by itself, comes in the next version.
 
 - Machines: each daemon package now has a **build**, a short code that changes whenever the daemon's program changes, so two daemons with the same version number are told apart. `orchestrator-daemon --version` and `orchestrator-daemon status` show it, and the machine's page shows its build next to the build this Orchestrator provides. When they differ, the machine still gets runs, but its page and "Needs you" say "The daemon on … is not the one this Orchestrator provides", with the commands to update it. Help: "Machines" > "Update the daemon".
 - Machines: a 0.3.0 daemon connects to this Orchestrator but gets no runs, since it cannot do what this version needs: "Needs you" shows "Update the daemon on …", and the machine's page says why. Run now refuses the machine until it is updated.
