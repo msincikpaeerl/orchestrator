@@ -82,11 +82,15 @@ test('overriding a limit for one project, then resetting it', async ({ page }) =
     '/help/settings#override-a-limit-for-one-project',
   );
 
-  // Only the settings a project can override are listed; this one belongs to a later version.
+  // Only the settings a project can override are listed, a later version's marked as such: CI
+  // wait at submission is used from 0.4.0 on, Most tickets per plan from 0.6.0.
   await expect(setting(page, 'Longest ticket title')).toHaveCount(0);
+  await expect(setting(page, 'Most tickets per plan')).toContainText(
+    'Used from version 0.6.0: it changes nothing in this version.',
+  );
   const ciWait = setting(page, 'CI wait at submission');
   await expect(ciWait).toContainText('This project uses the global value (20 minutes).');
-  await expect(ciWait).toContainText('Used from version 0.4.0');
+  await expect(ciWait).not.toContainText('Used from version');
   await ciWait.getByLabel('Value (minutes)').fill('45');
   await ciWait.getByRole('button', { name: 'Save' }).click();
   await expect(ciWait.getByText('Saved.')).toBeVisible();

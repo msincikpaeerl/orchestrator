@@ -1,6 +1,6 @@
 {
   "name": "@orchestrator/agents",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Default agent profiles, rules by run purpose and run message templates (docs/specs/03-agents.md, sections 3 and 6).",
   "files": [

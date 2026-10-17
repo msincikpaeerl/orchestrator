@@ -122,6 +122,19 @@ describe('the session kill in the log', () => {
         30_000,
         'the session start',
       );
+      // An ordinary run's end comes after the session's own calls. `working` is reported as the
+      // daemon answers the `SessionStart` hook, while the hook's command may still be exiting: a
+      // stop at that moment found that hook's connection open (answered), under load. The fake
+      // records a hook once its command has exited, and the `hang` turn makes no other call (no
+      // hook declared for the message, no status line, no MCP relay).
+      await waitFor(
+        async () =>
+          (await fake.log()).some(
+            (entry) => entry.event === 'hook' && entry.hook === 'SessionStart',
+          ),
+        30_000,
+        "the end of the session's hooks",
+      );
       await manager.handle({
         type: 'run.stop',
         id: randomUUID(),
