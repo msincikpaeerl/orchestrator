@@ -37,6 +37,7 @@ Every agent works on one ticket at a time, in its own copy of the project on you
 - runs one command at a time, so a refusal names the command really refused;
 - talks to you only through the Orchestrator: a short line showing what it is doing, notes, and questions that appear in **Needs you**;
 - never sends anything to GitHub itself.
+- ignores the tips Claude Code shows about its own commands (such as `/ultrareview`), which are meant for people using Claude Code by hand.
 
 The Architect and the Web Developer also:
 
