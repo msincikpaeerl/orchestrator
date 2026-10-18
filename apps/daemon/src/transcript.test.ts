@@ -51,9 +51,9 @@ describe('TranscriptReader', () => {
     expect((await reader.read(transcript)).entries.map((entry) => entry.text)).toEqual(['Whole.']);
   });
 
-  it("skips Claude Code 2.1.287's other line types without counting them, and counts unknown ones", async () => {
-    // Made-up lines shaped like the real ones of the owner's check (lot 2 step N), which counted
-    // them as unreadable: 17 to 29 per run.
+  it("skips Claude Code 2.1.287's and 2.1.302's other line types without counting them, and counts unknown ones", async () => {
+    // Made-up lines shaped like the real ones of the owner's checks (lot 2 and lot 3, step N),
+    // which counted them as unreadable: 17 to 29 per run in lot 2.
     const lines = [
       { type: 'ai-title', aiTitle: 'Add a line', sessionId: 's' },
       { type: 'last-prompt', lastPrompt: 'Implement ticket T-1', leafUuid: 'u', sessionId: 's' },
@@ -62,6 +62,9 @@ describe('TranscriptReader', () => {
       { type: 'atis-latch', atis: '', sessionId: 's' },
       { type: 'file-history-snapshot', messageId: 'm', snapshot: {}, isSnapshotUpdate: false },
       { type: 'file-history-delta', messageId: 'm', backup: {}, snapshotMessageId: 'm' },
+      { type: 'api-request-shape', sessionId: 's', shapeHash: 'h', shape: { system: [] } },
+      { type: 'api-request-blob', sessionId: 's', hash: 'b', message: { role: 'user', content: [] } },
+      { type: 'api-request', sessionId: 's', id: 'r', shapeHash: 'h', tail: ['b'], params: {} },
       { type: 'something-new', sessionId: 's' },
     ];
     await appendFile(transcript, lines.map((line) => `${JSON.stringify(line)}\n`).join(''));

@@ -24,6 +24,12 @@ export const KNOWN_TRANSCRIPT_TYPES: ReadonlySet<string> = new Set([
   'atis-latch',
   'file-history-snapshot',
   'file-history-delta',
+  // Seen with Claude Code 2.1.302 (owner's check, lot 3 step N): Claude Code's own record of each
+  // request to the model (its parameters, the shape of its prompt, and copies of the messages
+  // sent, kept once by hash). The agent's work is already in the `user` and `assistant` lines.
+  'api-request',
+  'api-request-blob',
+  'api-request-shape',
 ]);
 
 interface ContentPart {
