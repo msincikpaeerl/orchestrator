@@ -329,7 +329,7 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       await fake.play(
         session(
           answers().map((step) =>
-            step.do === 'tool' && step.input.command === 'git commit -m "Allowlist smoke test"'
+            step.do === 'tool' && step.input?.command === 'git commit -m "Allowlist smoke test"'
               ? { ...step, input: { command: heredoc } }
               : step,
           ),
