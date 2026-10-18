@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: done 2026-10-18 (version 0.4.0, tagged once the owner's rerun of the architect allowlist smoke test passes, step N; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
+> Status: done 2026-10-18 (version 0.4.0, tagged `v0.4.0` by the owner on 2026-10-18 on 3f04477, after the rerun of the architect allowlist smoke test, step N; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 

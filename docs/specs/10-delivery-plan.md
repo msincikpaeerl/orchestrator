@@ -87,6 +87,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).
 - From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, `download_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs. Decide whether agents running under a separate system user from the daemon (lot 7) comes before runs start without the owner (owner's decision, lot 3 step D1).
+- Carried from lot 3's check (lot 3 plan, "Carried to lot 4"; each placed in a step of `docs/dev/lot-4-plan.md`, or left out there with its reason): A27 in the GitHub smoke test (a pull request title of 256 characters and a description of 65,536); **Push again** for a refused push, without a session; acceptance criteria numbered from 0 in agent-written texts while the owner sees them from 1; the owner's **Request changes** contradicting an acceptance criterion.
 
 **Done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 

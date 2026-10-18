@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lots 0 to 3 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`; version 0.4.0, `docs/dev/lot-3-plan.md`). The owner tags v0.4.0 after rerunning the architect allowlist smoke test (lot 3 plan, step N). Start nothing of lot 4 until the owner asks; its open points are in the lot 3 plan's "Carried to lot 4". Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lots 0 to 3 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`; version 0.4.0, `docs/dev/lot-3-plan.md`, tagged v0.4.0). Lot 4 (version 0.5.0, scheduler and quota) is in progress: its steps are in `docs/dev/lot-4-plan.md`; do only the next unchecked step (step A waits for the owner's answers before any spec decision is written). Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
