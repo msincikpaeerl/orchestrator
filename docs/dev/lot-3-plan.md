@@ -1573,6 +1573,8 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 
 **Before the tag**: the owner runs `tools/smoke/allowlist-smoke.sh --profile architect` once more. If `git commit` is then refused, the architect's rules are fixed before v0.4.0 is tagged; if it is again not attempted, its line now says whether the agent ran another form.
 
+**The rerun** (the owner's paste, recorded in lot 4 step A): Claude Code 2.1.302, model `haiku`, 2026-10-18T17:14:14.594Z, `architect`: 17 of 17 PASS. Allowed as expected: `pnpm install`, `pnpm test`, `pnpm run lint`, `pnpm run build`, `npm test`, `node --version`, `mkdir -p src`, `ls`, the Write tool creating `smoke-note.txt`, `git status`, `git add smoke-note.txt`, `git commit -m "Allowlist smoke test"` (attempted and allowed this time) and `git log --oneline -1`. Refused as expected: `cat` of the daemon's `config.json` and `docker ps` (deny rules), `curl -sI https://example.com` and `sudo true` (not in the allowlist). No rule changed before the tag.
+
 Lot 3 is closed as version 0.4.0.
 
 ## Carried to lot 4

@@ -92,7 +92,7 @@ An agent can read anything in its own project. It can only change **its own tick
 
 Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
 
-`ticket.submit` input:
+`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A):
 
 ```json
 {
