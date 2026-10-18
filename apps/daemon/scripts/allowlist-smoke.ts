@@ -157,6 +157,8 @@ function prepare(layout: Layout): void {
 interface Check {
   /** What the prompt asks. */
   action: string;
+  /** The command a Bash step asks for, as the report names it. */
+  command?: string;
   /** `info`: nothing is expected; the report gives what Claude Code answered (lot 3 step H). */
   expect: 'allowed' | 'refused' | 'info';
   /** Whether a tool call is this action. */
@@ -178,6 +180,7 @@ const sameCommand = (command: string) => command.replace(/ (?:';'|";")(?= |$)/g,
 function bash(command: string, expected: Check['expect']): Check {
   return {
     action: `Run this command with the Bash tool: ${command}`,
+    command,
     expect: expected,
     matches: (call) => call.name === 'Bash' && sameCommand(commandOf(call)) === command,
   };
@@ -293,7 +296,12 @@ function checks(layout: Layout, profile: Pick<AgentProfileFile, 'role'>): Check[
     write,
     bash('git status', 'allowed'),
     bash(`git add ${NOTE_FILE}`, 'allowed'),
-    bash(`git commit -m "${COMMIT_MESSAGE}"`, 'allowed'),
+    // `haiku` never tried the commit in two runs of the owner's check (lot 3 step N), so this step
+    // asks for it in so many words: a commit is part of the check, typed exactly as given.
+    {
+      ...bash(`git commit -m "${COMMIT_MESSAGE}"`, 'allowed'),
+      action: `Make the commit this check asks for: run exactly this command with the Bash tool, as written, with no other option, no message file and no added line: git commit -m "${COMMIT_MESSAGE}"`,
+    },
     bash('git log --oneline -1', 'allowed'),
     ...forbidden(layout),
   ];
@@ -301,7 +309,7 @@ function checks(layout: Layout, profile: Pick<AgentProfileFile, 'role'>): Check[
 
 function prompt(layout: Layout, profile: Pick<AgentProfileFile, 'role'>): string {
   return [
-    'This is a short automated check of which commands are allowed. Do these steps in order, each exactly once, then reply with the single word DONE. Some steps are expected to be refused: do not retry them, explain them or try another way.',
+    'This is a short automated check of which commands are allowed. Do these steps in order, each exactly once, then reply with the single word DONE. Type each command exactly as written. Some steps are expected to be refused: do not retry them, explain them or try another way.',
     ...checks(layout, profile).map((check, index) => `${String(index + 1)}. ${check.action}`),
   ].join('\n');
 }
@@ -405,6 +413,18 @@ function transcriptCalls(transcript: Record<string, unknown>[]) {
   return { calls, results };
 }
 
+/**
+ * A Bash command the agent ran that no step matches and that starts like `command` (its first two
+ * words), such as a commit with another message form: a step not attempted as written.
+ */
+function otherForm(command: string, calls: ToolCall[], list: Check[]): string | undefined {
+  const start = command.split(' ').slice(0, 2).join(' ');
+  return calls
+    .filter((call) => call.name === 'Bash' && !list.some((check) => check.matches(call)))
+    .map(commandOf)
+    .find((ran) => ran === start || ran.startsWith(`${start} `));
+}
+
 type Verdict = 'PASS' | 'FAIL' | 'NOT ATTEMPTED' | 'INFO';
 interface Line {
   profile: string;
@@ -431,11 +451,9 @@ function evaluateProfile(
       name: typeof hook.input.tool_name === 'string' ? hook.input.tool_name : '',
       input: (hook.input.tool_input as Record<string, unknown> | undefined) ?? {},
     }));
-  const lines = checks(layout, profile).map((check): Line => {
-    const line = {
-      profile: key,
-      action: check.action.replace(/^Run this command with the Bash tool: /, ''),
-    };
+  const list = checks(layout, profile);
+  const lines = list.map((check): Line => {
+    const line = { profile: key, action: check.command ?? check.action };
     const call = calls.find(check.matches);
     if (check.expect === 'info') {
       // Never a verdict: the words Claude Code gave, whatever they are (owner's answer 1, step H).
@@ -451,7 +469,14 @@ function evaluateProfile(
       };
     }
     if (!call && !hookCalls.some(check.matches)) {
-      return { ...line, verdict: 'NOT ATTEMPTED', detail: 'the agent never tried it' };
+      const other = check.command ? otherForm(check.command, calls, list) : undefined;
+      return {
+        ...line,
+        verdict: 'NOT ATTEMPTED',
+        detail: other
+          ? `the agent ran another form of it instead: ${other.replace(/\s+/g, ' ').slice(0, 200)}`
+          : 'the agent never tried it',
+      };
     }
     const result = call?.id ? results.get(call.id) : undefined;
     if (result === undefined) {
