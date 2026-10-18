@@ -102,3 +102,7 @@ Run by the owner on Claude Code 2.1.283 with `tools/smoke/claude-code-probe.sh` 
 ## Update 2026-10-03 (lot 2 step N, owner's check)
 
 Run by the owner on Claude Code 2.1.287: the probe passed checks 1 to 4 again (5 is information only; fixtures in `apps/daemon/test/fixtures/claude-code-2.1.287/`), and the real runs of the lot's check passed end to end. The highest validated version is now 2.1.287. The allowlist smoke test passed on 2.1.288, to which Claude Code had updated itself. Found on the way: Claude Code allows some commands it considers read-only outside the allowlist (`docker ps`; 03, section 6), and its transcripts have seven more line types, none holding the agent's work (05, section 4.5).
+
+## Update 2026-10-18 (lot 3 step N, owner's check)
+
+Run by the owner on Claude Code 2.1.302: the probe passed checks 1 to 4 and 6 (check 6, the `dontAsk` permission mode a session runs in, for the first time against the real Claude Code; 5 is information only; fixtures in `apps/daemon/test/fixtures/claude-code-2.1.302/`), and the real runs of the lot's check passed end to end. The highest validated version is now 2.1.302. Its transcripts have three more line types, `api-request`, `api-request-shape` and `api-request-blob`, Claude Code's record of each request to the model, none holding the agent's work (05, section 4.5).

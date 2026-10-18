@@ -85,6 +85,8 @@ Lot 3, Full ticket lifecycle: a ticket now goes from **To do** to **Done** witho
 - Fixed: the run page of a run that ended because its machine could not download the project said the ticket's branch was on the machine "as this run left it", though the run never made one. It now says "No branch was made on machine …", or shows the branch as it was before the run when the machine already had it.
 - Agents: every agent is told to ignore the tips Claude Code shows about its own commands (such as `/ultrareview`), which are meant for people using Claude Code by hand. The versions of the Architect, Quality and the Web Developer go up by one. Help: "Agents".
 - Agents: when a command or a file is refused, the agent now reads "Do not ask the owner to allow it. If your ticket cannot be done without it, say so in plain words with ticket_ask or ticket_give_up.", as its instructions say, instead of being told to ask you about it. The run's log shows it with the refusal.
+- Machines: Claude Code 2.1.302 is now the latest version checked with this Orchestrator: no warning on a machine with it.
+- Runs: the run's log no longer says "N transcript line(s) could not be read and were skipped" for the lines Claude Code 2.1.302 adds, its own record of each request to the model, none of which holds the agent's work; the warning stays for lines really unknown.
 
 ## 0.3.0 — 2026-10-03
 

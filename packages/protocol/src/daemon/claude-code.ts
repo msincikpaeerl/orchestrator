@@ -5,7 +5,7 @@
  * the owner's checks.
  */
 export const CLAUDE_CODE_MIN_VERSION = '2.1.280';
-export const CLAUDE_CODE_VALIDATED_VERSION = '2.1.287';
+export const CLAUDE_CODE_VALIDATED_VERSION = '2.1.302';
 
 /** How a machine's Claude Code version compares with the supported versions. */
 export type ClaudeCodeSupport = 'missing' | 'below_minimum' | 'supported' | 'above_validated';
