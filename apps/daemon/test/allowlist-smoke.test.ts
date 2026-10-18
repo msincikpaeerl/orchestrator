@@ -322,6 +322,38 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
   );
 
   it(
+    "asks for the builder's commit in so many words, right after the git add, and names another form of it the agent ran",
+    async () => {
+      // The owner's check (lot 3 step N): `haiku` never tried the commit, in two runs.
+      const heredoc = `git commit -m "$(cat <<'EOF'\nAllowlist smoke test\n\nCo-Authored-By: Claude\nEOF\n)"`;
+      await fake.play(
+        session(
+          answers().map((step) =>
+            step.do === 'tool' && step.input?.command === 'git commit -m "Allowlist smoke test"'
+              ? { ...step, input: { command: heredoc } }
+              : step,
+          ),
+        ),
+        'architect',
+      );
+      const { code, output } = await runSmoke('--profile', 'architect');
+      const message = (await fake.log()).find((entry) => entry.event === 'message');
+      const steps = String(message?.text).split('\n');
+      expect(steps[0]).toContain('Type each command exactly as written.');
+      expect(steps.slice(11, 13)).toEqual([
+        '11. Run this command with the Bash tool: git add smoke-note.txt',
+        '12. Make the commit this check asks for: run exactly this command with the Bash tool, as written, with no other option, no message file and no added line: git commit -m "Allowlist smoke test"',
+      ]);
+      expect(output).toMatch(
+        /^architect: NOT ATTEMPTED +git commit -m "Allowlist smoke test": the agent ran another form of it instead: git commit -m "\$\(cat <<'EOF' Allowlist smoke test Co-Authored-By: Claude EOF \)"$/m,
+      );
+      expect(resultLines(output, 'NOT ATTEMPTED')).toHaveLength(1);
+      expect(code).toBe(2);
+    },
+    TIMEOUT,
+  );
+
+  it(
     "checks Quality's refusals of every command that writes a file or moves HEAD, and records the words for a tool not listed",
     async () => {
       await fake.play(

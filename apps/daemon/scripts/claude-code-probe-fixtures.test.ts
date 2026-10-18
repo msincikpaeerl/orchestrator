@@ -39,12 +39,20 @@ const rawTranscript = [
     message: { role: 'assistant', content: [{ type: 'text', text: 'DONE' }] },
   }),
   line({ type: 'cost-state', costUsd: 0.001 }),
+  // Claude Code 2.1.302's request records: copies of the messages sent, which hold whatever the
+  // session was shown (the owner's check, lot 3 step N).
+  line({
+    type: 'api-request-blob',
+    hash: 'b',
+    message: { role: 'user', content: [{ type: 'text', text: `Email: ${EMAIL}` }] },
+  }),
+  line({ type: 'api-request', id: 'r', tail: ['b'], params: { model: 'haiku' } }),
   line({ type: 'system', subtype: 'turn_duration' }),
   'not json\n',
 ].join('');
 
 describe('probe fixtures', () => {
-  it('keeps only the transcript entries the daemon reads, dropping every attachment', () => {
+  it('keeps only the transcript entries the daemon reads, dropping every attachment and request record', () => {
     const kept = keptTranscript(rawTranscript)
       .split('\n')
       .filter(Boolean)
@@ -195,8 +203,8 @@ describe("check 6, the session's permission mode (lot 3 step L)", () => {
       'utf8',
     );
 
-  it("passes on the transcripts the owner's probe runs recorded with Claude Code 2.1.283 and 2.1.287", () => {
-    for (const version of ['2.1.283', '2.1.287']) {
+  it("passes on the transcripts the owner's probe runs recorded with Claude Code 2.1.283, 2.1.287 and 2.1.302", () => {
+    for (const version of ['2.1.283', '2.1.287', '2.1.302']) {
       expect(permissionModeCheck(fixture(version)), version).toEqual({
         verdict: 'PASS',
         detail: 'dontAsk on 1 transcript line(s), no other mode',
