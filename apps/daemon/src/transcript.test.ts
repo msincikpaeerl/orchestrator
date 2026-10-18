@@ -63,7 +63,12 @@ describe('TranscriptReader', () => {
       { type: 'file-history-snapshot', messageId: 'm', snapshot: {}, isSnapshotUpdate: false },
       { type: 'file-history-delta', messageId: 'm', backup: {}, snapshotMessageId: 'm' },
       { type: 'api-request-shape', sessionId: 's', shapeHash: 'h', shape: { system: [] } },
-      { type: 'api-request-blob', sessionId: 's', hash: 'b', message: { role: 'user', content: [] } },
+      {
+        type: 'api-request-blob',
+        sessionId: 's',
+        hash: 'b',
+        message: { role: 'user', content: [] },
+      },
       { type: 'api-request', sessionId: 's', id: 'r', shapeHash: 'h', tail: ['b'], params: {} },
       { type: 'something-new', sessionId: 's' },
     ];
