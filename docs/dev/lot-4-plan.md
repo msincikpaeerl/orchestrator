@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: step A done (2026-10-19: the plan and the spec changes approved, the two new questions answered); step B in progress
+> Status: steps A and B done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); next: step C
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -70,7 +70,7 @@ Lot 4 raises no `PROTOCOL_VERSION` (Q7 B, Q8 A, Q13's fallback): the owner's ins
 
 **Done when** the owner has approved this plan and the spec changes, and answered the two new questions (their answers written in the same way).
 
-### [ ] B. Carried from lot 3
+### [x] B. Carried from lot 3 (2026-10-19)
 
 - **First, the flaky test** (own commit): `apps/server/test/conflicts-moved-head.test.ts` passes alone in 1.5 s but went over its 5 s timeout under the full suite's load in 3 runs of 3 (lot 3 step N): its cause found under load and fixed, or what was found recorded here.
 - **A27 in the GitHub smoke test**: `github-smoke.sh` gains a step opening a pull request with a title of 256 characters and a description of 65,536 (`PULL_REQUEST_TITLE_MAX_LENGTH`, `PULL_REQUEST_BODY_MAX_LENGTH`), reading both back and closing it, with its branch deleted at the clean-up; `--only-a27` runs that step alone (Q16). GitHub documents neither limit (lot 3 step F3), so the fake GitHub accepts both and only the owner's run checks them.
@@ -78,6 +78,14 @@ Lot 4 raises no `PROTOCOL_VERSION` (Q7 B, Q8 A, Q13's fallback): the owner's ins
 - **A request contradicting a criterion** (Q14): the dialog's sentence, the `fix_review` message's sentence (template `fix-review.md`), Help > Tickets > "Request changes".
 
 **Done when** the flaky test passes 10 runs of 10 under the full suite's load (or its record is here); the smoke script's dry run passes A27 against the fake GitHub; tests read the sentence about numbers from 1 in the rules and each template, and both numbers in the refusals for a report naming a missing criterion, one not met and one past the last; Playwright on both viewports shows the dialog's sentence.
+
+*Done 2026-10-19*, in one session (no split needed):
+
+- **The flaky test**: reproduced with the file run repeatedly beside a full `pnpm test`: 5 runs of 12 failed, always the first case ("is read once per interval…", two submissions with CI, a review and a fix run's start) at Vitest's 5 seconds. Timed phase by phase under load, its time is spread over every step (server start 0.7 to 1 s, each submission 0.8 to 1.5 s, the review 0.3 to 0.8 s, the ticks 0.6 s), with no wait or poll among them: every case of the file ran about three times slower (0.5 to 1.7 s alone, up to 5.8 s loaded; the others up to 4.1 s). Plain slowness, so a measured 15-second deadline per case (`SCENARIO`), no assertion changed: 11 runs of 11 passed under the same load. Seen meanwhile under that doubled load only (the suite plus this file), in 2 suites of 4: `runner.test.ts` (idle timeout), `workspace.test.ts` (local commits across runs) and `fix-review.test.ts` (a full round) failed once each; none failed in the plain `pnpm verify` runs of this step. Recorded, not changed.
+- **A27**: step 12 of `github-smoke.sh` (`apps/server/scripts/github-smoke.ts`): a branch `orchestrator-smoke-<time>-long-text` with one commit, a pull request whose title is 256 characters and description 65,536, both holding a zero-width space and the marker `…` (the characters beyond ASCII the Orchestrator's texts hold, in case GitHub counts bytes), read back whole, closed at once; the clean-up deletes the branch (A35 read as usual). It runs in the full run after step 11 (the script's confirmation now says six pull requests and 10 CI runs) and alone with `--only-a27` (no token check, no merge settings, no other step; refused with `--restricted-token`; the result block lists step 12, A27 and A35). It costs 1 CI run, not waited for. Tests: the full dry run (A27 and step 12 PASS), `--only-a27` (texts whole on the fake, only three writes), GitHub refusing the texts and reading the description back shorter (A27 FAIL with the first difference, the clean-up still done), and the refused combination.
+- **Criteria numbers**: a paragraph of the common rules, every role; `implement` and `fix-review` say under "Acceptance criteria" to use the numbers from 1 and that the index counts from 0, and list "- Criterion 1 (index 0): …"; `review` the same without naming `ticket_submit` (its texts never do, lot 3 step H5), the agent's report as "- Criterion 1 (index 0), met: …"; `submit-checks` names both in its refusals, including past the last ("your report names criterion 6 (index 5), which the ticket does not have") and a new sentence for a ticket without criteria. `ticket_submit`'s description and schema unchanged: nothing the 0.4.0 daemon reads changed (it relays the first message and the refusals as text).
+- **A request contradicting a criterion**: the dialog's sentence ("If your request contradicts one of the acceptance criteria, edit that criterion too: once WEB-12 is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion."), the same words in Help (a unit test reads them there), and the `fix_review` message after the owner's request only: "The owner wrote this request after the acceptance criteria below, so it comes first: …". **For the owner's review**: answer 14's "comes after the criteria" is read as "newer, so it wins where they disagree", as the agent did in lot 3's check.
+- **New question 2's box** goes to step D2 (written in step A's record): no code for it here.
 
 ### [ ] C. Claude accounts: time zone, windows, budget, manual pause
 
