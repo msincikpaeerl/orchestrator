@@ -5,6 +5,7 @@ User-facing changes, newest first. One entry per change that users can see.
 ## Unreleased
 
 - Agents: an agent now numbers a ticket's acceptance criteria from 1, as you see them, in everything you read from it: its comments and questions, the reason it gives up, Quality's review points and the justifications of its report. Under "What the agent was told" on a ticket, a refused submission names both numbers ("Criterion 1 (index 0) is not reported"): the index is how the agent counts them when it hands its work in.
+- Tickets: the **Request changes** dialog now says to edit an acceptance criterion your request contradicts (**Edit** on the ticket's page once it is back in **To do**), and the agent's next run is told that your request comes first where the two disagree. Help: "Tickets" > "Request changes".
 
 ## 0.4.0 — 2026-10-17
 

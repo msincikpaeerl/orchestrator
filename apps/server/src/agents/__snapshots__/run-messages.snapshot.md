@@ -213,6 +213,8 @@ Start by reading `CLAUDE.md`. The branch t/12-contact-form already holds the sub
 
 Also add a link to the map.
 
+The owner wrote this request after the acceptance criteria below, so it comes first: where it contradicts a criterion, do what the request asks, and say so in that criterion's justification. The owner may edit the criterion meanwhile.
+
 Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.
 
 # First message (fix_review), the earlier work lost with its machine

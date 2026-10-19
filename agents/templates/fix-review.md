@@ -6,7 +6,7 @@ Address the review of ticket {{ticket}}, then submit it again with `ticket_submi
 
 {{points}}
 
-Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.
+{{after_criteria}}Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.
 
 # {{ticket}}: {{title}}
 
@@ -39,6 +39,8 @@ The earlier work on this ticket is no longer available: the machine holding it w
 Quality, {{at}}, commit {{commit}}
 <!-- part: request-owner -->
 the owner's request, {{at}}
+<!-- part: after-criteria -->
+The owner wrote this request after the acceptance criteria below, so it comes first: where it contradicts a criterion, do what the request asks, and say so in that criterion's justification. The owner may edit the criterion meanwhile.
 <!-- part: point -->
 {{index}}. {{body}}
 <!-- part: point-file -->

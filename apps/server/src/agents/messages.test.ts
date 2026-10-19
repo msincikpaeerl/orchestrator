@@ -117,8 +117,10 @@ describe('the first message of a fix_review run (lot 3 step I)', () => {
       ].join('\n'),
     );
     expect(text).toContain(
-      'Address every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.',
+      '3. Describe the form in the user documentation.\n\nAddress every point. If one cannot or should not be done, say why with `ticket_comment` or ask with `ticket_ask`.',
     );
+    // Quality's points never come before the criteria (owner's answer 14, lot 4 step A).
+    expect(text).not.toContain('comes first');
     // Then the ticket as in implement.md.
     expect(text).toContain('# WEB-12: Contact form');
     expect(text).toContain('- Criterion 2 (index 1): An invalid e-mail address is refused');
@@ -135,6 +137,10 @@ describe('the first message of a fix_review run (lot 3 step I)', () => {
     });
     expect(text).toContain(
       "## Points to address (the owner's request, 2026-09-27 15:10 UTC)\n\nAlso add a link to the map.\n\nKeep the rest.\n",
+    );
+    // The owner's request comes after the criteria (owner's answer 14, lot 4 step A).
+    expect(text).toContain(
+      "Keep the rest.\n\nThe owner wrote this request after the acceptance criteria below, so it comes first: where it contradicts a criterion, do what the request asks, and say so in that criterion's justification. The owner may edit the criterion meanwhile.\n\nAddress every point.",
     );
   });
 

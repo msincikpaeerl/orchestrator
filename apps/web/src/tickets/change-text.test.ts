@@ -1,8 +1,10 @@
 import type { TicketChangeRequest, TicketReviewLatest, TicketStop } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { formatDateTime } from '../github/text';
+import { findPage } from '../help/content';
 import {
   RUN_NOW_AFTER_TRY_AGAIN,
+  contradictingCriterionText,
   requestChangesText,
   requestedAfterText,
   stopText,
@@ -91,6 +93,14 @@ describe('the Request changes dialog (answer 7)', () => {
     expect(requestChangesText('awaiting_merge', { kind: 'skipped', at })).toBe(
       'You skipped the review. The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open.',
     );
+  });
+
+  it('says to edit a criterion the request contradicts, in the words of Help (answer 14, lot 4 step A)', () => {
+    const text = contradictingCriterionText('WEB-12');
+    expect(text).toBe(
+      'If your request contradicts one of the acceptance criteria, edit that criterion too: once WEB-12 is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion.',
+    );
+    expect(findPage('tickets')?.markdown).toContain(`"${text}"`);
   });
 
   it('in review keeps the words of lot 2', () => {

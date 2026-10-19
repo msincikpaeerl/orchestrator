@@ -14,7 +14,11 @@ import { Button, ConfirmDialog, ErrorMessage, TextArea, WarningMessage } from '.
 import { ticketsChanged } from '../queries';
 import { refusalText } from '../refusals';
 import { runPath } from '../runs/text';
-import { RUN_NOW_AFTER_TRY_AGAIN, requestChangesText } from './change-text';
+import {
+  RUN_NOW_AFTER_TRY_AGAIN,
+  contradictingCriterionText,
+  requestChangesText,
+} from './change-text';
 import { markDoneWarning, ticketRef } from './text';
 
 // The owner's actions on a ticket (04, section 2), the same on the ticket page and on "Needs you"
@@ -439,6 +443,7 @@ export function RequestChangesAction({
           }}
         >
           <p>{text}</p>
+          <p>{contradictingCriterionText(ref)}</p>
           <TextArea
             label="What should change? (required)"
             hint="Added to the ticket's timeline; the agent reads it."
