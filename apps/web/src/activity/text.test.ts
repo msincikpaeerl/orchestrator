@@ -132,6 +132,9 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     fallbackMinutes: 60,
   },
   'account.available': { label: 'Personal' },
+  'account.paused': { label: 'Personal', activeRuns: 1 },
+  'account.resumed': { label: 'Personal', limitedUntil: '2026-09-24T15:45:00.000Z' },
+  'setting.time_zone_saved': { timeZone: 'Europe/Paris', previous: null },
   'run.created': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -677,6 +680,39 @@ describe('eventText', () => {
     );
     expect(plainText(eventText(entry('account.updated')))).toBe(
       'Claude account “Work Max” edited: renamed from “Personal Max”, 2 runs at a time',
+    );
+    // Lot 4 step C: the windows, the budget, Stop new runs, Resume and the time zone.
+    expect(
+      plainText(
+        eventText(
+          entry('account.updated', {
+            payload: {
+              label: 'Personal',
+              fields: ['schedule', 'dailyBudget'],
+              schedule: [
+                {
+                  days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                  start: '22:00',
+                  end: '06:00',
+                },
+                { days: ['saturday', 'sunday'], start: '00:00', end: '24:00' },
+              ],
+              dailyBudget: { kind: 'estimated_usage', usd: 5 },
+            },
+          }),
+        ),
+      ),
+    ).toBe(
+      'Claude account “Personal” edited: windows: Monday to Friday, 22:00 to 06:00 the next day; Saturday and Sunday, all day, daily budget: $5.00 of estimated usage a day',
+    );
+    expect(plainText(eventText(entry('account.paused')))).toBe(
+      'New runs stopped on the Claude account “Personal”: 1 active run goes on and finishes',
+    );
+    expect(plainText(eventText(entry('account.resumed')))).toMatch(
+      /^Claude account “Personal” resumed: its usage limit still holds until /,
+    );
+    expect(plainText(eventText(entry('setting.time_zone_saved')))).toBe(
+      'Time zone set to Europe/Paris (was not set: UTC)',
     );
   });
 

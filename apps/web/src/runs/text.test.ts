@@ -1,6 +1,12 @@
 import { RunRefusal, type MachineUnavailable } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { acceptedAfterText, runBranchText, runRefusalText, unavailableText } from './text';
+import {
+  acceptedAfterText,
+  runBranchText,
+  runRefusalText,
+  ticketUsageText,
+  unavailableText,
+} from './text';
 
 const account = { id: '3f1e0e8c-1111-4000-8000-000000000000', label: 'Personal' };
 const machine = { id: '3f1e0e8c-2222-4000-8000-000000000000', name: 'Laptop' };
@@ -20,6 +26,7 @@ const unavailable: {
   },
   missing_capabilities: { why: 'missing_capabilities', capabilities: ['android-sdk'] },
   account_limited: { why: 'account_limited', account, until },
+  account_paused: { why: 'account_paused', account },
   account_busy: { why: 'account_busy', account, maxConcurrentRuns: 2 },
 };
 
@@ -47,6 +54,7 @@ const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason
   },
   run_not_paused: { reason: 'run_not_paused', status: 'running' },
   account_limited: { reason: 'account_limited', account, until },
+  account_paused: { reason: 'account_paused', account },
   account_busy: { reason: 'account_busy', account, maxConcurrentRuns: 1 },
   ticket_not_in_review: { reason: 'ticket_not_in_review', status: 'todo' },
   no_pull_request: { reason: 'no_pull_request' },
@@ -151,5 +159,16 @@ describe('runBranchText (lot 3 step L, from step K2)', () => {
       text: `${name} on machine Laptop`,
       commits: true,
     });
+  });
+});
+
+describe("a ticket's estimated usage (lot 4 step C)", () => {
+  it('adds its runs, and names those without an estimate', () => {
+    expect(ticketUsageText([{ estimatedUsageUsd: 0.5 }, { estimatedUsageUsd: 1.25 }])).toBe(
+      'Estimated usage: $1.75 over 2 runs (estimated by Claude Code).',
+    );
+    expect(ticketUsageText([{ estimatedUsageUsd: 0.5 }, { estimatedUsageUsd: null }])).toBe(
+      'Estimated usage: $0.50 over 2 runs (estimated by Claude Code); 1 of them has no estimate yet and counts as $0.00.',
+    );
   });
 });

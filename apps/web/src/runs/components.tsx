@@ -59,6 +59,15 @@ export function AccountStatusText({
   return <>{accountStatusText(passed ? { ...account, state: 'available' } : account)}</>;
 }
 
+/** " (in 2 h 10 min)" while the account's usage limit holds (07, section 7). */
+export function ResetCountdown({ account }: { account: Pick<AccountStatus, 'limitedUntil'> }) {
+  const now = useNow(account.limitedUntil !== null);
+  if (account.limitedUntil === null) return null;
+  const left = new Date(account.limitedUntil).getTime() - now;
+  if (left <= 0) return null;
+  return <> (in {durationText(Math.max(60_000, left))})</>;
+}
+
 /** "Working 12 min · waiting 3 min" (01, section 3.7). */
 export function RunTimes({ run }: { run: Run }) {
   const now = useNow(isActive(run.status));

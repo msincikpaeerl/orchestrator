@@ -56,7 +56,14 @@ import {
 import { ticketsChanged, useRun, useTicket, useTicketRuns, useTickets } from '../queries';
 import { ticketCiText } from '../runs/ci-outcome-text';
 import { AnswerBox, CommitList, RunActions, RunTimes } from '../runs/components';
-import { isActive, purposeLabel, runStateText, runPath, usageText } from '../runs/text';
+import {
+  isActive,
+  purposeLabel,
+  runStateText,
+  runPath,
+  ticketUsageText,
+  usageText,
+} from '../runs/text';
 import {
   AcceptAction,
   CancelAction,
@@ -501,6 +508,7 @@ function Runs({ ticket }: { ticket: TicketDetail }) {
     <Card className="space-y-3">
       <SectionTitle>Runs</SectionTitle>
       <p className="text-slate-700">Failed attempts: {ticket.attemptCount}</p>
+      <p className="text-slate-700">{ticketUsageText(runs.data.runs)}</p>
       <ul aria-label="Runs" className="divide-y divide-slate-200">
         {runs.data.runs.map((run) => (
           <li key={run.id} className="space-y-1 py-2">

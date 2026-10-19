@@ -1,4 +1,5 @@
 import {
+  AccountDetailResponse,
   AccountListResponse,
   AgentListResponse,
   EventListResponse,
@@ -15,6 +16,7 @@ import {
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
+  TimeZoneResponse,
   RunDetail,
   RunListResponse,
   TicketListResponse,
@@ -27,6 +29,12 @@ import { api, ApiRequestError, setUnauthenticatedHandler } from './api';
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });
+
+/**
+ * Today's working time, usage and window position move with the clock and with each run's
+ * estimate, which writes no event: the account screens read them again every minute.
+ */
+const ACCOUNT_REFRESH_MS = 60_000;
 
 export const keys = {
   setup: ['setup'],
@@ -42,6 +50,8 @@ export const keys = {
   ticket: (key: string, number: number) => ['projects', 'tickets', key, number] as const,
   events: (query: string) => ['events', query] as const,
   accounts: ['accounts'],
+  account: (id: string) => ['accounts', id] as const,
+  timeZone: ['time-zone'],
   machines: ['machines'],
   machine: (id: string) => ['machines', id] as const,
   agents: ['agents'],
@@ -92,6 +102,8 @@ export function useNeedsYou() {
   return useQuery({
     queryKey: keys.needsYou,
     queryFn: () => api('GET', '/api/needs-you', NeedsYouResponse),
+    // The accounts' windows and daily budgets move with the clock (lot 4 step C).
+    refetchInterval: ACCOUNT_REFRESH_MS,
   });
 }
 
@@ -268,6 +280,32 @@ export function useAccounts() {
   return useQuery({
     queryKey: keys.accounts,
     queryFn: () => api('GET', '/api/accounts', AccountListResponse),
+  });
+}
+
+/** Claude accounts with their day so far, for Machines (lot 4 step C). */
+export function useAccountsLive() {
+  return useQuery({
+    queryKey: keys.accounts,
+    queryFn: () => api('GET', '/api/accounts', AccountListResponse),
+    refetchInterval: ACCOUNT_REFRESH_MS,
+  });
+}
+
+/** One account's page: its days and limits reached (02, section 9.1). */
+export function useAccount(id: string) {
+  return useQuery({
+    queryKey: keys.account(id),
+    queryFn: () => api('GET', `/api/accounts/${encodeURIComponent(id)}`, AccountDetailResponse),
+    refetchInterval: ACCOUNT_REFRESH_MS,
+  });
+}
+
+/** The Orchestrator's time zone (02, section 10). */
+export function useTimeZone() {
+  return useQuery({
+    queryKey: keys.timeZone,
+    queryFn: () => api('GET', '/api/time-zone', TimeZoneResponse),
   });
 }
 
