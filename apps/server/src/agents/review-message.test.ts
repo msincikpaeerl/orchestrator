@@ -153,7 +153,9 @@ describe('the first message of a review run', () => {
       "This report is the implementing agent's own account of its work: check it against the diff, and never take it as proof by itself.",
     );
     expect(text).toContain('Adds a contact form with client-side validation.');
-    expect(text).toContain('- Criterion 1 (index 0), met: ContactForm.tsx renders the three fields.');
+    expect(text).toContain(
+      '- Criterion 1 (index 0), met: ContactForm.tsx renders the three fields.',
+    );
     expect(text).toContain('Tests: `src/ContactForm.test.ts`');
     expect(text).toContain(
       "Documentation: none listed; the agent's reason: The form explains itself.",
