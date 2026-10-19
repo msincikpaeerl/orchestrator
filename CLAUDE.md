@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lots 0 to 3 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`; version 0.4.0, `docs/dev/lot-3-plan.md`, tagged v0.4.0). Lot 4 (version 0.5.0, scheduler and quota) is in progress: its steps are in `docs/dev/lot-4-plan.md`; do only the next unchecked step (step A's answers are written into the specs; it waits for the owner's review). Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lots 0 to 3 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`; version 0.4.0, `docs/dev/lot-3-plan.md`, tagged v0.4.0). Lot 4 (version 0.5.0, scheduler and quota) is in progress: its steps are in `docs/dev/lot-4-plan.md`; do only the next unchecked step (steps A and B done; next: step C). Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
@@ -45,7 +45,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | GitHub's documented answers for the fake GitHub (new endpoint or API version; downloads) | `pnpm --filter server exec tsx test/fake-github/documented/extract.ts` |
 | Claude Code probe (owner only, real Claude Code, lot 2 step H) | `tools/smoke/claude-code-probe.sh` (`--help`) |
 | Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
-| GitHub smoke test (owner only, real GitHub, lot 3 steps E and J4c) | `tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token]` (`--help`) |
+| GitHub smoke test (owner only, real GitHub, lot 3 steps E and J4c; A27 alone: `--only-a27`, lot 4 step B) | `tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token \| --only-a27]` (`--help`) |
 | Usage-limit capture (owner only: `--probe-limit` while limited; `--scan-limit` starts no session) | `tools/spike/claude-code-spike.sh --probe-limit` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 

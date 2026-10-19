@@ -12,7 +12,7 @@ Type: {{type}}. Priority: {{priority}}.
 
 ## Acceptance criteria
 
-Report each one by its index in `ticket_submit`.
+They are numbered from 1, as the owner sees them: use these numbers in every text the owner reads. In `ticket_submit`, report each one by its index, which counts from 0: criterion 1 is index 0.
 
 {{acceptance_criteria}}
 
@@ -42,7 +42,7 @@ The pull request conflicts with {{base}}: run `git merge origin/{{base}}` and re
 <!-- part: description-cut -->
 [The description is cut here because it is too long for this message. Read the rest with `ticket_get` before you start.]
 <!-- part: criterion -->
-- [{{index}}] {{text}}
+- Criterion {{number}} (index {{index}}): {{text}}
 <!-- part: no-criteria -->
 (None. Ask with `ticket_ask` what would make this ticket done before you start.)
 <!-- part: dependency -->

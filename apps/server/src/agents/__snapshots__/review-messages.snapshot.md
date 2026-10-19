@@ -19,6 +19,8 @@ The Orchestrator's MCP tools (`mcp__orchestrator__…`) are your only way to rea
 - `ticket_comment` records a note: a finding or a decision the owner or the next agent should know.
 - `ticket_create` proposes a new ticket for a problem outside your ticket's scope, instead of fixing it.
 
+The owner sees a ticket's acceptance criteria numbered from 1. Number them the same way in every text the owner reads: comments, questions, the reason you give up, review points and the justifications of a report. Only a criterion's `index` in a report counts from 0: criterion 1 is index 0.
+
 ## Ending your review
 
 Review the work in as few turns as you can: every turn costs the owner's quota. End every turn with exactly one of these four tools, then stop:
@@ -128,8 +130,10 @@ Visitors need a way to write to the bakery.
 
 ## Acceptance criteria
 
-- [0] The contact page has a form with name, e-mail address and message
-- [1] An invalid e-mail address is refused with a message next to the field
+They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.
+
+- Criterion 1 (index 0): The contact page has a form with name, e-mail address and message
+- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field
 
 ## Dependencies
 
@@ -145,8 +149,8 @@ Adds a contact form with client-side validation.
 
 Acceptance criteria, as the agent reported them:
 
-- [0] met: ContactForm.tsx renders the three fields.
-- [1] met: ContactForm.test.ts checks the message.
+- Criterion 1 (index 0), met: ContactForm.tsx renders the three fields.
+- Criterion 2 (index 1), met: ContactForm.test.ts checks the message.
 
 Tests: `src/ContactForm.test.ts`
 

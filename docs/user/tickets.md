@@ -123,6 +123,8 @@ Use **Request changes** when the agent's work is not right yet: on a ticket **In
 
 The ticket goes back to **To do**. Its branch and commits are kept, and this does not count as a failed attempt. The next dialog offers **Run now** to start the next run at once; click **Later** to start it yourself later. While your request waits, the ticket page says "Run now starts a run that addresses your request.". The next run is a **Fix after review** run: the agent reads your comment first and continues on the same branch and pull request (see [The round after a request](#the-round-after-a-request)). Your **Request changes** never counts as a review round. See also [Check finished work](runs.md#check-finished-work).
 
+**A request that contradicts an acceptance criterion.** The acceptance criteria stay as you wrote them: a request does not change them. The dialog says so: "If your request contradicts one of the acceptance criteria, edit that criterion too: once WEB-12 is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion." For example, if a criterion says README.md ends with a line and you ask for another line after it, edit the criterion to say what you now want, so that the next run, Quality's review and the ticket's history agree with your request.
+
 ## Reopen a cancelled ticket
 
 Open the cancelled ticket and click **Reopen**. It goes back to **To do** with its number, history and dependencies.

@@ -129,6 +129,10 @@ test('Request changes on Awaiting merge: the request stands in To do, then a fix
   await expect(dialog).toContainText(
     `Quality approved commit ${short(head)}. The ticket goes back to To do with your comment, and its next run addresses it; the pull request stays open.`,
   );
+  // A request contradicting a criterion (owner's answer 14, lot 4 step A).
+  await expect(dialog).toContainText(
+    'If your request contradicts one of the acceptance criteria, edit that criterion too: once WEB-1 is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion.',
+  );
   await dialog.getByLabel('What should change? (required)').fill('Also add a link to the map.');
   await expectFitsScreen(page);
   await screenshot(page, testInfo, 'request-changes-awaiting-merge-dialog');
@@ -136,8 +140,9 @@ test('Request changes on Awaiting merge: the request stands in To do, then a fix
   const offer = page.getByRole('dialog', { name: 'Changes requested on WEB-1' });
   await offer.getByRole('button', { name: 'Later' }).click();
 
-  // In To do with the request standing (owner's answers 6 and 7).
+  // In To do with the request standing (owner's answers 6 and 7), and Edit offered (answer 14).
   await expect(page.getByText('To do', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Edit' })).toBeVisible();
   await expect(page.getByLabel('Next run')).toHaveText(
     'Run now starts a run that addresses your request.',
   );

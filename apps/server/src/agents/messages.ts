@@ -224,7 +224,16 @@ export function fixReviewFirstMessage(
           });
         })
       : [request.comment.trim()];
-  return firstMessage(template, ticket, opening, points, { request: heading }, maxBytes);
+  // The owner's request comes after the acceptance criteria (owner's answer 14, lot 4 step A).
+  const afterCriteria = request.by === 'owner' ? `${part(template, 'after-criteria')}\n\n` : '';
+  return firstMessage(
+    template,
+    ticket,
+    opening,
+    points,
+    { request: heading, after_criteria: afterCriteria },
+    maxBytes,
+  );
 }
 
 function notPushedStart(
@@ -255,7 +264,9 @@ function firstMessage(
     ticket.acceptanceCriteria.length === 0
       ? part(template, 'no-criteria')
       : ticket.acceptanceCriteria
-          .map((text, index) => part(template, 'criterion', { index: String(index), text }))
+          .map((text, index) =>
+            part(template, 'criterion', { number: String(index + 1), index: String(index), text }),
+          )
           .join('\n');
   const dependencies =
     ticket.dependencies.length === 0

@@ -54,6 +54,15 @@ export function requestChangesText(
   );
 }
 
+/**
+ * The Request changes dialog's sentence for a request that contradicts an acceptance criterion
+ * (04, section 2; owner's answer 14, lot 4 step A): the criteria stay as written until the owner
+ * edits them, which **Edit** allows once the ticket is back in To do. Help > Tickets says the same.
+ */
+export function contradictingCriterionText(ref: string): string {
+  return `If your request contradicts one of the acceptance criteria, edit that criterion too: once ${ref} is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion.`;
+}
+
 /** What **Request changes** does on **Awaiting merge**, naming the approval or the skip. */
 export function awaitingMergeRequestText(
   review: { kind: 'approved'; commit: string } | { kind: 'skipped' } | null,

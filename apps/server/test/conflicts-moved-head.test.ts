@@ -21,6 +21,11 @@ import { RunHarness, TOKEN, eventually, state } from './run-harness.js';
 
 const h = new RunHarness();
 
+// Each case runs a whole scenario (the first: two submissions with CI, a review and a fix run's
+// start): 0.5 to 1.7 seconds alone, up to 5.2 under the full suite's load, where every case of
+// this file ran about three times slower, with no wait among its steps (lot 4 step B).
+const SCENARIO = { timeout: 15_000 };
+
 afterEach(async () => {
   h.github.override = undefined;
   await h.stop();
@@ -114,7 +119,7 @@ const requestChanges = (comment: string) =>
 const CONFLICT_PART =
   'The pull request conflicts with main: run `git merge origin/main` and resolve the conflicts before anything else.';
 
-describe('a conflict on Awaiting merge', () => {
+describe('a conflict on Awaiting merge', SCENARIO, () => {
   it('is read once per interval, stored with its filled-in request, and leads to a fix_review run told to merge, the comment edited', async () => {
     const { daemon, first } = await awaitingMerge();
     // A second ticket in review in the same project: in the project's list, no read of its own.
@@ -251,7 +256,7 @@ async function ciResult(runId: string) {
   return row?.ciResult as { state: string } | null;
 }
 
-describe('the conflict hidden by a green status from another service (answer 6)', () => {
+describe('the conflict hidden by a green status from another service (answer 6)', SCENARIO, () => {
   it('becomes a conflict round once GitHub says the pull request conflicts', async () => {
     const { daemon, runId, commit } = await waitingForCi();
     h.github.setStatus(repo(), commit, { context: 'deploy/preview', state: 'success' });
@@ -334,7 +339,7 @@ describe('the conflict hidden by a green status from another service (answer 6)'
   });
 });
 
-describe('a conflict while the pull request is closed (lot 3 step J3b)', () => {
+describe('a conflict while the pull request is closed (lot 3 step J3b)', SCENARIO, () => {
   it('sends no round with nothing on GitHub: the wait ends at CI wait at submission', async () => {
     const { daemon, runId } = await waitingForCi();
     conflictOnMain(repo());
@@ -388,7 +393,7 @@ function compares(from: number) {
   return requests(from).filter((request) => request.includes('/compare/'));
 }
 
-describe('the head moved after the approval (answer 3)', () => {
+describe('the head moved after the approval (answer 3)', SCENARIO, () => {
   it('compares once: the newest titles as plain text, cut, then how many more', async () => {
     const { first } = await awaitingMerge();
     const long = `Change ${'x'.repeat(100)}`;

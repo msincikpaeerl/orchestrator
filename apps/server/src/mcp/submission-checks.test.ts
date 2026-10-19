@@ -107,8 +107,15 @@ describe('checkSubmission', () => {
     expect(refused?.code).toBe('DOD_FAILED');
     expect(refused?.message).toMatch(/^The submission is refused: 2 checks failed/);
     expect(refused?.details).toEqual([
-      { check: 'criteria_met', message: matching(/^Criterion 0 is reported not_met/) },
-      { check: 'criteria_met', message: matching(/^Criterion 1 is not reported/) },
+      {
+        check: 'criteria_met',
+        message:
+          'Criterion 1 (index 0) is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
+      },
+      {
+        check: 'criteria_met',
+        message: 'Criterion 2 (index 1) is not reported: "The e-mail address is checked".',
+      },
     ]);
   });
 
@@ -119,9 +126,31 @@ describe('checkSubmission', () => {
     });
     expect(error).toEqual({
       code: 'VALIDATION_FAILED',
-      message: 'The ticket has 1 acceptance criteria (indexes 0 to 0): 3 do not exist.',
-      details: [{ field: 'criteria.0.index', message: 'no criterion 3' }],
+      message:
+        'The ticket has 1 acceptance criteria, criteria 1 to 1 (indexes 0 to 0): your report names criterion 4 (index 3), which the ticket does not have.',
+      details: [{ field: 'criteria.0.index', message: 'no criterion 4 (index 3)' }],
     });
+    // Several past the last, each by both numbers; a ticket without criteria (lot 4 step B).
+    const several = {
+      ...REPORT,
+      criteria: [
+        { index: 0, status: 'met' as const, justification: 'Done' },
+        { index: 2, status: 'met' as const, justification: 'Done' },
+        { index: 4, status: 'met' as const, justification: 'Done' },
+      ],
+    };
+    expect(criteriaOutOfRange(texts, ['One', 'Two'], several)).toEqual({
+      code: 'VALIDATION_FAILED',
+      message:
+        'The ticket has 2 acceptance criteria, criteria 1 to 2 (indexes 0 to 1): your report names criterion 3 (index 2), criterion 5 (index 4), which the ticket does not have.',
+      details: [
+        { field: 'criteria.1.index', message: 'no criterion 3 (index 2)' },
+        { field: 'criteria.2.index', message: 'no criterion 5 (index 4)' },
+      ],
+    });
+    expect(criteriaOutOfRange(texts, [], several)?.message).toBe(
+      'The ticket has no acceptance criteria: your report names criterion 1 (index 0), criterion 3 (index 2), criterion 5 (index 4), which the ticket does not have.',
+    );
   });
 
   it('skips the push check when the worktree is not ready to push', () => {

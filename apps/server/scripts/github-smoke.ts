@@ -47,6 +47,10 @@ import {
 } from '../src/github/pull-requests.js';
 import { branchPath, findRepository, repoPath } from '../src/github/repositories.js';
 import { excerptHeading } from '../src/github/job-log.js';
+import {
+  PULL_REQUEST_BODY_MAX_LENGTH,
+  PULL_REQUEST_TITLE_MAX_LENGTH,
+} from '../src/github/pull-request-text.js';
 import { checkToken, inspectToken } from '../src/github/token-check.js';
 import {
   branchHead,
@@ -77,6 +81,7 @@ const options = parseArgs({
     'ci-wait-minutes': { type: 'string', default: '15' },
     'owner-wait-minutes': { type: 'string', default: '30' },
     'restricted-token': { type: 'boolean', default: false },
+    'only-a27': { type: 'boolean', default: false },
     'dry-run': { type: 'boolean', default: false },
   },
 }).values;
@@ -91,6 +96,8 @@ const CI_WAIT_MINUTES = Number(options['ci-wait-minutes']);
 const OWNER_WAIT_MINUTES = Number(options['owner-wait-minutes']);
 /** Whether the owner gives the second, restricted token (step 10). */
 const RESTRICTED = options['restricted-token'];
+/** `--only-a27`: step 12 alone (lot 4 step B), with no token check and no other step. */
+const ONLY_A27 = options['only-a27'];
 /** How often GitHub is read while waiting; the dry run's fake answers at once. */
 const POLL_MS = DRY_RUN ? 50 : 5_000;
 /** How often GitHub is read while the owner acts on GitHub's site (15 seconds). */
@@ -144,11 +151,12 @@ const STEPS: [number, string][] = [
   [9, 'a conflicting pull request, closed by you, found and reopened'],
   [10, 'the second, restricted token'],
   [11, 'merges by squash and by rebase, Update branch, and the reads the merge watch relies on'],
+  [12, 'a pull request with the longest title and description the Orchestrator sends'],
 ];
 const ASSUMPTIONS = [
   'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13',
   'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26',
-  'A30', 'A31', 'A32', 'A33', 'A34', 'A35', 'A36', 'A37', 'A38',
+  'A27', 'A30', 'A31', 'A32', 'A33', 'A34', 'A35', 'A36', 'A37', 'A38',
 ]; // prettier-ignore
 
 const stepVerdicts = new Map<number, { verdict: Verdict; failures: string[] }>();
@@ -329,6 +337,9 @@ const SQUASH_PAGE = 'docs/orchestrator-smoke-squash.md';
 /** Step 11's squash branch's one commit: GitHub may name the squash commit after it (A21). */
 const SQUASH_COMMIT_TITLE = 'Orchestrator smoke test: merged by squash';
 const REBASE_PAGE = 'docs/orchestrator-smoke-rebase.md';
+/** Step 12's branch (A27, lot 4 step B), from the default branch as the first machine fetched it. */
+const LONG_TEXT_BRANCH = `${BRANCH}-long-text`;
+const LONG_TEXT_PAGE = 'docs/orchestrator-smoke-long-text.md';
 /** Every branch the run may push, for a pull request found by its branch at the clean-up. */
 const RUN_BRANCHES = () => [
   BRANCH,
@@ -336,6 +347,7 @@ const RUN_BRANCHES = () => [
   SQUASH_BRANCH,
   REBASE_BRANCH,
   BASE_LIST_BRANCH,
+  LONG_TEXT_BRANCH,
 ];
 /** Step 10's branch, pushed with the second token: it adds a workflow file. */
 const WORKFLOW_BRANCH = `${BRANCH}-workflow`;
@@ -2430,6 +2442,134 @@ async function cleanUp(context: Context): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Step 12: the longest title and description (A27, lot 4 step B)
+
+/**
+ * `start` made exactly `length` characters long with `filler` repeated, ending with the cut
+ * marker. Both hold the characters the Orchestrator's own texts hold beyond ASCII (a zero-width
+ * space after `@`, the marker `…`), in case GitHub counts bytes rather than characters.
+ */
+function textOfLength(start: string, filler: (index: number) => string, length: number): string {
+  let text = start;
+  for (let index = 1; text.length < length; index++) text += filler(index);
+  return `${text.slice(0, length - 1)}…`;
+}
+
+/** Where two texts first differ, for a FAIL that says what GitHub kept. */
+function difference(sent: string, read: string | null): string {
+  if (read === null) return 'GitHub read it back as empty (null)';
+  let at = 0;
+  while (at < sent.length && sent[at] === read[at]) at++;
+  return `sent ${String(sent.length)} characters, read back ${String(read.length)}; first difference at character ${String(at + 1)}: sent ${JSON.stringify(sent.slice(at, at + 20))}, read ${JSON.stringify(read.slice(at, at + 20))}`;
+}
+
+async function stepTwelve(context: Context): Promise<void> {
+  startStep(12);
+  credential = { ok: true, username: 'x-access-token', password: context.token };
+  // With --only-a27 the first machine is made here, and removed at the clean-up as usual.
+  context.first ??= await prepareMachine('machine-1', context.account, context.baseBranch);
+  const first = context.first;
+  const head = await commitFile(
+    first,
+    await baseAtStepOne(context, first),
+    LONG_TEXT_PAGE,
+    `# Orchestrator smoke test\n\nWritten by step 12 of the smoke test of ${stamp} (A27): never merged.\n`,
+    'Orchestrator smoke test: the longest title and description (A27)',
+  );
+  const pushed = await first.spaces.push(
+    runStart(context.account, context.baseBranch, NAME, LONG_TEXT_BRANCH),
+    first.bare,
+    first.folder,
+    head,
+  );
+  if (pushed.status !== 'pushed') {
+    check(null, false, `the push of ${LONG_TEXT_BRANCH}`, pushText(pushed));
+    endStep();
+    return;
+  }
+  left.branches.push(LONG_TEXT_BRANCH);
+  say(`  Branch ${LONG_TEXT_BRANCH} at ${head.slice(0, 7)}`);
+
+  const title = textOfLength(
+    `Orchestrator smoke test ${stamp}: the longest title (A27), with @\u200Bname and the marker `,
+    () => '-',
+    PULL_REQUEST_TITLE_MAX_LENGTH,
+  );
+  const body = textOfLength(
+    `Opened by the Orchestrator's smoke script (tools/smoke/github-smoke.sh), step 12 (A27): this description is ${String(PULL_REQUEST_BODY_MAX_LENGTH)} characters long and its title ${String(PULL_REQUEST_TITLE_MAX_LENGTH)}, the longest the Orchestrator sends. The script closes it at once; if it stopped early, close this pull request and delete its branch.\n\n`,
+    (index) =>
+      `Line ${String(index).padStart(4, '0')} of the description, with @\u200Bname and the marker … at its end.\n`,
+    PULL_REQUEST_BODY_MAX_LENGTH,
+  );
+  const opening = await openPullRequest(context.client, REPO, {
+    head: LONG_TEXT_BRANCH,
+    base: context.baseBranch,
+    title,
+    body,
+  });
+  let number: number | null = null;
+  if (opening.ok) {
+    number = opening.value.number;
+  } else if (unreadable(opening.refusal)) {
+    left.unknownPullRequest = true;
+    readable(opening, 'open the pull request with the longest title and description');
+    const found = readable(
+      await findPullRequests(context.client, REPO, LONG_TEXT_BRANCH, 'open'),
+      `find the pull request of branch ${LONG_TEXT_BRANCH}`,
+    );
+    number = found?.[0]?.number ?? null;
+    if (number !== null) left.unknownPullRequest = false;
+  }
+  check(
+    'A27',
+    number !== null,
+    `a pull request with a title of ${String(PULL_REQUEST_TITLE_MAX_LENGTH)} characters and a description of ${String(PULL_REQUEST_BODY_MAX_LENGTH)}: accepted`,
+    opening.ok ? '' : refusalText(opening.refusal),
+  );
+  if (number === null) {
+    endStep();
+    return;
+  }
+  left.pullRequests.push(number);
+  say(`  Pull request #${String(number)}: ${repoWeb}/pull/${String(number)}`);
+
+  const read = readable(
+    await readPullRequest(context.client, REPO, number),
+    `read pull request #${String(number)}`,
+  );
+  if (read === null) {
+    notAttempted('A27', 'the pull request could not be read back');
+  } else {
+    check(
+      'A27',
+      read.title === title,
+      `its title read back whole: ${String(read.title.length)} characters`,
+      difference(title, read.title),
+    );
+    check(
+      'A27',
+      read.body === body,
+      `its description read back whole: ${String(read.body?.length ?? 0)} characters`,
+      difference(body, read.body),
+    );
+  }
+
+  const closed = await closePullRequest(context.client, REPO, number);
+  // An answer that cannot be read still means GitHub closed it.
+  if (closed.ok || unreadable(closed.refusal)) {
+    closedNow(number);
+    stays.push(`pull request #${String(number)}, closed (A27): ${repoWeb}/pull/${String(number)}`);
+  }
+  check(
+    null,
+    closed.ok,
+    `pull request #${String(number)} closed`,
+    closed.ok ? '' : refusalText(closed.refusal),
+  );
+  endStep();
+}
+
+// ---------------------------------------------------------------------------------------------
 // The result block
 
 function run(file: string, args: string[]): Promise<string> {
@@ -2457,20 +2597,26 @@ async function readGitVersion(): Promise<string> {
 }
 
 async function printResult(): Promise<number> {
-  for (const [step] of STEPS) {
+  // With --only-a27: step 12 and the assumptions it checked (A35 at the clean-up) only.
+  const steps = ONLY_A27 ? STEPS.filter(([step]) => step === 12) : STEPS;
+  const assumptions = ONLY_A27
+    ? ASSUMPTIONS.filter((each) => each === 'A27' || assumptionVerdicts.has(each))
+    : ASSUMPTIONS;
+  for (const [step] of steps) {
     if (!stepVerdicts.has(step)) stepVerdicts.set(step, { verdict: 'NOT ATTEMPTED', failures: [] });
   }
   say();
   say('===== Result: paste this block back =====');
   say(`Script: ${await scriptVersion()}`);
   say(`Git: ${gitVersion}`);
-  say(`Step 0 (the token check): ${tokenLines.join('; ') || 'not reached'}`);
-  for (const [step, title] of STEPS) {
+  if (ONLY_A27) say('Only step 12 (--only-a27).');
+  else say(`Step 0 (the token check): ${tokenLines.join('; ') || 'not reached'}`);
+  for (const [step, title] of steps) {
     const kept = stepVerdicts.get(step);
     say(`Step ${String(step)}: ${kept?.verdict ?? 'NOT ATTEMPTED'} (${title})`);
     for (const failure of kept?.failures ?? []) say(quoted(failure, 8));
   }
-  for (const assumption of ASSUMPTIONS) {
+  for (const assumption of assumptions) {
     const kept = assumptionVerdicts.get(assumption);
     const verdict = kept?.verdict ?? 'NOT ATTEMPTED';
     say(`${assumption}: ${verdict}`);
@@ -2525,6 +2671,27 @@ async function restrictedToken(
   return { token: restricted, client };
 }
 
+/**
+ * Step 11 needs both merge methods: refused before anything is made, rather than at the end of
+ * the run (owner's answer 8 of step J). False, with the box to tick said, when one is off.
+ */
+async function mergeMethodsAllowed(client: GitHubClient): Promise<boolean> {
+  const merging = await readMergeSettings(client, REPO);
+  const boxes = merging.ok ? boxesOff(merging.value) : [];
+  if (boxes.length > 0) {
+    say(
+      `STOPPED: step 11 asks you to merge one pull request by squash and one by rebase, and ${OWNER}/${NAME} does not allow ${boxes.length === 2 ? 'either' : boxes[0] === BOX.squash ? 'squash merging' : 'rebase merging'}. ${tickText(boxes)}, then run the script again. Nothing was done on GitHub.`,
+    );
+    return false;
+  }
+  if (!merging.ok || merging.value.squash === null || merging.value.rebase === null) {
+    say(
+      `GitHub did not say whether ${OWNER}/${NAME} allows squash and rebase merging${merging.ok ? '' : ` (${refusalText(merging.refusal)})`}: before step 11, check that ${BOX.squash} and ${BOX.rebase} are ticked under "Pull Requests" in its settings: ${repoWeb}/settings`,
+    );
+  }
+  return true;
+}
+
 async function main(): Promise<number> {
   const [token = '', restricted = ''] = await readTokens(RESTRICTED ? 2 : 1);
   if (token === '') {
@@ -2550,21 +2717,7 @@ async function main(): Promise<number> {
   }
   const second = RESTRICTED ? await restrictedToken(restricted, token, identity.account) : null;
   if (RESTRICTED && second === null) return 3;
-  // Step 11 needs both merge methods: refused now, before anything is made, rather than at the
-  // end of the run (owner's answer 8 of step J).
-  const merging = await readMergeSettings(client, REPO);
-  const boxes = merging.ok ? boxesOff(merging.value) : [];
-  if (boxes.length > 0) {
-    say(
-      `STOPPED: step 11 asks you to merge one pull request by squash and one by rebase, and ${OWNER}/${NAME} does not allow ${boxes.length === 2 ? 'either' : boxes[0] === BOX.squash ? 'squash merging' : 'rebase merging'}. ${tickText(boxes)}, then run the script again. Nothing was done on GitHub.`,
-    );
-    return 3;
-  }
-  if (!merging.ok || merging.value.squash === null || merging.value.rebase === null) {
-    say(
-      `GitHub did not say whether ${OWNER}/${NAME} allows squash and rebase merging${merging.ok ? '' : ` (${refusalText(merging.refusal)})`}: before step 11, check that ${BOX.squash} and ${BOX.rebase} are ticked under "Pull Requests" in its settings: ${repoWeb}/settings`,
-    );
-  }
+  if (!ONLY_A27 && !(await mergeMethodsAllowed(client))) return 3;
   gitVersion = await readGitVersion();
   say(
     `Token of ${identity.account}; repository ${OWNER}/${NAME} (default branch ${repository.defaultBranch}, ${repository.private ? 'private' : 'public'}).`,
@@ -2588,9 +2741,14 @@ async function main(): Promise<number> {
   process.on('SIGINT', interrupted);
   process.on('SIGTERM', interrupted);
 
-  await stepZero(context);
+  if (!ONLY_A27) await stepZero(context);
   let stopped = false;
   try {
+    if (ONLY_A27) {
+      await stepTwelve(context);
+      await cleanUp(context);
+      return await printResult();
+    }
     await stepOne(context);
     await stepTwo(context);
     await stepThree(context);
@@ -2602,6 +2760,7 @@ async function main(): Promise<number> {
     await stepNine(context);
     await stepTen(context);
     await stepEleven(context);
+    await stepTwelve(context);
   } catch (error) {
     if (!(error instanceof Stop)) {
       check(

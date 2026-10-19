@@ -2,6 +2,11 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
+## Unreleased
+
+- Agents: an agent now numbers a ticket's acceptance criteria from 1, as you see them, in everything you read from it: its comments and questions, the reason it gives up, Quality's review points and the justifications of its report. Under "What the agent was told" on a ticket, a refused submission names both numbers ("Criterion 1 (index 0) is not reported"): the index is how the agent counts them when it hands its work in.
+- Tickets: the **Request changes** dialog now says to edit an acceptance criterion your request contradicts (**Edit** on the ticket's page once it is back in **To do**), and the agent's next run is told that your request comes first where the two disagree. Help: "Tickets" > "Request changes".
+
 ## 0.4.0 — 2026-10-17
 
 Lot 3, Full ticket lifecycle: a ticket now goes from **To do** to **Done** without you typing a Git command. When an agent hands its work in, its machine pushes the ticket's branch to GitHub and the Orchestrator opens the pull request; CI failures go back to the agent, which fixes them in the same session; **Start review** has the new Quality agent review the work and post its review on the pull request (or **Skip review**); you can **Request changes** on **In review** or **Awaiting merge**; and once you merge the pull request on GitHub, the ticket moves to **Done** by itself and the branch is deleted on GitHub, and on each machine whose copy holds nothing unmerged. "Needs you" lists what waits for you along the way (a review to start, a pull request to merge, a push or a download that failed, CI that did not finish, a ticket stopped after repeated failures). Update each machine's daemon from Help > Machines > "Update the daemon": a 0.3.0 daemon gets no runs. The scheduler, which starts runs by itself, comes in the next version.
