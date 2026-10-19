@@ -95,6 +95,27 @@ describe('run refusals in plain words (07, section 3)', () => {
     expect(runRefusalText(refusals.blocked)).toBe(
       'This ticket waits for WEB-3, WEB-4, which are not done yet.',
     );
+    // A cancelled blocker: how to let the ticket start (owner, review of lot 4 step D1).
+    expect(runRefusalText({ reason: 'blocked', tickets: ['WEB-3'], cancelled: ['WEB-3'] })).toBe(
+      'Blocked by WEB-3 (cancelled): remove the dependency to let it start.',
+    );
+    expect(
+      runRefusalText({
+        reason: 'blocked',
+        tickets: ['WEB-3', 'WEB-4'],
+        cancelled: ['WEB-3', 'WEB-4'],
+      }),
+    ).toBe(
+      'Blocked by WEB-3 (cancelled), WEB-4 (cancelled): remove the dependencies to let it start.',
+    );
+    expect(
+      runRefusalText({ reason: 'blocked', tickets: ['WEB-3', 'WEB-4'], cancelled: ['WEB-4'] }),
+    ).toBe(
+      'This ticket waits for WEB-3, which is not done yet. Blocked by WEB-4 (cancelled): remove the dependency to let it start.',
+    );
+    expect(queueReasonText({ reason: 'blocked', tickets: ['WEB-3'], cancelled: ['WEB-3'] })).toBe(
+      'Blocked by WEB-3 (cancelled): remove the dependency to let it start.',
+    );
     // Owner's answer 3, lot 3 step K: the setting and its value.
     for (const [count, words] of [
       [2, '2 failed attempts'],

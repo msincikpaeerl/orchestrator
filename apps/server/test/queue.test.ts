@@ -10,6 +10,8 @@ import {
 import type { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase, type Database } from '../src/database.js';
+import { createLogger } from '../src/logger.js';
+import { Scheduler } from '../src/scheduler/loop.js';
 import { computeQueue } from '../src/scheduler/queue.js';
 
 // The scheduler's queue (07, sections 2 to 4 and 7; lot 4 step D1), over a database built for each
@@ -191,6 +193,29 @@ async function run(
 
 async function queue(now = NOW): Promise<QueueResponse> {
   return QueueResponse.parse(await computeQueue(db, now));
+}
+
+/**
+ * What one tick of the loop asks to start (lot 4 step D2a), with the clock at `NOW`: each start is
+ * recorded and refused, so nothing is started and every candidate is asked once at most.
+ */
+async function loopAsks(): Promise<string[]> {
+  const asked: string[] = [];
+  const start = (projectKey: string, number: number): Promise<never> => {
+    asked.push(`${projectKey}-${String(number)}`);
+    return Promise.reject(new Error('recorded only'));
+  };
+  const scheduler = new Scheduler({
+    db,
+    pool,
+    log: createLogger('silent'),
+    runs: { runNow: start, startReview: start },
+    now: () => NOW,
+    timers: false,
+  });
+  await scheduler.tick();
+  await scheduler.close();
+  return asked;
 }
 
 const label = (candidate: QueueCandidate) =>
@@ -400,6 +425,8 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
     expect(await reasonOf(`WEB-${String(blocked.number)}`)).toEqual({
       reason: 'blocked',
       tickets: ['WEB-3', 'WEB-4'],
+      // Named apart, so the owner knows to remove the dependency (review of lot 4 step D1).
+      cancelled: ['WEB-4'],
     });
   });
 
@@ -472,6 +499,8 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
       machine: ref,
     });
     expect(await reasonOf('WEB-5')).toBeNull();
+    // The loop asks to start only the ticket without an item (lot 4 step D2a).
+    expect(await loopAsks()).toEqual(['WEB-5']);
   });
 
   it('names a review that did not finish, and offers no review while one runs', async () => {
@@ -501,6 +530,7 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
       item: 'review_not_finished',
       machine: { id: laptop.id, name: 'Laptop' },
     });
+    expect(await loopAsks()).toEqual([]);
   });
 
   it('names the account: paused, limited until, outside its window until, budget used', async () => {

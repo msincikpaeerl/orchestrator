@@ -96,7 +96,14 @@ const server = await startServer(
   },
   createLogger(process.env.E2E_LOG_LEVEL ?? 'warn'),
   // No CI check starts by itself: a test asks for one (POST /ci/pass).
-  { githubApiUrl: github.url, gitBaseUrl: github.url, webRoot, daemonPackageDir, ciTimers: false },
+  {
+    githubApiUrl: github.url,
+    gitBaseUrl: github.url,
+    webRoot,
+    daemonPackageDir,
+    ciTimers: false,
+    schedulerTimers: false,
+  },
 );
 
 // Test-only controls, never part of the server: POST /reset empties every table but the agent

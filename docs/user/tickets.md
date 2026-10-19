@@ -77,7 +77,7 @@ A ticket is **Blocked** while at least one ticket it waits for is not **Done**. 
 
 ### A ticket waits for a cancelled ticket
 
-A cancelled ticket is not done, so **a ticket waiting for a cancelled ticket stays blocked**. The ticket page tells you when this happens. You can:
+A cancelled ticket is not done, so **a ticket waiting for a cancelled ticket stays blocked**: nothing starts it, not even overnight. The ticket page tells you when this happens, and **Run now** says it in its own words, for example "Blocked by WEB-3 (cancelled): remove the dependency to let it start." You can:
 
 - **remove the dependency**, if the ticket no longer needs the cancelled work: on the waiting ticket's page, click **Remove** next to the cancelled ticket under **Blocked by**; or
 - **reopen the cancelled ticket**, if the work is needed after all: open it and click **Reopen**. The waiting ticket is unblocked when it is done.
@@ -271,7 +271,7 @@ When a ticket's work is accepted and CI has passed (or found nothing to run), th
 - **Start review**: Quality, the reviewing agent (see [Agents](agents.md#quality)), reads the work and approves it or asks for changes. It starts at once, without a confirmation, like **Run now**, and the run page opens.
 - **Skip review**: you check the pull request yourself. After a confirmation, the ticket moves to **Awaiting merge** with the comment "The owner skipped the review.".
 
-Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it.
+Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it. From version 0.5.0 the scheduler starts the review by itself when its account can take it (see [What starts by itself](runs.md#what-starts-by-itself)): **Start review** starts it at once, and **Skip review** before it starts means no review.
 
 ### What a review costs
 

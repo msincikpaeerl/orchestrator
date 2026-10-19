@@ -313,6 +313,8 @@ const describe: { [T in EventType]: Describe<T> } = {
         return [c.ticket, ` reopened: back to ${statusLabel[p.to].toLowerCase()}`];
       case 'run_now':
         return [c.ticket, ' in progress: Run now started a run'];
+      case 'scheduler_started':
+        return [c.ticket, ' in progress: the scheduler started a run'];
       case 'stop_run':
         return [c.ticket, ' back to to do: you stopped its run'];
       case 'run_submitted':

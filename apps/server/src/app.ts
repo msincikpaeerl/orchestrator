@@ -17,6 +17,7 @@ import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
 import { registerAccountRoutes } from './machines/accounts.js';
 import { registerTimeZoneRoutes } from './settings/time-zone.js';
+import { Scheduler } from './scheduler/loop.js';
 import { registerQueueRoutes } from './scheduler/routes.js';
 import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
@@ -64,9 +65,24 @@ export interface AppDependencies {
    * the test's clock (lot 3 step G1a).
    */
   ciTimers?: boolean;
+  /**
+   * False in tests: the scheduler's loop starts runs only when the test asks
+   * (`schedulerOf(app).tick()`), with the test's clock (lot 4 step D2a).
+   */
+  schedulerTimers?: boolean;
+  /** Milliseconds in one second of **Scheduler check interval**; tests of the timers shorten it. */
+  schedulerSecondMs?: number;
 }
 
 const ciWatchers = new WeakMap<object, CiWatcher>();
+const schedulers = new WeakMap<object, Scheduler>();
+
+/** The application's scheduler, for tests that run its loop by hand. */
+export function schedulerOf(app: object): Scheduler {
+  const scheduler = schedulers.get(app);
+  if (!scheduler) throw new Error('no scheduler for this application');
+  return scheduler;
+}
 
 /** The application's CI checks, for tests that run them by hand. */
 export function ciWatcherOf(app: object): CiWatcher {
@@ -192,6 +208,22 @@ export function buildApp(dependencies: AppDependencies) {
   app.addHook('onReady', async () => {
     await feed.start();
   });
+  // The scheduler's loop (07, section 2; lot 4 step D2a): on each relevant change of the feed,
+  // and at least once per **Scheduler check interval**.
+  const scheduler = new Scheduler({
+    db,
+    pool,
+    log: logger,
+    runs,
+    feed,
+    now: dependencies.now,
+    timers: dependencies.schedulerTimers,
+    secondMs: dependencies.schedulerSecondMs,
+  });
+  schedulers.set(app, scheduler);
+  app.addHook('onReady', () => {
+    scheduler.start();
+  });
   // Pull requests still wanted when the server stopped: tried once (04, section 3.1). Not awaited,
   // so GitHub's answers never delay the start.
   app.addHook('onReady', () => {
@@ -207,6 +239,7 @@ export function buildApp(dependencies: AppDependencies) {
     });
   });
   app.addHook('onClose', async () => {
+    await scheduler.close();
     await ci.close();
     runs.close();
     feed.close();

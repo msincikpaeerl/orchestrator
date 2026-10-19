@@ -26,7 +26,7 @@ export async function startServer(
   logger: FastifyBaseLogger,
   options: Pick<
     AppDependencies,
-    'githubApiUrl' | 'gitBaseUrl' | 'webRoot' | 'daemonPackageDir' | 'ciTimers'
+    'githubApiUrl' | 'gitBaseUrl' | 'webRoot' | 'daemonPackageDir' | 'ciTimers' | 'schedulerTimers'
   > = {},
 ): Promise<RunningServer> {
   const pool = createPool({ connectionString: config.databaseUrl });

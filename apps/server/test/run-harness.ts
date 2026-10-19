@@ -59,6 +59,8 @@ export class RunHarness {
       now?: () => Date;
       /** What the project's CI does by itself: it passes at once unless a test says otherwise. */
       ci?: 'success' | 'queued' | 'none';
+      /** The scheduler's loop by itself (lot 4 step D2a); by default only at `schedulerTick()`. */
+      scheduler?: { timers: true; secondMs?: number };
     } = {},
   ) {
     this.started = true;
@@ -90,6 +92,7 @@ export class RunHarness {
       streamKeepAliveMs: options.streamKeepAliveMs,
       gitBaseUrl: options.gitOnFakeGitHub ? this.github.url : options.gitBaseUrl,
       now: options.now,
+      scheduler: options.scheduler,
     });
     this.cookie = await createOwner(this.t.app);
     const saved = await this.call('PUT', '/api/github/token', { token: TOKEN, expiresOn: null });
@@ -187,19 +190,31 @@ export class RunHarness {
     const response = await this.call('POST', `/api/projects/WEB/tickets/${String(number)}/run`);
     expect(response.statusCode, response.body).toBe(201);
     const created = Run.parse(response.json());
+    return this.working(daemon, created.id, number);
+  }
+
+  /**
+   * A run started by **Run now** or by the scheduler (lot 4 step D2a): its `run.start`
+   * acknowledged, then the run `running`; its id, run token and start.
+   */
+  async working(
+    daemon: ScriptedDaemon,
+    runId: string,
+    number = 1,
+  ): Promise<{ runId: string; runToken: string; start: RunStart }> {
     const start = await daemon.find<RunStart>(
-      (message) => message.type === 'run.start' && message.payload.runId === created.id,
+      (message) => message.type === 'run.start' && message.payload.runId === runId,
       'run.start',
     );
     daemon.send({ type: 'ack', id: start.id, payload: { ok: true } });
-    await this.report(daemon, state(created.id, { state: 'preparing' }));
+    await this.report(daemon, state(runId, { state: 'preparing' }));
     await this.report(
       daemon,
-      state(created.id, { state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION }),
+      state(runId, { state: 'starting', claudeCodeVersion: CLAUDE_CODE_VALIDATED_VERSION }),
     );
-    await this.report(daemon, state(created.id, { state: 'working' }));
+    await this.report(daemon, state(runId, { state: 'working' }));
     this.runTickets.set(start.payload.runToken, number);
-    return { runId: created.id, runToken: start.payload.runToken };
+    return { runId, runToken: start.payload.runToken, start };
   }
 
   /** **Start review**, acknowledged, then the review run `running`: its id, token and start. */

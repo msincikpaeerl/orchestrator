@@ -69,6 +69,7 @@ export const pauseText: Record<PauseReason, string> = {
 export const causeText: Record<RunChangeCause, string> = {
   daemon: 'reported by its machine',
   run_now: 'Run now',
+  scheduler: 'started by the scheduler',
   resume: 'Resume',
   owner_stopped: 'stopped by you',
   ticket_cancelled: 'the ticket was cancelled',
@@ -186,8 +187,19 @@ export function runRefusalText(refusal: RunRefusal): string {
       return refusal.cause === 'review_rounds'
         ? `This ticket is stopped after ${String(refusal.count)} requests for changes by Quality (Most review rounds per ticket: ${String(refusal.limit)}): use Try again, Cancel or Mark as done manually.`
         : `This ticket is stopped after ${String(refusal.count)} failed attempt${refusal.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(refusal.limit)}): use Try again, Cancel or Mark as done manually.`;
-    case 'blocked':
-      return `This ticket waits for ${refusal.tickets.join(', ')}, which ${refusal.tickets.length === 1 ? 'is' : 'are'} not done yet.`;
+    case 'blocked': {
+      // A cancelled blocker blocks until the dependency is removed (owner, review of lot 4 D1).
+      const cancelled = new Set(refusal.cancelled);
+      const waiting = refusal.tickets.filter((ticket) => !cancelled.has(ticket));
+      const named = [...cancelled];
+      const removal =
+        named.length === 0
+          ? ''
+          : `Blocked by ${named.map((ticket) => `${ticket} (cancelled)`).join(', ')}: remove the ${named.length === 1 ? 'dependency' : 'dependencies'} to let it start.`;
+      if (waiting.length === 0) return removal;
+      const sentence = `This ticket waits for ${waiting.join(', ')}, which ${waiting.length === 1 ? 'is' : 'are'} not done yet.`;
+      return removal === '' ? sentence : `${sentence} ${removal}`;
+    }
     case 'project_archived':
       return 'This project is archived. Unarchive it first.';
     case 'project_not_ready':

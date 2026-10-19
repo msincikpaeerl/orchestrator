@@ -173,3 +173,5 @@ The owner
 The Orchestrator
 <!-- part: author-agent -->
 Agent {{name}}
+<!-- part: started-by-scheduler -->
+Started by the scheduler: the Orchestrator started this run by itself, not the owner.

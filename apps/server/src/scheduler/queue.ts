@@ -3,6 +3,8 @@ import {
   ACCOUNT_BUSY_RUN_STATUSES,
   Capability,
   FailureReason,
+  MachineFailureCause,
+  type MachineUnavailable,
   TicketPriority,
   type AccountToday,
   type BlockingItem,
@@ -33,9 +35,10 @@ import {
   resumeRefusal,
   ticketRefusal,
   ticketWork,
+  type Blocker,
   type Fleet,
 } from './checks.js';
-import { runsToday } from './facts.js';
+import { runStories, runsToday, type RunStory } from './facts.js';
 
 // The scheduler's queue (07, sections 2, 3 and 7; lot 4 step D1): every candidate at `now`, in the
 // order the loop takes them, and for each one that cannot start the reason, with the checks Run now
@@ -85,6 +88,8 @@ const runColumns = {
   commits: schema.runs.commits,
   notOnGitHub: schema.runs.notOnGitHub,
   branchHead: schema.runs.branchHead,
+  acknowledgedAt: schema.runs.acknowledgedAt,
+  reviewCommit: schema.runs.reviewCommit,
 };
 type RunFacts = { [Key in keyof typeof runColumns]: (typeof schema.runs.$inferSelect)[Key] };
 
@@ -103,6 +108,48 @@ interface Draft {
   holding: { machineId: string; commits: number } | null;
   /** The machine of the ticket's latest run, preferred among equals (07, section 4). */
   last: string | undefined;
+  /** The machines left out for this ticket after a start they did not take (lot 4 step D2a). */
+  leftOut: ReadonlyMap<string, MachineUnavailable>;
+}
+
+/**
+ * The ends of a start a machine never took (lot 4 step D2a): not acknowledged in time, refused, or
+ * the machine gone at the dispatch. The machine is left out for the ticket until the owner's
+ * **Run now** or **Start review**; the release at the machine's next connection and the item after
+ * repeated failures come with step D2b (07, section 4).
+ */
+const DISPATCH_FAILURES = new Set<string>([
+  'dispatch_timeout',
+  'dispatch_refused',
+  'machine_offline',
+]);
+
+/** The machines left out for a ticket, from its runs newest first and their stories. */
+function leftOutMachines(
+  earlier: readonly RunFacts[],
+  stories: ReadonlyMap<string, RunStory>,
+): Map<string, MachineUnavailable> {
+  const left = new Map<string, MachineUnavailable>();
+  for (const run of [...earlier].reverse()) {
+    const story = stories.get(run.id);
+    // The owner's start releases the machines left out before it.
+    if (story?.byOwner) left.clear();
+    const cause = story?.endCause;
+    if (
+      run.acknowledgedAt === null &&
+      run.endedAt !== null &&
+      cause !== undefined &&
+      cause !== null &&
+      DISPATCH_FAILURES.has(cause)
+    ) {
+      left.set(run.machineId, {
+        why: 'left_out',
+        cause: MachineFailureCause.parse(cause),
+        at: run.endedAt.toISOString(),
+      });
+    }
+  }
+  return left;
 }
 
 /** The queue at `now`: each account's line, then every candidate in the scheduler's order. */
@@ -188,6 +235,12 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     }
   }
 
+  // Who started each run and what ended it: the holds and the machines left out (lot 4 D2a).
+  const stories = await runStories(
+    db,
+    [...runsByTicket.values()].flatMap((runs) => runs.map((run) => run.id)),
+  );
+
   // Dependencies: what each ticket waits for, and the tickets waiting on it (07, section 3).
   const dependencies = await db.select().from(schema.ticketDependencies);
   const waitsFor = new Map<string, string[]>();
@@ -208,12 +261,14 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     return [...seen].filter((id) => !CLOSED.has(allTickets.get(id)?.status ?? 'done')).length;
   };
   // As Run now: a blocker counts until it is done (07, section 3).
-  const blockers = (ticketId: string, projectKey: string): string[] =>
+  const blockers = (ticketId: string, projectKey: string): Blocker[] =>
     (waitsFor.get(ticketId) ?? [])
       .map((id) => allTickets.get(id))
       .filter((blocker) => blocker !== undefined && blocker.status !== 'done')
-      .map((blocker) => ticketReference(projectKey, blocker?.number ?? 0))
-      .sort();
+      .map((blocker) => ({
+        reference: ticketReference(projectKey, blocker?.number ?? 0),
+        cancelled: blocker?.status === 'cancelled',
+      }));
 
   // The blocking "Needs you" items, as "Needs you" finds them (04, section 5.1).
   const items = new Map<
@@ -256,6 +311,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       project,
       blocks: blocks(ticket.id),
       last: earlier[0]?.machineId,
+      leftOut: leftOutMachines(earlier, stories),
     };
     const resumes = paused.filter((run) => run.ticketId === ticket.id);
     for (const run of resumes) {
@@ -292,6 +348,9 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
         earlier[0]?.endedAt?.getTime() ?? 0,
         request === null ? 0 : Date.parse(request.at),
       );
+      // Held after the owner's Stop run, until Run now starts it again (07, section 1): read from
+      // its latest run until step D2b gives the hold its own field.
+      const stopped = latest !== undefined && stories.get(latest.id)?.endCause === 'owner_stopped';
       drafts.push({
         ...base,
         kind: request === null ? 'implement' : 'fix_review',
@@ -302,6 +361,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           github ??
           projectRefusal(project) ??
           ticketRefusal(ticket, blockers(ticket.id, project.key)) ??
+          (stopped ? { reason: 'held', cause: 'stop_run' } : null) ??
           (item ? { reason: 'needs_you', item: item.item, machine: item.machine } : null),
         required: capabilities(ticket.assigneeProfileId),
         holding: holding ? { machineId: holding.machineId, commits: held } : null,
@@ -315,6 +375,12 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     if (!review.offered || ready === null) continue;
     const latest = review.latest;
     const item = items.get(reference);
+    // A review of this work stopped by the owner holds it until Start review (07, section 1).
+    const lastReview = earlier.find((run) => run.purpose === 'review');
+    const stopped =
+      lastReview !== undefined &&
+      lastReview.reviewCommit === ready.commit &&
+      stories.get(lastReview.id)?.endCause === 'owner_stopped';
     drafts.push({
       ...base,
       kind: 'review',
@@ -324,6 +390,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       early:
         github ??
         projectRefusal(project) ??
+        (stopped ? { reason: 'held', cause: 'stop_review' } : null) ??
         (latest?.kind === 'not_finished'
           ? { reason: 'needs_you', item: 'review_not_finished', machine: latest.machine }
           : item
@@ -370,7 +437,11 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       reason = resumeRefusal(own, account, places.get(account.id) ?? 0, now, days.get(account.id));
       if (reason === null) machine = own;
     } else if (reason === null) {
-      const choice = machineChoice(fleet, { required: draft.required, holding: draft.holding });
+      const choice = machineChoice(fleet, {
+        required: draft.required,
+        holding: draft.holding,
+        leftOut: draft.leftOut,
+      });
       if (choice.refusal !== null) reason = choice.refusal;
       else {
         const [only] = choice.machines;
