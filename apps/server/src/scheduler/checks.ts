@@ -213,12 +213,24 @@ export function machineChoice(
   input: {
     required: readonly Capability[];
     holding: { machineId: string; commits: number } | null;
+    /**
+     * The scheduler only: the machines left out for this ticket after a failure they caused (07,
+     * section 4), given after the machine's own state and before its account's.
+     */
+    leftOut?: ReadonlyMap<string, MachineUnavailable>;
   },
 ): MachineChoice {
   const { required, holding } = input;
+  const verdict = (machine: MachineRow): MachineUnavailable | null => {
+    const unavailable = fleetVerdict(fleet, machine, required);
+    const left = input.leftOut?.get(machine.id);
+    return left && (unavailable === null || unavailable.why.startsWith('account_'))
+      ? left
+      : unavailable;
+  };
   const holder = holding && fleet.machines.find((machine) => machine.id === holding.machineId);
   if (holding && holder && !holder.revokedAt) {
-    const unavailable = fleetVerdict(fleet, holder, required);
+    const unavailable = verdict(holder);
     if (unavailable) {
       return {
         refusal: {
@@ -235,7 +247,7 @@ export function machineChoice(
   const candidates = fleet.machines.filter((machine) => !machine.revokedAt);
   const verdicts = candidates.map((machine) => ({
     machine,
-    unavailable: fleetVerdict(fleet, machine, required),
+    unavailable: verdict(machine),
   }));
   const available = verdicts.filter((entry) => entry.unavailable === null);
   if (available.length === 0) {
@@ -335,9 +347,7 @@ export function refusalMessage(refusal: RunRefusal): string {
     case 'ticket_stopped':
       return `The ticket is stopped after ${String(refusal.count)} ${refusal.cause === 'review_rounds' ? 'review rounds' : 'failed attempts'} (limit ${String(refusal.limit)}): Try again first`;
     case 'blocked':
-      return refusal.cancelled === undefined
-        ? `The ticket waits for ${refusal.tickets.join(', ')}`
-        : `The ticket waits for ${refusal.tickets.join(', ')}; cancelled, so remove the dependency: ${refusal.cancelled.join(', ')}`;
+      return blockedMessage(refusal.tickets, refusal.cancelled ?? []);
     case 'machine_unavailable':
       return refusal.commits === null
         ? `The run's machine ${refusal.machine.name} cannot take it now (${refusal.unavailable.why})`
@@ -353,4 +363,19 @@ export function refusalMessage(refusal: RunRefusal): string {
     default:
       throw new Error(`no message for the refusal ${refusal.reason}`);
   }
+}
+
+/** "The ticket waits for WEB-2; blocked by WEB-3 (cancelled): remove the dependency to let it start". */
+function blockedMessage(tickets: readonly string[], cancelled: readonly string[]): string {
+  const waiting = tickets.filter((ticket) => !cancelled.includes(ticket));
+  const parts = [
+    ...(waiting.length > 0 ? [`the ticket waits for ${waiting.join(', ')}`] : []),
+    ...(cancelled.length > 0
+      ? [
+          `blocked by ${cancelled.map((ticket) => `${ticket} (cancelled)`).join(', ')}: remove the ${cancelled.length === 1 ? 'dependency' : 'dependencies'} to let it start`,
+        ]
+      : []),
+  ];
+  const text = parts.join('; ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
