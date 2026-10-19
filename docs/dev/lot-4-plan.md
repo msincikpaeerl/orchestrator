@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: step A in progress (2026-10-18): the owner's answers written into this plan and the specs, waiting for the owner's review (and the two new questions)
+> Status: step A done (2026-10-19: the plan and the spec changes approved, the two new questions answered); step B in progress
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -44,10 +44,10 @@ Step A's questions (Q), answered by the owner; the specs named carry them (step 
 - **Q16, the real check: A** (step L): three tickets over one night, without a **Pause now** part.
 - **Q17**: the owner's architect allowlist rerun before the tag (Claude Code 2.1.302, `haiku`, 2026-10-18T17:14:14.594Z): 17 of 17 PASS, recorded in lot 3's plan (step N).
 
-**New questions from writing the answers** (waiting for the owner's review):
+**New questions from writing the answers**, answered by the owner (2026-10-19, with the approval of PR #83; written into the specs named in step B's first commit):
 
-1. **How many machine-caused failures in a row block a ticket** (Q3's rule, 07 section 4)? Recommended: a setting, **Machine failures before asking you**, 2 by default, 1 to 10, since every limit is a setting (04 section 8). Otherwise a fixed rule of two, written in 07.
-2. **The fix run starting before the owner edits a criterion** (Q1 with Q14)? Recommended: the **Request changes** dialog gets a box "Hold BAK-12 so I can edit its acceptance criteria first", which holds the ticket as **Stop run** does (Q4) until the owner's **Run now**. Otherwise every owner's **Request changes** holds the ticket (fixes start by themselves only after Quality's request), or nothing is added and the owner turns the project's switch off first.
+1. **How many machine-caused failures in a row block a ticket** (Q3's rule): **the recommended setting** (04 section 8, 07 sections 4 and 8): **Machine failures before asking you** (`maxMachineFailures`), 2 by default, 1 to 10, global (machines are not a project's; 04 section 8 lists it with "No" override), on Settings > Limits with "Used from version 0.5.0"; read at the failure that reaches it. Built in step D2.
+2. **The fix run starting before the owner edits a criterion** (Q1 with Q14): **the recommended box** (01 section 3.4, 02 sections 6.4, 04 section 2, 07 section 1): the **Request changes** dialog has "Hold <ticket> so I can edit its acceptance criteria first", unchecked by default; checked, it holds the ticket as **Stop run** does (Q4) until the owner's **Run now**, and the confirmation offers no **Run now**. Built in **step D2**, with the hold it uses: in step B the box would need the hold built first (its field, events, badge and release, a part of D2 moved before any scheduler that reads it, rule 5), while in D2 it is one more way to set the hold.
 
 ### No daemon update expected in lot 4
 
@@ -63,7 +63,7 @@ Lot 4 raises no `PROTOCOL_VERSION` (Q7 B, Q8 A, Q13's fallback): the owner's ins
 
 ## Steps
 
-### [ ] A. Plan and spec decisions
+### [x] A. Plan and spec decisions (2026-10-19)
 
 - This plan; spec 10's lot 4 scope completed with lot 3's "Carried to lot 4"; CLAUDE.md's "Current state"; lot 3's plan marked tagged.
 - After the owner's answers (second commit, 2026-10-18): the answers above, and the specs they change: 01 (the project's switch, the held ticket, the machine-caused failures, the account's windows, budget and paused state), 02 (Needs you's new items and lines, the held badge, the dialog's sentence, project settings, Activity > Queue, the run's waiting split, the account page, Settings' time zone), 03 (criteria numbers, the `fix_review` message), 04 (sections 2 and 5.1: the scheduler's guard, Stop run's hold, the fix by itself, the contradicting request, `ci_cancelled`'s item, Push again moved), 05 (sections 3.3, 6 and 7.2), 06 (`ticket_submit`'s index), 07 (sections 1 to 8) and 10 (lots 4 and 7); lot 3's plan records the allowlist rerun (Q17).
@@ -108,14 +108,15 @@ The whole step: the loop of 07 section 2, the order of section 3, the machine ch
 - The run's first message and comment say who started it ("Started by the scheduler"), and the event names the scheduler as actor (01 section 3.10, actor `system`).
 - **The held ticket** (Q4): **Stop run** holds it; **Run now** releases it (**Start review** for a review run); the badge and the ticket page's sentence (02 section 6.4).
 - **The blocking rule** (Q3): the existing blocking items (`ci_timeout`, `push_failed`, `download_failed`, "Review did not finish") are read by D1; `ci_cancelled`'s new item, with its words.
-- **Failures the machine caused** (Q3's condition, 07 section 4): the machine left out for the ticket after one, until its next `hello` or the owner's **Run now**; the item "<ticket> could not start on <machine>" after a second in a row (or after the number of new question 1's setting), with its words. The every-kind and every-event guards cover the two new items and the hold's events.
+- **Failures the machine caused** (Q3's condition, 07 section 4): the machine left out for the ticket after one, until its next `hello` or the owner's **Run now**; the item "<ticket> could not start on <machine>" once **Machine failures before asking you** (new answer 1; 2 by default) are reached in a row, with its words; the setting on Settings > Limits ("Used from version 0.5.0" until step K), Help > Settings and the settings tests.
+- **The Request changes hold box** (new answer 2): "Hold <ticket> so I can edit its acceptance criteria first", unchecked by default; checked, the request holds the ticket as **Stop run** does and the confirmation offers no **Run now**; Help > Tickets > "Request changes". The every-kind and every-event guards cover the two new items and the hold's events.
 
-**Done when** server tests with the real daemon and the fake `claude` show: two eligible tickets started in order on an account of maximum 1, the second after the first ends; a counted failure retried, then stopped at **Failed attempts before asking you**; each uncounted failure of Q3 never retried while its item stands; a stopped run's ticket held, and released by Run now; for each of the five machine-caused failures (`machine_offline`, `machine_revoked`, `claude_code_unsupported`, `machine_problem`, a dispatch not acknowledged or refused), the same ticket never started again on that machine in a loop: left out until the machine reconnects, then the item after a second failure in a row, with a start sent between a `machine_problem` end and its `machine.doctor` report refused and not looping; no run started twice by two loops.
+**Done when** server tests with the real daemon and the fake `claude` show: two eligible tickets started in order on an account of maximum 1, the second after the first ends; a counted failure retried, then stopped at **Failed attempts before asking you**; each uncounted failure of Q3 never retried while its item stands; a stopped run's ticket held, and released by Run now; for each of the five machine-caused failures (`machine_offline`, `machine_revoked`, `claude_code_unsupported`, `machine_problem`, a dispatch not acknowledged or refused), the same ticket never started again on that machine in a loop: left out until the machine reconnects, then the item after a second failure in a row (after the first with **Machine failures before asking you** at 1), with a start sent between a `machine_problem` end and its `machine.doctor` report refused and not looping; no run started twice by two loops; a **Request changes** with its hold box checked leaves the ticket held, never started by the loop, until **Run now**, and one without the box does not (Playwright on both viewports shows the box).
 
 ### [ ] D3. Reviews and fixes by themselves
 
 - **Reviews** (Q1): a ticket entering `in_review` becomes a `review` candidate (category 2) when its project's switch is on; **Skip review** before its start removes it; **Start review** moves it to the front; "Ready for review" says the review will start by itself (or that the switch is off).
-- **Fixes**: after Quality's request for changes, and after the owner's **Request changes** (its confirmation's **Run now** stays, to move it to the front), the ticket is a `fix_review` candidate; the dialog's hold box if new question 2 is answered so.
+- **Fixes**: after Quality's request for changes, and after the owner's **Request changes** (its confirmation's **Run now** stays, to move it to the front), the ticket is a `fix_review` candidate, unless the dialog's hold box (new answer 2, built in D2) held it.
 - The project settings page's switch, its event, Help > Tickets ("Review by Quality", "What starts by itself"), Help > Projects; CHANGELOG.
 
 **Done when** server tests cover a ticket going `todo` → implement → `in_review` → review → `awaiting_merge` with no owner action, a request for changes followed by a `fix_review` by itself, **Skip review** before the review starts, and the switch off; Playwright on both viewports shows the switch and "Ready for review"'s sentence for both values.
