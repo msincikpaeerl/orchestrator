@@ -186,6 +186,17 @@ What the agent said about these points:
 
 Point 2: docs/user/contact.md already describes the form.
 
+# First message (review) after the owner's request: its acceptance criteria
+
+## Acceptance criteria
+
+They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.
+
+- Criterion 1 (index 0): The contact page has a form with name, e-mail address and message
+- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field
+
+The owner's request for changes, given under "The previous review" below, was written after these criteria, so it wins where they disagree. The agent was told to do what the request asks and to say so in that criterion's justification: a criterion the agent reported as superseded by the owner's request is not a reason to request changes. Check instead that the work does what the request asks.
+
 # First message (review), No CI found and workflow files changed: its CI
 
 ## CI
