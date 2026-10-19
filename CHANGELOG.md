@@ -4,6 +4,10 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Machines: each Claude account now has **windows** (the days and hours runs may start), a **daily budget** (minutes of working time or US dollars of estimated usage a day) and **Stop new runs** with **Resume**. Click **Windows, budget and history** under an account: its page shows today's working time, estimated usage and runs against the budget, the next window, the estimated usage of the last 14 days and the usage limits reached. In this version nothing starts by itself yet, and **Run now** ignores windows and the budget; it is refused while the account is paused, with the reason. Help: "Machines" > "Keep Claude usage for yourself".
+- Settings: new **Time zone**, filled in from your browser, in which the accounts' windows and days are read. Until you save it, the Orchestrator uses UTC. Help: "Settings" > "Set the time zone".
+- Needs you: each account's line now shows **Paused**, the next window and a daily budget used, with **Stop new runs** or **Resume**.
+- Tickets: the ticket page shows the estimated usage of its runs together.
 - Agents: an agent now numbers a ticket's acceptance criteria from 1, as you see them, in everything you read from it: its comments and questions, the reason it gives up, Quality's review points and the justifications of its report. Under "What the agent was told" on a ticket, a refused submission names both numbers ("Criterion 1 (index 0) is not reported"): the index is how the agent counts them when it hands its work in.
 - Tickets: the **Request changes** dialog now says to edit an acceptance criterion your request contradicts (**Edit** on the ticket's page once it is back in **To do**), and the agent's next run is told that your request comes first where the two disagree. Quality's next review is told the same, so it does not send the work back for following your request. Help: "Tickets" > "Request changes".
 

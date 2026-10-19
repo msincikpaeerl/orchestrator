@@ -15,7 +15,27 @@ Everything here is in **Machines**, in the menu. Add a Claude account first, the
 
 Click **Edit** to change its label, plan or runs at the same time.
 
-Each account also shows its **State**: **Available**, or **Limited until** a time when it reached its Claude usage limit ("(estimated)" when Claude gave no reset time). No run starts on a limited account before that time; it shows **Available** again by itself once the time has passed. See [Usage limits](runs.md#usage-limits).
+Each account also shows its **State**: **Available**, **Paused** (you stopped new runs, below), or **Limited until** a time when it reached its Claude usage limit ("(estimated)" when Claude gave no reset time), with the time left. No run starts on a limited account before that time; it shows **Available** again by itself once the time has passed. See [Usage limits](runs.md#usage-limits).
+
+## Keep Claude usage for yourself
+
+Agents use the same Claude subscription as you. Each account has three ways to keep some of it for your own work: **windows**, a **daily budget** and **Stop new runs**. Click **Windows, budget and history** under an account to set them.
+
+In this version nothing starts a run by itself yet: windows and the budget are shown, and the scheduler of a later version follows them. **Run now** always ignores windows and the budget, since you choose to start that run; it is refused only while the account is paused, limited or already running its maximum.
+
+**Time zone first.** Windows and the day of the budget are read in the Orchestrator's time zone, set in **Settings** > **Time zone**. Until you save one, the Orchestrator uses UTC; the field is filled in with your browser's time zone, so you usually only click **Save the time zone**. Summer and winter time are followed by themselves.
+
+**Windows.** Runs start only inside the account's windows; with no window, at any time. Click **Add a window**, tick its days, and set **from** and **until**. A window ending at 00:00 ends at midnight; one ending before its start ends the next day (for example Monday to Friday, 22:00 to 06:00: Monday night to Tuesday morning, and so on). 00:00 to 00:00 is the whole day. Click **Save windows**. When a window ends, a run already started finishes; it is not paused. On the night the clocks go forward, a window starting at an hour that does not exist (02:00 in much of Europe) opens when the clocks jump (03:00).
+
+**Daily budget.** Choose **Working time** (minutes a day) or **Estimated usage** (US dollars a day), then **Save the budget**. Once the runs started today reach it, no new run starts on the account until midnight; a run already started finishes. What counts:
+
+- each run counts whole on the day it started, also while it is still running: its working time so far, and the latest estimate its machine sent. A run started at 23:50 counts for that day, even if it works past midnight;
+- working time is the time agents work, not the time they wait for you, for CI or for a usage limit;
+- estimated usage is what Claude Code estimates the run would cost in US dollars. Your subscription does not charge it, but it follows how much of your usage a run takes better than time. A run Claude Code gave no estimate for yet counts as $0.00, and the account says how many there are.
+
+**Stop new runs.** Click **Stop new runs** on the account, its page or its line in **Needs you**: the account shows **Paused**. Runs already started go on and finish; **Run now**, and **Resume** of a paused run, are refused until you click **Resume**. To free your usage at once, also stop the running agent with **Stop run** on its ticket or run (see [Stop a run](runs.md#stop-a-run)). If the account reaches its usage limit while paused, **Resume** brings it back as limited until that time.
+
+The account's page also shows today against the budget, the estimated usage and runs of the last 14 days (each run on the day it started), and the usage limits it reached. The ticket page shows the estimated usage of the ticket's runs together.
 
 ## Before you start
 

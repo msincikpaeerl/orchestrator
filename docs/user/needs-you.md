@@ -19,6 +19,9 @@ Above the items, one line per Claude account says whether agents can use it:
 
 - **Available**: runs can start on it.
 - **Limited until 3:45 PM**: the account reached its Claude usage limit; no run starts on it before that time. "(estimated)" after the time means Claude gave no reset time, so the Orchestrator waits the **Quota wait when the reset time is unknown** (see [Settings](settings.md#settings-reference)). Once the time has passed, the line shows **Available** again by itself.
+- **Paused**: you clicked **Stop new runs** on it. Runs already started finish; **Run now** is refused until you click **Resume**, on the line or on the account.
+
+The line also says **next window at** a time when the account is outside its windows, **in its window until** a time when it is inside one, and **daily budget used until** midnight when today's runs reached its daily budget. Each line has **Stop new runs** or **Resume**. See [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself).
 
 A limited account is not an item of its own: the runs it paused are listed below, and **Run now** says why it cannot start a run, with the time.
 
