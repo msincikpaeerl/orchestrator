@@ -159,7 +159,12 @@ export function fleetVerdict(
  * work), the latest that reported commits, how many of them are not on GitHub, and the run whose
  * machine holds them, when no later run moved the work to another machine.
  */
-export function ticketWork(ticket: TicketRow, earlier: readonly RunRow[]) {
+export function ticketWork<
+  Run extends Pick<
+    RunRow,
+    'purpose' | 'commits' | 'notOnGitHub' | 'branchHead' | 'createdAt' | 'machineId'
+  >,
+>(ticket: Pick<TicketRow, 'githubBranchCommits' | 'pullRequestHead'>, earlier: readonly Run[]) {
   const worked = earlier.filter((run) => run.purpose !== 'review');
   const withCommits = worked.find((run) => (reportedCommits(run)?.length ?? 0) > 0);
   const held = withCommits ? commitsNotOnGitHub(ticket, runReport(withCommits)).count : 0;
