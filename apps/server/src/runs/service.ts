@@ -1082,7 +1082,7 @@ export class RunService {
         .for('update');
       if (!ticket) throw new HttpError(404, 'ticket_not_found', 'No ticket with this number');
       const blockers = await tx
-        .select({ number: schema.tickets.number })
+        .select({ number: schema.tickets.number, status: schema.tickets.status })
         .from(schema.ticketDependencies)
         .innerJoin(schema.tickets, eq(schema.tickets.id, schema.ticketDependencies.blockedById))
         .where(
@@ -1092,7 +1092,10 @@ export class RunService {
       // lot 3 step I), waiting for no ticket: the scheduler's checks (lot 4 step D1).
       const ticketRefused = ticketRefusal(
         ticket,
-        blockers.map((row) => ticketReference(project.key, row.number)).sort(),
+        blockers.map((row) => ({
+          reference: ticketReference(project.key, row.number),
+          cancelled: row.status === 'cancelled',
+        })),
       );
       if (ticketRefused !== null || ticket.assigneeProfileId === null) {
         throw refused(ticketRefused ?? { reason: 'no_assignee' });

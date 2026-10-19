@@ -400,6 +400,8 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
     expect(await reasonOf(`WEB-${String(blocked.number)}`)).toEqual({
       reason: 'blocked',
       tickets: ['WEB-3', 'WEB-4'],
+      // Named apart, so the owner knows to remove the dependency (review of lot 4 step D1).
+      cancelled: ['WEB-4'],
     });
   });
 

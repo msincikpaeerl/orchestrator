@@ -307,8 +307,16 @@ export const RunRefusal = z.discriminatedUnion('reason', [
     count: z.int().positive(),
     limit: z.int().positive(),
   }),
-  /** `tickets`: the tickets it waits for that are not done (`WEB-3`). */
-  z.object({ reason: z.literal('blocked'), tickets: z.array(z.string()) }),
+  /**
+   * `tickets`: the tickets it waits for that are not done (`WEB-3`); `cancelled`, those of them
+   * that are cancelled, which block until the dependency is removed (owner, review of lot 4 step
+   * D1), absent when none is.
+   */
+  z.object({
+    reason: z.literal('blocked'),
+    tickets: z.array(z.string()),
+    cancelled: z.array(z.string()).optional(),
+  }),
   z.object({ reason: z.literal('project_archived') }),
   z.object({ reason: z.literal('project_not_ready') }),
   z.object({ reason: z.literal('github_not_connected') }),

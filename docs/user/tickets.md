@@ -77,7 +77,7 @@ A ticket is **Blocked** while at least one ticket it waits for is not **Done**. 
 
 ### A ticket waits for a cancelled ticket
 
-A cancelled ticket is not done, so **a ticket waiting for a cancelled ticket stays blocked**. The ticket page tells you when this happens. You can:
+A cancelled ticket is not done, so **a ticket waiting for a cancelled ticket stays blocked**: nothing starts it, not even overnight. The ticket page tells you when this happens, and **Run now** says it in its own words, for example "Blocked by WEB-3 (cancelled): remove the dependency to let it start." You can:
 
 - **remove the dependency**, if the ticket no longer needs the cancelled work: on the waiting ticket's page, click **Remove** next to the cancelled ticket under **Blocked by**; or
 - **reopen the cancelled ticket**, if the work is needed after all: open it and click **Reopen**. The waiting ticket is unblocked when it is done.

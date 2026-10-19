@@ -47,6 +47,14 @@ describe('the queue and Run now (07, section 3)', () => {
 
     expect((await sameReason(1)).reason).toBe('no_assignee');
     expect(await sameReason(2)).toEqual({ reason: 'blocked', tickets: ['WEB-1'] });
+    // A cancelled blocker still blocks; both name it as cancelled (review of lot 4 step D1).
+    const cancelled = await h.call('POST', '/api/projects/WEB/tickets/1/cancel');
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(await sameReason(2)).toEqual({
+      reason: 'blocked',
+      tickets: ['WEB-1'],
+      cancelled: ['WEB-1'],
+    });
     // Ticket 3 is next and can start; reading the queue twice started nothing.
     expect(await queueReason(3)).toBeNull();
     expect((await queue()).candidates.find((c) => c.ticket.number === 3)?.machine?.name).toBe(

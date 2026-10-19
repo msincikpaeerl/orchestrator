@@ -4,6 +4,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Tickets: when a ticket waits for a cancelled ticket, **Run now** now says so and what to do: "Blocked by WEB-3 (cancelled): remove the dependency to let it start." Such a ticket stays blocked, as before. Help: "Tickets" > "A ticket waits for a cancelled ticket".
 - Machines: each Claude account now has **windows** (the days and hours runs may start), a **daily budget** (minutes of working time or US dollars of estimated usage a day) and **Stop new runs** with **Resume**. Click **Windows, budget and history** under an account: its page shows today's working time, estimated usage and runs against the budget, the next window, the estimated usage of the last 14 days and the usage limits reached. In this version nothing starts by itself yet, and **Run now** ignores windows and the budget; it is refused while the account is paused, with the reason. Help: "Machines" > "Keep Claude usage for yourself".
 - Help: "Machines" > "Keep Claude usage for yourself" now says that the daily budget starts again at midnight, so a window from 22:00 to 06:00 can use two days' budget in one night; start the window at 00:00 to cap a night with one budget.
 - Runs: between machines that can take a run equally, **Run now** now counts each machine's runs today from midnight in the Orchestrator's time zone, as the accounts do, instead of UTC's.

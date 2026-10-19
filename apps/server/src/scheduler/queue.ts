@@ -33,6 +33,7 @@ import {
   resumeRefusal,
   ticketRefusal,
   ticketWork,
+  type Blocker,
   type Fleet,
 } from './checks.js';
 import { runsToday } from './facts.js';
@@ -208,12 +209,14 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     return [...seen].filter((id) => !CLOSED.has(allTickets.get(id)?.status ?? 'done')).length;
   };
   // As Run now: a blocker counts until it is done (07, section 3).
-  const blockers = (ticketId: string, projectKey: string): string[] =>
+  const blockers = (ticketId: string, projectKey: string): Blocker[] =>
     (waitsFor.get(ticketId) ?? [])
       .map((id) => allTickets.get(id))
       .filter((blocker) => blocker !== undefined && blocker.status !== 'done')
-      .map((blocker) => ticketReference(projectKey, blocker?.number ?? 0))
-      .sort();
+      .map((blocker) => ({
+        reference: ticketReference(projectKey, blocker?.number ?? 0),
+        cancelled: blocker?.status === 'cancelled',
+      }));
 
   // The blocking "Needs you" items, as "Needs you" finds them (04, section 5.1).
   const items = new Map<

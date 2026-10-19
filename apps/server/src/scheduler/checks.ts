@@ -44,14 +44,20 @@ export function projectRefusal(
   return null;
 }
 
+/** A ticket another one waits for, not done: its reference and whether it is cancelled. */
+export interface Blocker {
+  reference: string;
+  cancelled: boolean;
+}
+
 /**
  * Whether the ticket can take a builder run (01, section 3.4): in `todo`, with an assignee, not
- * stopped by the retry policy (04, section 5), waiting for no ticket (`blockers`: the references of
- * those not done, sorted).
+ * stopped by the retry policy (04, section 5), waiting for no ticket (`blockers`: those not done).
+ * A cancelled blocker still blocks, and the refusal names it apart (owner, review of lot 4 D1).
  */
 export function ticketRefusal(
   ticket: Pick<TicketRow, 'status' | 'assigneeProfileId' | 'stopped'>,
-  blockers: readonly string[],
+  blockers: readonly Blocker[],
 ): RunRefusal | null {
   if (ticket.status !== 'todo') {
     return { reason: 'ticket_not_todo', status: TicketStatus.parse(ticket.status) };
@@ -61,7 +67,15 @@ export function ticketRefusal(
   if (stop !== null) {
     return { reason: 'ticket_stopped', cause: stop.cause, count: stop.count, limit: stop.limit };
   }
-  if (blockers.length > 0) return { reason: 'blocked', tickets: [...blockers] };
+  if (blockers.length > 0) {
+    const tickets = blockers.map((blocker) => blocker.reference).sort();
+    const cancelled = blockers.flatMap((blocker) => (blocker.cancelled ? [blocker.reference] : []));
+    return {
+      reason: 'blocked',
+      tickets,
+      ...(cancelled.length > 0 ? { cancelled: cancelled.sort() } : {}),
+    };
+  }
   return null;
 }
 
@@ -321,7 +335,9 @@ export function refusalMessage(refusal: RunRefusal): string {
     case 'ticket_stopped':
       return `The ticket is stopped after ${String(refusal.count)} ${refusal.cause === 'review_rounds' ? 'review rounds' : 'failed attempts'} (limit ${String(refusal.limit)}): Try again first`;
     case 'blocked':
-      return `The ticket waits for ${refusal.tickets.join(', ')}`;
+      return refusal.cancelled === undefined
+        ? `The ticket waits for ${refusal.tickets.join(', ')}`
+        : `The ticket waits for ${refusal.tickets.join(', ')}; cancelled, so remove the dependency: ${refusal.cancelled.join(', ')}`;
     case 'machine_unavailable':
       return refusal.commits === null
         ? `The run's machine ${refusal.machine.name} cannot take it now (${refusal.unavailable.why})`
