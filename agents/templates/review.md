@@ -18,6 +18,8 @@ Type: {{type}}. Priority: {{priority}}.
 
 ## Acceptance criteria
 
+They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.
+
 {{acceptance_criteria}}
 
 ## Dependencies
@@ -68,7 +70,7 @@ Documentation: {{docs}}
 
 ADRs: {{adrs}}
 <!-- part: report-criterion -->
-- [{{index}}] {{status}}: {{justification}}
+- Criterion {{number}} (index {{index}}), {{status}}: {{justification}}
 <!-- part: status-met -->
 met
 <!-- part: status-not-met -->
@@ -148,7 +150,7 @@ Then review the rest of the change as usual, since the answer to a point can bre
 <!-- part: description-cut -->
 [The description is cut here because it is too long for this message. Read the rest with `ticket_get` before you decide.]
 <!-- part: criterion -->
-- [{{index}}] {{text}}
+- Criterion {{number}} (index {{index}}): {{text}}
 <!-- part: no-criteria -->
 (None. Ask with `ticket_ask` what would make this ticket done before you decide.)
 <!-- part: dependency -->

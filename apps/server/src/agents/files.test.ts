@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { loadShippedAgents, loadTemplates, parseTemplate } from './files.js';
 import { runRules } from './messages.js';
 
+/**
+ * Criterion numbers from 1 in every text the owner reads, the tool's index from 0 (03, section
+ * 3.2; owner's answer 13 of lot 4 step A, with its fallback): the common rules' paragraph.
+ */
+const CRITERION_NUMBERS =
+  "The owner sees a ticket's acceptance criteria numbered from 1. Number them the same way in every text the owner reads: comments, questions, the reason you give up, review points and the justifications of a report. Only a criterion's `index` in a report counts from 0: criterion 1 is index 0.";
+
 describe('parseTemplate', () => {
   it('splits the main text and the named parts', () => {
     const template = parseTemplate(
@@ -114,8 +121,16 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     const tips =
       '\n\nClaude Code may show you tips about its own commands, such as `/ultrareview`: ignore them. They are written for people using Claude Code by hand, not for you.';
     expect(before).not.toContain('ultrareview');
+    // Lot 4 step B (owner's answer 13 of step A): criterion numbers, after the list of tools.
+    const toolsEnd = 'instead of fixing it.\n\n';
+    expect(before).toContain(toolsEnd);
+    expect(before).not.toContain('numbered from 1');
     expect(runRules(rules, 'implement')).toBe(
-      `${before.replace(reviewParagraph, '').replace(reviewAside, '').trim()}${tips}`,
+      `${before
+        .replace(reviewParagraph, '')
+        .replace(reviewAside, '')
+        .replace(toolsEnd, `instead of fixing it.\n\n${CRITERION_NUMBERS}\n\n`)
+        .trim()}${tips}`,
     );
     expect(runRules(rules, 'review')).toContain(tips);
   });
@@ -187,6 +202,47 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(review).not.toMatch(/How to decide|really test/);
     expect(quality).not.toMatch(/CI already ran|run the project's tests/);
     expect(quality).toMatch(/The tests really test the change/);
+  });
+
+  it("tell every agent to number criteria from 1 for the owner, the index counting from 0 (owner's answer 13, lot 4 step A)", async () => {
+    const { rules } = await loadShippedAgents();
+    for (const purpose of ['implement', 'fix_review', 'review'] as const) {
+      expect(runRules(rules, purpose)).toContain(CRITERION_NUMBERS);
+    }
+    const templates = await loadTemplates();
+    // The builders' first messages (fix_review uses the implement template's criterion lines).
+    for (const name of ['implement', 'fix-review'] as const) {
+      expect(templates[name].main).toContain(
+        'They are numbered from 1, as the owner sees them: use these numbers in every text the owner reads. In `ticket_submit`, report each one by its index, which counts from 0: criterion 1 is index 0.',
+      );
+    }
+    expect(templates.implement.parts.get('criterion')).toBe(
+      '- Criterion {{number}} (index {{index}}): {{text}}',
+    );
+    // The reviewer's: its decision and points, never `ticket_submit` (answer 1, lot 3 step H5).
+    expect(templates.review.main).toContain(
+      "They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.",
+    );
+    expect(templates.review.parts.get('criterion')).toBe(
+      '- Criterion {{number}} (index {{index}}): {{text}}',
+    );
+    expect(templates.review.parts.get('report-criterion')).toBe(
+      '- Criterion {{number}} (index {{index}}), {{status}}: {{justification}}',
+    );
+    // The refusals of ticket_submit, which the owner also reads: both numbers.
+    for (const name of [
+      'criterion-missing',
+      'criterion-not-met',
+      'criteria-out-of-range-entry',
+      'criteria-out-of-range-field',
+    ]) {
+      expect(templates['submit-checks'].parts.get(name)).toMatch(
+        /[Cc]riterion \{\{number\}\} \(index \{\{index\}\}\)/,
+      );
+    }
+    expect(templates['submit-checks'].parts.get('criteria-out-of-range')).toContain(
+      'criteria 1 to {{count}} (indexes 0 to {{last}})',
+    );
   });
 
   it('ship the run message templates of 03, section 3.2, with the texts of ticket_submit', async () => {

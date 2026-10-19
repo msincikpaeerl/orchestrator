@@ -4,13 +4,19 @@ The submission is refused: 1 check failed. Fix it and submit again.
 <!-- part: refused-push -->
 The submission is refused: your branch could not be pushed to GitHub. This is not yours to fix, and nothing you do in this run can fix it: end your turn now, without calling another tool. Your work stays committed on this machine, and the Orchestrator tells the owner what happened.
 <!-- part: criteria-out-of-range -->
-The ticket has {{count}} acceptance criteria (indexes 0 to {{last}}): {{indexes}} do not exist.
+The ticket has {{count}} acceptance criteria, criteria 1 to {{count}} (indexes 0 to {{last}}): your report names {{missing}}, which the ticket does not have.
+<!-- part: criteria-out-of-range-none -->
+The ticket has no acceptance criteria: your report names {{missing}}, which the ticket does not have.
+<!-- part: criteria-out-of-range-entry -->
+criterion {{number}} (index {{index}})
+<!-- part: criteria-out-of-range-separator -->
+, 
 <!-- part: criteria-out-of-range-field -->
-no criterion {{index}}
+no criterion {{number}} (index {{index}})
 <!-- part: criterion-missing -->
-Criterion {{index}} is not reported: "{{text}}".
+Criterion {{number}} (index {{index}}) is not reported: "{{text}}".
 <!-- part: criterion-not-met -->
-Criterion {{index}} is reported not_met: "{{text}}". Meet it, or use ticket_ask to get a decision.
+Criterion {{number}} (index {{index}}) is reported not_met: "{{text}}". Meet it, or use ticket_ask to get a decision.
 <!-- part: worktree-dirty -->
 The worktree has uncommitted changes or untracked files: commit your work first.
 <!-- part: no-commits -->

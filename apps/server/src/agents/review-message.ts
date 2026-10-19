@@ -220,6 +220,7 @@ function report(template: Template, ticket: ReviewTicket): string {
       : submitted.criteria
           .map((criterion) =>
             part(template, 'report-criterion', {
+              number: String(criterion.index + 1),
               index: String(criterion.index),
               status: part(template, criterion.status === 'met' ? 'status-met' : 'status-not-met'),
               justification: criterion.justification.trim(),
@@ -254,7 +255,9 @@ export function reviewFirstMessage(
     ticket.acceptanceCriteria.length === 0
       ? part(template, 'no-criteria')
       : ticket.acceptanceCriteria
-          .map((text, index) => part(template, 'criterion', { index: String(index), text }))
+          .map((text, index) =>
+            part(template, 'criterion', { number: String(index + 1), index: String(index), text }),
+          )
           .join('\n');
   const dependencies =
     ticket.dependencies.length === 0

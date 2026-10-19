@@ -94,6 +94,11 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       'worktree_clean',
       'commits_ahead',
     ]);
+    // Criterion numbers from 1, as the owner reads them, with the tool's index (lot 4 step B).
+    expect(failed.details?.slice(0, 2).map((detail) => detail.message)).toEqual([
+      'Criterion 1 (index 0) is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
+      'Criterion 2 (index 1) is not reported: "The e-mail address is checked".',
+    ]);
     // Criteria the ticket does not have: the input is wrong, nothing is kept.
     expect(
       refusal(
@@ -104,7 +109,9 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       ),
     ).toMatchObject({
       code: 'VALIDATION_FAILED',
-      message: 'The ticket has 2 acceptance criteria (indexes 0 to 1): 5 do not exist.',
+      message:
+        'The ticket has 2 acceptance criteria, criteria 1 to 2 (indexes 0 to 1): your report names criterion 6 (index 5), which the ticket does not have.',
+      details: [{ field: 'criteria.0.index', message: 'no criterion 6 (index 5)' }],
     });
 
     // The run keeps its latest refused submission, with each check's result.
