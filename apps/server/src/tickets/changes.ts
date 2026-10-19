@@ -27,7 +27,7 @@ export function standingRequest(ticket: TicketRow): ChangeRequest | null {
   return ticket.changeRequestAnsweredAt === null ? latestRequest(ticket) : null;
 }
 
-export function ticketStop(ticket: TicketRow): TicketStop | null {
+export function ticketStop(ticket: Pick<TicketRow, 'stopped'>): TicketStop | null {
   return ticket.stopped === null ? null : TicketStop.parse(ticket.stopped);
 }
 
