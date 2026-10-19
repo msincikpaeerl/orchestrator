@@ -315,11 +315,23 @@ describe('the guard of the GitHub smoke script', () => {
     await nothingDone();
   });
 
+  it('refuses --only-a27 with --restricted-token, having done nothing', async () => {
+    const { code, output } = await run(
+      [...dryRun(), '--only-a27', '--restricted-token'],
+      `yes\n${TOKEN}\n`,
+    );
+    expect(output).toContain(
+      '--only-a27 runs step 12 alone, which needs no second token: leave out --restricted-token.',
+    );
+    expect(code).toBe(3);
+    await nothingDone();
+  });
+
   it('asks for yes before anything, and refuses any other answer', async () => {
     for (const answer of ['no\n', '', 'YES\n']) {
       const { code, output } = await run(dryRun(), answer);
       expect(output).toMatch(
-        /This acts on your real GitHub: in octo-owner\/smoke-test, branches orchestrator-smoke-<time>, five pull requests \(you merge three, one by squash and one by rebase; two stay closed\)/,
+        /This acts on your real GitHub: in octo-owner\/smoke-test, branches orchestrator-smoke-<time>, six pull requests \(you merge three, one by squash and one by rebase; three stay closed\)/,
       );
       expect(output).toMatch(/REFUSED: not confirmed\./);
       expect(code).toBe(3);
@@ -588,12 +600,12 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toContain(
         'Second token: of octo-owner too, and it sees octo-owner/smoke-test.',
       );
-      for (let step = 1; step <= 11; step++) {
+      for (let step = 1; step <= 12; step++) {
         expect(output).toContain(`Step ${String(step)}: PASS`);
       }
       for (let number = 1; number <= 38; number++) {
-        // A27 to A29 are the owner's checks of step N, by eye.
-        if (number >= 27 && number <= 29) continue;
+        // A28 and A29 are the owner's checks of lot 3 step N, by eye.
+        if (number === 28 || number === 29) continue;
         const assumption = `A${String(number)}`;
         // A7 is not checked: nothing relies on it.
         const verdict = assumption === 'A7' ? 'NOT ATTEMPTED' : 'PASS';
@@ -674,7 +686,7 @@ describe('the dry run of the GitHub smoke script', () => {
       // pull requests to merge, the squash one again after Update branch, and the push runs of
       // both merges; none for the pull request based on the squash branch, which conflicts.
       const events = github.runs(repo).map((each) => each.event);
-      expect(events.filter((event) => event === 'pull_request')).toHaveLength(6);
+      expect(events.filter((event) => event === 'pull_request')).toHaveLength(7);
       expect(events.filter((event) => event === 'push')).toHaveLength(3);
       expect(
         github.runs(repo).some((each) => each.headSha === github.pullRequest(repo, 5).headSha),
@@ -729,6 +741,11 @@ describe('the dry run of the GitHub smoke script', () => {
         /- the squash of pull request #3 into main, with docs\/orchestrator-smoke-squash\.md: /,
       );
       expect(output).toMatch(/- pull request #5, closed \(A34, A36\): /);
+      // Step 12 (A27, lot 4 step B): the longest title and description, closed at once.
+      expect(github.pullRequest(repo, 6)).toMatchObject({ state: 'closed', merged: false });
+      expect(github.pullRequest(repo, 6).title).toHaveLength(256);
+      expect(github.pullRequest(repo, 6).body).toHaveLength(65_536);
+      expect(output).toMatch(/- pull request #6, closed \(A27\): /);
       // The log was downloaded without the API's Authorization (A13).
       expect(github.logRequests.length).toBeGreaterThan(0);
       expect(github.logRequests.every((request) => request.authorization === undefined)).toBe(true);
@@ -753,6 +770,102 @@ describe('the dry run of the GitHub smoke script', () => {
       }
       expect(output).toMatch(/Delete the token you made for this check now/);
       expect(code).toBe(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'runs step 12 alone with --only-a27: the longest title and description, read back and closed',
+    async () => {
+      const { code, output } = await run([...dryRun(), '--only-a27'], `yes\n${TOKEN}\n`);
+      expect(output, output).toContain(
+        'This acts on your real GitHub: in octo-owner/smoke-test, a branch orchestrator-smoke-<time>-long-text (deleted at the end), one pull request with the longest title and description (closed at once; it stays closed), and 1 CI run',
+      );
+      expect(output).toMatch(
+        /PASS {2}A27: a pull request with a title of 256 characters and a description of 65536: accepted/,
+      );
+      expect(output).toMatch(/PASS {2}A27: its title read back whole: 256 characters/);
+      expect(output).toMatch(/PASS {2}A27: its description read back whole: 65536 characters/);
+      // The result block: step 12 and what it checked, nothing else.
+      const result = output.slice(output.indexOf('===== Result'));
+      expect(result).toContain('Only step 12 (--only-a27).');
+      expect(result).toMatch(
+        /^Step 12: PASS \(a pull request with the longest title and description the Orchestrator sends\)$/m,
+      );
+      expect(result).toMatch(/^A27: PASS$/m);
+      expect(result).toMatch(/^A35: PASS$/m);
+      expect(result).not.toMatch(/^Step (0|[1-9]|1[01])\b/m);
+      expect(result).not.toMatch(/^A(1|26): /m);
+      expect(result).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(result).toMatch(/- pull request #1, closed \(A27\): /);
+      expect(code).toBe(0);
+
+      // What GitHub holds: the pull request closed with both texts whole, its branch deleted.
+      const pull = github.pullRequest(repo, 1);
+      expect(pull).toMatchObject({ state: 'closed', merged: false });
+      expect(pull.head).toMatch(/^orchestrator-smoke-\S+-long-text$/);
+      expect(pull.title).toHaveLength(256);
+      expect(pull.body).toHaveLength(65_536);
+      // The characters the Orchestrator's texts hold beyond ASCII, in both.
+      for (const text of [pull.title, pull.body ?? '']) {
+        expect(text).toContain('@\u200Bname');
+        expect(text.endsWith('…')).toBe(true);
+      }
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+      // No token check, no merge settings read, no other step.
+      expect(github.requests.some((request) => request.path.includes('/actions/runs'))).toBe(false);
+      expect(
+        github.requests.filter((request) => request.method !== 'GET').map((each) => each.method),
+      ).toEqual(['POST', 'PATCH', 'DELETE']);
+      expect(await leftInTemporaryFolder()).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'fails A27 when GitHub refuses the texts, or keeps less of them, and still cleans up',
+    async () => {
+      github.alter = (request, reply) =>
+        request.method === 'POST' && request.path.endsWith('/pulls')
+          ? {
+              status: 422,
+              body: {
+                message: 'Validation Failed',
+                errors: [{ resource: 'PullRequest', code: 'custom', message: 'body is too long' }],
+              },
+            }
+          : reply;
+      const refused = await run([...dryRun(), '--only-a27'], `yes\n${TOKEN}\n`);
+      expect(refused.output, refused.output).toMatch(
+        /FAIL {2}A27: a pull request with a title of 256 characters and a description of 65536: accepted\n.*HTTP 422/,
+      );
+      expect(refused.output).toMatch(/^Step 12: FAIL/m);
+      expect(refused.output).toMatch(/^A27: FAIL$/m);
+      expect(refused.output).toMatch(/Nothing of this run is left on GitHub\./);
+      expect(refused.code).toBe(1);
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
+
+      // Accepted, but read back shorter: the difference is said, the pull request closed.
+      github.alter = (request, reply) =>
+        request.method === 'GET' && /\/pulls\/\d+$/.test(request.path)
+          ? {
+              ...reply,
+              body: {
+                ...(reply.body as Record<string, unknown>),
+                body: (reply.body as { body: string }).body.slice(0, 65_535),
+              },
+            }
+          : reply;
+      const cut = await run([...dryRun(), '--only-a27'], `yes\n${TOKEN}\n`);
+      expect(cut.output, cut.output).toMatch(/PASS {2}A27: its title read back whole/);
+      expect(cut.output).toMatch(
+        /FAIL {2}A27: its description read back whole: 65535 characters\n.*sent 65536 characters, read back 65535; first difference at character 65536: sent "…", read ""/,
+      );
+      expect(cut.output).toMatch(/^A27: FAIL$/m);
+      expect(cut.code).toBe(1);
+      // The fake made #1 before its answer was replaced by the refusal: this one is #2.
+      expect(github.pullRequest(repo, 2).state).toBe('closed');
+      expect([...github.branches(repo).keys()]).toEqual(['main']);
     },
     TIMEOUT,
   );
@@ -1235,7 +1348,11 @@ describe('the dry run of the GitHub smoke script', () => {
       expect(output).toMatch(/^A32: NOT ATTEMPTED$/m);
       expect(output).toMatch(/Nothing of this run is left on GitHub\./);
       expect(code).toBe(1);
-      expect(() => github.pullRequest(repo, 3)).toThrow();
+      // None of step 11's pull requests was made; step 12 still ran (#3, closed at once).
+      expect(output).toMatch(/^Step 12: PASS/m);
+      expect(github.pullRequest(repo, 3)).toMatchObject({ state: 'closed', merged: false });
+      expect(github.pullRequest(repo, 3).head).toMatch(/-long-text$/);
+      expect(() => github.pullRequest(repo, 4)).toThrow();
       expect([...github.branches(repo).keys()]).toEqual(['main']);
     },
     TIMEOUT,

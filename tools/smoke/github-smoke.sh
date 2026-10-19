@@ -3,11 +3,12 @@
 # GitHub code and the daemon's push rely on, with no Claude quota. For the owner only (working
 # rule 9): sessions never run it; CI runs its dry run against the tests' fake GitHub.
 #
-# Usage: tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token]
+# Usage: tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token | --only-a27]
 #          [--ci-wait-minutes <n>] [--owner-wait-minutes <n>]
 #   --repository          a test repository of your account with the project skeleton (for
 #                         example the one of a test project), never the Orchestrator's own
 #   --restricted-token    also ask for the second, restricted token of step 10 (see below)
+#   --only-a27            run step 12 alone (lot 4 step B): a few minutes, nothing to do on GitHub
 #   --ci-wait-minutes     how long to wait for CI each time before giving up (default 15)
 #   --owner-wait-minutes  how long to wait for each of your actions on GitHub (default 30)
 #   --dry-run, --github-url <address>   for the tests only: against the fake GitHub
@@ -54,11 +55,17 @@
 # requests, each adding its own page under docs/, which you merge, one with "Rebase and merge"
 # and one with "Squash and merge" (the script waits for their CI first; 3 CI runs, and 2 more on
 # the default branch), and a third one, based on the first of them, which it closes at once (it
-# conflicts: no CI run). At the end it deletes every branch it made. What stays: the merges on the
+# conflicts: no CI run). Step 12 (A27): a pull request with a title of 256 characters and a
+# description of 65,536, the longest the Orchestrator sends, read back and closed at once (1 CI
+# run, not waited for). At the end it deletes every branch it made. What stays: the merges on the
 # default branch (docs/orchestrator-smoke.md, then 3 commits with the two step 11 pages), the
 # closed pull requests with their comment reviews, and the workflow runs. If it stops early, it
 # says what it left and how to remove it. You act on GitHub four times (five with the second
 # token); each time the script says what to click, with the link.
+#
+# With --only-a27, only step 12 runs: one branch orchestrator-smoke-<time>-long-text, its pull
+# request (closed at once, it stays closed) and 1 CI run; the branch is deleted at the end. No
+# token check, nothing for you to do on GitHub; the token needs the same permissions.
 #
 # The result block at the end lists each step and assumption with PASS, FAIL or NOT ATTEMPTED;
 # paste it back. Exit code: 0 when everything attempted passes, 1 when something fails, 3 when the
@@ -74,6 +81,7 @@ REPOSITORY=""
 CI_WAIT_MINUTES=15
 OWNER_WAIT_MINUTES=30
 RESTRICTED=0
+ONLY_A27=0
 DRY_RUN=0
 GITHUB_URL=""
 
@@ -88,9 +96,10 @@ while (($# > 0)); do
     --ci-wait-minutes) CI_WAIT_MINUTES="${2:?--ci-wait-minutes needs a value}"; shift ;;
     --owner-wait-minutes) OWNER_WAIT_MINUTES="${2:?--owner-wait-minutes needs a value}"; shift ;;
     --restricted-token) RESTRICTED=1 ;;
+    --only-a27) ONLY_A27=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --github-url) GITHUB_URL="${2:?--github-url needs a value}"; shift ;;
-    -h | --help) sed -n '2,65p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,72p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -118,6 +127,8 @@ fi
 [[ "$OWNER_WAIT_MINUTES" =~ ^[1-9][0-9]{0,2}$ ]] ||
   guard_refuse "--owner-wait-minutes needs a number of minutes, from 1 to 999."
 guard_not_own_repository "$REPO" "$REPOSITORY"
+((RESTRICTED && ONLY_A27)) &&
+  guard_refuse "--only-a27 runs step 12 alone, which needs no second token: leave out --restricted-token."
 
 TSX="$REPO/apps/server/node_modules/.bin/tsx"
 HELPER="$REPO/apps/server/scripts/github-smoke.ts"
@@ -146,7 +157,11 @@ if ((RESTRICTED)); then
 fi
 echo "Delete them when the script has finished: https://github.com/settings/personal-access-tokens"
 echo
-guard_confirm "in $REPOSITORY, branches orchestrator-smoke-<time>, five pull requests (you merge three, one by squash and one by rebase; two stay closed), and 9 CI runs (Actions minutes, about 18 on a private repository); the merges stay on the default branch."
+if ((ONLY_A27)); then
+  guard_confirm "in $REPOSITORY, a branch orchestrator-smoke-<time>-long-text (deleted at the end), one pull request with the longest title and description (closed at once; it stays closed), and 1 CI run (about 2 Actions minutes on a private repository)."
+else
+  guard_confirm "in $REPOSITORY, branches orchestrator-smoke-<time>, six pull requests (you merge three, one by squash and one by rebase; three stay closed), and 10 CI runs (Actions minutes, about 20 on a private repository); the merges stay on the default branch."
+fi
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/github-smoke.XXXXXX")" || stop "cannot create the scratch folder."
 chmod 700 "$SCRATCH"
@@ -189,5 +204,6 @@ HELPER_ARGS=(--repository "$REPOSITORY" --api-url "$API_URL" --git-url "$GIT_URL
   --owner-wait-minutes "$OWNER_WAIT_MINUTES")
 ((DRY_RUN)) && HELPER_ARGS+=(--dry-run)
 ((RESTRICTED)) && HELPER_ARGS+=(--restricted-token)
+((ONLY_A27)) && HELPER_ARGS+=(--only-a27)
 read_token | "$TSX" --conditions=source "$HELPER" "${HELPER_ARGS[@]}"
 exit "${PIPESTATUS[1]}"
