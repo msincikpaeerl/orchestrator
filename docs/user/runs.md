@@ -37,6 +37,32 @@ When the run cannot start, the ticket page says why, in plain words. The most co
 - **The Claude account already runs its maximum**: wait for a run to finish, or raise the account's **Runs at the same time** in **Machines**.
 - **This ticket is too large for an agent's first message**: shorten its description or its acceptance criteria.
 
+You rarely need **Run now**: the scheduler starts runs by itself (below). **Run now** starts one at once, also outside the account's windows and over its daily budget.
+
+## What starts by itself
+
+From version 0.5.0 the Orchestrator's **scheduler** starts runs by itself, so tickets get done while you are away. It looks for work as soon as something changes (a ticket created or back in **To do**, a run ending, a machine connecting, a setting saved) and at least every **Scheduler check interval** (30 seconds by default, in [Settings](settings.md#settings-reference)).
+
+**What it starts**, each time one Claude Code session from your Claude plan, exactly as you would with the button:
+
+- a ticket in **To do** with an assignee, waiting for no other ticket: a run of its agent, as **Run now** does (one that addresses the request for changes, when Quality or you asked for some);
+- a ticket **Ready for review**: Quality's review, as **Start review** does. If you do not want a review, use **Skip review** before it starts.
+
+**In which order**: reviews first, then fixes after a request for changes, then new work. Within each: high priority first, a ticket whose last attempt failed after the others, then the tickets that the most other tickets wait for, then the one waiting the longest. Projects take turns, so one large project does not hold up the others.
+
+**Where and how many**: only on a Claude account that can start a run: inside its windows, under its daily budget, not paused and not at its usage limit (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), and on a machine that can take the run, as for **Run now**. It starts one run per account at a time, until the account runs its **Runs at the same time**; the next ticket starts when a run ends.
+
+**How you can tell**: the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
+
+**What it never starts by itself**, so nothing is started again and again without you:
+
+- a ticket whose run you stopped with **Stop run**: it waits for your **Run now** (a review you stopped waits for **Start review**);
+- a ticket stopped after repeated failures (see [When a ticket keeps failing](#when-a-ticket-keeps-failing)): a ticket gets at most **Failed attempts before asking you** failed runs (2 by default) before it waits for you;
+- a ticket waiting for another ticket, also a cancelled one (see [A ticket waits for a cancelled ticket](tickets.md#a-ticket-waits-for-a-cancelled-ticket));
+- a ticket with an item in [Needs you](needs-you.md) about its CI, its push or its download, or a review that did not finish, until you handle the item;
+- a ticket on a machine that did not confirm its start in time, or refused it: that machine is left out for that ticket until you use **Run now** on it; another machine can still take the ticket;
+- a run paused at a usage limit: it waits for your **Resume**.
+
 ## Watch a run
 
 The screens update on their own while you look at them: you never need to reload. If the connection drops (a phone going to sleep, a network change), they catch up as soon as it comes back.

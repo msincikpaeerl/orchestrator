@@ -271,7 +271,7 @@ When a ticket's work is accepted and CI has passed (or found nothing to run), th
 - **Start review**: Quality, the reviewing agent (see [Agents](agents.md#quality)), reads the work and approves it or asks for changes. It starts at once, without a confirmation, like **Run now**, and the run page opens.
 - **Skip review**: you check the pull request yourself. After a confirmation, the ticket moves to **Awaiting merge** with the comment "The owner skipped the review.".
 
-Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it.
+Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it. From version 0.5.0 the scheduler starts the review by itself when its account can take it (see [What starts by itself](runs.md#what-starts-by-itself)): **Start review** starts it at once, and **Skip review** before it starts means no review.
 
 ### What a review costs
 

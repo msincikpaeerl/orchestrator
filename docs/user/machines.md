@@ -21,7 +21,7 @@ Each account also shows its **State**: **Available**, **Paused** (you stopped ne
 
 Agents use the same Claude subscription as you. Each account has three ways to keep some of it for your own work: **windows**, a **daily budget** and **Stop new runs**. Click **Windows, budget and history** under an account to set them.
 
-In this version nothing starts a run by itself yet: windows and the budget are shown, and the scheduler of a later version follows them. **Run now** always ignores windows and the budget, since you choose to start that run; it is refused only while the account is paused, limited or already running its maximum.
+The scheduler, which starts runs by itself (see [What starts by itself](runs.md#what-starts-by-itself)), follows all three. **Run now** always ignores windows and the budget, since you choose to start that run; it is refused only while the account is paused, limited or already running its maximum.
 
 **Time zone first.** Windows and the day of the budget are read in the Orchestrator's time zone, set in **Settings** > **Time zone**. Until you save one, the Orchestrator uses UTC; the field is filled in with your browser's time zone, so you usually only click **Save the time zone**. Summer and winter time are followed by themselves.
 
