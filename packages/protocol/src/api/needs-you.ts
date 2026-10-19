@@ -341,7 +341,8 @@ export type NeedsYouItem = z.infer<typeof NeedsYouItem>;
 
 /**
  * The compact status line of a Claude account (02, section 4): in lot 2 "Available" or "Limited
- * until <time>", a limit whose time has passed shown available.
+ * until <time>", a limit whose time has passed shown available; from lot 4 also "Paused", the
+ * window and the daily budget used.
  */
 export const AccountStatus = ClaudeAccount.pick({
   id: true,
@@ -349,6 +350,7 @@ export const AccountStatus = ClaudeAccount.pick({
   state: true,
   limitedUntil: true,
   limitedUntilEstimated: true,
+  today: true,
 });
 export type AccountStatus = z.infer<typeof AccountStatus>;
 

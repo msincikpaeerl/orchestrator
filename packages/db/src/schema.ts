@@ -81,6 +81,20 @@ export const secrets = pgTable('secrets', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The Orchestrator's time zone (02, section 10; 07, section 5.3), an IANA name. One row, written
+ * by the owner's first save on Settings; while there is none, UTC.
+ */
+export const timeZone = pgTable(
+  'time_zone',
+  {
+    id: smallint('id').primaryKey().default(1),
+    name: text('name').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check('time_zone_single_row', sql`${table.id} = 1`)],
+);
+
 /** What the Orchestrator knows about the saved GitHub token (02, sections 3.1 and 3.2). One row. */
 export const githubConnection = pgTable(
   'github_connection',
@@ -498,6 +512,12 @@ export const claudeAccounts = pgTable(
     limitedUntil: timestamp('limited_until', { withTimezone: true }),
     /** `limited_until` is now plus the fallback delay: no reset time was known (07, section 5.2). */
     limitedUntilEstimated: boolean('limited_until_estimated').notNull().default(false),
+    /**
+     * Weekly windows in which runs may start (`Schedule`), none meaning always, and the daily
+     * budget (`DailyBudget`), none when null; read in the Orchestrator's time zone (lot 4).
+     */
+    schedule: jsonb('schedule').notNull().default([]),
+    dailyBudget: jsonb('daily_budget'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

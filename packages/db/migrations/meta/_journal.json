@@ -246,6 +246,13 @@
       "when": 1792190530479,
       "tag": "0034_download_failed",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792435652020,
+      "tag": "0035_account_schedule",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import {
   SetupStep,
 } from './api/projects.js';
 import { AccountPlan } from './api/machines.js';
+import { DailyBudget, Schedule } from './api/schedule.js';
 import {
   FailureReason,
   PauseReason,
@@ -105,10 +106,13 @@ export const EventType = z.enum([
   'ticket.machine_branch_kept',
   'setting.changed',
   'setting.reset',
+  'setting.time_zone_saved',
   'account.created',
   'account.updated',
   'account.limited',
   'account.available',
+  'account.paused',
+  'account.resumed',
   'machine.created',
   'machine.enrollment_code_created',
   'machine.enrolled',
@@ -515,6 +519,8 @@ export const EventPayloads = {
     value: z.int(),
   }),
   'setting.reset': z.object({ ...SettingFacts, previous: z.int() }),
+  /** The Orchestrator's time zone (02, section 10); `previous` null when none was saved (UTC). */
+  'setting.time_zone_saved': z.object({ timeZone: z.string(), previous: z.string().nullable() }),
   'account.created': z.object({
     label: z.string(),
     plan: AccountPlan,
@@ -527,6 +533,8 @@ export const EventPayloads = {
     previousLabel: z.string().optional(),
     plan: AccountPlan.optional(),
     maxConcurrentRuns: z.int().optional(),
+    schedule: Schedule.optional(),
+    dailyBudget: DailyBudget.optional(),
   }),
   /** A usage limit detected with certainty (05, section 4.10): no run starts before `until`. */
   'account.limited': z.object({
@@ -538,6 +546,10 @@ export const EventPayloads = {
   }),
   /** `limited_until` passed: written by the first action that reads the account after it. */
   'account.available': z.object({ label: z.string() }),
+  /** The owner's **Stop new runs** (07, section 5.5): `activeRuns` keep going and finish. */
+  'account.paused': z.object({ label: z.string(), activeRuns: z.int().min(0) }),
+  /** The owner's **Resume**; `limitedUntil` when a usage limit reached meanwhile still holds. */
+  'account.resumed': z.object({ label: z.string(), limitedUntil: z.iso.datetime().optional() }),
   'machine.created': z.object({ ...MachineFacts, account: z.string() }),
   'machine.enrollment_code_created': z.object({ ...MachineFacts, expiresAt: z.iso.datetime() }),
   'machine.enrolled': z.object(MachineFacts),

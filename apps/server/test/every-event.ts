@@ -146,6 +146,13 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     (await call('POST', '/api/accounts', { label: 'Personal Max', plan: 'max_5x' })).json(),
   );
   await call('PATCH', `/api/accounts/${account.id}`, { maxConcurrentRuns: 2 });
+  await call('PUT', '/api/time-zone', { timeZone: 'Europe/Paris' });
+  await call('PATCH', `/api/accounts/${account.id}`, {
+    schedule: [{ days: ['saturday', 'sunday'], start: '00:00', end: '24:00' }],
+    dailyBudget: { kind: 'estimated_usage', usd: 5 },
+  });
+  await call('POST', `/api/accounts/${account.id}/stop-new-runs`);
+  await call('POST', `/api/accounts/${account.id}/resume`);
   const { machine, enrollment } = EnrollmentResponse.parse(
     (await call('POST', '/api/machines', { name: 'Laptop', accountId: account.id })).json(),
   );

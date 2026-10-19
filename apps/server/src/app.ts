@@ -16,6 +16,7 @@ import { registerEventLogRoutes } from './event-log.js';
 import { registerGitHubRoutes } from './github/routes.js';
 import { handleError } from './http.js';
 import { registerAccountRoutes } from './machines/accounts.js';
+import { registerTimeZoneRoutes } from './settings/time-zone.js';
 import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
@@ -262,10 +263,12 @@ export function buildApp(dependencies: AppDependencies) {
       publicUrl: dependencies.publicUrl,
       providedDaemonBuild: providedBuild,
       runs,
+      now: dependencies.now,
     });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
-    registerAccountRoutes(scope, { db });
+    registerAccountRoutes(scope, { db, now: dependencies.now });
+    registerTimeZoneRoutes(scope, { db });
     registerMachineRoutes(scope, {
       db,
       gateway,
