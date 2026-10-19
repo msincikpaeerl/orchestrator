@@ -3,7 +3,8 @@ import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing'
 import pg from 'pg';
 import { loadShippedAgents } from '../src/agents/files.js';
 import { seedAgentProfiles } from '../src/agents/seed.js';
-import { buildApp, ciWatcherOf, type App } from '../src/app.js';
+import { buildApp, ciWatcherOf, schedulerOf, type App } from '../src/app.js';
+import type { SchedulerTick } from '../src/scheduler/loop.js';
 import { createDatabase, type Database } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
 import { markAllOffline } from '../src/machines/gateway.js';
@@ -43,6 +44,8 @@ export interface TestApp {
    * G1a); resolves once it is over. No check starts by itself in tests.
    */
   ciTick(): Promise<void>;
+  /** One tick of the scheduler's loop (lot 4 step D2a), with the application's clock. */
+  schedulerTick(): Promise<SchedulerTick>;
   close(): Promise<void>;
 }
 
@@ -69,6 +72,11 @@ export async function startTestApp(
     streamKeepAliveMs?: number;
     /** `PUBLIC_URL`; `http://localhost:8080` by default. */
     publicUrl?: string;
+    /**
+     * The scheduler's loop by itself, on the feed's changes and its interval, with one second of
+     * its interval lasting `secondMs`; by default it runs only at `schedulerTick()`.
+     */
+    scheduler?: { timers: true; secondMs?: number };
   } = {},
 ): Promise<TestApp> {
   const database = await createTestDatabase();
@@ -96,6 +104,8 @@ export async function startTestApp(
       daemonPackageDir: options.daemonPackageDir ?? NO_DAEMON_PACKAGE,
       streamKeepAliveMs: options.streamKeepAliveMs,
       ciTimers: false,
+      schedulerTimers: options.scheduler?.timers ?? false,
+      schedulerSecondMs: options.scheduler?.secondMs,
     });
   const app = build();
   await app.ready();
@@ -118,6 +128,9 @@ export async function startTestApp(
     },
     ciTick() {
       return ciWatcherOf(testApp.app).tick();
+    },
+    schedulerTick() {
+      return schedulerOf(testApp.app).tick();
     },
     async close() {
       await testApp.app.close();
