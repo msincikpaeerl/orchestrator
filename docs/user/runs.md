@@ -48,7 +48,14 @@ From version 0.5.0 the Orchestrator's **scheduler** starts runs by itself, so ti
 - a ticket in **To do** with an assignee, waiting for no other ticket: a run of its agent, as **Run now** does (one that addresses the request for changes, when Quality or you asked for some);
 - a ticket **Ready for review**: Quality's review, as **Start review** does. If you do not want a review, use **Skip review** before it starts.
 
-**In which order**: reviews first, then fixes after a request for changes, then new work. Within each: high priority first, a ticket whose last attempt failed after the others, then the tickets that the most other tickets wait for, then the one waiting the longest. Projects take turns, so one large project does not hold up the others.
+**In which order**: reviews first, then fixes after a request for changes, then new work. Within each of these, in this order:
+
+1. a ticket whose last attempt failed (and counted as a failed attempt) goes behind the others, even a high-priority one;
+2. then priority: high, then normal, then low;
+3. then the tickets that the most other tickets wait for;
+4. then the one waiting the longest.
+
+Projects take turns, so one large project does not hold up the others.
 
 **Where and how many**: only on a Claude account that can start a run: inside its windows, under its daily budget, not paused and not at its usage limit (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), and on a machine that can take the run, as for **Run now**. It starts one run per account at a time, until the account runs its **Runs at the same time**; the next ticket starts when a run ends.
 
