@@ -1,7 +1,17 @@
-import { RunRefusal, type MachineUnavailable } from '@orchestrator/protocol';
+import {
+  BlockingItem,
+  HoldCause,
+  MachineFailureCause,
+  QueueReason,
+  RunRefusal,
+  type MachineUnavailable,
+} from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
+import { formatDateTime } from '../github/text';
 import {
   acceptedAfterText,
+  machineFailureText,
+  queueReasonText,
   runBranchText,
   runRefusalText,
   ticketUsageText,
@@ -28,6 +38,9 @@ const unavailable: {
   account_limited: { why: 'account_limited', account, until },
   account_paused: { why: 'account_paused', account },
   account_busy: { why: 'account_busy', account, maxConcurrentRuns: 2 },
+  account_outside_window: { why: 'account_outside_window', account, next: until },
+  account_budget_used: { why: 'account_budget_used', account, until },
+  left_out: { why: 'left_out', cause: 'dispatch_timeout', at: until },
 };
 
 const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason: Reason }> } = {
@@ -96,6 +109,71 @@ describe('run refusals in plain words (07, section 3)', () => {
     // "Reopen it first" (owner's answer 3 of step J4, lot 3 step J4b).
     expect(runRefusalText(refusals.pull_request_not_open)).toBe(
       'Pull request #12 is closed on GitHub, so there is nothing to review. Reopen it first, with Reopen pull request on the ticket page or in Needs you.',
+    );
+  });
+});
+
+describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", () => {
+  const queueReasons: QueueReason[] = [
+    ...Object.values(refusals),
+    ...HoldCause.options.map((cause) => ({ reason: 'held' as const, cause })),
+    ...BlockingItem.options.map((item) => ({
+      reason: 'needs_you' as const,
+      item,
+      machine: item === 'download_failed' || item === 'machine_failures' ? machine : null,
+    })),
+  ];
+
+  it.each(queueReasons.map((reason) => [reason.reason, reason] as const))(
+    'explains %s without codes',
+    (_, reason) => {
+      expect(QueueReason.safeParse(reason).success).toBe(true);
+      const text = queueReasonText(reason);
+      expect(text).toMatch(/^[A-Z].*\.$/s);
+      expect(text).not.toMatch(/\b[a-z]+_[a-z_]+\b|undefined|null|\[object/);
+    },
+  );
+
+  it("says Run now's reasons in Run now's words", () => {
+    for (const refusal of Object.values(refusals)) {
+      expect(queueReasonText(refusal)).toBe(runRefusalText(refusal));
+    }
+  });
+
+  it('names the account window, the budget and a machine left out (step A)', () => {
+    const noMachine = (entry: MachineUnavailable) =>
+      queueReasonText({ reason: 'no_machine', machines: [{ machine, unavailable: entry }] });
+    expect(noMachine(unavailable.account_outside_window)).toBe(
+      `No machine can take the run: Laptop: its Claude account Personal is outside its window until ${formatDateTime(until)}.`,
+    );
+    expect(noMachine({ why: 'account_outside_window', account, next: null })).toBe(
+      'No machine can take the run: Laptop: its Claude account Personal is outside its windows.',
+    );
+    expect(noMachine(unavailable.account_budget_used)).toBe(
+      `No machine can take the run: Laptop: its Claude account Personal has used its daily budget for today, until ${formatDateTime(until)}.`,
+    );
+    for (const cause of MachineFailureCause.options) {
+      expect(noMachine({ why: 'left_out', cause, at: until })).toBe(
+        `No machine can take the run: Laptop: it is left out for this ticket since ${formatDateTime(until)}, when ${machineFailureText[cause]}, until it connects again or you use Run now.`,
+      );
+    }
+  });
+
+  it('says how to release a held ticket, and which item it waits on', () => {
+    expect(queueReasonText({ reason: 'held', cause: 'stop_run' })).toBe(
+      'Held: you stopped its run. Run now releases it and starts it.',
+    );
+    expect(queueReasonText({ reason: 'held', cause: 'stop_review' })).toBe(
+      'Held: you stopped its review. Start review releases it and starts it.',
+    );
+    expect(queueReasonText({ reason: 'held', cause: 'request_changes' })).toBe(
+      'Held: you asked to edit its acceptance criteria first. Run now releases it and starts it.',
+    );
+    expect(queueReasonText({ reason: 'needs_you', item: 'machine_failures', machine })).toBe(
+      'Waiting for you in Needs you: it could not start on Laptop.',
+    );
+    expect(queueReasonText({ reason: 'needs_you', item: 'ci_cancelled', machine: null })).toBe(
+      'Waiting for you in Needs you: CI was cancelled on GitHub because the branch changed there.',
     );
   });
 });

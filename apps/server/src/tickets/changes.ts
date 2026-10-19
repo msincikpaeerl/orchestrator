@@ -15,7 +15,7 @@ import type { TicketRow } from './model.js';
 // sections 2 and 5; owner's answers 1 to 6, lot 3 step I).
 
 /** The ticket's latest request for changes, standing or answered; null when none. */
-export function latestRequest(ticket: TicketRow): ChangeRequest | null {
+export function latestRequest(ticket: Pick<TicketRow, 'changeRequest'>): ChangeRequest | null {
   return ticket.changeRequest === null ? null : ChangeRequest.parse(ticket.changeRequest);
 }
 
@@ -23,11 +23,13 @@ export function latestRequest(ticket: TicketRow): ChangeRequest | null {
  * The request still standing: made after the ticket's latest accepted submission (07, section
  * 3). Run now then starts a `fix_review` run, and the commit it was made on is refused.
  */
-export function standingRequest(ticket: TicketRow): ChangeRequest | null {
+export function standingRequest(
+  ticket: Pick<TicketRow, 'changeRequest' | 'changeRequestAnsweredAt'>,
+): ChangeRequest | null {
   return ticket.changeRequestAnsweredAt === null ? latestRequest(ticket) : null;
 }
 
-export function ticketStop(ticket: TicketRow): TicketStop | null {
+export function ticketStop(ticket: Pick<TicketRow, 'stopped'>): TicketStop | null {
   return ticket.stopped === null ? null : TicketStop.parse(ticket.stopped);
 }
 

@@ -188,7 +188,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
  * or until the ticket is cancelled or done, or its machine revoked; still shown while a next run
  * works.
  */
-async function pushFailedItems(db: Database): Promise<Items> {
+export async function pushFailedItems(db: Database): Promise<Items> {
   const rows = await db
     .select({
       ticket: schema.tickets,
@@ -401,7 +401,7 @@ async function toMergeItems(db: Database): Promise<Items> {
  * until the work is accepted (**Check CI again**), a new run starts (the run is no longer the
  * ticket's latest), or the ticket is done or cancelled.
  */
-async function ciTimeoutItems(db: Database): Promise<Items> {
+export async function ciTimeoutItems(db: Database): Promise<Items> {
   const rows = await db
     .select({
       run: schema.runs,
@@ -449,7 +449,7 @@ async function ciTimeoutItems(db: Database): Promise<Items> {
  * now**. Only the ticket's latest run, so the item goes when a new run starts; never for a done
  * or cancelled ticket, or a revoked machine. A review run that fails so is "Review did not finish".
  */
-async function downloadFailedItems(db: Database): Promise<Items> {
+export async function downloadFailedItems(db: Database): Promise<Items> {
   const rows = await db
     .select({
       run: schema.runs,

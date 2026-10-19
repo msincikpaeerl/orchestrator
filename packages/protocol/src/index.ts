@@ -184,9 +184,21 @@ export {
   RunHistoryResponse,
 } from './api/activity.js';
 export {
+  BlockingItem,
+  HoldCause,
+  QueueAccount,
+  QueueCandidate,
+  QueueKind,
+  QueueReason,
+  QueueResponse,
+} from './api/queue.js';
+export {
   ACCOUNT_BUSY_RUN_STATUSES,
   ACTIVE_RUN_STATUSES,
+  AccountRef,
   FailureReason,
+  MachineFailureCause,
+  MachineRef,
   MachineUnavailable,
   PauseReason,
   PROGRESS_CARD_MAX_LENGTH,

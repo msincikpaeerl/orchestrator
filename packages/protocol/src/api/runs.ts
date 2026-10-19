@@ -230,8 +230,23 @@ export const RunLogResponse = z.object({
 });
 export type RunLogResponse = z.infer<typeof RunLogResponse>;
 
-const MachineRef = z.object({ id: z.uuid(), name: z.string() });
-const AccountRef = z.object({ id: z.uuid(), label: z.string() });
+export const MachineRef = z.object({ id: z.uuid(), name: z.string() });
+export const AccountRef = z.object({ id: z.uuid(), label: z.string() });
+
+/**
+ * The failures a machine caused, which leave it out of the scheduler's choice for the ticket (07,
+ * section 4; owner's answer 3, lot 4 step A): the run's failure reason, or a start the machine did
+ * not confirm in time or refused.
+ */
+export const MachineFailureCause = z.enum([
+  'machine_offline',
+  'machine_revoked',
+  'claude_code_unsupported',
+  'machine_problem',
+  'dispatch_timeout',
+  'dispatch_refused',
+]);
+export type MachineFailureCause = z.infer<typeof MachineFailureCause>;
 
 /** Why one machine cannot take a run now (07, sections 3 and 4). */
 export const MachineUnavailable = z.discriminatedUnion('why', [
@@ -252,6 +267,26 @@ export const MachineUnavailable = z.discriminatedUnion('why', [
     account: AccountRef,
     maxConcurrentRuns: z.int().positive(),
   }),
+  /**
+   * The scheduler only (07, section 5.3; lot 4): the account is outside its windows; `next` is
+   * when the next one opens, null when none opens within a week. **Run now** ignores windows.
+   */
+  z.object({
+    why: z.literal('account_outside_window'),
+    account: AccountRef,
+    next: z.iso.datetime().nullable(),
+  }),
+  /**
+   * The scheduler only (07, section 5.4; lot 4): the account's daily budget is used for today,
+   * until `until`, the day's end in the Orchestrator's time zone. **Run now** ignores the budget.
+   */
+  z.object({ why: z.literal('account_budget_used'), account: AccountRef, until: z.iso.datetime() }),
+  /**
+   * The scheduler only (07, section 4; lot 4): a run of this ticket on this machine ended at `at`
+   * with a failure the machine caused (`cause`), so the machine is left out for the ticket until
+   * it connects again or the owner's **Run now**.
+   */
+  z.object({ why: z.literal('left_out'), cause: MachineFailureCause, at: z.iso.datetime() }),
 ]);
 export type MachineUnavailable = z.infer<typeof MachineUnavailable>;
 

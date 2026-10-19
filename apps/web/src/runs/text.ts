@@ -5,9 +5,13 @@ import {
   WORKING_RUN_STATUSES,
   type AccountStatus,
   type Comment,
+  type BlockingItem,
   type FailureReason,
+  type HoldCause,
+  type MachineFailureCause,
   type MachineUnavailable,
   type PauseReason,
+  type QueueReason,
   type Run,
   type RunChangeCause,
   type RunLogEntry,
@@ -81,7 +85,20 @@ export const causeText: Record<RunChangeCause, string> = {
   pull_request_merged: 'its pull request was merged on GitHub',
 };
 
-/** Why one machine cannot take a run, for the refusal of **Run now** or **Resume**. */
+/** A failure a machine caused, which leaves it out for the ticket (07, section 4; lot 4). */
+export const machineFailureText: Record<MachineFailureCause, string> = {
+  machine_offline: 'the machine went offline',
+  machine_revoked: 'the machine was revoked',
+  claude_code_unsupported: "the machine's Claude Code was missing or too old",
+  machine_problem: 'the machine could not start Claude Code in a process scope',
+  dispatch_timeout: 'the machine did not confirm the start in time',
+  dispatch_refused: 'the machine refused the start',
+};
+
+/**
+ * Why one machine cannot take a run, for the refusal of **Run now** or **Resume**, and the
+ * scheduler's queue, whose account windows, budget and machines left out Run now never gives.
+ */
 export function unavailableText(unavailable: MachineUnavailable): string {
   switch (unavailable.why) {
     case 'waiting_enrollment':
@@ -104,6 +121,56 @@ export function unavailableText(unavailable: MachineUnavailable): string {
       return `its Claude account ${unavailable.account.label} is paused: ${PAUSED_TEXT}`;
     case 'account_busy':
       return `its Claude account ${unavailable.account.label} already runs its maximum of ${String(unavailable.maxConcurrentRuns)} run${unavailable.maxConcurrentRuns === 1 ? '' : 's'} at a time`;
+    case 'account_outside_window':
+      return unavailable.next === null
+        ? `its Claude account ${unavailable.account.label} is outside its windows`
+        : `its Claude account ${unavailable.account.label} is outside its window until ${formatDateTime(unavailable.next)}`;
+    case 'account_budget_used':
+      return `its Claude account ${unavailable.account.label} has used its daily budget for today, until ${formatDateTime(unavailable.until)}`;
+    case 'left_out':
+      return `it is left out for this ticket since ${formatDateTime(unavailable.at)}, when ${machineFailureText[unavailable.cause]}, until it connects again or you use Run now`;
+  }
+}
+
+/** A held ticket (07, section 1; lot 4): why, and how to release it. */
+export const holdText: Record<HoldCause, string> = {
+  stop_run: 'Held: you stopped its run. Run now releases it and starts it.',
+  stop_review: 'Held: you stopped its review. Start review releases it and starts it.',
+  request_changes:
+    'Held: you asked to edit its acceptance criteria first. Run now releases it and starts it.',
+};
+
+/** The blocking "Needs you" item a ticket waits on (04, section 5.1; 07, section 4; lot 4). */
+export function blockingItemText(item: BlockingItem, machine: string | null): string {
+  const on = machine === null ? '' : ` on ${machine}`;
+  switch (item) {
+    case 'ci_timeout':
+      return 'its run ended before CI finished on GitHub';
+    case 'ci_cancelled':
+      return 'CI was cancelled on GitHub because the branch changed there';
+    case 'push_failed':
+      return 'its branch could not be pushed to GitHub';
+    case 'download_failed':
+      return `the project could not be downloaded from GitHub${on}`;
+    case 'review_not_finished':
+      return 'its review did not finish';
+    case 'machine_failures':
+      return `it could not start${on}`;
+  }
+}
+
+/**
+ * Why a candidate of the scheduler's queue is not running (07, section 7; lot 4): Run now's words
+ * for Run now's reasons, and the two only the scheduler has.
+ */
+export function queueReasonText(reason: QueueReason): string {
+  switch (reason.reason) {
+    case 'held':
+      return holdText[reason.cause];
+    case 'needs_you':
+      return `Waiting for you in Needs you: ${blockingItemText(reason.item, reason.machine?.name ?? null)}.`;
+    default:
+      return runRefusalText(reason);
   }
 }
 

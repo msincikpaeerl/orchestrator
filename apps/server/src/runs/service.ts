@@ -33,7 +33,6 @@ import {
   type GitCredential,
   type GitCredentialRequest,
   type Hello,
-  type MachineUnavailable,
   type McpCall,
   type McpResult,
   type PauseReason,
@@ -56,7 +55,6 @@ import {
   count,
   desc,
   eq,
-  gte,
   inArray,
   isNotNull,
   isNull,
@@ -93,13 +91,7 @@ import { inspectToken } from '../github/token-check.js';
 import { HttpError } from '../http.js';
 import { hashCredential } from '../machines/credentials.js';
 import { McpBackend } from '../mcp/backend.js';
-import {
-  capabilityLists,
-  effectiveCapabilities,
-  machineState,
-  unusableReasons,
-  type MachineRow,
-} from '../machines/model.js';
+import { type MachineRow } from '../machines/model.js';
 import type { ProjectRow } from '../projects/model.js';
 import { SecretUnreadableError, type SecretKey } from '../secrets.js';
 import { resolveSettings } from '../settings/store.js';
@@ -115,11 +107,10 @@ import {
   pushPermission,
   pushedCommits,
   recordPush,
-  runReport,
 } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { fixReviewTicket, implementTicket, reviewTicket } from './first-message.js';
-import { standingRequest, ticketStop } from '../tickets/changes.js';
+import { standingRequest } from '../tickets/changes.js';
 import { ciOutcome, ciSourceRun } from './ci-outcome.js';
 import { reviewCiOf } from './review-view.js';
 import { reviewFirstMessage, type ReviewCi } from '../agents/review-message.js';
@@ -145,6 +136,19 @@ import {
   type RunRow,
 } from './model.js';
 import { downloadWords, runDownload } from './download.js';
+import {
+  githubRefusal,
+  machineChoice,
+  machineUnavailable,
+  preferredMachine,
+  projectRefusal,
+  refusalMessage,
+  resumeRefusal,
+  ticketRefusal,
+  ticketWork,
+  type Fleet,
+} from '../scheduler/checks.js';
+import { runsToday } from '../scheduler/facts.js';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -205,6 +209,9 @@ const RUN_START_SETTINGS = [
   'pushTimeoutSeconds',
   'dispatchAckTimeoutSeconds',
 ] as const;
+
+/** A refusal of the checks shared with the scheduler's queue, with its message (lot 4 step D1). */
+const refused = (refusal: RunRefusal) => refuse(refusal, refusalMessage(refusal));
 
 const refuse = (refusal: RunRefusal, message: string) =>
   new HttpError(409, 'run_not_possible', message, { runRefusal: refusal });
@@ -967,47 +974,6 @@ export class RunService {
   // ---------------------------------------------------------------------------------------------
   // Machines
 
-  /**
-   * Why the machine cannot take a run now, or null. `busy` is the account's runs using it now.
-   */
-  private unavailable(
-    machine: MachineRow,
-    account: AccountRow,
-    busy: number,
-    required: readonly string[],
-    now: Date,
-  ): MachineUnavailable | null {
-    const state = machineState(machine);
-    if (state === 'revoked') return { why: 'revoked' };
-    if (state === 'waiting_enrollment') return { why: 'waiting_enrollment' };
-    if (state === 'disabled') return { why: 'disabled' };
-    if (state === 'offline') return { why: 'offline' };
-    if (machine.daemonIncompatibleSince) return { why: 'daemon_incompatible' };
-    const reasons = unusableReasons(machine);
-    if (reasons.length > 0) return { why: 'unusable', reasons };
-    const capabilities = new Set(effectiveCapabilities(capabilityLists(machine)));
-    const missing = required.filter((tag) => !capabilities.has(tag));
-    if (missing.length > 0) return { why: 'missing_capabilities', capabilities: missing };
-    const accountRef = { id: account.id, label: account.label };
-    // Paused first: the owner's choice, until Resume (07, section 5.5; owner's answer 5, lot 4).
-    if (account.state === 'paused_manual') return { why: 'account_paused', account: accountRef };
-    if (isLimited(account, now) && account.limitedUntil) {
-      return {
-        why: 'account_limited',
-        account: accountRef,
-        until: account.limitedUntil.toISOString(),
-      };
-    }
-    if (busy >= account.maxConcurrentRuns) {
-      return {
-        why: 'account_busy',
-        account: accountRef,
-        maxConcurrentRuns: account.maxConcurrentRuns,
-      };
-    }
-    return null;
-  }
-
   private async busyRuns(tx: Executor, accountId?: string): Promise<Map<string, number>> {
     const rows = await tx
       .select({ accountId: schema.runs.accountId, busy: count() })
@@ -1051,15 +1017,9 @@ export class RunService {
   /** The GitHub login and account id, reading the id at the first run when unknown (02, 3.2). */
   private async githubIdentity(): Promise<{ login: string; id: number; token: string }> {
     const [connection] = await this.db.select().from(schema.githubConnection);
-    if (!connection) {
-      throw refuse({ reason: 'github_not_connected' }, 'GitHub is not connected');
-    }
-    if (connection.unreadableSince) {
-      throw refuse({ reason: 'github_token_unreadable' }, 'The saved GitHub token cannot be read');
-    }
-    if (connection.invalidSince) {
-      throw refuse({ reason: 'github_token_invalid' }, 'GitHub does not accept the saved token');
-    }
+    const refusal = githubRefusal(connection);
+    if (refusal !== null || !connection)
+      throw refused(refusal ?? { reason: 'github_not_connected' });
     let token: string | null;
     try {
       token = await loadToken(this.db, this.options.key);
@@ -1109,11 +1069,9 @@ export class RunService {
     const prepared = await this.db.transaction(async (tx) => {
       const now = this.now();
       const project = await this.lockProject(tx, eq(schema.projects.key, projectKey));
-      if (project.status === 'archived') {
-        throw refuse({ reason: 'project_archived' }, 'The project is archived');
-      }
-      if (project.setupStatus !== 'ready' || project.defaultBranch === null) {
-        throw refuse({ reason: 'project_not_ready' }, 'The repository setup is not finished');
+      const projectRefused = projectRefusal(project);
+      if (projectRefused !== null || project.defaultBranch === null) {
+        throw refused(projectRefused ?? { reason: 'project_not_ready' });
       }
       const [ticket] = await tx
         .select()
@@ -1123,26 +1081,6 @@ export class RunService {
         )
         .for('update');
       if (!ticket) throw new HttpError(404, 'ticket_not_found', 'No ticket with this number');
-      if (ticket.status !== 'todo') {
-        throw refuse(
-          { reason: 'ticket_not_todo', status: TicketStatus.parse(ticket.status) },
-          `Run now needs a ticket in todo; it is ${ticket.status}`,
-        );
-      }
-      if (ticket.assigneeProfileId === null) {
-        throw refuse({ reason: 'no_assignee' }, 'The ticket has no assignee');
-      }
-      // Stopped by the retry policy until **Try again** (04, section 5; lot 3 step I).
-      const stop = ticketStop(ticket);
-      if (stop !== null) {
-        throw refuse(
-          { reason: 'ticket_stopped', cause: stop.cause, count: stop.count, limit: stop.limit },
-          `The ticket is stopped after ${String(stop.count)} ${stop.cause === 'review_rounds' ? 'review rounds' : 'failed attempts'} (limit ${String(stop.limit)}): Try again first`,
-        );
-      }
-      // A request for changes standing: the run addresses it (07, section 3; lot 3 step I).
-      const request = standingRequest(ticket);
-      const purpose = request === null ? ('implement' as const) : ('fix_review' as const);
       const blockers = await tx
         .select({ number: schema.tickets.number })
         .from(schema.ticketDependencies)
@@ -1150,10 +1088,18 @@ export class RunService {
         .where(
           and(eq(schema.ticketDependencies.ticketId, ticket.id), ne(schema.tickets.status, 'done')),
         );
-      if (blockers.length > 0) {
-        const tickets = blockers.map((row) => ticketReference(project.key, row.number)).sort();
-        throw refuse({ reason: 'blocked', tickets }, `The ticket waits for ${tickets.join(', ')}`);
+      // In todo, assigned, not stopped by the retry policy until **Try again** (04, section 5;
+      // lot 3 step I), waiting for no ticket: the scheduler's checks (lot 4 step D1).
+      const ticketRefused = ticketRefusal(
+        ticket,
+        blockers.map((row) => ticketReference(project.key, row.number)).sort(),
+      );
+      if (ticketRefused !== null || ticket.assigneeProfileId === null) {
+        throw refused(ticketRefused ?? { reason: 'no_assignee' });
       }
+      // A request for changes standing: the run addresses it (07, section 3; lot 3 step I).
+      const request = standingRequest(ticket);
+      const purpose = request === null ? ('implement' as const) : ('fix_review' as const);
       const [profile] = await tx
         .select()
         .from(schema.agentProfiles)
@@ -1185,17 +1131,7 @@ export class RunService {
         .where(eq(schema.runs.ticketId, ticket.id))
         .orderBy(desc(schema.runs.createdAt));
       // A review run reports GitHub's head: it never holds work, nor moves it (lot 3 step D3).
-      const worked = earlier.filter((run) => run.purpose !== 'review');
-      const withCommits = worked.find((run) => (reportedCommits(run)?.length ?? 0) > 0);
-      const held = withCommits ? commitsNotOnGitHub(ticket, runReport(withCommits)).count : 0;
-      const holding =
-        withCommits &&
-        held > 0 &&
-        !worked.some(
-          (run) => run.createdAt > withCommits.createdAt && run.machineId !== withCommits.machineId,
-        )
-          ? withCommits
-          : undefined;
+      const { worked, withCommits, held, holding } = ticketWork(ticket, earlier);
 
       const { machine, account, lostWork } = await this.chooseMachine(tx, {
         projectId: project.id,
@@ -1550,12 +1486,8 @@ export class RunService {
       .from(schema.projects)
       .where(eq(schema.projects.key, projectKey));
     if (!project) throw new HttpError(404, 'project_not_found', 'No project with this key');
-    if (project.status === 'archived') {
-      throw refuse({ reason: 'project_archived' }, 'The project is archived');
-    }
-    if (project.setupStatus !== 'ready') {
-      throw refuse({ reason: 'project_not_ready' }, 'The repository setup is not finished');
-    }
+    const projectRefused = projectRefusal(project);
+    if (projectRefused !== null) throw refused(projectRefused);
     const query = executor
       .select()
       .from(schema.tickets)
@@ -1793,52 +1725,22 @@ export class RunService {
     lostWork: { machine: MachineRow; commits: number } | undefined;
   }> {
     const { projectId, earlier, required, now, holding } = input;
-    const machines = await tx.select().from(schema.machines);
-    const accounts = new Map(
-      (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
-    );
-    const busy = await this.busyRuns(tx);
-    const verdict = (machine: MachineRow) => {
-      const account = accounts.get(machine.accountId);
-      if (!account) throw new Error(`account of machine ${machine.id} not found`);
-      return this.unavailable(machine, account, busy.get(account.id) ?? 0, required, now);
+    const fleet: Fleet = {
+      machines: await tx.select().from(schema.machines),
+      accounts: new Map(
+        (await tx.select().from(schema.claudeAccounts)).map((account) => [account.id, account]),
+      ),
+      busy: await this.busyRuns(tx),
+      now,
     };
-
-    let chosen: MachineRow | undefined;
-    let lostWork: { machine: MachineRow; commits: number } | undefined;
-    const holder = holding && machines.find((machine) => machine.id === holding.machineId);
-    if (holding && holder && !holder.revokedAt) {
-      const unavailable = verdict(holder);
-      const { commits } = holding;
-      if (unavailable) {
-        throw refuse(
-          {
-            reason: 'machine_unavailable',
-            machine: { id: holder.id, name: holder.name },
-            commits,
-            unavailable,
-          },
-          `The ticket's branch has commits not on GitHub on machine ${holder.name}, which cannot take the run now (${unavailable.why})`,
-        );
-      }
-      chosen = holder;
-    } else {
-      if (holding && holder) {
-        lostWork = { machine: holder, commits: holding.commits };
-      }
-      const candidates = machines.filter((machine) => !machine.revokedAt);
-      const available = candidates.filter((machine) => verdict(machine) === null);
-      if (available.length === 0) {
-        const listed = candidates
-          .map((machine) => ({
-            machine: { id: machine.id, name: machine.name },
-            unavailable: verdict(machine) as MachineUnavailable,
-          }))
-          .sort((a, b) => a.machine.name.localeCompare(b.machine.name));
-        throw refuse({ reason: 'no_machine', machines: listed }, 'No machine can take the run');
-      }
-      chosen = await this.preferred(tx, projectId, earlier, available);
-    }
+    const choice = machineChoice(fleet, { required, holding });
+    if (choice.refusal !== null) throw refused(choice.refusal);
+    const { lostWork } = choice;
+    const chosen =
+      choice.machines.length === 1 && holding?.machineId === choice.machines[0]?.id
+        ? choice.machines[0]
+        : await this.preferred(tx, projectId, earlier, choice.machines);
+    if (!chosen) throw new Error('no machine chosen');
 
     // The account is locked, so two starts cannot both take its last place (01, invariant 3).
     const [lockedAccount] = await tx
@@ -1855,15 +1757,12 @@ export class RunService {
       .for('share');
     if (!machine) throw new Error('machine not found');
     const recount = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
-    const unavailable = this.unavailable(machine, account, recount, required, now);
+    const unavailable = machineUnavailable(machine, account, recount, required, now);
     if (unavailable) {
-      throw refuse(
-        {
-          reason: 'no_machine',
-          machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
-        },
-        'No machine can take the run',
-      );
+      throw refused({
+        reason: 'no_machine',
+        machines: [{ machine: { id: machine.id, name: machine.name }, unavailable }],
+      });
     }
     return { machine, account, lostWork };
   }
@@ -1888,26 +1787,8 @@ export class RunService {
           .groupBy(schema.runs.machineId)
       ).map((row) => row.machineId),
     );
-    const midnight = new Date(this.now());
-    midnight.setUTCHours(0, 0, 0, 0);
-    const today = new Map(
-      (
-        await tx
-          .select({ machineId: schema.runs.machineId, runs: count() })
-          .from(schema.runs)
-          .where(and(inArray(schema.runs.machineId, ids), gte(schema.runs.createdAt, midnight)))
-          .groupBy(schema.runs.machineId)
-      ).map((row) => [row.machineId, row.runs]),
-    );
-    const last = earlier[0]?.machineId;
-    const sorted = [...available].sort(
-      (a, b) =>
-        Number(cloned.has(b.id)) - Number(cloned.has(a.id)) ||
-        Number(b.id === last) - Number(a.id === last) ||
-        (today.get(a.id) ?? 0) - (today.get(b.id) ?? 0) ||
-        a.name.localeCompare(b.name),
-    );
-    return sorted[0] as MachineRow;
+    const today = await runsToday(tx, ids, this.now());
+    return preferredMachine(available, { cloned, today, last: earlier[0]?.machineId });
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -2215,48 +2096,10 @@ export class RunService {
         .for('update');
       if (!lockedAccount) throw new Error('account not found');
       const account = await this.releaseAccount(tx, lockedAccount);
-      const now = this.now();
-      const accountRef = { id: account.id, label: account.label };
-      if (account.state === 'paused_manual') {
-        throw refuse(
-          { reason: 'account_paused', account: accountRef },
-          `The account ${account.label} is paused: new runs are stopped on it`,
-        );
-      }
-      if (isLimited(account, now) && account.limitedUntil) {
-        throw refuse(
-          {
-            reason: 'account_limited',
-            account: accountRef,
-            until: account.limitedUntil.toISOString(),
-          },
-          `The account ${account.label} is limited until ${account.limitedUntil.toISOString()}`,
-        );
-      }
       const busy = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
-      if (busy >= account.maxConcurrentRuns) {
-        throw refuse(
-          {
-            reason: 'account_busy',
-            account: accountRef,
-            maxConcurrentRuns: account.maxConcurrentRuns,
-          },
-          `The account ${account.label} already runs its maximum of ${String(account.maxConcurrentRuns)}`,
-        );
-      }
-      // Its own machine: capabilities and the account were checked when it started.
-      const unavailable = this.unavailable(machine, account, 0, [], now);
-      if (unavailable) {
-        throw refuse(
-          {
-            reason: 'machine_unavailable',
-            machine: { id: machine.id, name: machine.name },
-            commits: null,
-            unavailable,
-          },
-          `The run's machine ${machine.name} cannot take it now (${unavailable.why})`,
-        );
-      }
+      // The account, then its own machine: the scheduler's checks of a resume (lot 4 step D1).
+      const resumeRefused = resumeRefusal(machine, account, busy, this.now());
+      if (resumeRefused !== null) throw refused(resumeRefused);
       if (run.claudeSessionId === null) {
         throw new Error(`paused run ${run.id} has no Claude session to resume`);
       }
