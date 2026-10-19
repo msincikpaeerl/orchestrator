@@ -29,7 +29,8 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
-import { daemonUpdateCommands, doctorErrors, toAccount } from './machines/model.js';
+import { accountRows, accountsWithToday } from './machines/accounts.js';
+import { daemonUpdateCommands, doctorErrors } from './machines/model.js';
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
@@ -528,11 +529,13 @@ export function registerNeedsYouRoutes(
     publicUrl,
     providedDaemonBuild,
     runs,
+    now = () => new Date(),
   }: {
     db: Database;
     publicUrl: string;
     providedDaemonBuild: () => string | null;
     runs: RunService;
+    now?: () => Date;
   },
 ) {
   app.get('/api/needs-you', async (request) => {
@@ -659,17 +662,19 @@ export function registerNeedsYouRoutes(
       .where(and(isNotNull(schema.machines.enrolledAt), isNull(schema.machines.revokedAt)))
       .limit(1);
     if (!enrolled) setup.push({ type: 'no_machine' });
-    const accounts = await db
-      .select()
-      .from(schema.claudeAccounts)
-      .orderBy(asc(sql`lower(${schema.claudeAccounts.label})`));
-    const now = new Date();
+    const { accounts } = await accountsWithToday(db, await accountRows(db), now());
     return {
       items: [...setup, ...items],
-      accounts: accounts.map((row) => {
-        const { id, label, state, limitedUntil, limitedUntilEstimated } = toAccount(row, now);
-        return { id, label, state, limitedUntil, limitedUntilEstimated };
-      }),
+      accounts: accounts.map(
+        ({ id, label, state, limitedUntil, limitedUntilEstimated, today }) => ({
+          id,
+          label,
+          state,
+          limitedUntil,
+          limitedUntilEstimated,
+          today,
+        }),
+      ),
     } satisfies NeedsYouResponse;
   });
 }

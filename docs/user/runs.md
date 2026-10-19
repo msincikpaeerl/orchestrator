@@ -103,7 +103,7 @@ The answer is added to the ticket's timeline, the ticket goes back to **In progr
 
 ## Stop a run
 
-On the ticket page or the run page, click **Stop run**, then confirm. The agent stops at once and the ticket goes back to **To do**. The branch and its commits stay on the machine, and the next run goes on from them. From version 0.4.0 the machine also sends the commits GitHub does not have yet to the ticket's branch on GitHub, once the agent's programs are stopped (see [Where the work is](#where-the-work-is)). A run you stop never counts as a failed attempt.
+On the ticket page or the run page, click **Stop run**, then confirm. The agent stops at once and the ticket goes back to **To do**. The branch and its commits stay on the machine, and the next run goes on from them. From version 0.4.0 the machine also sends the commits GitHub does not have yet to the ticket's branch on GitHub, once the agent's programs are stopped (see [Where the work is](#where-the-work-is)). A run you stop never counts as a failed attempt. Stopping a run frees its Claude usage at once, and the ticket is not started again by itself: start it with **Run now** when you want (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)).
 
 If the machine is offline, the run is marked as failed because of that, and its session is stopped when the machine reconnects.
 

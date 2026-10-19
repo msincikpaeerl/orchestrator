@@ -22,7 +22,7 @@ They are numbered from 1, as the owner sees them: use these numbers in your deci
 
 {{acceptance_criteria}}
 
-## Dependencies
+{{owner_request_first}}## Dependencies
 
 {{dependencies}}
 
@@ -101,6 +101,8 @@ What the agent said about these points:
 Quality requested changes on commit {{commit}} at {{at}}{{round}}. {{answer}}
 
 {{points}}
+<!-- part: owner-request-first -->
+The owner's request for changes, given under "The previous review" below, was written after these criteria, so it wins where they disagree. The agent was told to do what the request asks and to say so in that criterion's justification: a criterion the agent reported as superseded by the owner's request is not a reason to request changes. Check instead that the work does what the request asks.
 <!-- part: previous-owner -->
 The owner requested changes at {{at}}{{on}}: {{comment}}
 

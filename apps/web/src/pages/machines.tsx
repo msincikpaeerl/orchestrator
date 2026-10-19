@@ -4,9 +4,11 @@ import { Link } from 'react-router';
 import { Button, buttonLinkClass, Card, ErrorMessage, Loading, PageHeader } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { AccountForm } from '../machines/account-form';
+import { AccountDayLines, PauseButton } from '../machines/account-parts';
+import { budgetText, scheduleText } from '../machines/schedule-text';
 import { concurrentRuns, osLabel, planLabel, statusText } from '../machines/text';
-import { useAccounts, useLiveRuns, useMachines } from '../queries';
-import { AccountStatusText } from '../runs/components';
+import { useAccounts, useAccountsLive, useLiveRuns, useMachines } from '../queries';
+import { AccountStatusText, ResetCountdown } from '../runs/components';
 import { runPath, runStateText } from '../runs/text';
 
 const badgeLook: Record<Machine['state'], string> = {
@@ -64,7 +66,7 @@ export function ActiveRunList({ runs }: { runs: Run[] }) {
 
 /** Claude accounts: list, add and edit (02, section 9.1). */
 function Accounts() {
-  const accounts = useAccounts();
+  const accounts = useAccountsLive();
   const [editing, setEditing] = useState<string | null>(null);
   const close = () => {
     setEditing(null);
@@ -121,18 +123,33 @@ function Accounts() {
                       </p>
                       <p className="text-slate-900">
                         State: <AccountStatusText account={account} />
+                        <ResetCountdown account={account} />
                       </p>
+                      <AccountDayLines account={account} />
+                      <p className="text-slate-700">
+                        Windows: {scheduleText(account.schedule)} · Daily budget:{' '}
+                        {budgetText(account.dailyBudget)}
+                      </p>
+                      <Link
+                        to={`/machines/accounts/${account.id}`}
+                        className="text-blue-700 underline"
+                        aria-label={`Windows, budget and history of ${account.label}`}
+                      >
+                        Windows, budget and history
+                      </Link>
                     </div>
-                    <Button
-                      variant="secondary"
-                      className="shrink-0"
-                      aria-label={`Edit ${account.label}`}
-                      onClick={() => {
-                        setEditing(account.id);
-                      }}
-                    >
-                      Edit
-                    </Button>
+                    <div className="flex shrink-0 flex-col gap-2">
+                      <Button
+                        variant="secondary"
+                        aria-label={`Edit ${account.label}`}
+                        onClick={() => {
+                          setEditing(account.id);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <PauseButton account={account} />
+                    </div>
                   </div>
                 )}
               </Card>

@@ -25,6 +25,11 @@ async function working(page: Page): Promise<{ runId: string; runToken: string }>
   return { runId, runToken: await startRun(page, runId) };
 }
 
+/** The status line of the accounts on "Needs you", without its button (lot 4 step C). */
+function accountLines(page: Page) {
+  return page.getByRole('list', { name: 'Claude accounts' }).locator(':scope > li > span');
+}
+
 /** The item of "Needs you" whose text matches. */
 function item(page: Page, text: string | RegExp) {
   return page.getByRole('main').getByRole('listitem').filter({ hasText: text });
@@ -95,9 +100,7 @@ test('a run paused on a suspected usage limit is resumed from Needs you', async 
 
   const paused = item(page, 'Run paused: possible Claude usage limit');
   await expect(paused).toContainText('the run may pause again if it was the limit');
-  await expect(page.getByRole('list', { name: 'Claude accounts' })).toHaveText(
-    'Personal: Available',
-  );
+  await expect(accountLines(page)).toHaveText('Personal: Available');
   await expectFitsScreen(page);
 
   await paused.getByRole('button', { name: 'Resume' }).click();
@@ -110,7 +113,7 @@ test('a limited account shows as limited, then available once its time has passe
 }) => {
   const { runId } = await working(page);
   await page.goto('/');
-  const accounts = page.getByRole('list', { name: 'Claude accounts' });
+  const accounts = accountLines(page);
   await expect(accounts).toHaveText('Personal: Available');
   // The limit resets in a few seconds: the screen follows the clock, without a reload.
   await limited(page, runId, 'detected', new Date(Date.now() + 4000).toISOString());
@@ -133,9 +136,7 @@ test('a limit without a reset time shows an estimated time', async ({ page }) =>
   await page.goto('/');
   await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
   await limited(page, runId, 'detected');
-  await expect(page.getByRole('list', { name: 'Claude accounts' })).toHaveText(
-    /^Personal: Limited until .+ \(estimated\)$/,
-  );
+  await expect(accountLines(page)).toHaveText(/^Personal: Limited until .+ \(estimated\)$/);
   const paused = item(page, 'Run paused: Claude usage limit reached');
   await expect(paused).toContainText(/you can resume after .+ \(estimated\)\./);
   await expect(paused.getByRole('button', { name: 'Resume' })).toBeDisabled();

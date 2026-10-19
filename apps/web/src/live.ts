@@ -42,12 +42,25 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
     case 'project':
       return [[...keys.projects], [...keys.runs], [...keys.needsYou]];
     case 'run':
-      return [[...keys.runs], [...keys.projects], [...keys.needsYou], [...keys.machines]];
+      return [
+        [...keys.runs],
+        [...keys.projects],
+        [...keys.needsYou],
+        [...keys.machines],
+        [...keys.accounts],
+      ];
     case 'machine':
     case 'claude_account':
       return [[...keys.machines], [...keys.accounts], [...keys.needsYou], [...keys.runs]];
     case 'setting':
-      return [[...keys.settings], ['projects', 'settings']];
+      // The time zone moves every account's windows and day.
+      return [
+        [...keys.settings],
+        ['projects', 'settings'],
+        [...keys.timeZone],
+        [...keys.accounts],
+        [...keys.needsYou],
+      ];
     case 'github_connection':
       return [[...keys.github], [...keys.setup], [...keys.needsYou]];
     case 'agent_profile':

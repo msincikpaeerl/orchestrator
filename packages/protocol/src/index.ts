@@ -208,7 +208,14 @@ export {
   UNCOUNTED_FAILURES,
 } from './api/runs.js';
 export {
+  ACCOUNT_DAYS_SHOWN,
+  ACCOUNT_LIMITS_SHOWN,
+  AccountDetailResponse,
+  AccountLimit,
   AccountListResponse,
+  AccountToday,
+  AccountWindow,
+  DayUsage,
   AccountPlan,
   AccountState,
   ClaudeAccount,
@@ -230,6 +237,18 @@ export {
   UnusableReason,
   UpdateAccountRequest,
 } from './api/machines.js';
+export {
+  DAILY_BUDGET,
+  DailyBudget,
+  SCHEDULE_WINDOWS_MAX,
+  SaveTimeZoneRequest,
+  Schedule,
+  ScheduleWindow,
+  TimeZoneName,
+  TimeZoneResponse,
+  Weekday,
+  isTimeZone,
+} from './api/schedule.js';
 export { STREAM_KEEP_ALIVE_MS, STREAM_PATH, STREAM_RETRY_MS, StreamMessage } from './api/stream.js';
 export {
   GlobalSetting,

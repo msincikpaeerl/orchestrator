@@ -1,6 +1,10 @@
 # Settings
 
-**Settings** holds the GitHub connection (see [Connect GitHub](github-token.md)) and **Limits**: the limits and timeouts of the Orchestrator, each with a default you can change.
+**Settings** holds the GitHub connection (see [Connect GitHub](github-token.md)), **Limits**: the limits and timeouts of the Orchestrator, each with a default you can change, and the **Time zone**.
+
+## Set the time zone
+
+The Claude accounts' windows, the day of their daily budget and their runs of the day are read in the Orchestrator's time zone. In **Settings** > **Time zone**, your browser's time zone is filled in until you save one; choose another if the Orchestrator should follow a different one, then click **Save the time zone**. Until you save it, the Orchestrator uses UTC, and each account's page says so. Summer and winter time are followed by themselves. See [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself).
 
 ## Change a limit
 

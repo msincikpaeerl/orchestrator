@@ -7,8 +7,9 @@ import { Button, Card, ErrorMessage, Loading, PageHeader } from '../components/u
 import { CreateTokenInstructions, PermissionResults, TokenForm } from '../github/token-form';
 import { formatDate, formatDateTime, problemText } from '../github/text';
 import { keys, queryClient, useGitHubStatus } from '../queries';
+import { TimeZoneCard } from '../settings/time-zone-card';
 
-/** Settings (02, section 10): GitHub connection and limits so far. */
+/** Settings (02, section 10): GitHub connection, limits and the time zone so far. */
 export function SettingsPage() {
   const github = useGitHubStatus();
   const status = github.data;
@@ -34,6 +35,7 @@ export function SettingsPage() {
             </p>
           </Card>
         </Link>
+        <TimeZoneCard />
         {['Owner account', 'Backups'].map((title) => (
           <Card key={title}>
             <h2 className="font-semibold text-slate-900">{title}</h2>

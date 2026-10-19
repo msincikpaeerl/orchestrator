@@ -204,7 +204,7 @@ State, plan, schedule windows, daily budget, behaviour at window end, limit hist
 
 In lot 2 an account has a label, a plan and its maximum concurrent runs, and shows its state (`available`, or `limited` until a time); schedule windows, the daily budget, the behaviour at window end and manual pause come with lot 4.
 
-Lot 4 (owner's answers 5, 6 and 7, lot 4 step A): the account page shows its state ("Paused" for `paused_manual`), the next window, the time until reset when limited, working time and estimated usage today against the budget, runs today, the estimated usage per day, and the history of limits reached; it edits the schedule windows (in the Orchestrator's time zone, Settings) and the daily budget; its actions are **Stop new runs** and **Resume**. **Pause now** and the behaviour at window end are not offered: a window's end lets the current run finish (07, section 5.3).
+Lot 4 (owner's answers 5, 6 and 7, lot 4 step A): the account page shows its state ("Paused" for `paused_manual`), the next window, the time until reset when limited, working time and estimated usage today against the budget, runs today, the estimated usage per day, and the history of limits reached; it edits the schedule windows (in the Orchestrator's time zone, Settings) and the daily budget; its actions are **Stop new runs** and **Resume**. Built in lot 4 step C: the account's card on Machines shows its state, window, day against the budget and both actions, and links ("Windows, budget and history") to its page, which edits the windows and the budget and lists the last 14 days and the latest 20 limits reached. **Pause now** and the behaviour at window end are not offered: a window's end lets the current run finish (07, section 5.3).
 
 ### 9.2 Machine list and detail
 
@@ -218,7 +218,7 @@ Lot 4 (owner's answers 5, 6 and 7, lot 4 step A): the account page shows its sta
 ## 10. Settings
 
 - **Limits** (Settings > Limits): every global setting of 04 section 8, 05 section 5 and 07 section 8. Each shows its value, its default, what it does, and a **Reset to default** action. Settings that can be overridden per project say so; settings used only from a later version say "Used from version ...". Settings of a Claude account are on the account (section 9.1), not here.
-- **Time zone** (lot 4; owner's answer 6, lot 4 step A): the Orchestrator's one time zone, filled in from the browser, in which schedule windows, the daily budget's day and "runs today" are read (07, section 5.3).
+- **Time zone** (lot 4; owner's answer 6, lot 4 step A): the Orchestrator's one time zone, filled in from the browser, in which schedule windows, the daily budget's day and "runs today" are read (07, section 5.3). Until the owner's first save the Orchestrator uses UTC, and Settings and each account page say so (lot 4 step C).
 - GitHub connection: token status, expiry date, permissions check, replace token.
 - Owner account: change password, sessions.
 - Backup reminder with a link to the backup guide.

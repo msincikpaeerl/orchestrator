@@ -289,6 +289,10 @@ export function reviewFirstMessage(
   const ci = ciSection(template, ticket);
   const previousPieces =
     ticket.previous === null ? null : previous(template, ticket, ticket.previous);
+  // The owner's request was written after the criteria and wins where they disagree, so a
+  // criterion it superseded is no reason to request changes (owner's answer 14, lot 4 step C).
+  const ownerFirst =
+    ticket.previous?.by === 'owner' ? `${part(template, 'owner-request-first')}\n\n` : '';
   const testsRule = part(template, ticket.ci === 'no_ci' ? 'tests-no-ci' : 'tests-ci-passed');
 
   /** The newest `kept` of `items`, after the marker saying how many older ones are left out. */
@@ -324,6 +328,7 @@ export function reviewFirstMessage(
       priority: ticket.priority,
       description: cut.description,
       acceptance_criteria: criteria,
+      owner_request_first: ownerFirst,
       dependencies,
       report: cut.report,
       earlier_reviews: newest(

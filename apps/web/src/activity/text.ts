@@ -10,6 +10,7 @@ import {
   type EventType,
 } from '@orchestrator/protocol';
 import { formatDate, formatDateTime, permissionLabel } from '../github/text';
+import { budgetText, scheduleText } from '../machines/schedule-text';
 import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
@@ -81,6 +82,9 @@ export const eventTypeLabel: Record<EventType, string> = {
   'account.updated': 'Claude account edited',
   'account.limited': 'Claude usage limit reached',
   'account.available': 'Claude account available again',
+  'account.paused': 'New runs stopped on a Claude account',
+  'account.resumed': 'Claude account resumed',
+  'setting.time_zone_saved': 'Time zone saved',
   'machine.created': 'Machine added',
   'machine.enrollment_code_created': 'Enrollment code created',
   'machine.enrolled': 'Machine enrolled',
@@ -563,6 +567,8 @@ const describe: { [T in EventType]: Describe<T> } = {
     if (p.previousLabel !== undefined) changes.push(`renamed from “${shorten(p.previousLabel)}”`);
     if (p.plan !== undefined) changes.push(`${planLabel[p.plan]} plan`);
     if (p.maxConcurrentRuns !== undefined) changes.push(concurrentRuns(p.maxConcurrentRuns));
+    if (p.schedule !== undefined) changes.push(`windows: ${scheduleText(p.schedule)}`);
+    if (p.dailyBudget !== undefined) changes.push(`daily budget: ${budgetText(p.dailyBudget)}`);
     return ['Claude account ', quote(p.label, null), ` edited: ${list(changes)}`];
   },
   'account.limited': (p) => [
@@ -577,6 +583,24 @@ const describe: { [T in EventType]: Describe<T> } = {
     'Claude account ',
     quote(p.label, null),
     ' available again: its usage limit time has passed',
+  ],
+  'account.paused': (p) => [
+    'New runs stopped on the Claude account ',
+    quote(p.label, null),
+    p.activeRuns === 0
+      ? ''
+      : `: ${String(p.activeRuns)} active run${p.activeRuns === 1 ? '' : 's'} go${p.activeRuns === 1 ? 'es' : ''} on and finish${p.activeRuns === 1 ? 'es' : ''}`,
+  ],
+  'account.resumed': (p) => [
+    'Claude account ',
+    quote(p.label, null),
+    ' resumed',
+    p.limitedUntil === undefined
+      ? ''
+      : `: its usage limit still holds until ${formatDateTime(p.limitedUntil)}`,
+  ],
+  'setting.time_zone_saved': (p) => [
+    `Time zone set to ${p.timeZone} (was ${p.previous ?? 'not set: UTC'})`,
   ],
   'machine.created': (p) => [
     'Machine ',

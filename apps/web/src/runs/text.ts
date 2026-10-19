@@ -18,6 +18,9 @@ import {
   type TicketSummary,
 } from '@orchestrator/protocol';
 import { formatDateTime } from '../github/text';
+
+/** **Stop new runs** in force (07, section 5.5): the account's screens and Run now's refusal. */
+export const PAUSED_TEXT = 'you stopped new runs on it';
 import { WAITING_FOR_CI } from './ci-text';
 import { statusLabel } from '../tickets/text';
 
@@ -97,6 +100,8 @@ export function unavailableText(unavailable: MachineUnavailable): string {
       return `it lacks ${unavailable.capabilities.join(', ')}`;
     case 'account_limited':
       return `its Claude account ${unavailable.account.label} reached its usage limit, until ${formatDateTime(unavailable.until)}`;
+    case 'account_paused':
+      return `its Claude account ${unavailable.account.label} is paused: ${PAUSED_TEXT}`;
     case 'account_busy':
       return `its Claude account ${unavailable.account.label} already runs its maximum of ${String(unavailable.maxConcurrentRuns)} run${unavailable.maxConcurrentRuns === 1 ? '' : 's'} at a time`;
   }
@@ -144,6 +149,8 @@ export function runRefusalText(refusal: RunRefusal): string {
       return 'This run is not paused any more. Reload the page.';
     case 'account_limited':
       return `The Claude account ${refusal.account.label} reached its usage limit. You can resume after ${formatDateTime(refusal.until)}.`;
+    case 'account_paused':
+      return `The Claude account ${refusal.account.label} is paused: ${PAUSED_TEXT}. Resume the account in Machines first.`;
     case 'account_busy':
       return `The Claude account ${refusal.account.label} already runs its maximum of ${String(refusal.maxConcurrentRuns)} run${refusal.maxConcurrentRuns === 1 ? '' : 's'} at a time. Try again when one finishes.`;
     case 'ticket_not_in_review':
@@ -245,6 +252,22 @@ export function runTimes(
 }
 
 /** "$0.42 (estimated by Claude Code)", or "Not known yet". */
+/**
+ * The ticket's estimated usage, its runs' together (07, section 5.4; lot 4 step C): a run Claude
+ * Code gave no estimate for counts as nothing and is named apart.
+ */
+export function ticketUsageText(runs: readonly Pick<Run, 'estimatedUsageUsd'>[]): string {
+  const total = runs.reduce((sum, run) => sum + (run.estimatedUsageUsd ?? 0), 0);
+  const unknown = runs.filter((run) => run.estimatedUsageUsd === null).length;
+  const amount = `$${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const runCount = `${String(runs.length)} run${runs.length === 1 ? '' : 's'}`;
+  return `Estimated usage: ${amount} over ${runCount} (estimated by Claude Code)${
+    unknown === 0
+      ? ''
+      : `; ${String(unknown)} of them ${unknown === 1 ? 'has' : 'have'} no estimate yet and count${unknown === 1 ? 's' : ''} as $0.00`
+  }.`;
+}
+
 export function usageText(usd: number | null): string {
   return usd === null
     ? 'Not known yet'
@@ -269,7 +292,8 @@ export function pausedText(run: Pick<Run, 'pauseReason' | 'resumeAfter'>): strin
 
 /**
  * A Claude account's compact status line (02, section 4): "Available" or "Limited until <time>",
- * "estimated" when that time comes from the fallback delay; "Paused" comes with lot 4.
+ * "estimated" when that time comes from the fallback delay; "Paused" (lot 4), with a usage limit
+ * reached meanwhile.
  */
 export function accountStatusText(
   account: Pick<AccountStatus, 'state' | 'limitedUntil' | 'limitedUntilEstimated'>,
@@ -278,7 +302,9 @@ export function accountStatusText(
     case 'available':
       return 'Available';
     case 'paused_manual':
-      return 'Paused';
+      return account.limitedUntil === null
+        ? 'Paused'
+        : `Paused, and limited until ${formatDateTime(account.limitedUntil)}${account.limitedUntilEstimated ? ' (estimated)' : ''}`;
     case 'limited':
       return account.limitedUntil === null
         ? 'Limited'

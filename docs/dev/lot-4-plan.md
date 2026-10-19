@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: steps A and B done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); next: step C
+> Status: steps A to C done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); next: step D1
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -87,7 +87,7 @@ Lot 4 raises no `PROTOCOL_VERSION` (Q7 B, Q8 A, Q13's fallback): the owner's ins
 - **A request contradicting a criterion**: the dialog's sentence ("If your request contradicts one of the acceptance criteria, edit that criterion too: once WEB-12 is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion."), the same words in Help (a unit test reads them there), and the `fix_review` message after the owner's request only: "The owner wrote this request after the acceptance criteria below, so it comes first: …". **For the owner's review**: answer 14's "comes after the criteria" is read as "newer, so it wins where they disagree", as the agent did in lot 3's check.
 - **New question 2's box** goes to step D2 (written in step A's record): no code for it here.
 
-### [ ] C. Claude accounts: time zone, windows, budget, manual pause
+### [x] C. Claude accounts: time zone, windows, budget, manual pause (2026-10-19)
 
 - **The time zone** (Q6): stored once, set on Settings, filled in from the browser on first save; every window and "today" is read in it, daylight saving included (a window from 02:00 on the night the clocks go forward is a test).
 - **Schedule windows** on the account (01 section 3.9): weekly windows (days, start, end; a window may cross midnight), none meaning always. A window's end lets the current run finish, the only behaviour (Q7 B): the account shows no **Behaviour at window end**.
@@ -97,6 +97,15 @@ Lot 4 raises no `PROTOCOL_VERSION` (Q7 B, Q8 A, Q13's fallback): the owner's ins
 - Nothing starts by itself yet: these values are read by **Run now** (Q5) and, from step D, by the scheduler.
 
 **Done when** server tests cover windows (crossing midnight, a daylight-saving change, none), the budget reached in each kind at the day's start and end, the manual pause and resume with their events, and Run now's refusals for each in the same words as the screens; Playwright on both viewports sets a window, a budget and a pause on an account and sees them on "Needs you" (screenshots).
+
+*Done 2026-10-19*, in one session (no split needed):
+
+- **First, a gap of answer 14** (owner's request with the review of step B): the `review` run's first message, after an owner's **Request changes** answered by the fix, says under the acceptance criteria that the request was written after them and wins where they disagree, so a criterion the agent reported as superseded by it is no reason to request changes (template `review.md`, part `owner-request-first`; absent after Quality's request or none); specs 03 and 04 section 2, Help > Tickets, CHANGELOG.
+- **Time zone**: one row (`time_zone`), `GET`/`PUT /api/time-zone`, event `setting.time_zone_saved`; **UTC until the owner's first save**, said on Settings and on each account page; Settings > Time zone fills in the browser's zone. Windows and days use `Intl` (Node.js's ICU data), no new dependency: a time the clocks skip moves forward by the gap (a window from 02:00 opens at 03:00), a window inside the gap is empty that night, a time shown twice is its first occurrence. The tests move the clock by giving `now` as UTC instants on both sides of the changes of 2026-03-29 and 2026-10-25 in Europe/Paris (unit tests of `schedule.ts`; the server tests pass the application's clock, `now`, set per case).
+- **Budget's day**: each run counts whole on the day it started; a run in progress with its working time up to now and the latest estimate its machine sent with its log (`run.events`'s `estimatedUsageUsd`, sent by daemons since 0.3.0, so a 0.4.0 daemon is enough); a run with no estimate counts $0.00 and the screens say how many. A run started at 23:50 stays on that day.
+- **Stop new runs / Resume**: `account.paused` and `account.resumed`; Run now refused (`account_paused` per machine) and **Resume** of a paused run too (refusal `account_paused`), in the words "you stopped new runs on it" shared with the screens. A detected limit while paused keeps `paused_manual` with `limited_until`; Resume returns to `limited` until then.
+- **Screens**: the account card on Machines (state with time left, window, today against the budget, the budget used, **Edit**, **Stop new runs**/**Resume**, link "Windows, budget and history"); the account page `/machines/accounts/:id` (windows and budget editors, 14 days, latest 20 limits); "Needs you"'s account line (Paused, next window, budget used, the button); the ticket page's estimated usage of its runs. The account screens and "Needs you" read again every minute (window and day move with the clock).
+- Nothing starts by itself; no daemon change, no protocol raise.
 
 ### Step D: The scheduler (split proposed in three, rule 15)
 

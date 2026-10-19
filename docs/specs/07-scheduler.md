@@ -111,11 +111,12 @@ A Pro subscription does not expose its remaining usage. The Orchestrator cannot 
 - An account can have zero or more weekly windows (for example Monday–Friday 00:00–08:00 and weekends all day). No window means always allowed.
 - New runs start only inside a window. A window may cross midnight.
 - Windows, and the day of the daily budget and of "runs today", are read in **the Orchestrator's time zone**, one for the whole Orchestrator, set on Settings (02, section 10) and filled in from the owner's browser, daylight saving changes included (owner's answer 6, lot 4 step A).
+- A local time the clocks skip (spring forward) is moved forward by the gap, so a window from 02:00 on that night opens at 03:00, and one lying entirely in the gap is empty that night; a time shown twice (fall back) is its first occurrence (lot 4 step C).
 - When a window ends while a run is active, the run **finishes**. In lot 4 this is the only behaviour (owner's answer 7, lot 4 step A). Pausing the run at the end of the window instead, then resuming it like a quota pause, is kept for later with **Pause now** (section 5.5): both need a daemon command that pauses a run (`run.pause`), so a raise of the protocol version, and no lot plans them yet.
 
 ### 5.4 Daily working-time budget
 
-An optional daily limit per account (default: none), expressed either as working time or as **estimated usage**. Estimated usage is the equivalent cost that Claude Code records in each session transcript (`cost-state`, see ADR 0002). It does not convert exactly into Pro quota, but it measures what runs really consume, including the fixed cost of each turn, far better than time. Working time counts only periods where the agent is actually working (05, section 5), not waiting. When the budget is exhausted, no new run starts until the next day (in the Orchestrator's time zone, section 5.3); the active run finishes. **Run now** ignores the budget (section 3).
+An optional daily limit per account (default: none), expressed either as working time or as **estimated usage**. Estimated usage is the equivalent cost that Claude Code records in each session transcript (`cost-state`, see ADR 0002). It does not convert exactly into Pro quota, but it measures what runs really consume, including the fixed cost of each turn, far better than time. Working time counts only periods where the agent is actually working (05, section 5), not waiting. When the budget is exhausted, no new run starts until the next day (in the Orchestrator's time zone, section 5.3); the active run finishes. **Run now** ignores the budget (section 3). What counts (lot 4 step C): each run counts whole on the day it started (`started_at`, in the Orchestrator's time zone), a run in progress with its working time up to now and the latest estimate its machine sent with its log entries (`run.events`, unchanged since 0.3.0), so a run started before midnight stays on the day before; a run with no estimate from Claude Code counts as nothing and is shown apart ("N runs have no estimate yet"). "Runs today" counts the runs started today the same way.
 
 Estimated usage is also shown per run, per ticket and per day, so the owner can learn what a typical ticket costs and set the budget accordingly.
 
@@ -125,7 +126,7 @@ This is the owner's main lever to keep quota for personal use.
 
 The owner can pause an account at any time from the UI or the "Needs you" view. Options: **stop new runs** (active ones finish) or **pause now** (active runs are paused like a quota pause). Resume is manual.
 
-Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish; **Run now** refused) and **Resume** (owner's answer 7, lot 4 step A). **Pause now** is kept for later with the window end's pause (section 5.3). To free the quota at once, the owner stops a run with **Stop run**: its ticket is then held from the scheduler (section 1).
+Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish; **Run now** refused, and **Resume** of a paused run too, lot 4 step C) and **Resume** (owner's answer 7, lot 4 step A). **Pause now** is kept for later with the window end's pause (section 5.3). To free the quota at once, the owner stops a run with **Stop run**: its ticket is then held from the scheduler (section 1).
 
 ## 6. Other rules
 

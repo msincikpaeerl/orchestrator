@@ -9,7 +9,10 @@ import {
   PROTOCOL_VERSION,
   claudeCodeSupport,
   daemonPackageFileName,
+  DailyBudget,
+  Schedule,
   daemonUpdateCommands as updateCommandsFor,
+  type AccountToday,
   type ClaudeAccount,
   type Machine,
   type MachineCapability,
@@ -21,12 +24,12 @@ import { HttpError } from '../http.js';
 import { effectiveAccountState } from '../runs/model.js';
 import { SERVER_VERSION } from '../version.js';
 
-type AccountRow = typeof schema.claudeAccounts.$inferSelect;
+export type AccountRow = typeof schema.claudeAccounts.$inferSelect;
 export type MachineRow = typeof schema.machines.$inferSelect;
 
 const Tags = z.array(Capability);
 
-export function toAccount(row: AccountRow, now = new Date()): ClaudeAccount {
+export function toAccount(row: AccountRow, today: AccountToday, now: Date): ClaudeAccount {
   const effective = effectiveAccountState(row, now);
   return {
     id: row.id,
@@ -37,6 +40,9 @@ export function toAccount(row: AccountRow, now = new Date()): ClaudeAccount {
     state: AccountState.parse(effective.state),
     limitedUntil: effective.limitedUntil?.toISOString() ?? null,
     limitedUntilEstimated: effective.estimated,
+    schedule: Schedule.parse(row.schedule),
+    dailyBudget: DailyBudget.parse(row.dailyBudget),
+    today,
     createdAt: row.createdAt.toISOString(),
   };
 }

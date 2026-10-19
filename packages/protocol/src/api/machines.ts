@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Capability, DoctorCheck, MachineOs } from '../daemon/connection.js';
 import { requiredText } from '../text-limits.js';
+import { DailyBudget, Schedule, TimeZoneResponse } from './schedule.js';
 
 /** Longest account label and machine name (01, sections 3.8 and 3.9). */
 export const NAME_MAX_LENGTH = 80;
@@ -24,6 +25,42 @@ export const MaxConcurrentRuns = z
 /** Account label or machine name: trimmed, unique among its kind without regard to case. */
 export const DisplayName = requiredText(NAME_MAX_LENGTH);
 
+/** Where now is in an account's windows (07, section 5.3), in the Orchestrator's time zone. */
+export const AccountWindow = z.discriminatedUnion('state', [
+  /** No window: runs may start at any time. */
+  z.object({ state: z.literal('always') }),
+  /** Inside a window until `until`; null when the windows never close. */
+  z.object({ state: z.literal('inside'), until: z.iso.datetime().nullable() }),
+  /** Outside its windows until `next`. */
+  z.object({ state: z.literal('outside'), next: z.iso.datetime().nullable() }),
+]);
+export type AccountWindow = z.infer<typeof AccountWindow>;
+
+/**
+ * What an account used on one day of the Orchestrator's time zone (07, section 5.4): the runs
+ * started that day, a run in progress with its time so far and its latest estimate, each run
+ * counted whole on the day it started. A run Claude Code gave no estimate for counts as nothing
+ * in `estimatedUsageUsd` and is counted in `runsWithoutEstimate`.
+ */
+export const DayUsage = z.object({
+  runs: z.int().min(0),
+  workingMs: z.int().min(0),
+  estimatedUsageUsd: z.number().min(0),
+  runsWithoutEstimate: z.int().min(0),
+});
+export type DayUsage = z.infer<typeof DayUsage>;
+
+/** The account's day so far (07, section 7). */
+export const AccountToday = z.object({
+  window: AccountWindow,
+  usage: DayUsage,
+  /** The daily budget is reached: no new run starts on the account before `dayEndsAt`. */
+  budgetUsed: z.boolean(),
+  /** The next midnight in the Orchestrator's time zone, when the day's budget starts again. */
+  dayEndsAt: z.iso.datetime(),
+});
+export type AccountToday = z.infer<typeof AccountToday>;
+
 /** A Claude account (01, section 3.9; 02, section 9.1). */
 export const ClaudeAccount = z.object({
   id: z.uuid(),
@@ -35,13 +72,47 @@ export const ClaudeAccount = z.object({
   limitedUntil: z.iso.datetime().nullable(),
   /** `limitedUntil` comes from the fallback delay: no reset time was known (07, section 5.2). */
   limitedUntilEstimated: z.boolean(),
+  /** Weekly windows in which runs may start; none means always (lot 4). */
+  schedule: Schedule,
+  dailyBudget: DailyBudget,
+  today: AccountToday,
   createdAt: z.iso.datetime(),
 });
 export type ClaudeAccount = z.infer<typeof ClaudeAccount>;
 
-/** `GET /api/accounts`: by label. */
-export const AccountListResponse = z.object({ accounts: z.array(ClaudeAccount) });
+/** `GET /api/accounts`: by label, with the time zone their windows and days are read in. */
+export const AccountListResponse = z.object({
+  accounts: z.array(ClaudeAccount),
+  timeZone: TimeZoneResponse,
+});
 export type AccountListResponse = z.infer<typeof AccountListResponse>;
+
+/** How many days of use the account page lists, today first (07, section 5.4). */
+export const ACCOUNT_DAYS_SHOWN = 14;
+
+/** How many limits reached the account page lists, newest first (07, section 5.2). */
+export const ACCOUNT_LIMITS_SHOWN = 20;
+
+/** A usage limit reached, from its `account.limited` event (01, section 3.9). */
+export const AccountLimit = z.object({
+  at: z.iso.datetime(),
+  until: z.iso.datetime(),
+  /** `reset_time`: reported by Claude Code; `fallback`: now plus the fallback delay. */
+  source: z.enum(['reset_time', 'fallback']),
+});
+export type AccountLimit = z.infer<typeof AccountLimit>;
+
+/** `GET /api/accounts/:id`: the account page (02, section 9.1). */
+export const AccountDetailResponse = z.object({
+  account: ClaudeAccount,
+  timeZone: TimeZoneResponse,
+  /** The last `ACCOUNT_DAYS_SHOWN` days, today first; `date` is `YYYY-MM-DD`. */
+  days: z.array(DayUsage.extend({ date: z.string() })),
+  /** The latest limits reached, newest first, and how many there are in all. */
+  limits: z.array(AccountLimit),
+  limitCount: z.int().min(0),
+});
+export type AccountDetailResponse = z.infer<typeof AccountDetailResponse>;
 
 /** `POST /api/accounts`. */
 export const CreateAccountRequest = z.object({
@@ -53,7 +124,13 @@ export type CreateAccountRequest = z.input<typeof CreateAccountRequest>;
 
 /** `PATCH /api/accounts/:id`: the fields to change. */
 export const UpdateAccountRequest = z
-  .object({ label: DisplayName, plan: AccountPlan, maxConcurrentRuns: MaxConcurrentRuns })
+  .object({
+    label: DisplayName,
+    plan: AccountPlan,
+    maxConcurrentRuns: MaxConcurrentRuns,
+    schedule: Schedule,
+    dailyBudget: DailyBudget,
+  })
   .partial()
   .refine((value) => Object.keys(value).length > 0, 'nothing to change');
 export type UpdateAccountRequest = z.infer<typeof UpdateAccountRequest>;

@@ -12,6 +12,8 @@ import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
 import { sentence, stepLabel } from '../projects/text';
 import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
+import { PauseButton } from '../machines/account-parts';
+import { compactDayText } from '../machines/schedule-text';
 import { AccountStatusText, QuestionAnswer, RunActions } from '../runs/components';
 import { runPath } from '../runs/text';
 import {
@@ -74,11 +76,15 @@ function itemKey(item: NeedsYouItem): string {
 function AccountStatusLines({ accounts }: { accounts: AccountStatus[] }) {
   if (accounts.length === 0) return null;
   return (
-    <ul aria-label="Claude accounts" className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-slate-700">
+    <ul aria-label="Claude accounts" className="mb-4 space-y-2 text-slate-700">
       {accounts.map((account) => (
-        <li key={account.id} className="break-words">
-          <span className="font-medium text-slate-900">{account.label}</span>:{' '}
-          <AccountStatusText account={account} />
+        <li key={account.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 break-words">
+          <span>
+            <span className="font-medium text-slate-900">{account.label}</span>:{' '}
+            <AccountStatusText account={account} />
+            {compactDayText(account.today).map((part) => ` · ${part}`)}
+          </span>
+          <PauseButton account={account} />
         </li>
       ))}
     </ul>

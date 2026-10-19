@@ -78,6 +78,10 @@ const qualityRequest: ReviewTicket['previous'] = {
   ],
 };
 
+/** After an owner's request (owner's answer 14, lot 4 step C). */
+const ownerFirst =
+  "The owner's request for changes, given under \"The previous review\" below, was written after these criteria, so it wins where they disagree. The agent was told to do what the request asks and to say so in that criterion's justification: a criterion the agent reported as superseded by the owner's request is not a reason to request changes. Check instead that the work does what the request asks.";
+
 describe('the previous review (owner, lot 3 step I)', () => {
   it("gives Quality's request, the diff since, the rest of the change and the agent's notes, before the earlier reviews", () => {
     const text = message({ previous: qualityRequest });
@@ -114,6 +118,10 @@ describe('the previous review (owner, lot 3 step I)', () => {
       `The owner requested changes at 2026-09-27 15:10 UTC, on commit ${reviewed} (Quality had approved it): Also add a link to the map.\n\nThe work you review now is the agent's answer:`,
     );
     expect(text).toContain('(The agent left no comment about these points.)');
+    // It was written after the criteria and wins where they disagree (owner's answer 14, step C).
+    expect(text).toContain(
+      `- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field\n\n${ownerFirst}\n\n## Dependencies`,
+    );
     const legacy = message({
       previous: {
         by: 'owner',
@@ -126,6 +134,15 @@ describe('the previous review (owner, lot 3 step I)', () => {
     });
     expect(legacy).toContain('The owner requested changes at 2026-09-27 15:10 UTC: Also add');
     expect(legacy).not.toContain('shows what changed since that review');
+    expect(legacy).toContain(ownerFirst);
+  });
+
+  it("says the owner's request wins over the criteria only after an owner's request", () => {
+    expect(message({ previous: qualityRequest })).not.toContain('wins where they disagree');
+    expect(message()).not.toContain('wins where they disagree');
+    expect(message()).toContain(
+      '- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field\n\n## Dependencies',
+    );
   });
 
   it('is left out, with no heading, when the work answers no request', () => {
@@ -476,6 +493,21 @@ describe('Quality and its messages (snapshot)', () => {
         message({ previous: qualityRequest })
           .split('## The previous review')[1]
           ?.split('## Earlier reviews')[0] ?? ''
+      }`.trimEnd(),
+      "# First message (review) after the owner's request: its acceptance criteria",
+      `## Acceptance criteria${
+        message({
+          previous: {
+            by: 'owner',
+            at: new Date('2026-09-27T15:10:00Z'),
+            commit: reviewed,
+            after: 'approved',
+            comment: 'Also add a link to the map.',
+            notes: [],
+          },
+        })
+          .split('## Acceptance criteria')[1]
+          ?.split('## Dependencies')[0] ?? ''
       }`.trimEnd(),
       '# First message (review), No CI found and workflow files changed: its CI',
       `## CI${noCi.split('## CI')[1]?.split('\n# WEB-12')[0] ?? ''}`.trimEnd(),

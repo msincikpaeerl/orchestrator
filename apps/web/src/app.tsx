@@ -6,6 +6,7 @@ import { CenteredPage, Loading } from './components/ui';
 import { ComingLaterPage } from './pages/coming-later';
 import { LoginPage } from './pages/login';
 import { AddMachinePage } from './pages/add-machine';
+import { AccountPage } from './pages/account';
 import { MachinePage } from './pages/machine';
 import { MachinesPage } from './pages/machines';
 import { NeedsYouPage } from './pages/needs-you';
@@ -93,6 +94,7 @@ export function App() {
           <Route path="/projects/:key/tickets/:number/edit" element={<EditTicketPage />} />
           <Route path="/machines" element={<MachinesPage />} />
           <Route path="/machines/new" element={<AddMachinePage />} />
+          <Route path="/machines/accounts/:id" element={<AccountPage />} />
           <Route path="/machines/:id" element={<MachinePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/github" element={<GitHubSettingsPage />} />

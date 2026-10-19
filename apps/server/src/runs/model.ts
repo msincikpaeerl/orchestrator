@@ -34,10 +34,14 @@ export function reportedCommits(row: Pick<RunRow, 'commits'>): CommitSummary[] |
   return row.commits === null ? null : Commits.parse(row.commits);
 }
 
-/** Whether the account is `limited` now: once `limited_until` has passed it is available (07, section 3). */
+/**
+ * Whether the account is `limited` now: once `limited_until` has passed it is available (07,
+ * section 3). A limit reached while the owner stopped new runs is kept on the paused account,
+ * which goes back to it at **Resume** (lot 4 step C).
+ */
 export function isLimited(account: Pick<AccountRow, 'state' | 'limitedUntil'>, now: Date): boolean {
   return (
-    account.state === 'limited' &&
+    (account.state === 'limited' || account.state === 'paused_manual') &&
     account.limitedUntil !== null &&
     account.limitedUntil.getTime() > now.getTime()
   );
@@ -50,6 +54,14 @@ export function effectiveAccountState(
 ): { state: AccountState; limitedUntil: Date | null; estimated: boolean } {
   if (account.state === 'limited' && !isLimited(account, now)) {
     return { state: 'available', limitedUntil: null, estimated: false };
+  }
+  if (account.state === 'paused_manual') {
+    const limited = isLimited(account, now);
+    return {
+      state: 'paused_manual',
+      limitedUntil: limited ? account.limitedUntil : null,
+      estimated: limited && account.limitedUntilEstimated,
+    };
   }
   return {
     state: AccountState.parse(account.state),
@@ -69,7 +81,7 @@ export function resumeAfter(
 ): { at: string; estimated: boolean } | null {
   if (run.status !== 'paused_quota' || run.pauseReason !== 'usage_limit') return null;
   const effective = effectiveAccountState(account, now);
-  if (effective.state !== 'limited' || effective.limitedUntil === null) return null;
+  if (effective.state === 'available' || effective.limitedUntil === null) return null;
   return { at: effective.limitedUntil.toISOString(), estimated: effective.estimated };
 }
 

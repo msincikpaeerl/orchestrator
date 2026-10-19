@@ -989,6 +989,8 @@ export class RunService {
     const missing = required.filter((tag) => !capabilities.has(tag));
     if (missing.length > 0) return { why: 'missing_capabilities', capabilities: missing };
     const accountRef = { id: account.id, label: account.label };
+    // Paused first: the owner's choice, until Resume (07, section 5.5; owner's answer 5, lot 4).
+    if (account.state === 'paused_manual') return { why: 'account_paused', account: accountRef };
     if (isLimited(account, now) && account.limitedUntil) {
       return {
         why: 'account_limited',
@@ -2215,6 +2217,12 @@ export class RunService {
       const account = await this.releaseAccount(tx, lockedAccount);
       const now = this.now();
       const accountRef = { id: account.id, label: account.label };
+      if (account.state === 'paused_manual') {
+        throw refuse(
+          { reason: 'account_paused', account: accountRef },
+          `The account ${account.label} is paused: new runs are stopped on it`,
+        );
+      }
       if (isLimited(account, now) && account.limitedUntil) {
         throw refuse(
           {
@@ -3337,7 +3345,8 @@ export class RunService {
       await tx
         .update(schema.claudeAccounts)
         .set({
-          state: 'limited',
+          // The owner's Stop new runs stays: Resume goes back to the limit (lot 4 step C).
+          state: account.state === 'paused_manual' ? 'paused_manual' : 'limited',
           limitedUntil: until,
           limitedUntilEstimated: !known,
           updatedAt: now,

@@ -244,6 +244,8 @@ export const MachineUnavailable = z.discriminatedUnion('why', [
   z.object({ why: z.literal('missing_capabilities'), capabilities: z.array(z.string()) }),
   /** The account is `limited` until `until` (a usage limit detected, 07 section 5.2). */
   z.object({ why: z.literal('account_limited'), account: AccountRef, until: z.iso.datetime() }),
+  /** The owner stopped new runs on the account (07, section 5.5; lot 4). */
+  z.object({ why: z.literal('account_paused'), account: AccountRef }),
   /** The account already runs its maximum: `maxConcurrentRuns` is its current value. */
   z.object({
     why: z.literal('account_busy'),
@@ -300,6 +302,8 @@ export const RunRefusal = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('run_not_paused'), status: RunStatus }),
   /** **Resume** of a detected limit before the reset time. */
   z.object({ reason: z.literal('account_limited'), account: AccountRef, until: z.iso.datetime() }),
+  /** **Resume** on an account whose new runs the owner stopped (lot 4). */
+  z.object({ reason: z.literal('account_paused'), account: AccountRef }),
   z.object({
     reason: z.literal('account_busy'),
     account: AccountRef,

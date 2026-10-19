@@ -180,6 +180,8 @@ describe('events of every type', () => {
       'setting.reset',
       'setting.changed',
       'setting.reset',
+      // The time zone, saved before the account's windows (lot 4 step C).
+      'setting.time_zone_saved',
     ]);
     expect(await readAll(t, cookie, 'entity=setting&project=SHOP')).toHaveLength(2);
 
