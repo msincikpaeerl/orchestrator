@@ -73,6 +73,7 @@ import {
 } from '../agents/files.js';
 import {
   FirstMessageTooLarge,
+  startedBy,
   answerMessage,
   answerResumeMessage,
   continueMessage,
@@ -176,6 +177,15 @@ export interface RunServiceOptions {
   /** After a run of a ticket reported its end: its machine's clean-up may go (lot 3 step J2b). */
   endReported?: (ticketId: string) => void;
 }
+
+/**
+ * Who starts a run (07, section 2; lot 4 step D2a): the owner (**Run now**, **Start review**), or
+ * the scheduler's loop on the machine its queue chose, which the start checks again under its
+ * locks.
+ */
+export type Starter = { by: 'owner' } | { by: 'scheduler'; machineId: string };
+
+const OWNER: Starter = { by: 'owner' };
 
 /** Everything about one run, locked for the rest of the transaction. */
 interface Locked {
@@ -1060,8 +1070,12 @@ export class RunService {
     }
   }
 
-  /** **Run now** on a ticket (07, section 3): checks, machine, run `queued`, then `dispatched`. */
-  async runNow(projectKey: string, ticketNumber: number): Promise<Run> {
+  /**
+   * **Run now** on a ticket (07, section 3), or the scheduler's start of it (`starter`, 07 section
+   * 2): checks, machine, run `queued`, then `dispatched`.
+   */
+  async runNow(projectKey: string, ticketNumber: number, starter: Starter = OWNER): Promise<Run> {
+    const actor = starter.by === 'owner' ? 'owner' : 'system';
     const github = await this.githubIdentity();
     const { templates, rules, allowlist } = await this.files();
     const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
@@ -1142,6 +1156,7 @@ export class RunService {
         required,
         now,
         holding: holding ? { machineId: holding.machineId, commits: held } : null,
+        only: starter.by === 'scheduler' ? starter.machineId : undefined,
       });
 
       // The first message (03, section 3.2): attempt, and earlier commits on this machine.
@@ -1186,6 +1201,8 @@ export class RunService {
                   ? { kind: 'failed_unsent' as const }
                   : null;
       let initialPrompt: string;
+      // "Started by the scheduler" first, within the message's byte budget (lot 4 step D2a).
+      const lead = startedBy(templates.implement, starter.by === 'scheduler');
       try {
         const implement = {
           projectKey: project.key,
@@ -1196,9 +1213,15 @@ export class RunService {
           notPushed,
           previousCi,
         };
+        const budget = FIRST_MESSAGE_MAX_BYTES - Buffer.byteLength(lead, 'utf8');
         initialPrompt =
-          request === null
-            ? implementFirstMessage(templates.implement, await implementTicket(tx, implement))
+          lead +
+          (request === null
+            ? implementFirstMessage(
+                templates.implement,
+                await implementTicket(tx, implement),
+                budget,
+              )
             : fixReviewFirstMessage(
                 templates['fix-review'],
                 templates.implement,
@@ -1210,7 +1233,8 @@ export class RunService {
                   // Nothing pushed and the machine holding the work revoked (answer 5).
                   lost: lostWork !== undefined && ticket.githubBranchHead === null,
                 }),
-              );
+                budget,
+              ));
       } catch (error) {
         if (!(error instanceof FirstMessageTooLarge)) throw error;
         throw refuse(
@@ -1255,7 +1279,7 @@ export class RunService {
       if (!run) throw new Error('run not inserted');
       const reference = ticketReference(project.key, ticket.number);
       await recordEvent(tx, {
-        actor: 'owner',
+        actor,
         entityType: 'run',
         entityId: run.id,
         projectId: project.id,
@@ -1276,9 +1300,15 @@ export class RunService {
       const started = await applyRunAction(tx, {
         projectKey: project.key,
         ticket,
-        action: 'run_now',
-        actor: 'owner',
+        action: starter.by === 'owner' ? 'run_now' : 'scheduler_started',
+        actor,
         runId: run.id,
+        // Who started it, on the ticket (lot 4 step D2a); Run now's own click needs no comment.
+        ...(starter.by === 'scheduler'
+          ? {
+              comment: `Started by the scheduler: attempt ${String(attempt)} on machine ${machine.name}${purpose === 'fix_review' ? ', to address the request for changes' : ''}.`,
+            }
+          : {}),
         now,
       });
       if (!started) throw new Error('ticket left todo during Run now');
@@ -1321,7 +1351,7 @@ export class RunService {
       return { run, start, machine, reference, ackDeadline };
     });
 
-    return this.dispatch(prepared);
+    return this.dispatch(prepared, starter);
   }
 
   /**
@@ -1330,7 +1360,12 @@ export class RunService {
    * submission. The pull request is read on GitHub first, outside the transaction: its head must
    * still be that commit. The ticket stays `in_review`.
    */
-  async startReview(projectKey: string, ticketNumber: number): Promise<Run> {
+  async startReview(
+    projectKey: string,
+    ticketNumber: number,
+    starter: Starter = OWNER,
+  ): Promise<Run> {
+    const actor = starter.by === 'owner' ? 'owner' : 'system';
     const github = await this.githubIdentity();
     const files = await this.files();
     const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
@@ -1372,24 +1407,29 @@ export class RunService {
         required,
         now,
         holding: null,
+        only: starter.by === 'scheduler' ? starter.machineId : undefined,
       });
       const reference = ticketReference(project.key, ticket.number);
       const baseBranch = source.baseBranch;
       const branchName = ticket.branchName ?? source.branchName;
       let initialPrompt: string;
+      const lead = startedBy(files.templates.review, starter.by === 'scheduler');
       try {
-        initialPrompt = reviewFirstMessage(
-          files.templates.review,
-          await reviewTicket(tx, {
-            projectKey: project.key,
-            projectName: project.name,
-            ticket,
-            commit: subject.commit,
-            pullRequest: subject.pullRequest,
-            base: baseBranch,
-            ci: subject.ci,
-          }),
-        );
+        initialPrompt =
+          lead +
+          reviewFirstMessage(
+            files.templates.review,
+            await reviewTicket(tx, {
+              projectKey: project.key,
+              projectName: project.name,
+              ticket,
+              commit: subject.commit,
+              pullRequest: subject.pullRequest,
+              base: baseBranch,
+              ci: subject.ci,
+            }),
+            FIRST_MESSAGE_MAX_BYTES - Buffer.byteLength(lead, 'utf8'),
+          );
       } catch (error) {
         if (!(error instanceof FirstMessageTooLarge)) throw error;
         throw refuse(
@@ -1427,7 +1467,7 @@ export class RunService {
         .returning();
       if (!run) throw new Error('run not inserted');
       await recordEvent(tx, {
-        actor: 'owner',
+        actor,
         entityType: 'run',
         entityId: run.id,
         projectId: project.id,
@@ -1445,6 +1485,28 @@ export class RunService {
         },
         at: now,
       });
+      if (starter.by === 'scheduler') {
+        // Who started it, on the ticket (lot 4 step D2a); the ticket stays in review.
+        const [comment] = await tx
+          .insert(schema.comments)
+          .values({
+            ticketId: ticket.id,
+            author: 'system',
+            kind: 'note',
+            body: `Started by the scheduler: Quality's review of attempt ${String(source.attempt)} on machine ${machine.name}.`,
+            runId: run.id,
+            createdAt: now,
+          })
+          .returning({ id: schema.comments.id });
+        if (!comment) throw new Error('comment not inserted');
+        await recordEvent(tx, {
+          actor,
+          ...ticketEntity(ticket),
+          type: 'ticket.commented',
+          payload: { project: project.key, ticket: reference, commentId: comment.id, kind: 'note' },
+          at: now,
+        });
+      }
       const start = this.startMessage({
         messageId: dispatchMessageId,
         runId: run.id,
@@ -1463,7 +1525,7 @@ export class RunService {
       });
       return { run, start, machine, reference, ackDeadline };
     });
-    return this.dispatch(prepared);
+    return this.dispatch(prepared, starter);
   }
 
   /**
@@ -1617,23 +1679,32 @@ export class RunService {
   }
 
   /** Sends a run's `run.start` once its transaction is committed: `dispatched`, or cancelled. */
-  private async dispatch(prepared: {
-    run: RunRow;
-    start: RunStart;
-    machine: MachineRow;
-    reference: string;
-    ackDeadline: Date;
-  }): Promise<Run> {
+  private async dispatch(
+    prepared: {
+      run: RunRow;
+      start: RunStart;
+      machine: MachineRow;
+      reference: string;
+      ackDeadline: Date;
+    },
+    starter: Starter,
+  ): Promise<Run> {
     const { run, start, machine, reference, ackDeadline } = prepared;
     this.armTimer(run.id, start.id, ackDeadline);
     const sent = this.send(machine.id, start);
     await this.withRun(run.id, async (tx, locked) => {
       if (locked.run.status !== 'queued') return;
-      if (sent) await this.setStatus(tx, locked, 'dispatched', 'run_now');
-      else await this.undoDispatch(tx, locked, 'machine_offline');
+      if (sent) {
+        await this.setStatus(
+          tx,
+          locked,
+          'dispatched',
+          starter.by === 'owner' ? 'run_now' : 'scheduler',
+        );
+      } else await this.undoDispatch(tx, locked, 'machine_offline');
     });
     this.log.info(
-      { run: run.id, ticket: reference, machine: machine.name, sent },
+      { run: run.id, ticket: reference, machine: machine.name, sent, by: starter.by },
       sent ? 'run dispatched' : 'run cancelled: machine offline at dispatch',
     );
     return this.view(run.id);
@@ -1721,13 +1792,15 @@ export class RunService {
       required: Capability[];
       now: Date;
       holding: { machineId: string; commits: number } | null;
+      /** The scheduler's start: only the machine its queue chose (lot 4 step D2a). */
+      only?: string;
     },
   ): Promise<{
     machine: MachineRow;
     account: AccountRow;
     lostWork: { machine: MachineRow; commits: number } | undefined;
   }> {
-    const { projectId, earlier, required, now, holding } = input;
+    const { projectId, earlier, required, now, holding, only } = input;
     const fleet: Fleet = {
       machines: await tx.select().from(schema.machines),
       accounts: new Map(
@@ -1740,10 +1813,19 @@ export class RunService {
     if (choice.refusal !== null) throw refused(choice.refusal);
     const { lostWork } = choice;
     const chosen =
-      choice.machines.length === 1 && holding?.machineId === choice.machines[0]?.id
-        ? choice.machines[0]
-        : await this.preferred(tx, projectId, earlier, choice.machines);
-    if (!chosen) throw new Error('no machine chosen');
+      only !== undefined
+        ? choice.machines.find((machine) => machine.id === only)
+        : choice.machines.length === 1 && holding?.machineId === choice.machines[0]?.id
+          ? choice.machines[0]
+          : await this.preferred(tx, projectId, earlier, choice.machines);
+    if (!chosen) {
+      // The queue's choice no longer fits (a run ended meanwhile): the next pass chooses again.
+      throw new Error(
+        only === undefined
+          ? 'no machine chosen'
+          : 'the machine the scheduler chose cannot take it now',
+      );
+    }
 
     // The account is locked, so two starts cannot both take its last place (01, invariant 3).
     const [lockedAccount] = await tx

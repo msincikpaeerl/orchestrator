@@ -451,3 +451,11 @@ export function nudgeMessage(templates: Templates, purpose: RunPurpose = 'implem
   const text = purpose === 'review' ? part(templates.nudge, 'review') : templates.nudge.main;
   return `${fill(templates.nudge, text, {})}\n`;
 }
+
+/**
+ * The line a run started by the scheduler begins with, followed by a blank line; empty for one the
+ * owner started (lot 4 step D2a). Its bytes count in the first message's budget.
+ */
+export function startedBy(template: Template, scheduler: boolean): string {
+  return scheduler ? `${part(template, 'started-by-scheduler').trim()}\n\n` : '';
+}

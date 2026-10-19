@@ -200,6 +200,7 @@ const RUN_TRANSITIONS: Readonly<
   Record<RunTicketAction, { from: readonly TicketStatus[]; to: TicketStatus }>
 > = {
   run_now: { from: ['todo'], to: 'in_progress' },
+  scheduler_started: { from: ['todo'], to: 'in_progress' },
   stop_run: { from: ['in_progress', 'waiting_human'], to: 'todo' },
   run_submitted: { from: ['in_progress'], to: 'in_review' },
   run_ended: { from: ['in_progress', 'waiting_human'], to: 'todo' },

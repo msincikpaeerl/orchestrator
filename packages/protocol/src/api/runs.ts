@@ -39,6 +39,8 @@ export const RunChangeCause = z.enum([
   /** A report of the daemon (`run.state`, `run.quota_limited`) or its acknowledgement. */
   'daemon',
   'run_now',
+  /** The scheduler's loop started the run (07, section 2; lot 4 step D2a). */
+  'scheduler',
   'resume',
   'owner_stopped',
   'ticket_cancelled',
@@ -381,6 +383,8 @@ export type RunRefusal = z.infer<typeof RunRefusal>;
 export const RunTicketAction = z.enum([
   /** `todo` → `in_progress`: **Run now**. */
   'run_now',
+  /** `todo` → `in_progress`: the scheduler's loop started a run (07, section 2; lot 4 D2a). */
+  'scheduler_started',
   /** → `todo`: the owner's **Stop run**. */
   'stop_run',
   /** `in_progress` → `in_review`: the agent's submission was accepted and its run ended. */

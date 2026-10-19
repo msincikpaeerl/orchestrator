@@ -69,6 +69,7 @@ export const pauseText: Record<PauseReason, string> = {
 export const causeText: Record<RunChangeCause, string> = {
   daemon: 'reported by its machine',
   run_now: 'Run now',
+  scheduler: 'started by the scheduler',
   resume: 'Resume',
   owner_stopped: 'stopped by you',
   ticket_cancelled: 'the ticket was cancelled',
