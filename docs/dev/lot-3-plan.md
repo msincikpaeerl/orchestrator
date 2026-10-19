@@ -1,6 +1,6 @@
 # Lot 3 — Implementation plan
 
-> Status: done 2026-10-18 (version 0.4.0, tagged once the owner's rerun of the architect allowlist smoke test passes, step N; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
+> Status: done 2026-10-18 (version 0.4.0, tagged `v0.4.0` by the owner on 2026-10-18 on 3f04477, after the rerun of the architect allowlist smoke test, step N; step K split into K1 and K2; step D split into D1, D2 and D3, step E into E1, E2 and E3, step F into F0 to F4, step G into G1a, G1b and G2a to G2c, step H into H1 to H5, step I into I1 and I2, step J into J0 to J4, J2 into J2a to J2c and J2s, J3 into J3a and J3b, J4 into J4a to J4c)
 > Scope: "Lot 3 — Full ticket lifecycle" in [10 — Delivery Plan](../specs/10-delivery-plan.md).
 > **Lot 3 is done when** a ticket goes from `todo` to `done` with a reviewed, merged pull request, without the owner touching Git.
 
@@ -1572,6 +1572,8 @@ Split approved by the owner on 2026-10-16, each part in its own session after th
 - **B. Allowlist smoke test, `architect`.** The commit step, right after the `git add`, now reads "Make the commit this check asks for: run exactly this command with the Bash tool, as written, with no other option, no message file and no added line: git commit -m "Allowlist smoke test"", and the prompt's first line asks for each command exactly as written. The two runs' recorded files were deleted with the scratch folder, so why the agent skipped it is not known; one possible cause is a commit typed in Claude Code's own habitual form (a message through a here-document, with a co-author line), which the report would also have shown as `NOT ATTEMPTED`. So a step not attempted as written now names the other form of the command the agent ran instead. Tested with the fake `claude` (the prompt's steps 11 and 12 as sent, and a here-document commit reported).
 
 **Before the tag**: the owner runs `tools/smoke/allowlist-smoke.sh --profile architect` once more. If `git commit` is then refused, the architect's rules are fixed before v0.4.0 is tagged; if it is again not attempted, its line now says whether the agent ran another form.
+
+**The rerun** (the owner's paste, recorded in lot 4 step A): Claude Code 2.1.302, model `haiku`, 2026-10-18T17:14:14.594Z, `architect`: 17 of 17 PASS. Allowed as expected: `pnpm install`, `pnpm test`, `pnpm run lint`, `pnpm run build`, `npm test`, `node --version`, `mkdir -p src`, `ls`, the Write tool creating `smoke-note.txt`, `git status`, `git add smoke-note.txt`, `git commit -m "Allowlist smoke test"` (attempted and allowed this time) and `git log --oneline -1`. Refused as expected: `cat` of the daemon's `config.json` and `docker ps` (deny rules), `curl -sI https://example.com` and `sudo true` (not in the allowlist). No rule changed before the tag.
 
 Lot 3 is closed as version 0.4.0.
 

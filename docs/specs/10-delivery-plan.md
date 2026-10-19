@@ -82,11 +82,12 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 **Scope**
 
 - Scheduling loop, priority order, machine selection (07, sections 2 to 4).
-- Automatic resume of paused runs and the doubling fallback delay (07, section 5.2); detection, `paused_quota` and `limited` exist since lot 2. The usage-limit signal capture, if lot 2 could not do it.
-- Schedule windows, daily budget, manual pause.
+- Automatic resume of paused runs and the doubling fallback delay (07, section 5.2); detection, `paused_quota` and `limited` exist since lot 2. The usage-limit signal capture, if lot 2 could not do it: in lot 4 only if the limit is reached during the lot, otherwise moved to lot 7 (owner's answer 12, lot 4 step A).
+- Schedule windows, daily budget, manual pause: **Stop new runs** and **Resume**; **Pause now** and the pause at a window's end are kept for later (07, sections 5.3 and 5.5): they need a daemon command, and lot 4 raises no protocol version (owner's answer 7, lot 4 step A).
 - Activity screen: queue and reasons.
 - Daemon reconciliation after disconnection (05, section 6).
-- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, `download_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decide when reviews start by themselves (lot 3: **Start review** by the owner), and whether a run waiting for CI still counts against its account's maximum concurrent runs. Decide whether agents running under a separate system user from the daemon (lot 7) comes before runs start without the owner (owner's decision, lot 3 step D1).
+- From lot 3 (owner's decision, lot 3 step A): a failure that is not counted as an attempt (`ci_timeout`, `push_failed`, `download_failed`, a review run that did not finish) leaves a blocking "Needs you" item, so the scheduler never retries it in a loop. Decided in lot 4 step A: reviews and fixes start by themselves, with a per-project switch on by default (answer 1); a run waiting for CI still counts against its account's maximum (answer 2); `ci_cancelled` also leaves a blocking item, and a failure the machine caused leaves the machine out until something changes (answer 3; 07, section 4); agents under a separate system user stay in lot 7 (answer 11).
+- Carried from lot 3's check (lot 3 plan, "Carried to lot 4"; each placed in a step of `docs/dev/lot-4-plan.md`, or left out there with its reason): A27 in the GitHub smoke test (a pull request title of 256 characters and a description of 65,536); **Push again** for a refused push, without a session (moved to lot 7, answer 8); acceptance criteria numbered from 0 in agent-written texts while the owner sees them from 1 (agents write them from 1 in the owner's texts, the tool keeps 0 until a daemon update, answer 13); the owner's **Request changes** contradicting an acceptance criterion (answer 14).
 
 **Done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -123,7 +124,9 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Harness check tickets (08, section 7).
 - Browser notifications.
 - Secret masking in transcripts, audit of permissions, dependency audit in CI.
-- Agents run under a separate system user from the daemon (05, section 7.2): today an agent runs as the daemon's user, so it can read the daemon's machine token and ask the server for the GitHub credential of an active run. Lot 4's plan decides whether to bring this forward, since runs then start without the owner (owner's decision, lot 3 step D1).
+- Agents run under a separate system user from the daemon (05, section 7.2): today an agent runs as the daemon's user, so it can read the daemon's machine token and ask the server for the GitHub credential of an active run. It stays here (owner's answer 11, lot 4 step A).
+- **Push again** for a push GitHub refused, without a session, with the design of lot 3's plan ("Carried to lot 4"; owner's answer 8, lot 4 step A). It needs a daemon command, so a raise of the protocol version; `ticket_submit`'s criteria counted from 1 (03, section 3.2) can come with the same daemon update.
+- The usage-limit signal capture, if lot 4 did not reach the limit (owner's answer 12, lot 4 step A).
 - Trust the forwarded client address from a configured reverse proxy, for login throttling (see ADR 0015).
 - Point to settle: whether the server's shutdown forces busy HTTP connections closed after a grace period. Since lot 2 step L1, SIGTERM ends the realtime streams at once and the server exits in milliseconds, but a response still being sent (for example a daemon package download the client stops reading) keeps the close waiting until Docker kills the process, 10 seconds by default; PostgreSQL rolls back any write interrupted by the kill. Left unchanged in lot 2 (owner's decision, review of step L1).
 

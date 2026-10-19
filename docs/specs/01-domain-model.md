@@ -63,6 +63,7 @@ erDiagram
 | missing_harness | For a linked repository: the harness elements not found at the last check (08, section 3.4), with the check time. |
 | status | `active`, `archived`. |
 | required_capabilities | Capabilities every run on this project needs (for example `android-sdk` for Android projects). |
+| reviews_automatic | **Start reviews by themselves** (lot 4; owner's answer 1, lot 4 step A): when on (the default), the scheduler starts a `review` run when a ticket enters `in_review` with a pull request; when off, only the owner's **Start review** does (07, section 1). Each change writes an event. |
 | created_at, updated_at | Timestamps. |
 
 A project is always linked to a repository. A project cannot exist without one.
@@ -121,6 +122,8 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | ci | The CI result of the latest accepted submission: waiting, passed, failed, no CI found, or did not finish (04, section 3.1; lot 3). |
 | review_rounds | Number of Quality's requests for changes applied on the ticket, for **Most review rounds per ticket** (lot 3). The owner's **Request changes** and a decision thrown away never count; **Try again** and **Reopen** reset it to 0 (owner's answer 2, lot 3 step I). |
 | change_request | The latest request for changes (lot 3 step I): Quality's (the reviewed commit, the review run whose `review` comments hold the points, the round) or the owner's **Request changes** (the ticket's latest accepted commit, the comment, and on `awaiting_merge` whether it came after Quality's approval or a skipped review), with when the next accepted submission answered it. While not answered it stands: **Run now** starts a `fix_review` run, and handing in the same commit is refused (04, section 3.1); once answered, the next review's first message gives it (03, section 3.1). |
+| held | Set by the owner's **Stop run** (lot 4; owner's answer 4, lot 4 step A), with when and the run: the scheduler does not start the ticket until the owner's **Run now** (**Start review** for a review run), which clears it (04, section 2; 07, section 1). Each change writes an event. |
+| machine_start_failures | From lot 4: the latest failures its machine caused for the ticket (07, section 4), per machine, cleared by any other ending of a run of the ticket; one leaves that machine out for the ticket until it connects again or the owner's **Run now**, a second leaves a blocking "Needs you" item. |
 | stopped | Set when the ticket reached **Failed attempts before asking you** or **Most review rounds per ticket**, with its cause (`review_rounds` from lot 3 step I, `failed_attempts` from step K) and when: **Run now** refuses it until the owner's **Try again**, which clears it and resets `attempt_count` and `review_rounds` (04, section 5; owner's answer 2, lot 3 step I). **Reopen** clears it too. |
 | attempt_count | Number of failed runs, used by the retry policy. A run stopped by the owner, a run failed with `machine_offline`, `machine_revoked`, `claude_code_unsupported`, `machine_problem`, `ci_timeout`, `ci_cancelled`, `push_failed` or `download_failed`, any failed `review` run, and a run cancelled because the machine did not acknowledge it are never counted (owner's decisions, lot 2 steps A, C, J and M2, lot 3 steps A and K2). A run failed with `ci_failed` whose commit **Check CI again** later accepts no longer counts: the acceptance takes one off, never below 0 (owner's answer 3d, lot 3 step G2c). The attempt number a run's first message states is different: it counts every earlier run a machine acknowledged, review runs left out (07, section 3). |
 | dod_report | Latest Definition of Done report submitted by the agent (see 04). |
@@ -227,8 +230,10 @@ A machine is created by the owner, with its account, and is waiting for enrollme
 | label | 1 to 80 characters, unique among accounts without regard to case. |
 | plan | `pro`, `max_5x`, `max_20x`. Informational in v1. |
 | max_concurrent_runs | Default 1, from 1 to 10. A field of the account, not a global setting (owner's decision, lot 2 step C). |
-| schedule | Time windows during which runs may start (for example weekdays 00:00–08:00). Empty means always. |
-| state | `available`, `paused_manual`, `limited`. Only a usage limit detected with certainty makes an account `limited`, never a suspected one (05, section 4.10). `paused_manual` comes with lot 4. |
+| schedule | Weekly time windows during which runs may start (for example weekdays 00:00–08:00): days, a start and an end, a window crossing midnight allowed, read in the Orchestrator's time zone (07, section 5.3). Empty means always. From lot 4. |
+| daily_budget | None (the default), working time in minutes, or estimated usage in US dollars, per day in the Orchestrator's time zone (07, section 5.4). From lot 4. |
+| window_end | Behaviour at window end: finish the current run, the only one in lot 4 (07, section 5.3). |
+| state | `available`, `paused_manual`, `limited`. Only a usage limit detected with certainty makes an account `limited`, never a suspected one (05, section 4.10). `paused_manual` comes with lot 4: the owner's **Stop new runs**, until **Resume** (07, section 5.5). The history of limits reached is read from the `account.limited` events. |
 | limited_until | When `limited`, the expected reset time, if known. Once it has passed, the account is treated as `available` everywhere, even before the change and its event are written (07, section 3; owner's decision, lot 2 step J). |
 
 ### 3.10 Event
