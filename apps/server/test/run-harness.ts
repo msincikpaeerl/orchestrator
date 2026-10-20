@@ -15,6 +15,7 @@ import {
   type SettingValues,
   type WorkspaceFacts,
   type DownloadFailure,
+  type Hello,
 } from '@orchestrator/protocol';
 import { asc, eq, like } from 'drizzle-orm';
 import { expect } from 'vitest';
@@ -173,10 +174,11 @@ export class RunHarness {
     return { id: enrolled.machine.id, account, token, daemon };
   }
 
-  async connect(token: string) {
+  /** Connects with the machine token; `hello` can list the runs the daemon still has. */
+  async connect(token: string, hello: Partial<Hello['payload']> = {}) {
     const daemon = await ScriptedDaemon.connect(this.t.url, token);
     this.daemons.push(daemon);
-    expect((await daemon.hello()).accepted).toBe(true);
+    expect((await daemon.hello(hello)).accepted).toBe(true);
     this.heartbeats.push(
       setInterval(() => {
         if (daemon.isOpen) daemon.heartbeat();

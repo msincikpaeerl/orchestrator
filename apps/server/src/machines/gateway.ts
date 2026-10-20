@@ -72,10 +72,11 @@ export async function markOffline(
   db: Executor,
   machine: Pick<MachineRow, 'id' | 'name'>,
   reason: OfflineReason,
+  at: Date = new Date(),
 ): Promise<boolean> {
   const updated = await db
     .update(schema.machines)
-    .set({ status: 'offline', updatedAt: new Date() })
+    .set({ status: 'offline', offlineSince: at, updatedAt: new Date() })
     .where(and(eq(schema.machines.id, machine.id), eq(schema.machines.status, 'online')))
     .returning({ id: schema.machines.id, name: schema.machines.name });
   const [row] = updated;
@@ -128,6 +129,11 @@ export class DaemonGateway {
     this.db = options.db;
     this.log = options.log;
     this.secondMs = options.secondMs ?? 1000;
+  }
+
+  /** The application's clock (lot 4 steps D2b and G). */
+  private now(): Date {
+    return this.options.now?.() ?? new Date();
   }
 
   /** The run service handles the run messages; the two know each other. */
@@ -273,7 +279,9 @@ export class DaemonGateway {
         this.connections.delete(machine.id);
         if (!connection.welcomed || this.closing) return;
         log.info('daemon disconnected');
-        await this.db.transaction((tx) => markOffline(tx, machine, 'connection_closed'));
+        await this.db.transaction((tx) =>
+          markOffline(tx, machine, 'connection_closed', this.now()),
+        );
       });
     });
   }
@@ -299,7 +307,12 @@ export class DaemonGateway {
         this.end(connection, DaemonCloseCode.silent, 'nothing received in time');
         if (connection.welcomed && !this.connections.has(connection.machineId)) {
           await this.db.transaction((tx) =>
-            markOffline(tx, { id: connection.machineId, name: connection.machineName }, 'silent'),
+            markOffline(
+              tx,
+              { id: connection.machineId, name: connection.machineName },
+              'silent',
+              this.now(),
+            ),
           );
         }
       });
@@ -524,6 +537,16 @@ export class DaemonGateway {
       machine.daemonBuild === payload.daemonBuild &&
       machine.protocolVersion === payload.protocolVersion;
 
+    // A run the server thinks active that the daemon does not report fails (05, section 6; lot 4
+    // step G), while the machine is still offline here, so nothing is sent to it meanwhile; as
+    // lost before this connection, it leaves the machine out for its ticket no longer (07, 4).
+    const connectedAt = this.now();
+    await this.runs?.lostAtHello(
+      machine.id,
+      payload.runs,
+      machine.offlineSince ?? new Date(connectedAt.getTime() - 1),
+    );
+
     const accepted = await this.db.transaction(async (tx) => {
       const updated = await tx
         .update(schema.machines)
@@ -538,7 +561,8 @@ export class DaemonGateway {
           detectedCapabilities: detected,
           lastHeartbeatAt: now,
           // Releases the machines left out for a ticket after a failure (07, section 4).
-          connectedAt: this.options.now?.() ?? now,
+          connectedAt,
+          offlineSince: null,
           daemonIncompatibleSince: null,
           daemonOutdatedSince: outdated
             ? ((sameDaemon ? machine.daemonOutdatedSince : null) ?? now)

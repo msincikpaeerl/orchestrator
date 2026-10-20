@@ -222,6 +222,12 @@ const TURN_DECIDED_ENDS = new Set<RunEndReason>([
 ]);
 const TERMINAL = new Set<string>(['succeeded', 'failed', 'cancelled']);
 
+/**
+ * Runs that fail once their machine is offline for **Runs of an offline machine fail after** (05,
+ * section 6; owner's answer 10, lot 4 step G): those waiting for the owner or paused keep waiting.
+ */
+const OFFLINE_FAILING = new Set<string>(['dispatched', 'starting', 'running']);
+
 /** Runs a machine can be working on: fetching with a credential is allowed only for them. */
 const FETCHING = new Set<string>(['dispatched', 'starting', 'running']);
 
@@ -399,6 +405,8 @@ export class RunService {
       failureReason?: FailureReason;
       endReason?: RunEndReason;
       detail?: string;
+      /** When its machine lost it, if earlier than now: a run found lost at `hello` (step G). */
+      failedAt?: Date;
       set?: Partial<typeof schema.runs.$inferInsert>;
     } = {},
   ): Promise<RunRow> {
@@ -470,7 +478,7 @@ export class RunService {
           cause,
           facts.failureReason ?? null,
         ),
-        at: now,
+        at: facts.failedAt ?? now,
       });
     }
     if (terminal) this.clearTimer(locked.run.id);
@@ -501,6 +509,8 @@ export class RunService {
       reviewWhy?: string;
       /** Where a review run found the head moved, and GitHub's head then (lot 3 step H4). */
       reviewMoved?: { where: ReviewMoved; head: string | null };
+      /** When its machine lost it, for the machine's failures (lot 4 step G). */
+      failedAt?: Date;
     } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
@@ -516,6 +526,7 @@ export class RunService {
       failureReason,
       endReason: facts.endReason,
       detail: facts.detail,
+      failedAt: facts.failedAt,
     });
     if (!locked.ticket) return;
     if (locked.run.purpose === 'review') {
@@ -3699,6 +3710,119 @@ export class RunService {
       await this.sendStop(machineId, reported.runId, 'not_active');
     }
   }
+
+  /**
+   * At `hello`, before the machine is online again (05, section 6; lot 4 step G): a run the server
+   * thinks active on this machine that the daemon does not report fails with `machine_offline`,
+   * not counted (a review run's ticket stays in review, "Review did not finish"). `lostAt`, when
+   * the machine went offline, is when its machine lost it, for the machine's failures (07, 4).
+   */
+  async lostAtHello(
+    machineId: string,
+    reported: Hello['payload']['runs'],
+    lostAt: Date,
+  ): Promise<void> {
+    const kept = new Set(reported.map((run) => run.runId));
+    const active = await this.db
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.machineId, machineId),
+          inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      );
+    for (const { id } of active.filter((run) => !kept.has(run.id))) {
+      const lost = await this.withRun(id, async (tx, locked) => {
+        if (locked.run.machineId !== machineId || !ACTIVE.has(locked.run.status)) return null;
+        const name = locked.machine.name;
+        const why = `machine ${name} no longer had it when it connected again (its daemon or the machine was restarted without it)`;
+        await this.fail(tx, locked, 'machine_offline', 'machine_offline', {
+          detail: 'not on the machine when it connected again',
+          failedAt: lostAt,
+          reviewWhy: `machine ${name} no longer had the review run when it connected again`,
+          comment:
+            locked.run.purpose === 'review'
+              ? undefined
+              : `The run on machine ${name} failed as "machine offline": ${why}. It does not count as a failed attempt.`,
+        });
+        return locked;
+      });
+      if (lost) {
+        this.log.warn(
+          { run: id, ticket: this.reference(lost), machine: lost.machine.name },
+          'run not reported at hello: failed as machine offline',
+        );
+      }
+    }
+  }
+
+  /**
+   * Runs `dispatched`, `starting` or `running` (waiting for CI included) on a machine offline for
+   * **Runs of an offline machine fail after** fail with `machine_offline`, not counted (05,
+   * section 6; owner's answer 10, lot 4 step G); runs waiting for the owner or paused keep
+   * waiting. Called by the scheduler at each tick; returns when the next one is due, if any.
+   */
+  async failOfflineRuns(): Promise<Date | null> {
+    const { offlineRunFailMinutes } = await resolveSettings(this.db, ['offlineRunFailMinutes']);
+    const limitMs = offlineRunFailMinutes * 60_000;
+    const rows = await this.db
+      .select({ id: schema.runs.id, offlineSince: schema.machines.offlineSince })
+      .from(schema.runs)
+      .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+      .where(
+        and(
+          inArray(schema.runs.status, [...OFFLINE_FAILING]),
+          eq(schema.machines.status, 'offline'),
+          isNotNull(schema.machines.offlineSince),
+        ),
+      );
+    let next: Date | null = null;
+    for (const { id, offlineSince } of rows) {
+      if (offlineSince === null) continue;
+      const due = new Date(offlineSince.getTime() + limitMs);
+      if (due.getTime() > this.now().getTime()) {
+        if (next === null || due < next) next = due;
+        continue;
+      }
+      const failed = await this.withRun(id, async (tx, locked) => {
+        const since = locked.machine.offlineSince;
+        if (!OFFLINE_FAILING.has(locked.run.status) || locked.machine.status !== 'offline') {
+          return null;
+        }
+        if (since === null || this.now().getTime() - since.getTime() < limitMs) return null;
+        const name = locked.machine.name;
+        const offline = `machine ${name} was offline for ${offlineFor(this.now().getTime() - since.getTime())} (Runs of an offline machine fail after: ${String(offlineRunFailMinutes)} minute${offlineRunFailMinutes === 1 ? '' : 's'})`;
+        await this.fail(tx, locked, 'machine_offline', 'machine_offline', {
+          detail: `offline for more than ${String(offlineRunFailMinutes)} minute${offlineRunFailMinutes === 1 ? '' : 's'}`,
+          reviewWhy: offline,
+          comment:
+            locked.run.purpose === 'review'
+              ? undefined
+              : `The run failed as "machine offline": ${offline}. It does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}: when its commits are not all on GitHub, the next run waits for that machine.`,
+        });
+        return locked;
+      });
+      if (failed) {
+        this.log.warn(
+          { run: id, ticket: this.reference(failed), machine: failed.machine.name },
+          'machine offline too long: run failed',
+        );
+      }
+    }
+    return next;
+  }
+}
+
+/** "12 minutes", "1 hour 5 minutes": how long a machine was offline, in whole minutes. */
+function offlineFor(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  const plural = (count: number, unit: string) =>
+    `${String(count)} ${unit}${count === 1 ? '' : 's'}`;
+  if (minutes < 60) return plural(minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? plural(hours, 'hour') : `${plural(hours, 'hour')} ${plural(rest, 'minute')}`;
 }
 
 function stopMessage(

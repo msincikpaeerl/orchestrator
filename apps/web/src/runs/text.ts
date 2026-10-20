@@ -106,7 +106,9 @@ export function unavailableText(unavailable: MachineUnavailable): string {
     case 'waiting_enrollment':
       return 'it is not enrolled yet';
     case 'offline':
-      return 'it is offline';
+      return unavailable.since === null
+        ? 'it is offline'
+        : `it is offline since ${formatDateTime(unavailable.since)}`;
     case 'disabled':
       return 'it is disabled';
     case 'revoked':

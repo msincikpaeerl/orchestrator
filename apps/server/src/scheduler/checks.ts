@@ -132,7 +132,9 @@ export function machineUnavailable(
   if (state === 'revoked') return { why: 'revoked' };
   if (state === 'waiting_enrollment') return { why: 'waiting_enrollment' };
   if (state === 'disabled') return { why: 'disabled' };
-  if (state === 'offline') return { why: 'offline' };
+  if (state === 'offline') {
+    return { why: 'offline', since: machine.offlineSince?.toISOString() ?? null };
+  }
   if (machine.daemonIncompatibleSince) return { why: 'daemon_incompatible' };
   const reasons = unusableReasons(machine);
   if (reasons.length > 0) return { why: 'unusable', reasons };

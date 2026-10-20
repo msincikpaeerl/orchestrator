@@ -509,7 +509,10 @@ describe('Run now', () => {
     expect(refused).toEqual({
       reason: 'no_machine',
       machines: [
-        { machine: { id: offline.id, name: 'Desk' }, unavailable: { why: 'offline' } },
+        {
+          machine: { id: offline.id, name: 'Desk' },
+          unavailable: { why: 'offline', since: expect.any(String) as string },
+        },
         {
           machine: { id: old.id, name: 'Old' },
           unavailable: {

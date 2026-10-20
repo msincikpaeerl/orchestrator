@@ -19,7 +19,9 @@ import { computeQueue } from './queue.js';
 // machine, an account, a project, a setting or the GitHub connection), when a window opens, a
 // day starts or a limit ends, and at least once per **Scheduler check interval**. From step E it
 // also resumes the runs paused on a usage limit, first in their account's queue, on their own
-// machine, through Resume's own path (07, section 5.2).
+// machine, through Resume's own path (07, section 5.2). From step G each tick first fails the runs
+// of a machine offline for **Runs of an offline machine fail after** (05, section 6), and wakes
+// when the next one is due.
 
 /** The advisory lock of the loop (07, section 2): one pass at a time across server instances. */
 export const SCHEDULER_LOCK = 4_701_517_242;
@@ -56,7 +58,7 @@ export interface SchedulerOptions {
   db: Database;
   pool: Pool;
   log: FastifyBaseLogger;
-  runs: Pick<RunService, 'runNow' | 'startReview' | 'resume'>;
+  runs: Pick<RunService, 'runNow' | 'startReview' | 'resume' | 'failOfflineRuns'>;
   /** The changes that trigger a tick; none in tests that run the ticks themselves. */
   feed?: ChangeFeed;
   now?: () => Date;
@@ -153,10 +155,10 @@ export class Scheduler {
   }
 
   /**
-   * A tick when the first window opens, day starts or limit ends among the accounts, or a paused
-   * run's wait after a suspected limit ends.
+   * A tick when the first window opens, day starts or limit ends among the accounts, a paused
+   * run's wait after a suspected limit ends, or a run of an offline machine is due to fail.
    */
-  private armWake(queue: QueueResponse, now: Date): void {
+  private armWake(queue: QueueResponse, now: Date, offlineDue: Date | null): void {
     if (this.options.timers === false || this.closed) return;
     const times = queue.accounts.flatMap(({ unavailable }) => {
       if (!unavailable) return [];
@@ -169,6 +171,7 @@ export class Scheduler {
     for (const { reason } of queue.candidates) {
       if (reason?.reason === 'quota_wait') times.push(reason.until);
     }
+    if (offlineDue !== null) times.push(offlineDue.toISOString());
     const first = Math.min(...times.map((at) => Date.parse(at)));
     clearTimeout(this.wake);
     if (!Number.isFinite(first)) return;
@@ -196,12 +199,14 @@ export class Scheduler {
         this.options.log.debug('scheduler: another instance holds the lock');
         return { locked: false, started: [] };
       }
+      // First the runs of machines offline too long: their tickets can then be candidates.
+      const offlineDue = await this.options.runs.failOfflineRuns();
       const started: SchedulerStart[] = [];
       const tried = new Set<string>();
       for (;;) {
         const now = this.now();
         const queue = await computeQueue(this.options.db, now);
-        this.armWake(queue, now);
+        this.armWake(queue, now, offlineDue);
         const picks = await this.picks(queue, tried);
         if (picks.length === 0) break;
         for (const candidate of picks) {

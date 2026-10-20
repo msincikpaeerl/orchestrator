@@ -249,7 +249,8 @@ export const AccountRef = z.object({ id: z.uuid(), label: z.string() });
 /** Why one machine cannot take a run now (07, sections 3 and 4). */
 export const MachineUnavailable = z.discriminatedUnion('why', [
   z.object({ why: z.literal('waiting_enrollment') }),
-  z.object({ why: z.literal('offline') }),
+  /** Since when, on the application's clock (lot 4 step G); null when not known. */
+  z.object({ why: z.literal('offline'), since: z.iso.datetime().nullable() }),
   z.object({ why: z.literal('disabled') }),
   z.object({ why: z.literal('revoked') }),
   z.object({ why: z.literal('daemon_incompatible') }),

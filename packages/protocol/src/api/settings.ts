@@ -479,6 +479,18 @@ const definitions = {
     default: 60,
     perProject: false,
   },
+  offlineRunFailMinutes: {
+    group: 'machines',
+    label: 'Runs of an offline machine fail after',
+    description:
+      'A run working on a machine that stays offline this long fails, without counting as a failed attempt; its ticket can start again, on that machine once it is back when its commits are not on GitHub. Runs waiting for you or paused on a usage limit keep waiting.',
+    unit: 'minutes',
+    min: 1,
+    max: 1440,
+    default: 10,
+    perProject: false,
+    usedFrom: '0.5.0',
+  },
   schedulerTickSeconds: {
     group: 'scheduler',
     label: 'Scheduler check interval',

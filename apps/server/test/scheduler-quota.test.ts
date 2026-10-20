@@ -12,7 +12,7 @@ import {
 import { desc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
-import { RunHarness, eventually, state } from './run-harness.js';
+import { RunHarness, SESSION, eventually, state } from './run-harness.js';
 
 // The scheduler's resumes after a usage limit (07, section 5.2; lot 4 step E), with the real
 // application and scripted daemons: what waits for the account's window, budget and Stop new
@@ -290,7 +290,10 @@ describe('what the scheduler resumes, and how often (07, section 5.2)', () => {
       expect(row?.status).toBe('offline');
     });
     set(new Date(at.getTime() + 60_000).toISOString());
-    const again = await h.connect(laptop.token);
+    // Its `hello` lists the paused run it still has (lot 4 step G).
+    const again = await h.connect(laptop.token, {
+      runs: [{ runId, state: 'quota_paused', claudeSessionId: SESSION }],
+    });
     expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
     await answerResume(again, runId, 1, false);
     expect(await tick()).toEqual([]);

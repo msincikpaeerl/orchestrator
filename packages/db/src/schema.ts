@@ -588,6 +588,12 @@ export const machines = pgTable(
      * left out for a ticket after a failure it caused is released by a connection after it.
      */
     connectedAt: timestamp('connected_at', { withTimezone: true }),
+    /**
+     * Since when it is offline, on the application's clock (lot 4 step G): its runs `dispatched`,
+     * `starting` or `running` fail once **Runs of an offline machine fail after** has passed, and
+     * the queue says since when. Cleared by an accepted `hello`.
+     */
+    offlineSince: timestamp('offline_since', { withTimezone: true }),
     /** Since when the last `hello` was refused for its protocol version; cleared by an accepted one. */
     daemonIncompatibleSince: timestamp('daemon_incompatible_since', { withTimezone: true }),
     /** Since when the daemon speaks the previous protocol (unusable), for "Needs you". */
