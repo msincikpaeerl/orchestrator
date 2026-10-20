@@ -141,6 +141,16 @@ export const holdText: Record<HoldCause, string> = {
     'Held: you asked to edit its acceptance criteria first. Run now releases it and starts it.',
 };
 
+/** A held ticket on its page (02, section 6.4; lot 4 step D2b). */
+export const ticketHoldText: Record<HoldCause, string> = {
+  stop_run:
+    'Held: you stopped its run. The scheduler does not start it again until you use Run now.',
+  stop_review:
+    'Held: you stopped its review. The scheduler does not start it again until you use Start review.',
+  request_changes:
+    'Held: you asked to edit its acceptance criteria first. The scheduler does not start the fix until you use Run now.',
+};
+
 /** The blocking "Needs you" item a ticket waits on (04, section 5.1; 07, section 4; lot 4). */
 export function blockingItemText(item: BlockingItem, machine: string | null): string {
   const on = machine === null ? '' : ` on ${machine}`;

@@ -253,6 +253,13 @@
       "when": 1792435652020,
       "tag": "0035_account_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792452887346,
+      "tag": "0036_holds",
+      "breakpoints": true
     }
   ]
 }

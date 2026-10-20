@@ -19,6 +19,8 @@ import {
   type AgentLink,
   type LimitExceeded,
   type OwnerTicketAction,
+  type ReleaseAction,
+  type TicketHold,
   type TicketDetail,
   type TicketListResponse,
   type TimelineEntry,
@@ -71,7 +73,11 @@ import {
   ticketStop,
   tryAgainComment,
 } from './changes.js';
+import { holdTicket, releaseHold } from './holds.js';
 import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
+
+/** The owner's actions that release a hold (lot 4 step D2b). */
+const RELEASING = new Set<string>(['request_changes', 'skip_review', 'cancel', 'mark_done']);
 
 /** The ticket's pull request as last recorded (lot 3 step F3), for its page (step F4). */
 async function ticketPullRequest(
@@ -786,10 +792,13 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     path: string,
     action: OwnerTicketAction,
     comment: (body: unknown) => string | undefined,
+    /** **Request changes**'s hold box (owner's new answer 2, lot 4 step A). */
+    hold: (body: unknown) => boolean = () => false,
   ) {
     app.post<TicketParams>(`/api/projects/:key/tickets/:number/${path}`, async (request) => {
       await requireSession(db, request);
       const text = comment(request.body);
+      const holdWanted = hold(request.body);
       if (text !== undefined) await checkCommentLength(text, 'comment');
       let afterCommit: () => Promise<void> = () => Promise.resolve();
       // Set inside the transaction's callback: a holder, so the type stays `string | null`.
@@ -868,6 +877,17 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           changeRequest,
           now: now(),
         });
+        if (RELEASING.has(action)) {
+          // The owner's action replaces a hold; Request changes holds again with its box (07,
+          // section 1; owner's new answer 2, lot 4 step A).
+          await releaseHold(tx, project, updated, action as ReleaseAction, now());
+          let held: TicketHold | null = null;
+          if (action === 'request_changes' && holdWanted && updated.status === 'todo') {
+            held = { cause: 'request_changes', at: now().toISOString(), runId: null, commit: null };
+            await holdTicket(tx, project, updated, held, now());
+          }
+          updated = { ...updated, held };
+        }
         const close =
           action === 'cancel' &&
           updated.status === 'cancelled' &&
@@ -927,6 +947,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     'request-changes',
     'request_changes',
     (body) => parseInput(RequestChangesRequest, body).comment,
+    (body) => parseInput(RequestChangesRequest, body).hold === true,
   );
   ownerAction('skip-review', 'skip_review', () => undefined);
 

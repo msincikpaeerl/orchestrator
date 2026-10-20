@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createPool, endPool, schema } from '@orchestrator/db';
-import { createTestDatabase, type TestDatabase } from '@orchestrator/db/testing';
+import { createTestDatabase, migrationsFolder, type TestDatabase } from '@orchestrator/db/testing';
 import {
   QueueResponse,
   type QueueCandidate,
   type QueueReason,
   type TicketPriority,
 } from '@orchestrator/protocol';
+import { eq } from 'drizzle-orm';
 import type { Pool } from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase, type Database } from '../src/database.js';
@@ -483,10 +486,11 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
       item: 'ci_timeout',
       machine: ref,
     });
+    // Its own item since lot 4 step D2b, naming the run's machine as download_failed's does.
     expect(await reasonOf('WEB-2')).toEqual({
       reason: 'needs_you',
       item: 'ci_cancelled',
-      machine: null,
+      machine: ref,
     });
     expect(await reasonOf('WEB-3')).toEqual({
       reason: 'needs_you',
@@ -694,6 +698,114 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
       account: { id: personal.id, label: 'Personal' },
       until: minutes(45).toISOString(),
     });
+  });
+});
+
+describe('the holds and the machines left out, kept on the ticket (lot 4 step D2b)', () => {
+  /** A run's end as its event says, the only record D2a read a Stop run from. */
+  async function endEvent(runId: string, cause: string, to = 'cancelled') {
+    await db.insert(schema.events).values({
+      actor: cause === 'owner_stopped' ? 'owner' : 'system',
+      entityType: 'run',
+      entityId: runId,
+      type: 'run.status_changed',
+      payload: { project: 'WEB', ticket: 'WEB-1', machine: 'Laptop', from: 'running', to, cause },
+    });
+  }
+
+  it("keeps D2a's holds at the migration: a stopped builder run in To do, a stopped review in review", async () => {
+    const web = await project('WEB');
+    const laptop = await machine('Laptop', (await account('Personal')).id);
+    // WEB-1: its latest run stopped by the owner. WEB-2: stopped, then a later run ended otherwise.
+    const stopped = await ticket(web);
+    const stoppedRun = await run(stopped, laptop, { status: 'cancelled' });
+    await endEvent(stoppedRun.id, 'owner_stopped');
+    const later = await ticket(web);
+    await endEvent((await run(later, laptop, { status: 'cancelled' })).id, 'owner_stopped');
+    const failed = await run(later, laptop, { createdAt: minutes(-60), failureReason: 'crash' });
+    await endEvent(failed.id, 'daemon', 'failed');
+    // WEB-3: in review, its review run stopped by the owner for the work in review.
+    const reviewed = await inReview(web, laptop);
+    const review = await run(reviewed, laptop, {
+      purpose: 'review',
+      status: 'cancelled',
+      reviewCommit: 'c'.repeat(40),
+      createdAt: minutes(-80),
+      endedAt: minutes(-70),
+    });
+    await endEvent(review.id, 'owner_stopped');
+    // WEB-4: a dispatch not acknowledged, not the owner's stop.
+    const lost = await ticket(web);
+    await endEvent((await run(lost, laptop, { status: 'cancelled' })).id, 'dispatch_timeout');
+
+    // The migration's last statement, run again on these rows.
+    const sql = await readFile(join(migrationsFolder, '0036_holds.sql'), 'utf8');
+    const backfill = sql.split('--> statement-breakpoint').at(-1) ?? '';
+    expect(backfill).toContain('UPDATE "tickets" SET "held"');
+    await pool.query(backfill);
+
+    const held = async (row: { id: string }) => {
+      const [found] = await db
+        .select({ held: schema.tickets.held })
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, row.id));
+      return found?.held;
+    };
+    expect(await held(stopped)).toEqual({
+      cause: 'stop_run',
+      at: minutes(-100).toISOString(),
+      runId: stoppedRun.id,
+      commit: null,
+    });
+    expect(await held(later)).toBeNull();
+    expect(await held(reviewed)).toMatchObject({ cause: 'stop_review', commit: 'c'.repeat(40) });
+    expect(await held(lost)).toBeNull();
+    expect(await reasonOf('WEB-1')).toEqual({ reason: 'held', cause: 'stop_run' });
+    expect(await reasonOf('WEB-3')).toEqual({ reason: 'held', cause: 'stop_review' });
+    // WEB-2's counted failure puts it behind WEB-4 (07, section 6).
+    expect(await loopAsks()).toEqual(['WEB-4', 'WEB-2']);
+  });
+
+  it('leaves a machine out from its failure until it connects again, and blocks at the item', async () => {
+    const web = await project('WEB');
+    const personal = await account('Personal');
+    const laptop = await machine('Laptop', personal.id, { connectedAt: minutes(-30) });
+    const failure = {
+      cause: 'dispatch_timeout',
+      at: minutes(-20).toISOString(),
+      runId: randomUUID(),
+    };
+    await ticket(web, {
+      machineFailures: [{ machineId: laptop.id, failures: [failure], asked: null }],
+    });
+    expect(await reasonOf('WEB-1')).toMatchObject({
+      reason: 'no_machine',
+      machines: [{ unavailable: { why: 'left_out', cause: 'dispatch_timeout', at: failure.at } }],
+    });
+
+    // Connected again since: released.
+    await db
+      .update(schema.machines)
+      .set({ connectedAt: minutes(-10) })
+      .where(eq(schema.machines.id, laptop.id));
+    expect(await reasonOf('WEB-1')).toBeNull();
+
+    // The item stands: the ticket waits for the owner whatever the machine does.
+    await db.update(schema.tickets).set({
+      machineFailures: [
+        {
+          machineId: laptop.id,
+          failures: [failure, failure],
+          asked: { at: minutes(-20).toISOString(), limit: 2 },
+        },
+      ],
+    });
+    expect(await reasonOf('WEB-1')).toEqual({
+      reason: 'needs_you',
+      item: 'machine_failures',
+      machine: { id: laptop.id, name: 'Laptop' },
+    });
+    expect(await loopAsks()).toEqual([]);
   });
 });
 

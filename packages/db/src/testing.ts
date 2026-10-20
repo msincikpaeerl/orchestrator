@@ -8,6 +8,9 @@ import pg from 'pg';
 import { migrationsFolder, runMigrations } from './migrate.js';
 import { createPool, endPool } from './pool.js';
 
+/** The SQL migrations, for tests that run one of their statements again (lot 4 step D2b). */
+export { migrationsFolder };
+
 /**
  * The test PostgreSQL of `docker/compose.dev.yml` (`postgres-test`, durability turned off for
  * speed); `TEST_DATABASE_URL` overrides it.

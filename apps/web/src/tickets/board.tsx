@@ -35,6 +35,11 @@ export function StoppedBadge() {
   return <span className="rounded bg-red-100 px-2 py-0.5 text-sm text-red-900">Stopped</span>;
 }
 
+/** A ticket the owner holds from the scheduler (02, section 6.4; lot 4 step D2b). */
+export function HeldBadge() {
+  return <span className="rounded bg-sky-100 px-2 py-0.5 text-sm text-sky-900">Held</span>;
+}
+
 function TicketCard({ ticket }: { ticket: TicketSummary }) {
   return (
     <li className="rounded border border-slate-200 bg-white p-3 shadow-sm">
@@ -51,6 +56,7 @@ function TicketCard({ ticket }: { ticket: TicketSummary }) {
         </span>
         {showsBlocked(ticket) && <BlockedBadge />}
         {ticket.stop && <StoppedBadge />}
+        {ticket.held && <HeldBadge />}
         {ticket.createdByAgent && (
           <span className="rounded bg-violet-100 px-2 py-0.5 text-sm text-violet-900">
             created by agent

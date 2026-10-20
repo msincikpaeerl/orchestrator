@@ -106,6 +106,7 @@ export function buildApp(dependencies: AppDependencies) {
     publicUrl: dependencies.publicUrl,
     providedDaemonBuild: providedBuild,
     secondMs: dependencies.daemonSecondMs,
+    now: dependencies.now,
   });
   const key = deriveSecretKey(dependencies.secretKey);
   // The clean-up after a merge, on GitHub and on the machines (lot 3 step J2), looked at by the
