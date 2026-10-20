@@ -63,11 +63,12 @@ Projects take turns, so one large project does not hold up the others.
 
 **What it never starts by itself**, so nothing is started again and again without you:
 
-- a ticket whose run you stopped with **Stop run**: it waits for your **Run now** (a review you stopped waits for **Start review**);
+- a ticket **Held**: you stopped its run with **Stop run**, or sent it back with **Request changes** and checked "Hold … so I can edit its acceptance criteria first". The board and the ticket page show **Held** and say why; it waits for your **Run now** (a review you stopped waits for **Start review**). **Request changes** without the box, **Skip review**, **Cancel** and **Mark as done manually** also end the hold;
 - a ticket stopped after repeated failures (see [When a ticket keeps failing](#when-a-ticket-keeps-failing)): a ticket gets at most **Failed attempts before asking you** failed runs (2 by default) before it waits for you;
 - a ticket waiting for another ticket, also a cancelled one (see [A ticket waits for a cancelled ticket](tickets.md#a-ticket-waits-for-a-cancelled-ticket));
 - a ticket with an item in [Needs you](needs-you.md) about its CI, its push or its download, or a review that did not finish, until you handle the item;
-- a ticket on a machine that did not confirm its start in time, or refused it: that machine is left out for that ticket until you use **Run now** on it; another machine can still take the ticket;
+- a ticket on a machine that just failed it (see [When a machine keeps failing a ticket](#when-a-machine-keeps-failing-a-ticket)): that machine is left out for that ticket until it connects again or you use **Run now**; another machine can still take the ticket;
+- a ticket CI cancelled because its branch changed on GitHub: it waits for your **Run now** (see [CI items](needs-you.md#ci-items));
 - a run paused at a usage limit: it waits for your **Resume**.
 
 ## Watch a run
@@ -166,6 +167,15 @@ Read the comments of the failed runs in the timeline, and their run pages, to se
 - **Mark as done manually**: the work is good enough as it is (see [Mark as done manually](tickets.md#mark-as-done-manually)).
 
 Only the failures that count stop a ticket (see the list above). A ticket that had already failed more often with version 0.3.0 stops at its next failure that counts. When the last failure was one CI failure too many and **Check CI again** then finds CI passed for the same commit, the work is accepted and the ticket is no longer stopped (see [Check CI again](tickets.md#check-ci-again)).
+
+### When a machine keeps failing a ticket
+
+From version 0.5.0, some failures come from the machine, not from the ticket's work, and never count as a failed attempt: the machine did not confirm the start in time or refused it, went offline, was revoked, has a Claude Code that is too old, or could not start Claude Code in a process scope. So that the scheduler does not start the same ticket on the same machine again and again:
+
+- after one such failure, that machine is left out for that ticket until the machine connects again (for example once its daemon is restarted or updated) or you use **Run now**. Another machine can take the ticket meanwhile. The queue says "left out" with why;
+- when **Machine failures before asking you** (2 by default, in [Settings](settings.md#settings-reference)) such failures happen in a row, for the same ticket on the same machine, [Needs you](needs-you.md#agents-work) shows "WEB-12 could not start on Laptop", with each failure, and the scheduler no longer starts that ticket by itself. Check the machine on its page (see [Troubleshooting](machines.md#troubleshooting)), then click **Run now**: the item goes, and the run starts on any machine that can take it.
+
+Any other end of a run of the ticket (it succeeded, it failed and counted, you stopped it) starts the count again. Your **Run now** or **Start review** also releases every machine left out for the ticket.
 
 ## Check finished work
 
