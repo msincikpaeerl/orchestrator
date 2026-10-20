@@ -6,6 +6,7 @@ import { RunCiHistory } from './ci.js';
 import { RunReview, StopCause } from './reviews.js';
 import { SubmissionRecord } from '../mcp/dod-report.js';
 import { AgentKey } from './agents.js';
+import { MachineFailureCause } from './holds.js';
 import { UnusableReason } from './machines.js';
 import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
@@ -234,21 +235,6 @@ export type RunLogResponse = z.infer<typeof RunLogResponse>;
 
 export const MachineRef = z.object({ id: z.uuid(), name: z.string() });
 export const AccountRef = z.object({ id: z.uuid(), label: z.string() });
-
-/**
- * The failures a machine caused, which leave it out of the scheduler's choice for the ticket (07,
- * section 4; owner's answer 3, lot 4 step A): the run's failure reason, or a start the machine did
- * not confirm in time or refused.
- */
-export const MachineFailureCause = z.enum([
-  'machine_offline',
-  'machine_revoked',
-  'claude_code_unsupported',
-  'machine_problem',
-  'dispatch_timeout',
-  'dispatch_refused',
-]);
-export type MachineFailureCause = z.infer<typeof MachineFailureCause>;
 
 /** Why one machine cannot take a run now (07, sections 3 and 4). */
 export const MachineUnavailable = z.discriminatedUnion('why', [

@@ -231,6 +231,18 @@ const definitions = {
     perProject: true,
     usedFrom: '0.4.0',
   },
+  maxMachineFailures: {
+    group: 'tickets',
+    label: 'Machine failures before asking you',
+    description:
+      "After this many failures in a row caused by a machine, not by the ticket's work, the scheduler stops starting the ticket on that machine and asks you.",
+    unit: 'failures',
+    min: 1,
+    max: 10,
+    default: 2,
+    perProject: false,
+    usedFrom: '0.5.0',
+  },
   ciWaitTimeoutMinutes: {
     group: 'tickets',
     label: 'CI wait at submission',

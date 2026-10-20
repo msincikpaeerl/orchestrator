@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HoldCause } from './holds.js';
 import { AccountRef, MachineRef, MachineUnavailable, RunRefusal } from './runs.js';
 import { TicketPriority } from './tickets.js';
 
@@ -9,15 +10,6 @@ import { TicketPriority } from './tickets.js';
 /** What a candidate starts, in the scheduler's order of categories (07, section 3). */
 export const QueueKind = z.enum(['resume', 'review', 'fix_review', 'implement']);
 export type QueueKind = z.infer<typeof QueueKind>;
-
-/**
- * Why a ticket is held from the scheduler (01, section 3.4; 07, section 1; owner's answer 4 and new
- * answer 2, lot 4 step A): the owner's **Stop run** of a builder run or of a review run, or
- * **Request changes** with its hold box checked. **Run now** releases it (**Start review** for a
- * review).
- */
-export const HoldCause = z.enum(['stop_run', 'stop_review', 'request_changes']);
-export type HoldCause = z.infer<typeof HoldCause>;
 
 /**
  * The blocking "Needs you" items that keep a ticket out of the scheduler while they stand (04,

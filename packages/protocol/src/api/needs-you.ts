@@ -16,6 +16,7 @@ import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
+import { MachineFailure } from './holds.js';
 import { RunDownloadFailure } from './download-failure.js';
 import {
   GITHUB_TOKEN_LIST_URL,
@@ -221,6 +222,35 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** Why, with Git's, GitHub's or the Orchestrator's words, masked. */
     download: RunDownloadFailure,
     /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * The ticket's latest run ended `ci_cancelled` (04, section 5.1; owner's answer 3, lot 4 step A):
+   * CI was cancelled on GitHub because the branch changed there. Blocking, with **Run now**; shown
+   * until a new run of the ticket starts, or the ticket is done or cancelled.
+   */
+  z.object({
+    type: z.literal('ci_cancelled'),
+    ticket: TicketRef,
+    runId: z.uuid(),
+    machine: MachineRef,
+    /** When the run ended. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * "<ticket> could not start on <machine>" (07, section 4; owner's new answer 1, lot 4 step A):
+   * as many failures in a row caused by the machine as **Machine failures before asking you**
+   * (`limit`, its value at the failure that reached it). Blocking, with **Run now**; shown until a
+   * new run of the ticket starts, or the ticket is done or cancelled.
+   */
+  z.object({
+    type: z.literal('machine_failures'),
+    ticket: TicketRef,
+    machine: MachineRef,
+    /** Oldest first. */
+    failures: z.array(MachineFailure),
+    limit: z.int().positive(),
+    /** When the failures reached the setting. */
     since: z.iso.datetime(),
   }),
   /**

@@ -24,6 +24,7 @@ import { ReviewDecisionKind, ReviewPostProblem, StopCause } from './api/reviews.
 import { DodCheck } from './mcp/errors.js';
 import { RunEndReason, RunPurpose } from './daemon/runs.js';
 import { SettingName } from './api/settings.js';
+import { HoldCause, MachineFailureCause, ReleaseAction } from './api/holds.js';
 import {
   CommentKind,
   OwnerTicketAction,
@@ -99,6 +100,9 @@ export const EventType = z.enum([
   'ticket.ci_checked_again',
   'ticket.stopped',
   'ticket.tried_again',
+  'ticket.held',
+  'ticket.released',
+  'ticket.could_not_start',
   'ticket.branch_deleted',
   'ticket.branch_kept',
   'ticket.branch_pushed_again',
@@ -436,6 +440,27 @@ export const EventPayloads = {
   }),
   /** The owner's **Try again** on a stopped ticket: the stop's cause; the counts start again. */
   'ticket.tried_again': z.object({ ...TicketFacts, cause: StopCause, commentId: z.uuid() }),
+  /**
+   * The ticket is held from the scheduler (01, section 3.4; lot 4 step D2b): the owner's **Stop
+   * run** (`runId`, the run stopped) or **Request changes** with its hold box checked.
+   */
+  'ticket.held': z.object({ ...TicketFacts, cause: HoldCause, runId: z.uuid().nullable() }),
+  /**
+   * The owner's hold released (lot 4 step D2b): by **Run now** or **Start review**, or replaced by
+   * another of the owner's actions on the ticket (`action`).
+   */
+  'ticket.released': z.object({ ...TicketFacts, cause: HoldCause, action: ReleaseAction }),
+  /**
+   * "<ticket> could not start on <machine>" (07, section 4; lot 4 step D2b): the failures in a row
+   * the machine caused reached **Machine failures before asking you** (`limit`).
+   */
+  'ticket.could_not_start': z.object({
+    ...TicketFacts,
+    machine: z.string(),
+    count: z.int().positive(),
+    limit: z.int().positive(),
+    causes: z.array(MachineFailureCause),
+  }),
   /**
    * The ticket branch deleted on GitHub after its pull request's merge (lot 3 step J2a), or found
    * already gone (`alreadyGone`: deleted on GitHub, by hand or by the repository's setting).

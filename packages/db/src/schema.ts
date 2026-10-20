@@ -305,6 +305,18 @@ export const tickets = pgTable(
      */
     stopped: jsonb('stopped'),
     /**
+     * The owner's hold (`TicketHold`: **Stop run**, or **Request changes** with its box; 01,
+     * section 3.4; lot 4 step D2b): the scheduler does not start the ticket until **Run now**
+     * (**Start review** for a stopped review), which clears it.
+     */
+    held: jsonb('held'),
+    /**
+     * The failures in a row its machines caused (`TicketMachineFailures`; 07, section 4; lot 4
+     * step D2b): each machine left out from its latest failure until it connects again, and the
+     * blocking item once **Machine failures before asking you** is reached.
+     */
+    machineFailures: jsonb('machine_failures').notNull().default([]),
+    /**
      * The latest request for changes (`ChangeRequest`), Quality's or the owner's, and when the
      * next accepted submission answered it; standing while not answered (lot 3 step I).
      */
@@ -560,6 +572,11 @@ export const machines = pgTable(
     addedCapabilities: jsonb('added_capabilities').notNull().default([]),
     removedCapabilities: jsonb('removed_capabilities').notNull().default([]),
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
+    /**
+     * When its latest `hello` was accepted, on the application's clock (lot 4 step D2b): a machine
+     * left out for a ticket after a failure it caused is released by a connection after it.
+     */
+    connectedAt: timestamp('connected_at', { withTimezone: true }),
     /** Since when the last `hello` was refused for its protocol version; cleared by an accepted one. */
     daemonIncompatibleSince: timestamp('daemon_incompatible_since', { withTimezone: true }),
     /** Since when the daemon speaks the previous protocol (unusable), for "Needs you". */

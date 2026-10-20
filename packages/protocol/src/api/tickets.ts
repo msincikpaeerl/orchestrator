@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
 import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
+import { TicketHold } from './holds.js';
 import {
   PullRequestClosedBy,
   PullRequestConflict,
@@ -151,6 +152,12 @@ export const TicketSummary = z.object({
    * ticket is not stopped (04, section 5; lot 3 steps I and I2).
    */
   stop: TicketStop.nullable(),
+  /**
+   * The owner's hold, for the board's and the ticket page's "Held" badge (02, section 6.4; lot 4
+   * step D2b): null when the ticket is not held, or the hold no longer applies (a stopped run's
+   * ticket out of To do, a stopped review's ticket out of review).
+   */
+  held: TicketHold.nullable(),
   /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
   assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
@@ -422,7 +429,14 @@ export const MarkDoneRequest = z.strictObject({ comment: CommentBody });
 export type MarkDoneRequest = z.infer<typeof MarkDoneRequest>;
 
 /** **Request changes**: the comment saying what to change is mandatory (04, section 2). */
-export const RequestChangesRequest = z.strictObject({ comment: CommentBody });
+export const RequestChangesRequest = z.strictObject({
+  comment: CommentBody,
+  /**
+   * The dialog's box "Hold <ticket> so I can edit its acceptance criteria first" (owner's new
+   * answer 2, lot 4 step A): the ticket is held until **Run now**. Unchecked when absent.
+   */
+  hold: z.boolean().optional(),
+});
 export type RequestChangesRequest = z.infer<typeof RequestChangesRequest>;
 
 /** The owner's answer to the ticket's open question (04, section 6). */

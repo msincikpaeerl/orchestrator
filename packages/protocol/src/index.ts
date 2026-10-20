@@ -184,8 +184,15 @@ export {
   RunHistoryResponse,
 } from './api/activity.js';
 export {
-  BlockingItem,
   HoldCause,
+  MachineFailure,
+  MachineFailureCause,
+  ReleaseAction,
+  TicketHold,
+  TicketMachineFailures,
+} from './api/holds.js';
+export {
+  BlockingItem,
   QueueAccount,
   QueueCandidate,
   QueueKind,
@@ -197,7 +204,6 @@ export {
   ACTIVE_RUN_STATUSES,
   AccountRef,
   FailureReason,
-  MachineFailureCause,
   MachineRef,
   MachineUnavailable,
   PauseReason,
