@@ -16,6 +16,15 @@ export const kindLabel: Record<ProjectKind, string> = {
   android_app: 'Android app',
 };
 
+/** The switch **Start reviews by themselves** on Project settings (02, section 6.5; lot 4 step D3). */
+export const reviewsSwitch = {
+  heading: 'Reviews by Quality',
+  label: 'Start reviews by themselves',
+  hint: 'On: once a ticket is ready for review, the scheduler starts its review by Quality by itself, when a machine and its Claude account can take it. Each review uses one Claude Code session. Off: a review starts only when you use Start review.',
+  on: 'Saved: reviews start by themselves.',
+  off: 'Saved: reviews wait for Start review. A review already running goes on.',
+};
+
 /** The steps of the repository setup, as the project page lists them. */
 export const stepLabel: Record<SetupStep, string> = {
   repository: 'Create the GitHub repository',

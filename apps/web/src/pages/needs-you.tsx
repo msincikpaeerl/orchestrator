@@ -195,7 +195,8 @@ function WorkItemCard({
 
 /**
  * "Ready for review" (02, section 4; owner's answers 4 and 5, lot 3 step H): the pull request, the
- * CI line, the workflow line, what each choice costs, **Start review** and **Skip review**.
+ * CI line, the workflow line, what each choice costs, whether the review starts by itself (lot 4
+ * step D3), **Start review** and **Skip review**.
  */
 function ReadyForReviewCard({
   item,
@@ -224,6 +225,9 @@ function ReadyForReviewCard({
         </p>
       )}
       <p className="text-slate-700">{text.cost}</p>
+      <p aria-label="When the review starts" className="break-words text-slate-700">
+        {text.start}
+      </p>
       <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
       <div className="flex flex-wrap items-start gap-2">
         <StartReviewAction ticket={item.ticket} />
