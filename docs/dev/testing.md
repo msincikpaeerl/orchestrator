@@ -22,6 +22,8 @@ After an asynchronous cause (a message sent, a connection terminated, a process 
 
 Repeated local runs do not prove there is no race: CI is slower (a run took 352 s where the same tests take a fraction locally). Two tests of lot 2 passed every local run and failed in CI for this reason.
 
+**Per-test timeout.** Integration tests (`apps/*/test/`, `packages/*/test/`) get 20 seconds by default, unit tests next to the code keep Vitest's 5 (`vitest.setup.ts`, lot 4 step H). They start servers, databases, Git, tmux and the daemon from its sources, so under load every case runs about three times slower with no wait among its steps: three tests went over 5 seconds in CI or under load in steps B, E and H, each passing alone. Measured in step H, three full `pnpm test` runs each beside the daemon's suite run in a loop: the slowest integration case on the default 9.9 s (1.4 s alone), 13 of 929 over 5 s, the slowest unit test 1.8 s. Do not add a per-file deadline for slowness: first look for a real wait or race (a sleep, a wait on a delay instead of an effect, an order between two async events) and fix it; if there is none, measure under load the same way and raise this default with a clear margin. A test keeps its own timeout when it waits for longer deadlines (the acceptance scenarios, the smoke scripts). Two full suites at once are not a usable load: they exhaust PostgreSQL's connections ("too many clients").
+
 ## Integration tests
 
 They need the test PostgreSQL, `postgres-test` in `docker/compose.dev.yml` (`127.0.0.1:5433`), never the development one:
