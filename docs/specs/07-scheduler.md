@@ -98,6 +98,8 @@ A machine can take a run when it is:
 
 So that none of them starts the same ticket on the same machine in a loop (owner's answer 3 and new answer 1, lot 4 step A; tested in step D2): after one of these failures, the scheduler does not start that ticket on that machine again until the machine connects again (`hello`) or the owner uses **Run now** on the ticket; once they reach **Machine failures before asking you** (section 8; 2 by default, read at that failure) for the same ticket on the same machine in a row, with no other ending of a run of that ticket between them (a reconnection between them does not count as one), the ticket gets a blocking "Needs you" item, "<ticket> could not start on <machine>", giving the reasons (with the value 1, the first failure leaves it), with **Run now**, and the scheduler does not start it while the item stands. A ticket tied to that machine by commits not on GitHub (section 3) waits meanwhile, its queue line saying why.
 
+**As built in lot 4 step G** (05, section 6): a `machine_offline` failure from **Runs of an offline machine fail after** is one of these failures, recorded when the run fails, while the machine is offline: the machine's next `hello` releases it, and a second one in a row gives the item. A run found lost at a `hello` (the daemon does not report it) is one too, recorded at the time the machine went offline (`offline_since`, or just before this connection when none is known): it counts in a row, but the connection that found it already releases the machine, so the ticket can start there again at once. A run fails once, so neither path counts twice: the session found again at the reconnection after the timer's failure is only stopped. The queue's `offline` reason gives since when (`since`, the machine's `offline_since` on the application's clock), so a ticket held to an offline machine reads "… only on machine Laptop, and it is offline since 3:12 PM."
+
 Among suitable machines, prefer the one that already has the repository cloned (it ran a run of the project), then the one that ran the ticket last (warm worktree for resumes; required for `quota_paused` runs, which resume on their own machine, and, until branches are pushed in lot 3, for a ticket whose branch holds commits on that machine: section 3), then the one with the fewest runs today (runs created since midnight in the Orchestrator's time zone, section 5.3; UTC's midnight before lot 4 step D1), then by name.
 
 ## 5. Quota management
@@ -157,7 +159,7 @@ Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish;
 
 - **Retries** follow 04, section 5. A failed candidate returns to the queue behind other candidates of the same category. A failure that is not counted and leaves a blocking "Needs you" item (04, section 5.1) keeps the ticket out of the queue while the item stands; one the machine caused follows section 4.
 - **Cancelled tickets** stop their active run immediately (`run.stop`).
-- **Machine offline** with an active run: handled by the daemon reconciliation rules (05, section 6), after **Runs of an offline machine fail after** (section 8).
+- **Machine offline** with an active run: handled by the daemon reconciliation rules (05, section 6), after **Runs of an offline machine fail after** (section 8). The scheduler's tick fails those runs first, before it reads its queue, and wakes when the next one is due (lot 4 step G).
 - **Fairness between runs of one ticket**: never more than one active run per ticket (01, invariant 2).
 
 ## 7. What the owner sees
