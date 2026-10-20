@@ -12,7 +12,7 @@ import {
   PullRequestReopenFailure,
   PullRequestWatchFailure,
 } from './pull-requests.js';
-import { ReviewDecision, ReviewEnd, StopCause } from './reviews.js';
+import { ReviewDecision, ReviewEnd, ReviewStart, StopCause } from './reviews.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
@@ -157,6 +157,8 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** When **Check CI again** accepted the work; null when the run's own CI did. */
     checkedAgainAt: z.iso.datetime().nullable(),
     workflowFlag: WorkflowFlag.nullable(),
+    /** Whether the review starts by itself (lot 4 step D3); never `not_finished` here. */
+    start: ReviewStart,
     /** When the work entered review: its acceptance. */
     since: z.iso.datetime(),
   }),

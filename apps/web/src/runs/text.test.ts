@@ -143,6 +143,7 @@ describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", ()
       item,
       machine: item === 'download_failed' || item === 'machine_failures' ? machine : null,
     })),
+    { reason: 'reviews_off' },
   ];
 
   it.each(queueReasons.map((reason) => [reason.reason, reason] as const))(
@@ -195,6 +196,12 @@ describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", ()
     );
     expect(queueReasonText({ reason: 'needs_you', item: 'ci_cancelled', machine: null })).toBe(
       'Waiting for you in Needs you: CI was cancelled on GitHub because the branch changed there.',
+    );
+  });
+
+  it("says a review waits for Start review while the project's switch is off (step D3)", () => {
+    expect(queueReasonText({ reason: 'reviews_off' })).toBe(
+      "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.",
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   awaitingMergeText,
   readyForReviewText,
   reviewNotFinishedText,
+  reviewStartText,
   runReviewText,
   ticketReviewText,
 } from './review-text';
@@ -50,6 +51,7 @@ function ready(more: Partial<Ready> = {}): Ready {
     ci: 'passed',
     checkedAgainAt: null,
     workflowFlag: null,
+    start: 'by_itself',
     since: AT,
     ...more,
   };
@@ -62,7 +64,21 @@ describe('"Ready for review"', () => {
       ci: 'CI passed on GitHub for commit abc1234',
       workflows: null,
       cost: 'A review by Quality uses one Claude Code session; Skip review uses none.',
+      start:
+        'The review starts by itself as soon as a machine and its Claude account can take it. Start review starts it now; Skip review before then if you want none.',
     });
+  });
+
+  it('says whether the review starts by itself (lot 4 step D3)', () => {
+    expect(readyForReviewText(ready({ start: 'switch_off' })).start).toBe(
+      "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.",
+    );
+    expect(readyForReviewText(ready({ start: 'held' })).start).toBe(
+      'The review does not start by itself: you stopped its review run. Start review starts it again.',
+    );
+    expect(reviewStartText.not_finished).toBe(
+      'The review does not start again by itself after a review that did not finish: use Start review to try again, or Skip review.',
+    );
   });
 
   it('CI passed when Check CI again read it', () => {
@@ -160,7 +176,7 @@ describe('"Review did not finish"', () => {
 });
 
 function review(latest: TicketReview['latest'], earlier = false): TicketReview {
-  return { latest, current: { commit: HEAD, earlier }, offered: true };
+  return { latest, current: { commit: HEAD, earlier }, offered: true, start: 'by_itself' };
 }
 
 describe('the ticket page', () => {

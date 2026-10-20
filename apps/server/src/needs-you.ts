@@ -116,6 +116,7 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
         ci: ready.ci,
         checkedAgainAt: ready.checkedAgainAt,
         workflowFlag: workflowFlag(ticket),
+        start: review.start ?? 'by_itself',
         since: ready.since,
       });
     } else {

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "reviews_automatic" boolean DEFAULT true NOT NULL;

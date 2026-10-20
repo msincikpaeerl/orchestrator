@@ -2,13 +2,14 @@ import type {
   NeedsYouItem,
   ReviewDecision,
   ReviewEnd,
+  ReviewStart,
   RunReview,
   TicketReview,
   WorkflowFlag,
 } from '@orchestrator/protocol';
 import { formatDate, formatDateTime } from '../github/text';
 import { downloadReason } from '../runs/download-text';
-import { failureText } from '../runs/text';
+import { REVIEWS_OFF, failureText } from '../runs/text';
 import { sentence } from '../projects/text';
 import { ticketRef } from './text';
 
@@ -19,6 +20,19 @@ import { ticketRef } from './text';
 
 export const REVIEW_COST =
   'A review by Quality uses one Claude Code session; Skip review uses none.';
+
+/**
+ * Whether the review starts by itself (02, sections 4 and 6.4; lot 4 step D3), said after the
+ * cost: the scheduler's promise, or what waits for the owner.
+ */
+export const reviewStartText: Record<ReviewStart, string> = {
+  by_itself:
+    'The review starts by itself as soon as a machine and its Claude account can take it. Start review starts it now; Skip review before then if you want none.',
+  held: 'The review does not start by itself: you stopped its review run. Start review starts it again.',
+  not_finished:
+    'The review does not start again by itself after a review that did not finish: use Start review to try again, or Skip review.',
+  switch_off: REVIEWS_OFF,
+};
 
 function short(commit: string): string {
   return commit.slice(0, 7);
@@ -63,6 +77,7 @@ export function readyForReviewText(item: Extract<NeedsYouItem, { type: 'ready_fo
   ci: string;
   workflows: string | null;
   cost: string;
+  start: string;
 } {
   return {
     title: `Ready for review: ${ticketRef(item.ticket.projectKey, item.ticket.number)} ${item.ticket.title}`,
@@ -72,6 +87,7 @@ export function readyForReviewText(item: Extract<NeedsYouItem, { type: 'ready_fo
       item.ci === 'no_ci' && item.workflowFlag === 'changed',
     ),
     cost: REVIEW_COST,
+    start: reviewStartText[item.start],
   };
 }
 

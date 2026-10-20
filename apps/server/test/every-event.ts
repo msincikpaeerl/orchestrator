@@ -103,6 +103,9 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   await call('POST', '/api/projects/SHOP/setup/retry');
   expect((await settled('SHOP')).setup.status).toBe('ready');
   await call('PATCH', '/api/projects/SHOP', { name: 'Online <b>Shop</b>' });
+  // Start reviews by themselves off, then on again (lot 4 step D3).
+  await call('PUT', '/api/projects/SHOP/reviews-automatic', { on: false });
+  await call('PUT', '/api/projects/SHOP/reviews-automatic', { on: true });
 
   await call('POST', '/api/projects', {
     name: 'Legacy',

@@ -46,6 +46,7 @@ export function toProject(row: ProjectRow): Project {
             checkedAt: row.harnessCheckedAt.toISOString(),
           },
     status: ProjectStatus.parse(row.status),
+    reviewsAutomatic: row.reviewsAutomatic,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

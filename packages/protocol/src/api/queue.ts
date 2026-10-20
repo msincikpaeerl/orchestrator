@@ -26,12 +26,14 @@ export const BlockingItem = z.enum([
 ]);
 export type BlockingItem = z.infer<typeof BlockingItem>;
 
-/** Why a candidate cannot start now: Run now's refusals, and the two the scheduler adds. */
+/** Why a candidate cannot start now: Run now's refusals, and those the scheduler adds. */
 export const QueueReason = z.discriminatedUnion('reason', [
   ...RunRefusal.options,
   z.object({ reason: z.literal('held'), cause: HoldCause }),
   /** `machine`: the machine the item names, when it names one. */
   z.object({ reason: z.literal('needs_you'), item: BlockingItem, machine: MachineRef.nullable() }),
+  /** A review while its project's **Start reviews by themselves** is off (07, section 1). */
+  z.object({ reason: z.literal('reviews_off') }),
 ]);
 export type QueueReason = z.infer<typeof QueueReason>;
 

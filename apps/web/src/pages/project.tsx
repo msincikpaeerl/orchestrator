@@ -1,5 +1,6 @@
 import {
   Project,
+  ReviewsAutomaticRequest,
   SETUP_STEPS,
   UpdateProjectRequest,
   type Project as ProjectData,
@@ -27,6 +28,7 @@ import {
   kindLabel,
   refusalText,
   repositoryUrl,
+  reviewsSwitch,
   sentence,
   stepLabel,
 } from '../projects/text';
@@ -355,9 +357,59 @@ function SettingsForm({ project }: { project: ProjectData }) {
   );
 }
 
+/** **Start reviews by themselves** (02, section 6.5; lot 4 step D3), saved at each change. */
+function ReviewsSwitch({ project }: { project: ProjectData }) {
+  // Shown at once, put back if the server refuses it.
+  const [on, setOn] = useState(project.reviewsAutomatic);
+  const save = useMutation({
+    mutationFn: (on: boolean) =>
+      api(
+        'PUT',
+        projectPath(project, 'reviews-automatic'),
+        Project,
+        ReviewsAutomaticRequest.parse({ on }),
+      ),
+    onSuccess: (changed) => projectsChanged(changed),
+    onError: () => {
+      setOn(project.reviewsAutomatic);
+    },
+  });
+  const archived = project.status === 'archived';
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-lg font-semibold text-slate-900">{reviewsSwitch.heading}</h2>
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={on}
+          disabled={archived || save.isPending}
+          onChange={(event) => {
+            setOn(event.target.checked);
+            save.mutate(event.target.checked);
+          }}
+        />
+        <span>
+          {reviewsSwitch.label}
+          <span className="block text-sm text-slate-600">{reviewsSwitch.hint}</span>
+        </span>
+      </label>
+      {save.error && <ErrorMessage>{refusalText(save.error).text}</ErrorMessage>}
+      {save.isSuccess && (
+        <p role="status" className="text-green-800">
+          {on ? reviewsSwitch.on : reviewsSwitch.off}
+        </p>
+      )}
+      <p className="text-sm text-slate-600">
+        <HelpLink page="tickets#review-by-quality">Review by Quality</HelpLink>
+      </p>
+    </Card>
+  );
+}
+
 /**
- * Project settings (02, section 6.5): name and description, overrides of settings, archive and
- * unarchive.
+ * Project settings (02, section 6.5): name and description, Start reviews by themselves, overrides
+ * of settings, archive and unarchive.
  */
 export function ProjectSettingsPage() {
   return (
@@ -373,6 +425,7 @@ export function ProjectSettingsPage() {
             <Card>
               <SettingsForm project={project} />
             </Card>
+            <ReviewsSwitch project={project} />
             <Card className="space-y-2">
               <h2 className="text-lg font-semibold text-slate-900">Cannot be changed</h2>
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">

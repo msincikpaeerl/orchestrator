@@ -8,6 +8,7 @@ import {
   ReviewPost,
   type ReviewEnd,
   type ReviewPostView,
+  type ReviewStart,
   type RunCiOutcome,
   type RunReview,
   type TicketReview,
@@ -16,6 +17,7 @@ import {
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { maskStrings } from '../event-log.js';
+import { applyingHold, type TicketRow } from '../tickets/model.js';
 import type { ReviewCi } from '../agents/review-message.js';
 import { ciOutcome, ciSourceRun } from './ci-outcome.js';
 import type { RunRow } from './model.js';
@@ -100,6 +102,22 @@ export interface ReadyWork {
 }
 
 /**
+ * Whether the scheduler starts the review offered by itself (lot 4 step D3), in the order of the
+ * queue's reasons for a review (`scheduler/queue.ts`): the owner's hold, a review that did not
+ * finish, then the project's switch.
+ */
+function reviewStart(
+  ticket: Pick<TicketRow, 'held' | 'status'>,
+  ready: ReadyWork,
+  latest: TicketReviewLatest | null,
+  automatic: boolean,
+): ReviewStart {
+  if (applyingHold(ticket, ready.commit)) return 'held';
+  if (latest?.kind === 'not_finished') return 'not_finished';
+  return automatic ? 'by_itself' : 'switch_off';
+}
+
+/**
  * The ticket's latest review and the work in review (owner's answer 4 and its change, lot 3 step
  * H4): a review run or the owner's **Skip review**, newest first. A review run the owner stopped
  * before any decision is passed over; one that did not finish counts only while the ticket is in
@@ -107,7 +125,10 @@ export interface ReadyWork {
  */
 export async function ticketReview(
   executor: Executor,
-  ticket: { id: string; status: string; pullRequestNumber: number | null; updatedAt: Date },
+  ticket: Pick<
+    TicketRow,
+    'id' | 'projectId' | 'status' | 'pullRequestNumber' | 'updatedAt' | 'held'
+  >,
 ): Promise<{ review: TicketReview; ready: ReadyWork | null }> {
   const runs = await executor
     .select({ run: schema.runs, machine: { id: schema.machines.id, name: schema.machines.name } })
@@ -186,11 +207,21 @@ export async function ticketReview(
       ? latest.decision.commit !== ready.commit
       : latest.kind === 'skipped' && latest.at < ready.since);
   const active = runs.some(({ run }) => ACTIVE.has(run.status));
+  const offered = ready !== null && ticket.pullRequestNumber !== null && !active;
+  let start: ReviewStart | null = null;
+  if (offered) {
+    const [project] = await executor
+      .select({ reviewsAutomatic: schema.projects.reviewsAutomatic })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, ticket.projectId));
+    start = reviewStart(ticket, ready, latest, project?.reviewsAutomatic ?? true);
+  }
   return {
     review: {
       latest,
       current: ready === null ? null : { commit: ready.commit, earlier },
-      offered: ready !== null && ticket.pullRequestNumber !== null && !active,
+      offered,
+      start,
     },
     ready,
   };

@@ -174,12 +174,18 @@ export function blockingItemText(item: BlockingItem, machine: string | null): st
  * Why a candidate of the scheduler's queue is not running (07, section 7; lot 4): Run now's words
  * for Run now's reasons, and the two only the scheduler has.
  */
+/** A review while its project's switch is off (lot 4 step D3), in the queue and on the screens. */
+export const REVIEWS_OFF =
+  "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.";
+
 export function queueReasonText(reason: QueueReason): string {
   switch (reason.reason) {
     case 'held':
       return holdText[reason.cause];
     case 'needs_you':
       return `Waiting for you in Needs you: ${blockingItemText(reason.item, reason.machine?.name ?? null)}.`;
+    case 'reviews_off':
+      return REVIEWS_OFF;
     default:
       return runRefusalText(reason);
   }

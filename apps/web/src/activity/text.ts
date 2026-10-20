@@ -46,6 +46,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'github.permission_refused': 'GitHub request refused for a missing permission',
   'project.created': 'Project created',
   'project.updated': 'Project renamed or described',
+  'project.reviews_automatic_changed': 'Start reviews by themselves changed',
   'project.setup_step': 'Repository setup step done',
   'project.setup_failed': 'Repository setup failed',
   'project.setup_retried': 'Repository setup tried again',
@@ -256,6 +257,12 @@ const describe: { [T in EventType]: Describe<T> } = {
     }
     return pieces;
   },
+  'project.reviews_automatic_changed': (p, c) => [
+    c.project,
+    p.on
+      ? ': Start reviews by themselves turned on'
+      : ': Start reviews by themselves turned off, reviews wait for Start review',
+  ],
   'project.setup_step': (p, c) => {
     const done: Record<typeof p.step, string> = {
       repository: p.reused

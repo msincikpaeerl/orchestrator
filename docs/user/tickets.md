@@ -272,7 +272,14 @@ When a ticket's work is accepted and CI has passed (or found nothing to run), th
 - **Start review**: Quality, the reviewing agent (see [Agents](agents.md#quality)), reads the work and approves it or asks for changes. It starts at once, without a confirmation, like **Run now**, and the run page opens.
 - **Skip review**: you check the pull request yourself. After a confirmation, the ticket moves to **Awaiting merge** with the comment "The owner skipped the review.".
 
-Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it. From version 0.5.0 the scheduler starts the review by itself when its account can take it (see [What starts by itself](runs.md#what-starts-by-itself)): **Start review** starts it at once, and **Skip review** before it starts means no review.
+Both are also on the ticket page, under **Review**, while the ticket is **In review** with a pull request and no run is working on it.
+
+**By itself, from version 0.5.0.** The scheduler starts the review by itself when a machine and its Claude account can take it (see [What starts by itself](runs.md#what-starts-by-itself)). **Start review** starts it at once instead of waiting its turn, and **Skip review** before it starts means no review. "Ready for review" and the ticket page say what will happen:
+
+- "The review starts by itself as soon as a machine and its Claude account can take it. Start review starts it now; Skip review before then if you want none.";
+- "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review." when you turned the switch off for the project (see [Reviews by themselves](projects.md#reviews-by-themselves));
+- "The review does not start by itself: you stopped its review run. Start review starts it again." after you stopped a review with **Stop run**;
+- "The review does not start again by itself after a review that did not finish: use Start review to try again, or Skip review." (see [When the review did not finish](#when-the-review-did-not-finish)).
 
 ### What a review costs
 
@@ -281,7 +288,7 @@ A review by Quality uses one Claude Code session, from the usage of your Claude 
 ### The result
 
 - **Approved**: the ticket moves to **Awaiting merge**. Merge the pull request on GitHub: the ticket then moves to **Done** by itself (see [Merging the pull request](#merging-the-pull-request)).
-- **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. **Run now** starts the next run of its assignee, which addresses the points (see [The round after a request](#the-round-after-a-request)). Quality's request never counts as a failed attempt, but it counts as a review round (see [Too many review rounds](#too-many-review-rounds)).
+- **Changes requested**: each point becomes a comment on the ticket, which goes back to **To do**. From version 0.5.0 the scheduler starts the next run of its assignee by itself, which addresses the points; **Run now** starts it at once (see [The round after a request](#the-round-after-a-request)). Quality's request never counts as a failed attempt, but it counts as a review round (see [Too many review rounds](#too-many-review-rounds)).
 
 The ticket page's **Review** shows the latest review: "Approved by Quality · commit abc1234 · <time>" with Quality's summary, or "Changes requested by Quality · commit abc1234 · 3 points" with each point and the file it is about, "Review skipped by you on <date>", or "Review in progress on <machine>". When that review is about an earlier submission (the agent changed the work since), it says so, with the commit now in review, which nobody has reviewed yet. Earlier reviews stay in the timeline. The review's run page shows the commit reviewed and the decision.
 
@@ -289,7 +296,7 @@ Quality's text is shown as plain text: it is an agent's writing, not the Orchest
 
 ### The round after a request
 
-After a request for changes, Quality's or yours, the ticket page says what **Run now** will do: "Run now starts a run that addresses Quality's points (round 1 of at most 2)." or "Run now starts a run that addresses your request.". **Run now** then starts a **Fix after review** run (its run page says so):
+After a request for changes, Quality's or yours, the ticket page says what **Run now** will do: "Run now starts a run that addresses Quality's points (round 1 of at most 2)." or "Run now starts a run that addresses your request.". From version 0.5.0 the scheduler starts that run by itself (unless you checked the hold box of **Request changes**), also when **Start reviews by themselves** is off; **Run now** starts it at once. It is a **Fix after review** run (its run page says so):
 
 1. The agent receives the points first (Quality's, numbered with the file they are about, or your comment whole), and continues the work on the same branch and pull request.
 2. It addresses every point. When one cannot or should not be done, it says why in a comment on the ticket, or asks you a question.
@@ -298,7 +305,7 @@ After a request for changes, Quality's or yours, the ticket page says what **Run
 
 The ticket page's **Review** then shows the earlier review as "…, on an earlier submission.", with the commit now in review, which nobody has reviewed yet. When you **Start review** again, Quality is told of the earlier points and of what the agent said about them: it checks that each point was addressed, or that the agent's reason for leaving it holds, then reviews the rest of the work as usual.
 
-A **Fix after review** run that fails (it gives up, runs out of time, its session stops) counts as a failed attempt, like any run; the next **Run now** gets the same points again.
+A **Fix after review** run that fails (it gives up, runs out of time, its session stops) counts as a failed attempt, like any run; the next run, started by the scheduler or by **Run now**, gets the same points again. After **Failed attempts before asking you** (2 by default) the ticket stops and waits for you (see [When a ticket keeps failing](runs.md#when-a-ticket-keeps-failing)).
 
 ### Too many review rounds
 

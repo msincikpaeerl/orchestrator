@@ -68,6 +68,7 @@ export const EventType = z.enum([
   'github.permission_refused',
   'project.created',
   'project.updated',
+  'project.reviews_automatic_changed',
   'project.setup_step',
   'project.setup_failed',
   'project.setup_retried',
@@ -203,6 +204,8 @@ export const EventPayloads = {
     name: z.string().optional(),
     description: z.string().optional(),
   }),
+  /** The switch **Start reviews by themselves** turned on or off (01, section 3.1). */
+  'project.reviews_automatic_changed': z.object({ ...ProjectFacts, on: z.boolean() }),
   'project.setup_step': z.object({
     ...ProjectFacts,
     step: SetupStep,

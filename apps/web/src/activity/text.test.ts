@@ -44,6 +44,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     private: true,
   },
   'project.updated': { key: 'WEB', name: 'Online shop', description: 'Sells things' },
+  'project.reviews_automatic_changed': { key: 'WEB', on: false },
   'project.setup_step': {
     key: 'WEB',
     step: 'branch_protection',
@@ -641,6 +642,17 @@ describe('eventText', () => {
       { text: 'WEB', to: '/projects/WEB' },
       { text: '“Web shop”', to: '/projects/WEB' },
     ]);
+  });
+
+  it('says which way Start reviews by themselves was turned (lot 4 step D3)', () => {
+    const say = (on: boolean) =>
+      plainText(
+        eventText(entry('project.reviews_automatic_changed', { payload: { key: 'WEB', on } })),
+      );
+    expect(say(true)).toBe('WEB: Start reviews by themselves turned on');
+    expect(say(false)).toBe(
+      'WEB: Start reviews by themselves turned off, reviews wait for Start review',
+    );
   });
 
   it('says what a setting became', () => {

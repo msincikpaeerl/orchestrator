@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a and D2b done (2026-10-20); next: step D3
+> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b and D3 done (2026-10-20); next: step E
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -176,13 +176,25 @@ The whole step, as first planned: the loop of 07 section 2, the dispatch through
 - **Tests**: `scheduler-holds.test.ts` (9 cases, scripted daemons: the hold and its release, the box, the five causes, a `machine_problem` start refused before its doctor report, a counted failure resetting the count); `acceptance.test.ts` scenario G (the real daemon and the fake `claude`: Claude Code too old twice across a daemon restart, the item, nothing started by the loop, then Run now); `queue.test.ts` (the migration's backfill, left out versus `connected_at`); `ci-rounds.test.ts` (`ci_cancelled`'s item); the every-kind and every-event guards; Playwright `changes.e2e.ts` (the box, the badge, both viewports); web unit tests for the words.
 - **What can still start by itself after a failure**: a counted failure, up to **Failed attempts before asking you** (2); a machine-caused failure, once per reconnection of that machine, at most **Machine failures before asking you** (2) times in a row per ticket and machine before the item, while another machine can take the ticket meanwhile (each machine with its own count).
 
-### [ ] D3. Reviews and fixes by themselves
+### [x] D3. Reviews and fixes by themselves (branch `lot4/d3-reviews`, 2026-10-20)
 
 - **Reviews** (Q1): a ticket entering `in_review` becomes a `review` candidate (category 2) when its project's switch is on; **Skip review** before its start removes it; **Start review** moves it to the front; "Ready for review" says the review will start by itself (or that the switch is off).
 - **Fixes**: after Quality's request for changes, and after the owner's **Request changes** (its confirmation's **Run now** stays, to move it to the front), the ticket is a `fix_review` candidate, unless the dialog's hold box (new answer 2, built in D2) held it.
 - The project settings page's switch, its event, Help > Tickets ("Review by Quality", "What starts by itself"), Help > Projects; CHANGELOG.
 
 **Done when** server tests cover a ticket going `todo` → implement → `in_review` → review → `awaiting_merge` with no owner action, a request for changes followed by a `fix_review` by itself, **Skip review** before the review starts, and the switch off; Playwright on both viewports shows the switch and "Ready for review"'s sentence for both values.
+
+*Done 2026-10-20*, in one session:
+
+- **First, the owner's tidy-up** (review of D2b): this plan's step J scenarios are lettered H, I and J, after `acceptance.test.ts`'s scenario G (step D2b's), so the plan and the test file agree.
+- **The switch**: `projects.reviews_automatic` (migration `0037_reviews_automatic`, default on: every project created before keeps D2a's behaviour, reviews starting by themselves), `PUT /api/projects/<key>/reviews-automatic` (`{ on }`; the same value writes nothing; refused for an archived project) and `project.reviews_automatic_changed`, with its words in Activity. Project settings > **Reviews by Quality**, saved at each change.
+- **The queue**: with the switch off, a review candidate stays listed with the reason `reviews_off`, after `held` and the blocking items, so the loop never starts it; a review waiting when the owner turns the switch off waits from then on, and turned on again it starts in its turn; a review run already started is not touched. **Start review** starts it at once (unchanged). **Skip review** before the start leaves no candidate.
+- **"Ready for review" and the ticket page** say whether the review starts by itself: `ReviewStart` on the ticket's review and the item (`by_itself`, `held` after a stopped review, `not_finished`, `switch_off`, in the queue's order).
+- **Fixes**: already candidates since D2a after Quality's request and the owner's **Request changes** without the box; the switch does not apply to them. Bounded by **Most review rounds per ticket** (one more request by Quality stops the ticket) and by **Failed attempts before asking you** (counted over the ticket's life, implement and fix runs alike); tested.
+- **Help > Tickets "What starts by itself"**: that section is in Help > Runs (since D2a), updated there, with the per-ticket bound; Help > Tickets > "Review by Quality" and "The round after a request", Help > Projects > "Reviews by themselves", Needs you's table; 07 section 1 and 02 sections 4 and 6.5 say what was built.
+- **What can start by itself per ticket, and how many sessions at most** (defaults, no owner action): the first run, a review, and after each request by Quality a fix and a review; the third request stops it: at most 3 builder runs that succeed and 3 reviews, plus at most 2 counted failures over the ticket's life (the second stops it), so **8 sessions at most**, usually 2. A review that does not finish waits for the owner. Machine-caused failures come on top: only `machine_offline` after the start uses a session, at most 2 in a row per machine and ticket, each after a reconnection (D2b). Each owner's **Request changes** starts a fix and a review again within the same limits.
+- No daemon message changed; a 0.4.0 daemon is unaffected.
+- **Tests**: `scheduler-reviews.test.ts` (10 cases, scripted daemon): the cycle implement → review → changes → fix → review → approved with no owner action; Most review rounds per ticket at 1 stopping the second fix; the owner's Request changes → fix by itself, failing twice, stopped at Failed attempts before asking you; Skip review before the start; the switch off (queue, Needs you, ticket page, its event once), on again; Start review with the switch off, and the switch changed while a review runs; fixes with the switch off; the route's refusals; a held review's sentence. `review-screens.test.ts` (the new field), `every-event.ts` (the event); web unit tests for the words; Playwright `reviews.e2e.ts` (the switch, both sentences, both viewports).
 
 ### [ ] E. Quota: resuming by itself
 
@@ -222,10 +234,10 @@ Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 
 
 ### [ ] J. End-to-end lot 4 test
 
-- `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub, and the server's clock moved by the test:
-  - scenario G: three tickets (one high priority, one blocked by another) on an account of maximum 1 with a window opening later: nothing before the window; then, with no owner action but the merges on the fake GitHub, each ticket implemented, reviewed (Q1) and `done` in the expected order, the blocked one after its blocker's merge;
-  - scenario H: a usage limit with no reset time during a run: paused, the account limited, resumed by itself after the fallback delay, limited again and resumed after the doubled one, then submitted; no failed attempt;
-  - scenario I: the daemon stopped during a run for longer than **Runs of an offline machine fail after**: the run failed, not counted, started again by the scheduler once the machine is back;
+- `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub, and the server's clock moved by the test, three scenarios whose letters follow the file's (G is step D2b's, renamed from this plan's first G in step D3 so the two agree):
+  - scenario H: three tickets (one high priority, one blocked by another) on an account of maximum 1 with a window opening later: nothing before the window; then, with no owner action but the merges on the fake GitHub, each ticket implemented, reviewed (Q1) and `done` in the expected order, the blocked one after its blocker's merge;
+  - scenario I: a usage limit with no reset time during a run: paused, the account limited, resumed by itself after the fallback delay, limited again and resumed after the doubled one, then submitted; no failed attempt;
+  - scenario J: the daemon stopped during a run for longer than **Runs of an offline machine fail after**: the run failed, not counted, started again by the scheduler once the machine is back;
   - every process and folder of the test homes cleaned (lot 3 step M's checks).
 
 **Done when** the three scenarios pass in `pnpm test`, within CI's 8 minutes per shard.

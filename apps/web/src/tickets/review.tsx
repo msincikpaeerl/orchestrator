@@ -16,6 +16,7 @@ import { reviewPostText } from './review-post-text';
 import {
   REVIEW_COST,
   awaitingMergeText,
+  reviewStartText,
   pointText,
   runReviewText,
   ticketReviewText,
@@ -156,6 +157,11 @@ export function TicketReviewSection({
       {offered && (
         <>
           <p className="text-slate-700">{REVIEW_COST}</p>
+          {review.start && (
+            <p aria-label="When the review starts" className="break-words text-slate-700">
+              {reviewStartText[review.start]}
+            </p>
+          )}
           <div className="flex flex-wrap items-start gap-2">
             <StartReviewAction ticket={ticket} />
             <SkipReviewAction ticket={ticket} />
