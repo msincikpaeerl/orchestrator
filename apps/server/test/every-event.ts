@@ -567,6 +567,84 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   });
   await call('POST', `/api/projects/SHOP/tickets/${String(filters.number)}/try-again`);
 
+  // Lot 4 step D2b: a run the owner stops holds its ticket (`ticket.held`, also written by the
+  // review stopped above), Cancel releases it (`ticket.released`); two starts the machine refuses
+  // (Machine failures before asking you, 2) give "could not start" (`ticket.could_not_start`).
+  const [webDev] = await t.db
+    .select()
+    .from(schema.agentProfiles)
+    .where(eq(schema.agentProfiles.key, 'web_dev'));
+  let refusedTicket: TicketDetail | undefined;
+  for (const [title, status] of [
+    ['Held', 'running'],
+    ['Refused', 'dispatched'],
+    ['Refused', 'dispatched'],
+  ] as const) {
+    const created =
+      title === 'Refused' && refusedTicket
+        ? refusedTicket
+        : TicketDetail.parse(
+            (
+              await call('POST', '/api/projects/SHOP/tickets', {
+                type: 'feature',
+                title,
+                assignee: 'web_dev',
+              })
+            ).json(),
+          );
+    if (title === 'Refused') refusedTicket = created;
+    await t.db
+      .update(schema.tickets)
+      .set({ status: 'in_progress' })
+      .where(eq(schema.tickets.id, created.id));
+    const dispatchMessageId = randomUUID();
+    const [row] = await t.db
+      .insert(schema.runs)
+      .values({
+        projectId: shop3Row?.projectId ?? '',
+        ticketId: created.id,
+        profileId: webDev?.id ?? '',
+        profileVersion: 1,
+        purpose: 'implement',
+        machineId: machine.id,
+        accountId: account.id,
+        status,
+        attempt: 1,
+        runTokenHash: hashCredential(`ort_every_event_${randomUUID()}`),
+        branchName: `t/${String(created.number)}-${title.toLowerCase()}`,
+        baseBranch: 'main',
+        dispatchMessageId,
+        dispatchKind: 'start',
+        acknowledgedAt: status === 'running' ? new Date() : null,
+      })
+      .returning();
+    if (status === 'running') {
+      await call('POST', `/api/runs/${row?.id ?? ''}/stop`);
+      await call('POST', `/api/projects/SHOP/tickets/${String(created.number)}/cancel`);
+    } else {
+      daemon.send({
+        type: 'ack',
+        id: dispatchMessageId,
+        payload: { ok: false, message: 'the daemon is stopping' },
+      });
+      for (let tries = 0; ; tries++) {
+        const [refused] = await t.db
+          .select({ status: schema.runs.status })
+          .from(schema.runs)
+          .where(eq(schema.runs.id, row?.id ?? ''));
+        // A refused start is cancelled, not counted (07, section 3).
+        if (refused?.status === 'cancelled') break;
+        if (tries > 100) throw new Error('the refused start was not cancelled');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+  }
+  const couldNotStart = await t.db
+    .select({ id: schema.events.id })
+    .from(schema.events)
+    .where(eq(schema.events.type, 'ticket.could_not_start'));
+  if (couldNotStart.length === 0) throw new Error('no ticket.could_not_start event');
+
   // The Checkout ticket (pull request #999, which GitHub does not have) cancelled while its pull
   // request reads open: Cancel's close refused (`ticket.pull_request_not_closed`), and the watch
   // cannot read it (`project.pull_request_watch_failed`; lot 3 step J3a). Then read as closed, it

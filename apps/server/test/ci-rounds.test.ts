@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   McpCiStatus,
+  NeedsYouResponse,
   RunStart,
   type CiResult,
   type DodReport,
@@ -503,6 +504,21 @@ describe('runs cancelled because the branch moved (owner answer 2)', () => {
     expect(JSON.stringify(comment)).toMatch(
       /CI was cancelled on GitHub because the branch changed there/,
     );
+
+    // Its blocking item (owner's answer 3, lot 4 step A; built in step D2b): the scheduler does
+    // not start the ticket while it stands; a new run started by the owner removes it.
+    const items = async () =>
+      NeedsYouResponse.parse((await h.call('GET', '/api/needs-you')).json()).items.filter(
+        (item) => item.type === 'ci_cancelled',
+      );
+    expect(await items()).toMatchObject([
+      { ticket: { projectKey: 'WEB', number: 1 }, runId, machine: { name: 'Laptop' } },
+    ]);
+    expect((await h.t.schedulerTick()).started).toEqual([]);
+    advance(1);
+    const ran = await h.call('POST', '/api/projects/WEB/tickets/1/run');
+    expect(ran.statusCode, ran.body).toBe(201);
+    expect(await items()).toEqual([]);
   });
 
   it('counts a cancellation as a failure when the branch did not move', async () => {

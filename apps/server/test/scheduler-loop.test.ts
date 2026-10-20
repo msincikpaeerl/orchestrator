@@ -17,8 +17,9 @@ import { RunHarness, cleanWorkspace, eventually, state } from './run-harness.js'
 
 // The scheduler's loop (07, section 2; lot 4 step D2a), with the real application, scripted
 // daemons and the fake GitHub: what it starts by itself, in which order, who it says started it,
-// and what it never starts again in a loop until step D2b's holds and machine rule. The tests run
-// its ticks themselves (`schedulerTick()`), except those of its triggers and interval.
+// and what it never starts again in a loop (the holds and the machine rule: lot 4 step D2b, its own
+// tests in `scheduler-holds.test.ts`). The tests run its ticks themselves (`schedulerTick()`),
+// except those of its triggers and interval.
 
 const h = new RunHarness();
 
@@ -261,7 +262,7 @@ describe("the scheduler's loop (07, section 2)", () => {
   });
 });
 
-describe('what the loop never starts again in a loop, until step D2b', () => {
+describe('what the loop never starts again in a loop', () => {
   it('a start the machine did not acknowledge: cancelled, not counted, never sent there again but by Run now', async () => {
     // One second of Machine answer timeout lasts 10 ms: 5 seconds, the least, in 50 ms.
     await h.start({ daemonSecondMs: 10, settings: { dispatchAckTimeoutSeconds: 5 } });

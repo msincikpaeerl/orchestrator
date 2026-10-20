@@ -912,3 +912,86 @@ describe('lot 3 acceptance scenarios, real server and daemon, fake GitHub', () =
     TIMEOUT,
   );
 });
+
+// The lot 4 acceptance scenario of step D2b: the scheduler's loop (one `schedulerTick()` per
+// pass) against the real daemon, a failure its machine caused, and what stops it looping.
+
+describe('lot 4 acceptance scenario, real server and daemon, fake GitHub', () => {
+  beforeEach(async () => {
+    await startHarness({
+      gitOnFakeGitHub: true,
+      now: () => new Date(Date.now() + ahead),
+    });
+  });
+
+  const tick = async () =>
+    (await h.t.schedulerTick()).started.map((start) => `${start.kind} ${start.ticket}`);
+  /** The daemon stopped and started again a minute later, its `hello` reporting `claude`. */
+  async function restart(daemon: DaemonProcess, machineId: string): Promise<DaemonProcess> {
+    await stopDaemon(daemon);
+    await until('the machine offline', async () => !(await machine(machineId)).online);
+    ahead += 60_000;
+    const next = startDaemon();
+    await until('the machine online', async () => (await machine(machineId)).online);
+    return next;
+  }
+  const latestRun = async () => {
+    const runs = await h.t.db.select().from(schema.runs);
+    const last = runs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    if (!last) throw new Error('no run');
+    return last;
+  };
+  const items = async () =>
+    (await json((v) => NeedsYouResponse.parse(v), 'GET', '/api/needs-you')).items.filter(
+      (item) => item.type === 'machine_failures',
+    );
+
+  it(
+    'G: Claude Code too old at a start, twice across a daemon restart: never in a loop, the item, then Run now',
+    async () => {
+      // Its `hello` reports a supported Claude Code; the one found at the start is too old.
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      await fake.play({ version: '2.1.100 (Claude Code)' });
+
+      async function tooOld() {
+        expect(await tick()).toEqual(['implement WEB-1']);
+        const started = await latestRun();
+        await until('the run failed', async () => (await run(started.id)).status === 'failed');
+        expect((await run(started.id)).failureReason).toBe('claude_code_unsupported');
+      }
+
+      // First failure: the machine is unusable and left out; the loop starts nothing.
+      await tooOld();
+      for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+      expect(await ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+
+      // Restarted, it connects again with a supported version: released, the loop starts it once.
+      await fake.play({});
+      let daemon = daemons[0];
+      if (!daemon) throw new Error('no daemon');
+      daemon = await restart(daemon, machineId);
+      await fake.play({ version: '2.1.100 (Claude Code)' });
+      await tooOld();
+
+      // Second failure in a row on Laptop (Machine failures before asking you: 2): the item, and
+      // nothing starts by itself, even after the machine connects again.
+      expect(await items()).toMatchObject([
+        { ticket: { number: 1 }, machine: { name: 'Laptop' }, limit: 2, failures: [{}, {}] },
+      ]);
+      await fake.play({});
+      await restart(daemon, machineId);
+      for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+      expect(await messages()).toEqual([]);
+
+      // The owner's Run now starts it and removes the item.
+      await fake.play({ turns: [{ steps: [{ do: 'text', text: 'Reading the ticket.' }] }] });
+      const started = await runNow();
+      expect(started.machine.id).toBe(machineId);
+      expect(await items()).toEqual([]);
+      await h.call('POST', `/api/runs/${started.id}/stop`);
+      await until('the session closed', async () => !(await run(started.id)).sessionAlive);
+    },
+    TIMEOUT,
+  );
+});

@@ -787,6 +787,8 @@ describe('Needs you after a merge', () => {
       'Closed',
       'To merge',
       'Download',
+      'CI cancelled',
+      'Machine',
     ];
     for (const title of titles) await h.createTicket({ title });
     /** Submitted, CI started: its pull request open. */
@@ -799,7 +801,7 @@ describe('Needs you after a merge', () => {
       });
       return { ...run, commit: h.lastPushed ?? '' };
     };
-    for (const number of [1, 2, 3, 4, 5, 6, 10]) {
+    for (const number of [1, 2, 3, 4, 5, 6, 10, 12]) {
       const { runId, commit } = await handedIn(number);
       for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
       await h.t.ciTick();
@@ -856,6 +858,14 @@ describe('Needs you after a merge', () => {
         download: { reason: 'unreachable', message: 'Could not resolve host: github.com' },
       }),
     );
+    // 11: CI cancelled on GitHub because the branch changed there (lot 4 step D2b).
+    {
+      const { commit } = await handedIn(11);
+      const branch = (await ticketRow(11)).branchName ?? '';
+      h.github.commit(repo(), branch, { 'src/elsewhere.ts': 'export {};\n' }, 'Pushed on GitHub');
+      for (const run of h.github.runs(repo(), commit)) h.github.cancelRun(run);
+      await h.t.ciTick();
+    }
     // 1: Quality asks a question.
     const asking = await h.reviewing(daemon, 1);
     await h.ok(daemon, asking.runToken, 'ticket_ask', { question: 'Phone number too?' });
@@ -901,6 +911,21 @@ describe('Needs you after a merge', () => {
       .update(schema.tickets)
       .set({ status: 'todo', stopped: { cause: 'review_rounds', count: 2, limit: 1, at } })
       .where(eq(schema.tickets.number, 6));
+    // 12: "could not start on Laptop", built by runs in scheduler-holds.test.ts (lot 4 step D2b).
+    const [laptop] = await h.t.db.select({ id: schema.machines.id }).from(schema.machines);
+    await h.t.db
+      .update(schema.tickets)
+      .set({
+        status: 'todo',
+        machineFailures: [
+          {
+            machineId: laptop?.id ?? '',
+            failures: [{ cause: 'dispatch_timeout', at, runId: randomUUID() }],
+            asked: { at, limit: 1 },
+          },
+        ],
+      })
+      .where(eq(schema.tickets.number, 12));
     // The machine goes offline with the runs of 1 and 3 active.
     await daemon.close();
 
@@ -920,6 +945,6 @@ describe('Needs you after a merge', () => {
     }
     const tied = (await items()).filter((item) => 'ticket' in item || 'tickets' in item);
     expect(tied).toEqual([]);
-    // Ten tickets through their runs: about 5 seconds on an idle machine.
+    // Twelve tickets through their runs: about 6 seconds on an idle machine.
   }, 30_000);
 });

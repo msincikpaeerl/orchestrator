@@ -257,3 +257,47 @@ test("Quality's request in To do, then a ticket stopped after too many review ro
   await offer.getByRole('button', { name: 'Run now' }).click();
   await fixRun(page);
 });
+
+test('Request changes with its hold box: held, with its badge, until Run now (lot 4 step D2b)', async ({
+  page,
+  gitHubCommit,
+}, testInfo) => {
+  await inReview(page, gitHubCommit);
+  await page.goto(TICKET);
+  await page.getByRole('button', { name: 'Request changes' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Request changes on WEB-1?' });
+  const box = dialog.getByRole('checkbox', {
+    name: /^Hold WEB-1 so I can edit its acceptance criteria first/,
+  });
+  // Unchecked by default (owner's new answer 2, lot 4 step A).
+  await expect(box).not.toBeChecked();
+  await expect(dialog).toContainText(
+    'The scheduler then does not start the fix until you use Run now on WEB-1.',
+  );
+  await dialog.getByLabel('What should change? (required)').fill('Ask for the phone number too.');
+  await box.check();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'request-changes-hold-box');
+  await dialog.getByRole('button', { name: 'Request changes' }).click();
+
+  // Held: no Run now offered; the badge and the sentence on the page, the badge on the board.
+  await expect(page.getByText('To do', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Changes requested on WEB-1' })).toHaveCount(0);
+  await expect(page.getByLabel('Held')).toHaveText(
+    'Held: you asked to edit its acceptance criteria first. The scheduler does not start the fix until you use Run now.',
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'ticket-held');
+  await page.goto('/projects/WEB');
+  const card = page.getByRole('listitem').filter({ hasText: 'WEB-1 · Contact form' });
+  await expect(card).toContainText('Held');
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'board-held');
+
+  // Run now releases it and starts the fix.
+  await page.goto(TICKET);
+  await page.getByRole('button', { name: 'Run now' }).click();
+  await fixRun(page);
+  await page.goto(TICKET);
+  await expect(page.getByLabel('Held')).toHaveCount(0);
+});
