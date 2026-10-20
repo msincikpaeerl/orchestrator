@@ -23,6 +23,8 @@ export const BlockingItem = z.enum([
   'review_not_finished',
   /** "<ticket> could not start on <machine>" (07, section 4). */
   'machine_failures',
+  /** A paused run the scheduler resumed **Most resumes per run** times (07, section 5.2). */
+  'run_resumes_used',
 ]);
 export type BlockingItem = z.infer<typeof BlockingItem>;
 

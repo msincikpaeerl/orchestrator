@@ -311,6 +311,19 @@ If the machine can reach GitHub only through a proxy: from version 0.4.0 the dae
 
 If `systemctl --user` answers "Failed to connect to bus", systemd is not running: see [Turn on systemd on WSL](#turn-on-systemd-on-wsl). If the machine shows **Offline** while the service runs, read the daemon's last messages: they say why it cannot reach the Orchestrator.
 
+### When a machine goes offline during a run
+
+A machine goes **Offline** when its daemon stops, the computer sleeps or shuts down, WSL stops, or the network drops. Its agents' sessions keep running on the computer as long as it is on, and the run page says "(machine offline)".
+
+- **Back within Runs of an offline machine fail after** (from version 0.5.0; 10 minutes by default, in [Settings](settings.md#settings-reference)): nothing is lost. The run goes on where it was; while the machine was offline the agent's calls to the Orchestrator were answered "try again in a few minutes", so it waits and tries again.
+- **Offline longer than that**: a run that was starting or working (waiting for CI included) **fails** as "machine offline", and the ticket's timeline says so: "The run failed as "machine offline": machine Laptop was offline for 10 minutes (Runs of an offline machine fail after: 10 minutes). It does not count as a failed attempt. …". The ticket goes back to **To do** (a review run's ticket stays **In review**, and Needs you shows "Review did not finish", with **Start review**).
+- **What then starts by itself**: the scheduler can start the ticket again, but not on that machine until it is back (see [When a machine keeps failing a ticket](runs.md#when-a-machine-keeps-failing-a-ticket)). When the ticket's commits are only on that machine (not on GitHub yet), no other machine takes it either, and **Run now** says why: "The ticket's branch has 2 commits not on GitHub, only on machine Laptop, and it is offline since 3:12 PM. The run can only continue there." Once the machine is back, the ticket starts there again. If the same machine loses the ticket's run twice in a row, Needs you shows "WEB-12 could not start on Laptop" and the scheduler waits for your **Run now**.
+- **When the machine comes back**, a session that was still running is stopped, and the work it had done is kept: its commits are pushed to GitHub as at the end of any run, and the run page lists them. If that push fails, they stay on the machine, as after any failed push.
+- **Runs waiting for you or paused at a usage limit keep waiting**, however long the machine is offline. Your answer, or **Resume**, needs the machine online: offline, the run then fails as "machine offline", not counted.
+- **A machine that restarted without a run** (its daemon no longer has it when it connects again): that run fails at once as "machine offline", not counted, and the ticket can start again on that machine.
+
+None of these failures counts as a failed attempt. To keep a run going while you are away, keep the machine on and connected (see [Keep WSL running](#keep-wsl-running)); to give runs more time to come back, raise **Runs of an offline machine fail after**.
+
 ### When the project cannot be downloaded from GitHub
 
 At the start of every run, the machine downloads the project from GitHub. When it cannot, the agent never starts, and the run ends with "the project could not be downloaded from GitHub". Such a run does **not** count as a failed attempt, so it never stops the ticket. "Needs you" shows "<ticket> could not be downloaded from GitHub on <machine>", with **Run now**, and says which of three things happened:

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
 import type { FakeRepository } from './fake-github.js';
-import { RunHarness, cleanWorkspace, eventually, state } from './run-harness.js';
+import { RunHarness, SESSION, cleanWorkspace, eventually, state } from './run-harness.js';
 
 // The wait for CI after an accepted submission (04, section 3.1; lot 3 step G1a), against the
 // fake GitHub, with a clock the test controls: each check is one tick the test starts.
@@ -342,7 +342,8 @@ describe('the wait for CI', () => {
     const commit = await submitted(daemon, runId, runToken);
     await h.t.ciTick();
     await h.t.restart();
-    await h.connect(token);
+    // The daemon still has the run, waiting for CI: its `hello` lists it (lot 4 step G).
+    await h.connect(token, { runs: [{ runId, state: 'waiting_ci', claudeSessionId: SESSION }] });
     // CI finished while the server was down, and the deadline passed too.
     completeAll(repo, commit);
     advance(30);
@@ -356,7 +357,8 @@ describe('the wait for CI', () => {
     const { daemon, runId, runToken, repo, token } = await working('queued');
     const commit = await submitted(daemon, runId, runToken);
     await h.t.restart();
-    await h.connect(token);
+    // The daemon still has the run, waiting for CI: its `hello` lists it (lot 4 step G).
+    await h.connect(token, { runs: [{ runId, state: 'waiting_ci', claudeSessionId: SESSION }] });
     advance(2);
     await h.t.ciTick();
     expect((await h.run(runId)).ci?.result?.state).toBe('pending');

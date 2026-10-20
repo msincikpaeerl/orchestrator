@@ -100,6 +100,7 @@ What these limits apply to: see [Machines](machines.md).
 | Enrollment code lifetime | 15 minutes | 1 to 1,440 | No | How long the code shown by **Add machine** can be used to connect the machine; after that, click **New enrollment code** on the machine's page. |
 | Heartbeat interval | 15 seconds | 5 to 120 | No | How often a connected machine tells the Orchestrator it is still there. A machine uses the value it received when it connected. |
 | Machine offline after | 60 seconds | 15 to 600 | No | A machine that sends nothing for this long is shown offline. At least twice the heartbeat interval. |
+| Runs of an offline machine fail after (from version 0.5.0) | 10 minutes | 1 to 1,440 | No | A run working on a machine that stays offline this long fails, without counting as a failed attempt; its ticket can start again, on that machine once it is back when its commits are not on GitHub. Runs waiting for you or paused on a usage limit keep waiting. See [When a machine goes offline during a run](machines.md#when-a-machine-goes-offline-during-a-run). |
 
 ### Scheduler
 
@@ -108,3 +109,4 @@ What these limits apply to: see [Machines](machines.md).
 | Scheduler check interval (from version 0.5.0) | 30 seconds | 5 to 600 | No | The scheduler looks for work to start at least this often. |
 | Quota wait when the reset time is unknown | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. A run paused on a possible limit waits this long too before the scheduler resumes it, doubling the same way. |
 | Longest quota wait (from version 0.5.0) | 240 minutes | 1 to 2,880 | No | The doubling wait above never goes above this. |
+| Most resumes per run (from version 0.5.0) | 6 resumes | 1 to 50 | No | How many times the scheduler resumes one run paused on a Claude usage limit, detected or possible. Once reached, the run waits for you in Needs you; your own Resume does not count and starts the count again. See [Usage limits](runs.md#usage-limits). |

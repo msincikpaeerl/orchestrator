@@ -132,7 +132,9 @@ export function machineUnavailable(
   if (state === 'revoked') return { why: 'revoked' };
   if (state === 'waiting_enrollment') return { why: 'waiting_enrollment' };
   if (state === 'disabled') return { why: 'disabled' };
-  if (state === 'offline') return { why: 'offline' };
+  if (state === 'offline') {
+    return { why: 'offline', since: machine.offlineSince?.toISOString() ?? null };
+  }
   if (machine.daemonIncompatibleSince) return { why: 'daemon_incompatible' };
   const reasons = unusableReasons(machine);
   if (reasons.length > 0) return { why: 'unusable', reasons };
@@ -351,6 +353,18 @@ export function quotaWait(
   const until = run.quotaResumeAt ?? new Date(run.statusSince.getTime() + fallbackMinutes * 60_000);
   if (until.getTime() <= now.getTime()) return null;
   return { reason: 'quota_wait', until: until.toISOString(), minutes };
+}
+
+/**
+ * A paused run the scheduler resumed **Most resumes per run** times (`limit`; 07, section 5.2;
+ * lot 4 step G): it waits for the owner's **Resume** in "Needs you"; null below the limit.
+ */
+export function resumesUsed(
+  run: Pick<RunRow, 'status' | 'schedulerResumes'>,
+  limit: number,
+): Extract<QueueReason, { reason: 'needs_you' }> | null {
+  if (run.status !== 'paused_quota' || run.schedulerResumes < limit) return null;
+  return { reason: 'needs_you', item: 'run_resumes_used', machine: null };
 }
 
 /**

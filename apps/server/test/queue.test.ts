@@ -219,6 +219,7 @@ async function loopAsks(): Promise<string[]> {
         asked.push(`resume ${runId}`);
         return Promise.reject(new Error('recorded only'));
       },
+      failOfflineRuns: () => Promise.resolve(null),
     },
     now: () => NOW,
     timers: false,
@@ -625,7 +626,7 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
     expect(await reasonOf('WEB-2')).toEqual({
       reason: 'no_machine',
       machines: [
-        { machine: laptop, unavailable: { why: 'offline' } },
+        { machine: laptop, unavailable: { why: 'offline', since: null } },
         { machine: phone, unavailable: { why: 'disabled' } },
       ],
     });
@@ -637,7 +638,7 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
           machine: { id: expect.any(String) as string, name: 'Desktop' },
           unavailable: { why: 'missing_capabilities', capabilities: ['android-sdk'] },
         },
-        { machine: laptop, unavailable: { why: 'offline' } },
+        { machine: laptop, unavailable: { why: 'offline', since: null } },
         { machine: phone, unavailable: { why: 'disabled' } },
       ],
     });
@@ -667,7 +668,8 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
     });
     const fresh = await ticket(web);
 
-    const offline = { why: 'offline' };
+    // Rows written directly: no time known for when it went offline (lot 4 step G).
+    const offline = { why: 'offline', since: null };
     expect(await reasonOf('WEB-1')).toEqual({
       reason: 'machine_unavailable',
       machine: { id: laptop.id, name: 'Laptop' },

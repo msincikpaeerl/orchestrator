@@ -588,6 +588,12 @@ export const machines = pgTable(
      * left out for a ticket after a failure it caused is released by a connection after it.
      */
     connectedAt: timestamp('connected_at', { withTimezone: true }),
+    /**
+     * Since when it is offline, on the application's clock (lot 4 step G): its runs `dispatched`,
+     * `starting` or `running` fail once **Runs of an offline machine fail after** has passed, and
+     * the queue says since when. Cleared by an accepted `hello`.
+     */
+    offlineSince: timestamp('offline_since', { withTimezone: true }),
     /** Since when the last `hello` was refused for its protocol version; cleared by an accepted one. */
     daemonIncompatibleSince: timestamp('daemon_incompatible_since', { withTimezone: true }),
     /** Since when the daemon speaks the previous protocol (unusable), for "Needs you". */
@@ -800,6 +806,12 @@ export const runs = pgTable(
      * (07, sections 4 and 5.2; lot 4 step E). Null otherwise.
      */
     resumeLeftOut: jsonb('resume_left_out'),
+    /**
+     * The scheduler's resumes of the run since it started or since the owner's latest **Resume**,
+     * one taken back when its machine did not take it: at **Most resumes per run**, the scheduler
+     * no longer resumes it and "Needs you" asks the owner (07, section 5.2; lot 4 step G).
+     */
+    schedulerResumes: integer('scheduler_resumes').notNull().default(0),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.

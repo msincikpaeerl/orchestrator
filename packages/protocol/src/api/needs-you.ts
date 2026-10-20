@@ -375,6 +375,21 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
      */
     resume: QueueReason.nullable(),
   }),
+  /**
+   * A run paused on a usage limit that the scheduler resumed `resumes` times, **Most resumes per
+   * run** (`limit`, its current value), and that still hits a limit (07, section 5.2; lot 4 step
+   * G). Blocking: the scheduler no longer resumes it; **Resume** (which starts the count again) or
+   * **Stop run**. Shown instead of `run_paused`, until the run is resumed or ends.
+   */
+  z.object({
+    type: z.literal('run_resumes_used'),
+    run: Run,
+    ticket: TicketRef,
+    /** When it paused the last time. */
+    since: z.iso.datetime(),
+    resumes: z.int().positive(),
+    limit: z.int().positive(),
+  }),
 ]);
 export type NeedsYouItem = z.infer<typeof NeedsYouItem>;
 

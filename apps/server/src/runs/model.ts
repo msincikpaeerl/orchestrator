@@ -212,6 +212,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     status: RunStatus.parse(row.status),
     pauseReason: row.pauseReason === null ? null : PauseReason.parse(row.pauseReason),
     resumeAfter: context.resumeAfter,
+    schedulerResumes: row.schedulerResumes,
     failureReason: row.failureReason === null ? null : FailureReason.parse(row.failureReason),
     endReason: row.endReason === null ? null : RunEndReason.parse(row.endReason),
     endDetail: row.endDetail,

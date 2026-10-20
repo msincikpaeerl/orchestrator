@@ -42,6 +42,7 @@ import {
   quotaWait,
   resumeLeftOut,
   resumeRefusal,
+  resumesUsed,
   ticketRefusal,
   ticketWork,
   type Blocker,
@@ -105,6 +106,7 @@ const runColumns = {
   quotaResumeAt: schema.runs.quotaResumeAt,
   quotaWaitMinutes: schema.runs.quotaWaitMinutes,
   resumeLeftOut: schema.runs.resumeLeftOut,
+  schedulerResumes: schema.runs.schedulerResumes,
 };
 type RunFacts = { [Key in keyof typeof runColumns]: (typeof schema.runs.$inferSelect)[Key] };
 
@@ -132,7 +134,10 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
   const [connection] = await db.select().from(schema.githubConnection);
   const github = githubRefusal(connection);
   const { timeZone } = await readTimeZone(db);
-  const { quotaFallbackDelayMinutes } = await resolveSettings(db, ['quotaFallbackDelayMinutes']);
+  const { quotaFallbackDelayMinutes, maxSchedulerResumes } = await resolveSettings(db, [
+    'quotaFallbackDelayMinutes',
+    'maxSchedulerResumes',
+  ]);
 
   const projects = new Map(
     (await db.select().from(schema.projects)).map((project) => [project.id, project]),
@@ -295,8 +300,11 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
         run,
         afterFailure: false,
         since: run.statusSince,
-        // A suspected limit's own wait first (07, section 5.2; lot 4 step E).
-        early: projectRefusal(project) ?? quotaWait(run, now, quotaFallbackDelayMinutes),
+        // Most resumes per run reached, then a suspected limit's own wait (07, section 5.2).
+        early:
+          projectRefusal(project) ??
+          resumesUsed(run, maxSchedulerResumes) ??
+          quotaWait(run, now, quotaFallbackDelayMinutes),
         required: [],
         holding: null,
       });

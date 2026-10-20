@@ -32,6 +32,7 @@ import type { Database } from './database.js';
 import { accountRows, accountsWithToday } from './machines/accounts.js';
 import { daemonUpdateCommands, doctorErrors } from './machines/model.js';
 import { computeQueue } from './scheduler/queue.js';
+import { resolveSettings } from './settings/store.js';
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
@@ -174,16 +175,30 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
               paused.map((run) => run.id),
             ),
           );
-  // When the scheduler resumes each one, as its queue says (07, section 5.2; lot 4 step E).
+  // When the scheduler resumes each one, as its queue says (07, section 5.2; lot 4 step E), or
+  // that it no longer does, after Most resumes per run (lot 4 step G).
   const queue = paused.length === 0 ? null : await computeQueue(db, now);
+  const { maxSchedulerResumes } = await resolveSettings(db, ['maxSchedulerResumes']);
   for (const run of paused) {
     const ticket = titles.find((row) => row.runId === run.id);
     if (!ticket) continue;
+    const ticketRef = { projectKey: run.projectKey, number: ticket.number, title: ticket.title };
+    if (run.schedulerResumes >= maxSchedulerResumes) {
+      items.push({
+        type: 'run_resumes_used',
+        run,
+        ticket: ticketRef,
+        since: run.statusSince,
+        resumes: run.schedulerResumes,
+        limit: maxSchedulerResumes,
+      });
+      continue;
+    }
     const candidate = queue?.candidates.find((each) => each.runId === run.id);
     items.push({
       type: 'run_paused',
       run,
-      ticket: { projectKey: run.projectKey, number: ticket.number, title: ticket.title },
+      ticket: ticketRef,
       since: run.statusSince,
       resume: candidate?.reason ?? null,
     });

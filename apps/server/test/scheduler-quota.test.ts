@@ -12,7 +12,7 @@ import {
 import { desc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ScriptedDaemon } from './daemon-client.js';
-import { RunHarness, eventually, state } from './run-harness.js';
+import { RunHarness, SESSION, eventually, state } from './run-harness.js';
 
 // The scheduler's resumes after a usage limit (07, section 5.2; lot 4 step E), with the real
 // application and scripted daemons: what waits for the account's window, budget and Stop new
@@ -270,6 +270,8 @@ describe('what the scheduler resumes, and how often (07, section 5.2)', () => {
     set(new Date(at.getTime() + 61 * 60_000).toISOString());
     expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
     await answerResume(laptop.daemon, runId, 1, false);
+    // Not taken: not counted against Most resumes per run (lot 4 step G).
+    expect((await runRow(runId)).schedulerResumes).toBe(0);
     for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
     expect(resumesOf(laptop.daemon, runId)).toHaveLength(1);
     expect(await reasonOf()).toMatchObject({
@@ -288,7 +290,10 @@ describe('what the scheduler resumes, and how often (07, section 5.2)', () => {
       expect(row?.status).toBe('offline');
     });
     set(new Date(at.getTime() + 60_000).toISOString());
-    const again = await h.connect(laptop.token);
+    // Its `hello` lists the paused run it still has (lot 4 step G).
+    const again = await h.connect(laptop.token, {
+      runs: [{ runId, state: 'quota_paused', claudeSessionId: SESSION }],
+    });
     expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
     await answerResume(again, runId, 1, false);
     expect(await tick()).toEqual([]);
@@ -334,5 +339,71 @@ describe('what the scheduler resumes, and how often (07, section 5.2)', () => {
       reason: 'no_machine',
       machines: [{ unavailable: { why: 'account_busy' } }],
     });
+  });
+});
+
+describe('Most resumes per run (07, section 5.2; lot 4 step G)', () => {
+  it("stops the scheduler's resumes of a run at the limit; the owner's Resume starts the count again", async () => {
+    await h.start({ now: clock, settings: { maxSchedulerResumes: 2 } });
+    await h.createTicket();
+    const { daemon } = await h.machine();
+    expect(await tick()).toEqual(['implement WEB-1 on Laptop']);
+    const runId = await latestRunId();
+    await h.working(daemon, runId);
+    const later = (hours: number) => {
+      set(new Date(at.getTime() + hours * 3_600_000).toISOString());
+    };
+
+    // Two resumes by the scheduler, each pausing again on a possible limit.
+    await pause(daemon, runId, 'suspected');
+    for (let count = 1; count <= 2; count += 1) {
+      later(5);
+      expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
+      await answerResume(daemon, runId, count, true);
+      expect((await runRow(runId)).schedulerResumes).toBe(count);
+      await pause(daemon, runId, count === 1 ? 'suspected' : 'detected');
+    }
+
+    // The limit reached: never resumed by itself again, the blocking item instead of "paused".
+    later(5);
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect(resumesOf(daemon, runId)).toHaveLength(2);
+    expect(await reasonOf()).toEqual({
+      reason: 'needs_you',
+      item: 'run_resumes_used',
+      machine: null,
+    });
+    const response = await h.call('GET', '/api/needs-you');
+    const items = NeedsYouResponse.parse(response.json()).items;
+    expect(items.filter((item) => item.type === 'run_paused')).toEqual([]);
+    expect(items.find((item) => item.type === 'run_resumes_used')).toMatchObject({
+      run: { id: runId, status: 'paused_quota', schedulerResumes: 2 },
+      ticket: { projectKey: 'WEB', number: 1 },
+      resumes: 2,
+      limit: 2,
+    });
+    expect(await h.ticket()).toMatchObject({ attemptCount: 0 });
+
+    // Raised to 3 on Settings: one more resume by itself (the limit is read at each check).
+    const raised = await h.call('PUT', '/api/settings/maxSchedulerResumes', { value: 3 });
+    expect(raised.statusCode, raised.body).toBe(200);
+    expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
+    await answerResume(daemon, runId, 3, true);
+    await pause(daemon, runId, 'suspected');
+    later(5);
+    expect(await tick()).toEqual([]);
+    expect(await reasonOf()).toMatchObject({ reason: 'needs_you', item: 'run_resumes_used' });
+
+    // The owner's Resume is not counted and starts the count again: the scheduler resumes it next.
+    const resumed = await h.call('POST', `/api/runs/${runId}/resume`);
+    expect(resumed.statusCode, resumed.body).toBe(200);
+    expect((await runRow(runId)).schedulerResumes).toBe(0);
+    await answerResume(daemon, runId, 4, true);
+    await pause(daemon, runId, 'suspected');
+    later(5);
+    expect(await tick()).toEqual(['resume WEB-1 on Laptop']);
+    expect((await runRow(runId)).schedulerResumes).toBe(1);
+    await answerResume(daemon, runId, 5, true);
+    expect(await h.ticket()).toMatchObject({ status: 'in_progress', attemptCount: 0 });
   });
 });
