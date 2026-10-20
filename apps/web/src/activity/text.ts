@@ -93,6 +93,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'account.updated': 'Claude account edited',
   'account.limited': 'Claude usage limit reached',
   'account.available': 'Claude account available again',
+  'account.quota_wait_restarted': 'Quota wait back to its first length',
   'account.paused': 'New runs stopped on a Claude account',
   'account.resumed': 'Claude account resumed',
   'setting.time_zone_saved': 'Time zone saved',
@@ -626,6 +627,11 @@ const describe: { [T in EventType]: Describe<T> } = {
     quote(p.label, null),
     ' available again: its usage limit time has passed',
   ],
+  'account.quota_wait_restarted': (p) => [
+    'Claude account ',
+    quote(p.label, null),
+    `: a run worked again without reaching the usage limit, so the next limit without a reset time waits Quota wait when the reset time is unknown again (the latest wait was ${duration(p.minutes * 60)})`,
+  ],
   'account.paused': (p) => [
     'New runs stopped on the Claude account ',
     quote(p.label, null),
@@ -759,6 +765,9 @@ const describe: { [T in EventType]: Describe<T> } = {
       ` on `,
       quote(p.machine, null),
       `: ${runStatusLabel[p.from].toLowerCase()} to ${runStatusLabel[p.to].toLowerCase()} (${causeText[p.cause]})${why}`,
+      p.resumeAt === undefined
+        ? ''
+        : `; the scheduler resumes it at ${formatDateTime(p.resumeAt)}, ${duration((p.quotaWaitMinutes ?? 0) * 60)} later`,
       p.detail === undefined ? '' : ` — ${shorten(p.detail)}`,
     ];
   },

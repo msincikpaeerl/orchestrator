@@ -12,6 +12,7 @@ import {
   acceptedAfterText,
   machineFailureText,
   queueReasonText,
+  resumeText,
   runBranchText,
   runRefusalText,
   ticketUsageText,
@@ -144,6 +145,7 @@ describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", ()
       machine: item === 'download_failed' || item === 'machine_failures' ? machine : null,
     })),
     { reason: 'reviews_off' },
+    { reason: 'quota_wait', until, minutes: 120 },
   ];
 
   it.each(queueReasons.map((reason) => [reason.reason, reason] as const))(
@@ -202,6 +204,47 @@ describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", ()
   it("says a review waits for Start review while the project's switch is off (step D3)", () => {
     expect(queueReasonText({ reason: 'reviews_off' })).toBe(
       "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.",
+    );
+  });
+});
+
+describe('when the scheduler resumes a paused run (lot 4 step E)', () => {
+  it("says its own wait after a suspected limit, its account's limit, or what else it waits for", () => {
+    expect(queueReasonText({ reason: 'quota_wait', until, minutes: 120 })).toBe(
+      `Paused on a possible usage limit: the scheduler resumes it at ${formatDateTime(until)}, 2 hours after it paused.`,
+    );
+    expect(resumeText({ reason: 'quota_wait', until, minutes: 60 })).toBe(
+      `The scheduler resumes it by itself at ${formatDateTime(until)} (1 hour after it paused), if its Claude account and machine can take it then.`,
+    );
+    expect(resumeText({ reason: 'account_limited', account, until })).toBe(
+      `The scheduler resumes it by itself once the limit resets, at ${formatDateTime(until)}.`,
+    );
+    expect(
+      resumeText({
+        reason: 'machine_unavailable',
+        machine,
+        commits: null,
+        unavailable: unavailable.account_outside_window,
+      }),
+    ).toBe(
+      `The scheduler resumes it by itself once this changes: This run can only continue on machine Laptop, and its Claude account Personal is outside its window until ${formatDateTime(until)}.`,
+    );
+    expect(resumeText({ reason: 'account_paused', account })).toBe(
+      'The scheduler resumes it by itself once this changes: The Claude account Personal is paused: you stopped new runs on it. Resume the account in Machines first.',
+    );
+    expect(resumeText(null)).toBe('The scheduler resumes it by itself at its next check.');
+  });
+
+  it('says a machine that did not take the latest resume waits for its reconnection or Resume', () => {
+    expect(
+      runRefusalText({
+        reason: 'machine_unavailable',
+        machine,
+        commits: null,
+        unavailable: { why: 'left_out', cause: 'dispatch_refused', at: until },
+      }),
+    ).toBe(
+      `This run can only continue on machine Laptop, which did not take its latest resume at ${formatDateTime(until)} (it refused it): the scheduler resumes it again once the machine connects again, or use Resume.`,
     );
   });
 });
