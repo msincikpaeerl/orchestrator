@@ -222,10 +222,10 @@ Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 
 
 ### [ ] J. End-to-end lot 4 test
 
-- `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub, and the server's clock moved by the test:
-  - scenario G: three tickets (one high priority, one blocked by another) on an account of maximum 1 with a window opening later: nothing before the window; then, with no owner action but the merges on the fake GitHub, each ticket implemented, reviewed (Q1) and `done` in the expected order, the blocked one after its blocker's merge;
-  - scenario H: a usage limit with no reset time during a run: paused, the account limited, resumed by itself after the fallback delay, limited again and resumed after the doubled one, then submitted; no failed attempt;
-  - scenario I: the daemon stopped during a run for longer than **Runs of an offline machine fail after**: the run failed, not counted, started again by the scheduler once the machine is back;
+- `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub, and the server's clock moved by the test, three scenarios whose letters follow the file's (G is step D2b's, renamed from this plan's first G in step D3 so the two agree):
+  - scenario H: three tickets (one high priority, one blocked by another) on an account of maximum 1 with a window opening later: nothing before the window; then, with no owner action but the merges on the fake GitHub, each ticket implemented, reviewed (Q1) and `done` in the expected order, the blocked one after its blocker's merge;
+  - scenario I: a usage limit with no reset time during a run: paused, the account limited, resumed by itself after the fallback delay, limited again and resumed after the doubled one, then submitted; no failed attempt;
+  - scenario J: the daemon stopped during a run for longer than **Runs of an offline machine fail after**: the run failed, not counted, started again by the scheduler once the machine is back;
   - every process and folder of the test homes cleaned (lot 3 step M's checks).
 
 **Done when** the three scenarios pass in `pnpm test`, within CI's 8 minutes per shard.
