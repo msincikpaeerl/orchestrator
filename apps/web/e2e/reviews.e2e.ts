@@ -237,3 +237,52 @@ test('Review did not finish: a decision thrown away by Stop run, which and why',
   );
   await expectFitsScreen(page);
 });
+
+test('Start reviews by themselves on Project settings, and what Ready for review says for each value', async ({
+  page,
+  gitHubCommit,
+}, testInfo) => {
+  await inReview(page, gitHubCommit);
+  const byItself =
+    'The review starts by itself as soon as a machine and its Claude account can take it. Start review starts it now; Skip review before then if you want none.';
+  const waits =
+    "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.";
+
+  // On, the default: the review starts by itself.
+  await openSection(page, 'Needs you');
+  const item = page
+    .getByRole('listitem')
+    .filter({ hasText: 'Ready for review: WEB-1 Contact form' });
+  await expect(item.getByLabel('When the review starts')).toHaveText(byItself);
+  await expectFitsScreen(page);
+  await screenshot(item, testInfo, 'needs-you-review-by-itself');
+
+  // The switch, turned off on the project's settings.
+  await page.goto('/projects/WEB/settings');
+  const box = page.getByRole('checkbox', { name: /Start reviews by themselves/ });
+  await expect(box).toBeChecked();
+  await expect(page.getByText('Each review uses one Claude Code session.')).toBeVisible();
+  await box.uncheck();
+  await expect(page.getByRole('status')).toHaveText(
+    'Saved: reviews wait for Start review. A review already running goes on.',
+  );
+  await expect(box).not.toBeChecked();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'project-settings-reviews-off');
+
+  // Off: Needs you and the ticket page say the review waits for Start review.
+  await openSection(page, 'Needs you');
+  await expect(item.getByLabel('When the review starts')).toHaveText(waits);
+  await screenshot(item, testInfo, 'needs-you-review-waits');
+  await page.goto('/projects/WEB/tickets/1');
+  await expect(page.getByLabel('When the review starts')).toHaveText(waits);
+  await expectFitsScreen(page);
+
+  // On again, after a reload: saved.
+  await page.goto('/projects/WEB/settings');
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await expect(page.getByRole('status')).toHaveText('Saved: reviews start by themselves.');
+  await page.goto('/projects/WEB/tickets/1');
+  await expect(page.getByLabel('When the review starts')).toHaveText(byItself);
+});

@@ -95,6 +95,7 @@ describe('"Ready for review"', () => {
         ci: 'passed',
         checkedAgainAt: null,
         workflowFlag: null,
+        start: 'by_itself',
         since: expect.any(String) as string,
       },
     ]);
@@ -102,6 +103,7 @@ describe('"Ready for review"', () => {
       latest: null,
       current: { commit, earlier: false },
       offered: true,
+      start: 'by_itself',
     });
   });
 
@@ -120,6 +122,7 @@ describe('"Ready for review"', () => {
       latest: { kind: 'in_progress', runId: review.runId, machine: { id, name: 'Laptop' } },
       current: { commit, earlier: false },
       offered: false,
+      start: null,
     });
     expect((await h.run(review.runId)).review).toEqual({
       commit,
@@ -205,6 +208,7 @@ describe('a decision applied', () => {
       latest: at,
       current: { commit: fixed, earlier: true },
       offered: true,
+      start: 'by_itself',
     });
   });
 });
@@ -228,6 +232,7 @@ describe('"Review did not finish"', () => {
       latest: { kind: 'not_finished', runId: review.runId, end: { why: 'stopped' } },
       current: { commit, earlier: false },
       offered: true,
+      start: 'held',
     });
     expect((await h.run(review.runId)).review).toMatchObject({
       decision: { kind: 'changes_requested' },
