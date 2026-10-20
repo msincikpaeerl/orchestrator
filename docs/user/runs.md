@@ -46,11 +46,12 @@ From version 0.5.0 the Orchestrator's **scheduler** starts runs by itself, so ti
 **What it starts**, each time one Claude Code session from your Claude plan, exactly as you would with the button:
 
 - a ticket in **To do** with an assignee, waiting for no other ticket: a run of its agent, as **Run now** does (one that addresses the request for changes, when Quality or you asked for some);
+- a run paused at a usage limit, once the limit resets or, for a possible limit, once its wait is over: it continues where it stopped, as **Resume** does, before any other work of its account (see [Usage limits](#usage-limits));
 - a ticket **Ready for review**: Quality's review, as **Start review** does, unless you turned off **Start reviews by themselves** in the project's settings (see [Reviews by themselves](projects.md#reviews-by-themselves)). If you do not want a review, use **Skip review** before it starts. "Ready for review" says which: "The review starts by itself as soon as a machine and its Claude account can take it." or "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.".
 
 A fix after a request for changes starts by itself whether the switch is on or off: the switch is only about reviews.
 
-**In which order**: reviews first, then fixes after a request for changes, then new work. Within each of these, in this order:
+**In which order**: paused runs first, then reviews, then fixes after a request for changes, then new work. Within each of these, in this order:
 
 1. a ticket whose last attempt failed (and counted as a failed attempt) goes behind the others, even a high-priority one;
 2. then priority: high, then normal, then low;
@@ -73,7 +74,6 @@ Projects take turns, so one large project does not hold up the others.
 - a ticket with an item in [Needs you](needs-you.md) about its CI, its push or its download, or a review that did not finish, until you handle the item;
 - a ticket on a machine that just failed it (see [When a machine keeps failing a ticket](#when-a-machine-keeps-failing-a-ticket)): that machine is left out for that ticket until it connects again or you use **Run now**; another machine can still take the ticket;
 - a ticket CI cancelled because its branch changed on GitHub: it waits for your **Run now** (see [CI items](needs-you.md#ci-items));
-- a run paused at a usage limit: it waits for your **Resume**.
 
 ## Watch a run
 
@@ -149,10 +149,18 @@ If the machine is offline, the run is marked as failed because of that, and its 
 
 Your Claude plan limits how much agents can work in a period. When a run reaches the limit, it is **paused**: its work is kept, and it does not count as a failed attempt.
 
-- **Claude usage limit reached: you can resume after 3:45 PM**: the machine recognised Claude's usage limit message. The run and the Claude account wait until the limit resets: the time Claude gave or, when it gave none, **Quota wait when the reset time is unknown** later; the time then shows "(estimated)". **Resume** becomes available only at that time, and no other run starts on that account until then.
-- **Run paused: possible Claude usage limit** (a *suspected* limit): the agent stopped on an error that may be the usage limit, but may also be Claude being overloaded or a network problem. The account is not marked as limited, and you can click **Resume** at once: the run may pause again if it was the limit.
+- **Claude usage limit reached: you can resume after 3:45 PM**: the machine recognised Claude's usage limit message. The run and the Claude account wait until the limit resets: the time Claude gave or, when it gave none, **Quota wait when the reset time is unknown** later (1 hour by default); the time then shows "(estimated)". **Resume** becomes available only at that time, and no other run starts on that account until then.
+- **Run paused: possible Claude usage limit** (a *suspected* limit): the agent stopped on an error that may be the usage limit, but may also be Claude being overloaded or a network problem. The account is not marked as limited, so other tickets keep starting on it, and you can click **Resume** at once: the run may pause again if it was the limit.
 
-In this version, a paused run never resumes by itself. [Needs you](needs-you.md#agents-work) lists it. To resume, click **Resume** there, on the ticket or on the run. The agent picks up where it stopped, on the same machine; if that machine cannot take it now, the page says why and the run stays paused.
+From version 0.5.0 the scheduler **resumes a paused run by itself**. [Needs you](needs-you.md#agents-work) lists the run and says when: "The scheduler resumes it by itself once the limit resets, at 3:45 PM." or "The scheduler resumes it by itself at 3:12 AM (1 hour after it paused), if its Claude account and machine can take it then.". The agent picks up where it stopped, on the same machine, and the run's history says "resumed by the scheduler". You can still click **Resume** yourself, on the item, the ticket or the run.
+
+- **When**: once the limit resets; after a possible limit, once **Quota wait when the reset time is unknown** has passed. A paused run goes before any other work of its Claude account.
+- **Only when a new run could start**: inside the account's windows, under its daily budget, not after **Stop new runs**, and on its own machine when it is online. Otherwise the item says what it waits for, and the run waits. Your **Resume** works as before: it ignores windows and the budget, is refused after **Stop new runs** or before the limit resets, and resumes a possible limit at once.
+- **If the limit is still there**, the run pauses again and waits twice as long: 1 hour, then 2, then 4, never more than **Longest quota wait** (4 hours by default). For a reached limit with no reset time this is the account's wait; for a possible limit, the run's own. The wait starts again from 1 hour once an agent works without reaching the limit.
+- **How often at most**: with the default settings, 1, 3 and 7 hours after the first pause, then every 4 hours, only inside the account's windows. In a night window of 9 hours that is at most 3 resumes per paused run. A resume that meets the limit again stops on Claude's error without working. None counts as a failed attempt.
+- **If its machine does not take the resume** (it did not confirm it in time, or refused it), the run stays paused and the scheduler does not send it again until the machine connects again, or you click **Resume**.
+
+A run's usage counts on the day it started (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)): a run started in the evening and resumed after midnight adds its usage to the evening's budget.
 
 ## When a run ends
 
