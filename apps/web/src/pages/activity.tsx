@@ -2,6 +2,7 @@ import { EventEntityType, EventType, type EventLogEntry } from '@orchestrator/pr
 import { useSearchParams } from 'react-router';
 import { dayStart } from '../activity/days';
 import { EventText } from '../activity/event-text';
+import { Queue } from '../activity/queue';
 import { LiveRuns, RunHistory } from '../activity/runs';
 import { actorLabel, entityLabel, eventTypeLabel } from '../activity/text';
 import {
@@ -202,21 +203,14 @@ function EventLog() {
   );
 }
 
-/** Activity (02, section 7): live runs, the queue (lot 4), the run history and the event log. */
+/** Activity (02, section 7): live runs, the queue (lot 4 step H), the run history and the event log. */
 export function ActivityPage() {
   return (
     <>
       <PageHeader title="Activity" help="activity" />
       <div className="space-y-8">
         <LiveRuns />
-        <section aria-labelledby="queue-title" className="space-y-4">
-          <h2 id="queue-title" className="text-xl font-semibold text-slate-900">
-            Queue
-          </h2>
-          <Card>
-            <p>Coming in a later version: the tickets waiting to run, and why.</p>
-          </Card>
-        </section>
+        <Queue />
         <RunHistory />
         <EventLog />
       </div>

@@ -7,6 +7,7 @@ import {
   daemonRequest,
   expect,
   expectFitsScreen,
+  limited,
   readyForRuns,
   reportState,
   runNow,
@@ -33,26 +34,6 @@ function accountLines(page: Page) {
 /** The item of "Needs you" whose text matches. */
 function item(page: Page, text: string | RegExp) {
   return page.getByRole('main').getByRole('listitem').filter({ hasText: text });
-}
-
-async function limited(
-  page: Page,
-  runId: string,
-  kind: 'detected' | 'suspected',
-  resetsAt?: string,
-) {
-  const answer = await daemonRequest(page, 'run.quota_limited', {
-    runId,
-    kind,
-    ...(kind === 'detected' ? { resetsAt: resetsAt ?? null } : {}),
-    evidence: {
-      signal: 'stop_failure',
-      error: kind === 'detected' ? 'rate_limit' : 'overloaded',
-      message: kind === 'detected' ? "You've hit your session limit" : 'API Error: 529 Overloaded',
-      statusLine: null,
-    },
-  });
-  expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
 }
 
 test("the agent's question is answered from Needs you", async ({ page }) => {

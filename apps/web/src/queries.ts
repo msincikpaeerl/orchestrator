@@ -13,6 +13,7 @@ import {
   Project,
   ProjectListResponse,
   ProjectSettingsResponse,
+  QueueResponse,
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
@@ -61,6 +62,7 @@ export const keys = {
   liveRunsOf: (machine: string) => ['runs', 'live', machine] as const,
   runHistory: (query: string) => ['runs', 'history', query] as const,
   ticketRuns: (key: string, number: number) => ['runs', 'ticket', key, number] as const,
+  queue: ['queue'],
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -282,6 +284,44 @@ export function useAccounts() {
     queryFn: () => api('GET', '/api/accounts', AccountListResponse),
   });
 }
+
+/**
+ * Activity > Queue (02, section 7; lot 4 step H): read again on every change the stream reports
+ * that can move it (`live.ts`), and at the next time it names (a window opening, a limit or a
+ * suspected limit's wait ending, the day's end), at least once a minute: windows and budgets move
+ * with the clock without an event. Reading it starts nothing.
+ */
+export function useQueue() {
+  return useQuery({
+    queryKey: keys.queue,
+    queryFn: () => api('GET', '/api/queue', QueueResponse),
+    refetchInterval: (query) =>
+      query.state.data ? queueRefreshMs(query.state.data, Date.now()) : ACCOUNT_REFRESH_MS,
+  });
+}
+
+/**
+ * When to read the queue again: just after the soonest time it names that is still to come, or
+ * after a minute when that is later (lot 4 step H).
+ */
+export function queueRefreshMs(queue: QueueResponse, now: number): number {
+  let next = ACCOUNT_REFRESH_MS;
+  const visit = (value: unknown) => {
+    if (typeof value === 'string') {
+      const at = ISO_TIME.test(value) ? Date.parse(value) : Number.NaN;
+      if (at > now) next = Math.min(next, at - now + QUEUE_REFRESH_DELAY_MS);
+    } else if (Array.isArray(value)) value.forEach(visit);
+    else if (typeof value === 'object' && value !== null) Object.values(value).forEach(visit);
+  };
+  visit(queue);
+  return next;
+}
+
+/** An ISO time in an API answer (`z.iso.datetime()`). */
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+/** The queue is read again this long after a time it names, so the server sees that time passed. */
+const QUEUE_REFRESH_DELAY_MS = 1000;
 
 /** Claude accounts with their day so far, for Machines (lot 4 step C). */
 export function useAccountsLive() {

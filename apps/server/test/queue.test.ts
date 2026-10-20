@@ -385,6 +385,19 @@ describe('the order (07, section 3)', () => {
     expect(result.accounts).toEqual([
       {
         account: { id: personal.id, label: 'Personal' },
+        // Its state, window and day, as its page shows them (lot 4 step H).
+        status: {
+          state: 'available',
+          limitedUntil: null,
+          limitedUntilEstimated: false,
+          dailyBudget: null,
+          today: {
+            window: { state: 'always' },
+            usage: { runs: 0, workingMs: 0, estimatedUsageUsd: 0, runsWithoutEstimate: 0 },
+            budgetUsed: false,
+            dayEndsAt: '2026-10-21T00:00:00.000Z',
+          },
+        },
         active: 1,
         maxConcurrentRuns: 2,
         unavailable: null,
@@ -558,13 +571,19 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
 
     await db.update(schema.claudeAccounts).set({ state: 'paused_manual' });
     expect(await reasonOf('WEB-1')).toEqual(machineReason({ why: 'account_paused', account: ref }));
+    expect((await queue()).accounts[0]?.status.state).toBe('paused_manual');
 
     await db.update(schema.claudeAccounts).set({ state: 'limited', limitedUntil: minutes(30) });
     expect(await reasonOf('WEB-1')).toEqual(
       machineReason({ why: 'account_limited', account: ref, until: minutes(30).toISOString() }),
     );
     // Its time passed: available again, as Run now reads it.
+    expect((await queue()).accounts[0]?.status).toMatchObject({
+      state: 'limited',
+      limitedUntil: minutes(30).toISOString(),
+    });
     expect((await queue(minutes(31))).candidates[0]?.reason).toBeNull();
+    expect((await queue(minutes(31))).accounts[0]?.status.state).toBe('available');
 
     // Windows in the Orchestrator's time zone (UTC until saved): Tuesday 10:00 is outside.
     await db.update(schema.claudeAccounts).set({
@@ -579,6 +598,10 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
         next: '2026-10-20T22:00:00.000Z',
       }),
     );
+    expect((await queue()).accounts[0]?.status.today.window).toEqual({
+      state: 'outside',
+      next: '2026-10-20T22:00:00.000Z',
+    });
     expect((await queue(new Date('2026-10-20T23:00:00.000Z'))).candidates[0]?.reason).toBeNull();
 
     await db.update(schema.claudeAccounts).set({
@@ -591,6 +614,10 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
       estimatedUsageUsd: 1.5,
     });
     const used = (await queue()).accounts[0];
+    expect(used?.status).toMatchObject({
+      dailyBudget: { kind: 'estimated_usage', usd: 1 },
+      today: { budgetUsed: true, usage: { runs: 1, estimatedUsageUsd: 1.5 } },
+    });
     expect(used?.unavailable).toEqual({
       why: 'account_budget_used',
       account: ref,
