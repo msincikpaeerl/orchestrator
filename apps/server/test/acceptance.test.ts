@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createTestHome,
@@ -1264,6 +1264,194 @@ describe('lot 4 step E: usage limits resumed by the scheduler, real server and d
       await finishes(first.id);
       expect((await ticket(2)).attemptCount).toBe(0);
       await h.call('POST', `/api/runs/${second.id}/stop`);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('lot 4 step G: a machine offline during a run, real server and daemon', () => {
+  beforeEach(async () => {
+    await startHarness({
+      gitOnFakeGitHub: true,
+      now: () => new Date(Date.now() + ahead),
+    });
+  });
+
+  const MINUTE = 60_000;
+  const tick = async () =>
+    (await h.t.schedulerTick()).started.map((start) => `${start.kind} ${start.ticket}`);
+  /** The agent commits, says it got there, then works on for a minute (it is stopped first). */
+  const committing = {
+    turns: [
+      {
+        steps: [
+          commit('contact.html', 'Add the contact form'),
+          { do: 'bash' as const, command: 'touch working' },
+          { do: 'sleep' as const, ms: 60_000 },
+        ],
+      },
+    ],
+  };
+  const reviewing = {
+    turns: [
+      {
+        steps: [
+          { do: 'text' as const, text: 'Reviewing the contact form.' },
+          { do: 'sleep' as const, ms: 60_000 },
+        ],
+      },
+    ],
+  };
+  const working = (runId: string) =>
+    until('the agent at work', async () =>
+      (await readdir(join(home.paths.home, 'worktrees', runId)).catch((): string[] => [])).includes(
+        'working',
+      ),
+    );
+  const theDaemon = () => {
+    const daemon = daemons[0];
+    if (!daemon) throw new Error('no daemon');
+    return daemon;
+  };
+  async function offline(machineId: string) {
+    await stopDaemon(theDaemon());
+    await until('the machine offline', async () => !(await machine(machineId)).online);
+  }
+  async function online(machineId: string) {
+    startDaemon();
+    await until('the machine online', async () => (await machine(machineId)).online);
+  }
+  const latestRun = async () => {
+    const runs = await h.t.db.select().from(schema.runs);
+    const last = runs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    if (!last) throw new Error('no run');
+    return last;
+  };
+
+  it(
+    'back before Runs of an offline machine fail after, the run goes on; back after it, failed, its session stopped and its end kept',
+    async () => {
+      await fake.play(committing);
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      const started = await runNow();
+      await working(started.id);
+
+      // Offline 9 minutes: nothing fails, and the run goes on with the session it kept.
+      await offline(machineId);
+      ahead += 9 * MINUTE;
+      expect(await tick()).toEqual([]);
+      await online(machineId);
+      expect((await run(started.id)).status).toBe('running');
+      expect(sessionAlive(started.id)).toBe(true);
+
+      // Offline 11 minutes: failed at the scheduler's check, not counted.
+      await offline(machineId);
+      ahead += 11 * MINUTE;
+      expect(await tick()).toEqual([]);
+      expect(await run(started.id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'machine_offline',
+      });
+      expect(await ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+      expect(sessionAlive(started.id)).toBe(true);
+
+      // Back: the session is stopped (not active), its end push and branch report are kept.
+      await online(machineId);
+      await until('the session stopped', () => Promise.resolve(!sessionAlive(started.id)));
+      await until('the end reported', async () => (await run(started.id)).branch.head !== null);
+      expect(await run(started.id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'machine_offline',
+        branch: { commits: [{ subject: 'Add the contact form' }] },
+        push: { result: { status: 'pushed' } },
+      });
+      expect(h.github.branches(h.github.repository('octo-owner', 'bakery')).has(BRANCH)).toBe(true);
+
+      // Laptop is released by its reconnection: the ticket starts again there.
+      await fake.play({ turns: [{ steps: [{ do: 'text', text: 'Reading the ticket.' }] }] });
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const next = await latestRun();
+      expect(next.machineId).toBe(machineId);
+      await h.call('POST', `/api/runs/${next.id}/stop`);
+      await until('the session closed', async () => !(await run(next.id)).sessionAlive);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a daemon restarted without a run it had: the run fails at its hello, and starts again there',
+    async () => {
+      await fake.play(committing);
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      const started = await runNow();
+      await working(started.id);
+
+      // The daemon lost the run: its session, its record and its worktree are gone. (A record
+      // lost alone, its worktree left, would make the next run's preparation fail: the daemon
+      // leaves a worktree it has no record of as it is.)
+      await offline(machineId);
+      tmux('kill-session', '-t', `orch-${started.id}`);
+      await rm(join(home.paths.home, 'runs', started.id), { recursive: true, force: true });
+      const bare = join(home.paths.home, 'repos', 'octo-owner', 'bakery.git');
+      const worktree = join(home.paths.home, 'worktrees', started.id);
+      const removed = spawnSync(
+        join(home.bin, 'git'),
+        ['-C', bare, 'worktree', 'remove', '--force', worktree],
+        { env: home.env },
+      );
+      expect(removed.status, removed.stderr.toString()).toBe(0);
+      ahead += MINUTE;
+      await fake.play({ turns: [{ steps: [{ do: 'text', text: 'Reading the ticket.' }] }] });
+      await online(machineId);
+      expect(await run(started.id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'machine_offline',
+      });
+      expect(await ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const next = await latestRun();
+      await until('the next run running', async () => (await run(next.id)).status === 'running');
+      await h.call('POST', `/api/runs/${next.id}/stop`);
+      await until('the session closed', async () => !(await run(next.id)).sessionAlive);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a review run on a machine offline too long: the ticket stays in review, "Review did not finish"',
+    async () => {
+      await fake.play({
+        turns: [{ steps: [commit('contact.html', 'Add the contact form'), submit] }],
+      });
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      const built = await runNow();
+      await until('the run succeeded and ended', async () => {
+        await h.t.ciTick();
+        return endedSucceeded(built.id);
+      });
+      await fake.play(reviewing);
+      expect(await tick()).toEqual(['review WEB-1']);
+      const review = await latestRun();
+      await until('the review running', async () => (await run(review.id)).status === 'running');
+
+      await offline(machineId);
+      ahead += 11 * MINUTE;
+      expect(await tick()).toEqual([]);
+      expect(await run(review.id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'machine_offline',
+      });
+      expect(await ticket()).toMatchObject({ status: 'in_review', attemptCount: 0 });
+      const items = (await json((v) => NeedsYouResponse.parse(v), 'GET', '/api/needs-you')).items;
+      expect(items.map((item) => item.type)).toContain('review_not_finished');
+
+      await online(machineId);
+      await until('the session stopped', () => Promise.resolve(!sessionAlive(review.id)));
+      expect((await run(review.id)).status).toBe('failed');
+      expect(await tick()).toEqual([]);
     },
     TIMEOUT,
   );
