@@ -17,6 +17,7 @@ import { runPath } from '../runs/text';
 import {
   RUN_NOW_AFTER_TRY_AGAIN,
   contradictingCriterionText,
+  holdBoxText,
   requestChangesText,
 } from './change-text';
 import { markDoneWarning, ticketRef } from './text';
@@ -378,7 +379,8 @@ export function RequestChangesAction({
   filledIn = '',
 }: {
   ticket: TicketAddress;
-  onRequested: () => void;
+  /** `held`: the hold box was checked, so no **Run now** is offered (owner's new answer 2). */
+  onRequested: (held: boolean) => void;
   /** What happens, from `requestChangesText`: on Awaiting merge it names the approval or skip. */
   text?: string;
   /**
@@ -390,19 +392,21 @@ export function RequestChangesAction({
 }) {
   const [asking, setAsking] = useState(false);
   const [comment, setComment] = useState('');
+  const [hold, setHold] = useState(false);
   const [missing, setMissing] = useState(false);
   // `onRequested` is called before the screens are read again: the ticket then leaves
   // `in_review` and this button, with any callback given to `mutate`, is gone.
   const request = useMutation({
     mutationFn: (body: RequestChangesRequest) =>
       api('POST', ticketApi(ticket, '/request-changes'), TicketDetail, body),
-    onSuccess: (changed) => {
-      onRequested();
+    onSuccess: (changed, body) => {
+      onRequested(body.hold === true);
       return ticketsChanged(changed);
     },
     onError: () => ticketsChanged(),
   });
   const ref = ticketRef(ticket.projectKey, ticket.number);
+  const holdBox = holdBoxText(ref);
   return (
     <>
       <Button
@@ -429,11 +433,12 @@ export function RequestChangesAction({
               return;
             }
             request.mutate(
-              { comment: comment.trim() },
+              { comment: comment.trim(), hold },
               {
                 onSuccess: () => {
                   setAsking(false);
                   setComment('');
+                  setHold(false);
                 },
               },
             );
@@ -454,6 +459,20 @@ export function RequestChangesAction({
               setMissing(false);
             }}
           />
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={hold}
+              onChange={(event) => {
+                setHold(event.target.checked);
+              }}
+            />
+            <span>
+              {holdBox.label}
+              <span className="block text-sm text-slate-600">{holdBox.hint}</span>
+            </span>
+          </label>
         </ConfirmDialog>
       )}
     </>

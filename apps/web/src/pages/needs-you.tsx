@@ -41,6 +41,7 @@ import { readyForReviewText, reviewNotFinishedText } from '../tickets/review-tex
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { ciTimeoutItemText } from '../runs/ci-outcome-text';
 import { downloadFailedText, showsGitHubWords } from '../runs/download-text';
+import { ciCancelledText, machineFailuresText } from '../runs/machine-failures-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
 import { HeadMovedLines, warningClass } from '../tickets/pull-request-lines';
 import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
@@ -56,6 +57,8 @@ function itemKey(item: NeedsYouItem): string {
     case 'review_not_finished':
     case 'push_failed':
     case 'download_failed':
+    case 'ci_cancelled':
+    case 'machine_failures':
     case 'pull_request_not_opened':
     case 'ci_timeout':
     case 'ticket_stopped':
@@ -160,8 +163,8 @@ function WorkItemCard({
             <MarkDone ticket={item.ticket} />
             <RequestChangesAction
               ticket={item.ticket}
-              onRequested={() => {
-                onChangesRequested(item.ticket);
+              onRequested={(held) => {
+                if (!held) onChangesRequested(item.ticket);
               }}
             />
             {item.runId !== null && (
@@ -356,6 +359,73 @@ function DownloadFailedCard({
   );
 }
 
+/** CI cancelled because the branch changed on GitHub (lot 4 step D2b): **Run now**. */
+function CiCancelledCard({ item }: { item: Extract<NeedsYouItem, { type: 'ci_cancelled' }> }) {
+  const { title, detail } = ciCancelledText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <RunNowAction ticket={item.ticket} />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link to={runPath(item.runId)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * "<ticket> could not start on <machine>" (07, section 4; lot 4 step D2b): each failure the
+ * machine caused, and **Run now**.
+ */
+function MachineFailuresCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'machine_failures' }>;
+}) {
+  const { title, detail, failures } = machineFailuresText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      <ul aria-label="Failures" className="list-disc pl-5 text-slate-700">
+        {failures.map((failure, index) => (
+          <li key={index}>{failure}</li>
+        ))}
+      </ul>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <div className="flex flex-wrap items-start gap-2">
+        <RunNowAction ticket={item.ticket} />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <Link to={`/machines/${item.machine.id}`} className="text-blue-700 underline">
+          Open the machine
+        </Link>
+        <Link
+          to={ticketPath(item.ticket.projectKey, item.ticket.number)}
+          className="text-blue-700 underline"
+        >
+          Open the ticket
+        </Link>
+        <HelpLink page="runs#when-a-machine-keeps-failing-a-ticket">What to do</HelpLink>
+      </div>
+    </Card>
+  );
+}
+
 /** A ticket's **Cancel**, which needs the ticket's dependents for its dialog. */
 function Cancel({ ticket }: { ticket: TicketAddress }) {
   const detail = useTicket(ticket.projectKey, ticket.number);
@@ -480,8 +550,8 @@ function ToMergeCard({
           ticket={item.ticket}
           text={awaitingMergeRequestText(item.review)}
           filledIn={item.conflict?.request ?? ''}
-          onRequested={() => {
-            onChangesRequested(item.ticket);
+          onRequested={(held) => {
+            if (!held) onChangesRequested(item.ticket);
           }}
         />
       </div>
@@ -751,6 +821,10 @@ export function NeedsYouPage() {
                 <PushFailedCard item={item} />
               ) : item.type === 'download_failed' ? (
                 <DownloadFailedCard item={item} />
+              ) : item.type === 'ci_cancelled' ? (
+                <CiCancelledCard item={item} />
+              ) : item.type === 'machine_failures' ? (
+                <MachineFailuresCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
                 <PullRequestNotOpenedCard item={item} />
               ) : item.type === 'pull_request_closed' ? (

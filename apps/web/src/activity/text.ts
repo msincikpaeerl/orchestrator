@@ -8,13 +8,20 @@ import {
   type EventLogEntry,
   type EventPayload,
   type EventType,
+  type ReleaseAction,
 } from '@orchestrator/protocol';
 import { formatDate, formatDateTime, permissionLabel } from '../github/text';
 import { budgetText, scheduleText } from '../machines/schedule-text';
 import { concurrentRuns, planLabel } from '../machines/text';
 import { amount } from '../settings/text';
 import { branchProtectionLabel, harnessElement, kindLabel, stepLabel } from '../projects/text';
-import { causeText, failureText, pauseText, runStatusLabel } from '../runs/text';
+import {
+  causeText,
+  failureText,
+  machineFailureText,
+  pauseText,
+  runStatusLabel,
+} from '../runs/text';
 import { keptReasonText } from '../tickets/branch-clean-up-text';
 import { checkLabel, priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
@@ -71,6 +78,9 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.ci_checked_again': 'CI checked again',
   'ticket.stopped': 'Ticket stopped',
   'ticket.tried_again': 'Ticket tried again',
+  'ticket.held': 'Ticket held from the scheduler',
+  'ticket.released': 'Ticket released',
+  'ticket.could_not_start': 'Ticket could not start on a machine',
   'ticket.branch_deleted': 'Ticket branch deleted on GitHub',
   'ticket.branch_kept': 'Ticket branch kept on GitHub',
   'ticket.branch_pushed_again': 'Ticket branch on GitHub again',
@@ -136,6 +146,16 @@ export const actorLabel: Record<EventActor, string> = {
   system: 'Orchestrator',
   cli: 'Server command',
   agent: 'Agent',
+};
+
+/** What released a hold (lot 4 step D2b). */
+const releaseText: Record<ReleaseAction, string> = {
+  run_now: 'by your Run now',
+  start_review: 'by your Start review',
+  request_changes: 'by your Request changes',
+  skip_review: 'by your Skip review',
+  cancel: 'as you cancelled it',
+  mark_done: 'as you marked it as done',
 };
 
 const ticketFieldLabel: Record<string, string> = {
@@ -511,6 +531,19 @@ const describe: { [T in EventType]: Describe<T> } = {
       : `: stopped after ${String(p.count)} failed attempt${p.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(p.limit)})`,
   ],
   'ticket.tried_again': (_p, c) => [c.ticket, ': you used Try again; its counts start again'],
+  'ticket.held': (p, c) => [
+    c.ticket,
+    p.cause === 'request_changes'
+      ? ': held so you can edit its acceptance criteria first; the scheduler does not start the fix until you use Run now'
+      : p.cause === 'stop_review'
+        ? ': held after you stopped its review; the scheduler does not start it again until you use Start review'
+        : ': held after you stopped its run; the scheduler does not start it again until you use Run now',
+  ],
+  'ticket.released': (p, c) => [c.ticket, `: no longer held, ${releaseText[p.action]}`],
+  'ticket.could_not_start': (p, c) => [
+    c.ticket,
+    `: could not start on ${p.machine}, ${String(p.count)} failure${p.count === 1 ? '' : 's'} in a row caused by the machine (${p.causes.map((cause) => machineFailureText[cause]).join('; ')}); it waits for you in Needs you (Machine failures before asking you: ${String(p.limit)})`,
+  ],
   'ticket.ci_checked_again': (p, c) => {
     const commit = p.commit === '' ? '' : ` for commit ${p.commit.slice(0, 7)}`;
     switch (p.outcome) {

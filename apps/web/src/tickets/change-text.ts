@@ -63,6 +63,17 @@ export function contradictingCriterionText(ref: string): string {
   return `If your request contradicts one of the acceptance criteria, edit that criterion too: once ${ref} is back in To do, use Edit on its page. Until then, the agent does what your request asks and says so when it reports on that criterion.`;
 }
 
+/**
+ * The dialog's hold box (owner's new answer 2, lot 4 step A; 02, section 6.4): unchecked, the fix
+ * starts by itself; checked, the ticket is held until Run now.
+ */
+export function holdBoxText(ref: string): { label: string; hint: string } {
+  return {
+    label: `Hold ${ref} so I can edit its acceptance criteria first`,
+    hint: `The scheduler then does not start the fix until you use Run now on ${ref}.`,
+  };
+}
+
 /** What **Request changes** does on **Awaiting merge**, naming the approval or the skip. */
 export function awaitingMergeRequestText(
   review: { kind: 'approved'; commit: string } | { kind: 'skipped' } | null,

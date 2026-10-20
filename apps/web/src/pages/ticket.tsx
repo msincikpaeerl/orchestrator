@@ -35,7 +35,7 @@ import {
   type CleanUpLine,
 } from '../tickets/branch-clean-up-text';
 import { branchStateText, pushedText, pushFailureText } from '../tickets/branch-text';
-import { BlockedBadge, StoppedBadge } from '../tickets/board';
+import { BlockedBadge, HeldBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
@@ -61,6 +61,7 @@ import {
   purposeLabel,
   runStateText,
   runPath,
+  ticketHoldText,
   ticketUsageText,
   usageText,
 } from '../runs/text';
@@ -148,8 +149,9 @@ function Actions({ project, ticket }: { project: Project; ticket: TicketDetail }
           filledIn={
             ticket.status === 'awaiting_merge' ? (ticket.pullRequest.conflict?.request ?? '') : ''
           }
-          onRequested={() => {
-            setOfferRunNow(true);
+          onRequested={(held) => {
+            // Held: the owner edits first, so no Run now is offered (owner's new answer 2).
+            if (!held) setOfferRunNow(true);
           }}
         />
       )}
@@ -836,7 +838,13 @@ function TicketContent({ project, number }: { project: Project; number: number }
             </span>
             {showsBlocked(data) && <BlockedBadge />}
             {data.stop && <StoppedBadge />}
+            {data.held && <HeldBadge />}
           </div>
+          {data.held && (
+            <p aria-label="Held" className="break-words text-slate-800">
+              {ticketHoldText[data.held.cause]}
+            </p>
+          )}
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
             <dt className="text-slate-600">Type</dt>
             <dd>{typeLabel[data.type]}</dd>

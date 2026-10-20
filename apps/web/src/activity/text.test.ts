@@ -396,6 +396,21 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     cause: 'review_rounds',
     commentId: COMMENT_ID,
   },
+  'ticket.held': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    cause: 'stop_run',
+    runId: '3f1e0e8c-3333-4000-8000-000000000000',
+  },
+  'ticket.released': { project: 'WEB', ticket: 'WEB-12', cause: 'stop_run', action: 'run_now' },
+  'ticket.could_not_start': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    machine: 'Laptop',
+    count: 2,
+    limit: 2,
+    causes: ['dispatch_timeout', 'machine_offline'],
+  },
   'ticket.ci_checked_again': {
     project: 'WEB',
     ticket: 'WEB-12',
