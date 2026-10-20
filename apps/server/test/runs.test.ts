@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { schema } from '@orchestrator/db';
+import { migrationsFolder } from '@orchestrator/db/testing';
 import {
   AccountListResponse,
   ApiError,
@@ -1799,6 +1802,102 @@ describe('usage limits (07, section 5.2)', () => {
     const resumed = await call('POST', `/api/runs/${created.id}/resume`);
     expect(resumed.statusCode, resumed.body).toBe(200);
     expect(Run.parse(resumed.json()).status).toBe('dispatched');
+  });
+
+  // The waiting time split between the owner, CI and the quota (07, section 7; lot 4 step H): each
+  // period moved back in time in the database, as if it had lasted that long.
+  it('splits the time waiting between CI and the usage limit, the working time apart', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    await working(daemon, created.id);
+    const lasted = async (minutes: number) => {
+      const [row] = await t.db
+        .select({ since: schema.runs.statusSince })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, created.id));
+      if (!row) throw new Error('run not found');
+      await t.db
+        .update(schema.runs)
+        .set({ statusSince: new Date(row.since.getTime() - minutes * 60_000) })
+        .where(eq(schema.runs.id, created.id));
+    };
+    await lasted(5);
+    // The session idle waiting for CI (lot 3 step G1a), as a daemon reports it.
+    const waitingCi = state(created.id, { state: 'working' });
+    expect(
+      await report(daemon, {
+        ...waitingCi,
+        payload: { ...waitingCi.payload, state: 'waiting_ci' },
+      }),
+    ).toEqual({ ok: true });
+    await lasted(7);
+    await report(daemon, state(created.id, { state: 'working' }));
+    await lasted(1);
+    await report(daemon, suspected(created.id));
+    await lasted(10);
+    const resumed = await call('POST', `/api/runs/${created.id}/resume`);
+    expect(resumed.statusCode, resumed.body).toBe(200);
+
+    const times = await run(created.id);
+    const inMinutes = (ms: number) => Math.round(ms / 60_000);
+    expect(inMinutes(times.workingMs)).toBe(6);
+    expect(inMinutes(times.waitingMs)).toBe(17);
+    expect({
+      ownerMs: inMinutes(times.waiting.ownerMs),
+      ciMs: inMinutes(times.waiting.ciMs),
+      quotaMs: inMinutes(times.waiting.quotaMs),
+    }).toEqual({ ownerMs: 0, ciMs: 7, quotaMs: 10 });
+    expect(times.waiting.ownerMs + times.waiting.ciMs + times.waiting.quotaMs).toBe(
+      times.waitingMs,
+    );
+  });
+
+  it('gives a run of an earlier version its split from its status events (migration 0041)', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    const at = (minutes: number) =>
+      new Date(Date.parse('2026-10-20T20:00:00.000Z') + minutes * 60_000);
+    await t.db
+      .delete(schema.events)
+      .where(and(eq(schema.events.entityType, 'run'), eq(schema.events.entityId, created.id)));
+    // 3 minutes waiting for the owner, 10 for the usage limit; one more period for the owner
+    // still going on, not in `waiting_ms` yet; the 2 other minutes of `waiting_ms` waited for CI.
+    const periods: [number, string][] = [
+      [0, 'running'],
+      [1, 'waiting_human'],
+      [4, 'running'],
+      [6, 'paused_quota'],
+      [16, 'dispatched'],
+      [17, 'running'],
+      [20, 'waiting_human'],
+    ];
+    await t.db.insert(schema.events).values(
+      periods.map(([minute, to]) => ({
+        createdAt: at(minute),
+        actor: 'daemon',
+        entityType: 'run',
+        entityId: created.id,
+        type: 'run.status_changed',
+        payload: { to },
+      })),
+    );
+    await t.db
+      .update(schema.runs)
+      .set({ waitingMs: 15 * 60_000 })
+      .where(eq(schema.runs.id, created.id));
+
+    // The migration's backfill, its two last statements, run again on these rows.
+    const migration = await readFile(join(migrationsFolder, '0041_waiting_split.sql'), 'utf8');
+    for (const statement of migration.split('--> statement-breakpoint').slice(-2)) {
+      await t.pool.query(statement);
+    }
+    expect((await run(created.id)).waiting).toEqual({
+      ownerMs: 3 * 60_000,
+      ciMs: 2 * 60_000,
+      quotaMs: 10 * 60_000,
+    });
   });
 
   it('refuses Resume when the run is not paused, or its machine cannot take it', async () => {

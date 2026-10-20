@@ -223,6 +223,8 @@ export {
   RunLogResponse,
   RunRefusal,
   RunStatus,
+  RunWaitKind,
+  runWaitKind,
   WAITING_RUN_STATUSES,
   WORKING_RUN_STATUSES,
   RunTicketAction,

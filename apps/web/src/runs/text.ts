@@ -1,8 +1,8 @@
 import {
   ACTIVE_RUN_STATUSES,
   PROGRESS_CARD_MAX_LENGTH,
-  WAITING_RUN_STATUSES,
   WORKING_RUN_STATUSES,
+  runWaitKind,
   type AccountStatus,
   type Comment,
   type BlockingItem,
@@ -18,6 +18,7 @@ import {
   type RunPurpose,
   type RunRefusal,
   type RunStatus,
+  type RunWaitKind,
   type TicketDetail,
   type TicketSummary,
 } from '@orchestrator/protocol';
@@ -336,25 +337,56 @@ export function durationText(ms: number): string {
   return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
 }
 
+/** A run's times at a moment: working, waiting, and waiting split by what for (07, section 7). */
+export interface RunTimesAt {
+  workingMs: number;
+  waitingMs: number;
+  waiting: Run['waiting'];
+}
+
 /**
  * The run's working and waiting times at `now`: the stored totals, plus the current period of an
- * active run (01, section 3.7).
+ * active run (01, section 3.7), its waiting time to what it waits for (lot 4 step H).
  */
 export function runTimes(
-  run: Pick<Run, 'status' | 'workingMs' | 'waitingMs' | 'statusSince'> & {
+  run: Pick<Run, 'status' | 'workingMs' | 'waitingMs' | 'waiting' | 'statusSince'> & {
     ci?: Run['ci'];
   },
   now: number,
-): { workingMs: number; waitingMs: number } {
-  const current = Math.max(0, now - new Date(run.statusSince).getTime());
+): RunTimesAt {
+  const current = isActive(run.status) ? Math.max(0, now - new Date(run.statusSince).getTime()) : 0;
   // A run waiting for CI is running, its time waiting (lot 3 step G1a).
-  const waitingForCi = run.status === 'running' && (run.ci?.waitingSince ?? null) !== null;
+  const waitingFor = runWaitKind(run.status, (run.ci?.waitingSince ?? null) !== null);
+  const add = (kind: RunWaitKind) => (waitingFor === kind ? current : 0);
   return {
     workingMs:
-      run.workingMs + (WORKING_RUN_STATUSES.includes(run.status) && !waitingForCi ? current : 0),
-    waitingMs:
-      run.waitingMs + (WAITING_RUN_STATUSES.includes(run.status) || waitingForCi ? current : 0),
+      run.workingMs +
+      (WORKING_RUN_STATUSES.includes(run.status) && waitingFor === null ? current : 0),
+    waitingMs: run.waitingMs + (waitingFor === null ? 0 : current),
+    waiting: {
+      ownerMs: run.waiting.ownerMs + add('owner'),
+      ciMs: run.waiting.ciMs + add('ci'),
+      quotaMs: run.waiting.quotaMs + add('quota'),
+    },
   };
+}
+
+/**
+ * "working 12 min · waiting 1 h 5 min (for you 5 min, for CI 1 h)": the waiting time split between
+ * the owner, CI and the quota, the parts with no time left out (07, section 7; lot 4 step H).
+ */
+export function runTimesText(times: RunTimesAt): string {
+  const parts = [
+    ['for you', times.waiting.ownerMs],
+    ['for CI', times.waiting.ciMs],
+    ['for the usage limit', times.waiting.quotaMs],
+  ] as const;
+  const split = parts
+    .filter(([, ms]) => ms >= 1000)
+    .map(([label, ms]) => `${label} ${durationText(ms)}`);
+  return `working ${durationText(times.workingMs)} · waiting ${durationText(times.waitingMs)}${
+    split.length === 0 ? '' : ` (${split.join(', ')})`
+  }`;
 }
 
 /** "$0.42 (estimated by Claude Code)", or "Not known yet". */

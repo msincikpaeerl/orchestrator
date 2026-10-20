@@ -818,6 +818,14 @@ export const runs = pgTable(
      */
     workingMs: bigint('working_ms', { mode: 'number' }).notNull().default(0),
     waitingMs: bigint('waiting_ms', { mode: 'number' }).notNull().default(0),
+    /**
+     * `waiting_ms` split by what the run waited for (07, section 7; lot 4 step H): the owner
+     * (`waiting_human`), CI (`running`, its session idle waiting for CI) and the quota
+     * (`paused_quota`). A run of an earlier version gets them from its `run.status_changed` events.
+     */
+    waitingOwnerMs: bigint('waiting_owner_ms', { mode: 'number' }).notNull().default(0),
+    waitingCiMs: bigint('waiting_ci_ms', { mode: 'number' }).notNull().default(0),
+    waitingQuotaMs: bigint('waiting_quota_ms', { mode: 'number' }).notNull().default(0),
     /** When the current status began. */
     statusSince: timestamp('status_since', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
