@@ -100,6 +100,11 @@ test('a run paused on a suspected usage limit is resumed from Needs you', async 
 
   const paused = item(page, 'Run paused: possible Claude usage limit');
   await expect(paused).toContainText('the run may pause again if it was the limit');
+  // From version 0.5.0 the scheduler resumes it by itself after Quota wait when the reset time
+  // is unknown (lot 4 step E).
+  await expect(paused).toContainText(
+    /The scheduler resumes it by itself at .+ \(1 hour after it paused\), if its Claude account and machine can take it then\./,
+  );
   await expect(accountLines(page)).toHaveText('Personal: Available');
   await expectFitsScreen(page);
 
@@ -139,7 +144,11 @@ test('a limit without a reset time shows an estimated time', async ({ page }) =>
   await expect(accountLines(page)).toHaveText(/^Personal: Limited until .+ \(estimated\)$/);
   const paused = item(page, 'Run paused: Claude usage limit reached');
   await expect(paused).toContainText(/you can resume after .+ \(estimated\)\./);
+  await expect(paused).toContainText(
+    /The scheduler resumes it by itself once the limit resets, at .+\./,
+  );
   await expect(paused.getByRole('button', { name: 'Resume' })).toBeDisabled();
+  await expectFitsScreen(page);
 });
 
 test('finished work is sent back with Request changes, then Run now starts the next run', async ({
