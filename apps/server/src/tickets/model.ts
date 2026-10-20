@@ -9,6 +9,7 @@ import {
   TicketCreator,
   TicketPriority,
   TicketStatus,
+  TicketHold,
   TicketStop,
   TicketType,
   type AgentAuthorship,
@@ -112,6 +113,29 @@ export async function activeRuns(
   return active;
 }
 
+/** The ticket's hold as stored; null when it is not held. */
+export function storedHold(row: Pick<TicketRow, 'held'>): TicketHold | null {
+  return row.held === null ? null : TicketHold.parse(row.held);
+}
+
+/**
+ * The hold that applies now, for the screens and the scheduler: a stopped run's hold and the
+ * Request changes box's while the ticket is in To do, a stopped review's while it is in review
+ * (`commit`, when given, must be the commit the stopped review was for).
+ */
+export function applyingHold(
+  row: Pick<TicketRow, 'held' | 'status'>,
+  commit?: string,
+): TicketHold | null {
+  const hold = storedHold(row);
+  if (hold === null) return null;
+  if (hold.cause === 'stop_review') {
+    if (row.status !== 'in_review') return null;
+    return commit === undefined || hold.commit === commit ? hold : null;
+  }
+  return row.status === 'todo' ? hold : null;
+}
+
 /** The API's view of a ticket. Parsing the text columns catches a value no code should write. */
 export function toTicketSummary(
   row: TicketRow,
@@ -131,6 +155,7 @@ export function toTicketSummary(
     status: TicketStatus.parse(row.status),
     blocked,
     stop: row.stopped === null ? null : TicketStop.parse(row.stopped),
+    held: applyingHold(row),
     assignee,
     createdBy: TicketCreator.parse(row.createdBy),
     createdByAgent: authorship(row.createdByProfileId, row.createdByRunId, profiles),

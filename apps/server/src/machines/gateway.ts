@@ -56,6 +56,11 @@ export interface GatewayOptions {
   providedDaemonBuild: () => string | null;
   /** Milliseconds in one second of the heartbeat and offline settings; tests shorten it. */
   secondMs?: number;
+  /**
+   * The application's clock, for when a machine connected (lot 4 step D2b): the scheduler's
+   * machine rule compares it with the failures' times, which use the same clock.
+   */
+  now?: () => Date;
 }
 
 /**
@@ -532,6 +537,8 @@ export class DaemonGateway {
           doctor: payload.doctor,
           detectedCapabilities: detected,
           lastHeartbeatAt: now,
+          // Releases the machines left out for a ticket after a failure (07, section 4).
+          connectedAt: this.options.now?.() ?? now,
           daemonIncompatibleSince: null,
           daemonOutdatedSince: outdated
             ? ((sameDaemon ? machine.daemonOutdatedSince : null) ?? now)

@@ -47,7 +47,7 @@ import {
   type ServerMessage,
   McpPermission,
   runMcpTools,
-  type RunPurpose,
+  RunPurpose,
   type SettingValues,
 } from '@orchestrator/protocol';
 import {
@@ -109,6 +109,17 @@ import {
   pushedCommits,
   recordPush,
 } from '../tickets/branch.js';
+import {
+  applyingHold,
+  askedMachine,
+  clearMachineFailures,
+  holdTicket,
+  leftOutMachines,
+  machineFailureOf,
+  machineFailures,
+  recordRunEnd,
+  releaseHold,
+} from '../tickets/holds.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import { fixReviewTicket, implementTicket, reviewTicket } from './first-message.js';
 import { standingRequest } from '../tickets/changes.js';
@@ -423,6 +434,21 @@ export class RunService {
           ...(facts.endReason === undefined ? {} : { endReason: facts.endReason }),
           ...(facts.detail === undefined ? {} : { detail: facts.detail }),
         },
+        at: now,
+      });
+    }
+    if (terminal && from !== to && locked.ticket) {
+      // The failures its machine caused, in a row, or every count again (07, section 4).
+      await recordRunEnd(tx, {
+        project: locked.project,
+        ticket: locked.ticket,
+        machine: locked.machine,
+        runId: locked.run.id,
+        failure: machineFailureOf(
+          RunPurpose.parse(locked.run.purpose),
+          cause,
+          facts.failureReason ?? null,
+        ),
         at: now,
       });
     }
@@ -1114,6 +1140,7 @@ export class RunService {
       if (ticketRefused !== null || ticket.assigneeProfileId === null) {
         throw refused(ticketRefused ?? { reason: 'no_assignee' });
       }
+      await this.schedulerGuard(tx, ticket, starter);
       // A request for changes standing: the run addresses it (07, section 3; lot 3 step I).
       const request = standingRequest(ticket);
       const purpose = request === null ? ('implement' as const) : ('fix_review' as const);
@@ -1312,6 +1339,7 @@ export class RunService {
         now,
       });
       if (!started) throw new Error('ticket left todo during Run now');
+      if (starter.by === 'owner') await this.ownerStart(tx, project, ticket, 'run_now', now);
 
       if (lostWork) {
         const from =
@@ -1390,6 +1418,7 @@ export class RunService {
         );
       }
       const { project, ticket, source } = subject;
+      await this.schedulerGuard(tx, ticket, starter, subject.commit);
       const [profile] = await tx
         .select()
         .from(schema.agentProfiles)
@@ -1485,6 +1514,7 @@ export class RunService {
         },
         at: now,
       });
+      if (starter.by === 'owner') await this.ownerStart(tx, project, ticket, 'start_review', now);
       if (starter.by === 'scheduler') {
         // Who started it, on the ticket (lot 4 step D2a); the ticket stays in review.
         const [comment] = await tx
@@ -1784,6 +1814,48 @@ export class RunService {
    * holding the ticket's commits not on GitHub when there is one (`holding`), else the preferred
    * machine that can take it. A holder revoked gives `lostWork`.
    */
+  /**
+   * The scheduler's start checks again, under the locks, what its queue read (07, sections 1 and
+   * 4; lot 4 step D2b): the owner's hold, the blocking item after a machine's failures, and its
+   * machine left out for the ticket. Refused, the start is left to the next tick.
+   */
+  private async schedulerGuard(
+    tx: Executor,
+    ticket: TicketRow,
+    starter: Starter,
+    reviewCommit?: string,
+  ): Promise<void> {
+    if (starter.by !== 'scheduler') return;
+    if (applyingHold(ticket, reviewCommit) !== null) {
+      throw new Error('the owner holds this ticket: only Run now starts it');
+    }
+    const failures = machineFailures(ticket);
+    if (askedMachine(failures) !== null) {
+      throw new Error('this ticket waits for the owner in Needs you');
+    }
+    const machines = await tx
+      .select({ id: schema.machines.id, connectedAt: schema.machines.connectedAt })
+      .from(schema.machines);
+    if (leftOutMachines(failures, machines).has(starter.machineId)) {
+      throw new Error('the machine the scheduler chose is left out for this ticket');
+    }
+  }
+
+  /**
+   * The owner's **Run now** or **Start review** started a run: the hold released, and every
+   * machine left out for the ticket with it, the "could not start" item gone (07, section 4).
+   */
+  private async ownerStart(
+    tx: Executor,
+    project: ProjectRow,
+    ticket: TicketRow,
+    action: 'run_now' | 'start_review',
+    now: Date,
+  ): Promise<void> {
+    await releaseHold(tx, project, ticket, action, now);
+    await clearMachineFailures(tx, ticket);
+  }
+
   private async chooseMachine(
     tx: Executor,
     input: {
@@ -2269,6 +2341,22 @@ export class RunService {
             : `Run stopped by the owner while machine ${locked.machine.name} was offline: it failed as "machine offline" and does not count as a failed attempt. ${kept}`,
           now: this.now(),
         });
+      }
+      if (locked.ticket) {
+        // Held until the owner's Run now, or Start review for a review (07, section 1).
+        const review = locked.run.purpose === 'review';
+        await holdTicket(
+          tx,
+          locked.project,
+          locked.ticket,
+          {
+            cause: review ? 'stop_review' : 'stop_run',
+            at: this.now().toISOString(),
+            runId: locked.run.id,
+            commit: review ? locked.run.reviewCommit : null,
+          },
+          this.now(),
+        );
       }
       return { locked, online };
     });

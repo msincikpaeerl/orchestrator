@@ -38,6 +38,7 @@ import { runDownload } from './runs/download.js';
 import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
+import { askedMachine, machineFailures } from './tickets/holds.js';
 import { profileLinks, toComment, type TicketRow } from './tickets/model.js';
 import { headMoved, ticketConflict, ticketWatchFailure } from './tickets/pull-request-facts.js';
 
@@ -143,6 +144,8 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
   items.push(...(await toMergeItems(db)));
   items.push(...(await ciTimeoutItems(db)));
   items.push(...(await downloadFailedItems(db)));
+  items.push(...(await ciCancelledItems(db)));
+  items.push(...(await machineFailureItems(db)));
   items.push(...(await stoppedItems(db)));
 
   const paused = await runs.list(
@@ -483,6 +486,86 @@ export async function downloadFailedItems(db: Database): Promise<Items> {
       machine,
       download,
       since: run.endedAt.toISOString(),
+    });
+  }
+  return items;
+}
+
+/**
+ * Tickets whose latest run ended `ci_cancelled` (04, section 5.1; owner's answer 3, lot 4 step A):
+ * CI cancelled on GitHub because the branch changed there. Blocking, with **Run now**, until a new
+ * run of the ticket starts, or the ticket is done or cancelled: the rule of `download_failed`.
+ */
+export async function ciCancelledItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({
+      run: schema.runs,
+      ticket: schema.tickets,
+      projectKey: schema.projects.key,
+      machine: { id: schema.machines.id, name: schema.machines.name },
+    })
+    .from(schema.runs)
+    .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+    .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        eq(schema.runs.failureReason, 'ci_cancelled'),
+        isNotNull(schema.runs.endedAt),
+        sql`${schema.runs.createdAt} = (SELECT max(r.created_at) FROM runs r WHERE r.ticket_id = ${schema.runs.ticketId})`,
+      ),
+    );
+  return rows.flatMap(({ run, ticket, projectKey, machine }) =>
+    run.endedAt === null
+      ? []
+      : [
+          {
+            type: 'ci_cancelled' as const,
+            ticket: { projectKey, number: ticket.number, title: ticket.title },
+            runId: run.id,
+            machine,
+            since: run.endedAt.toISOString(),
+          },
+        ],
+  );
+}
+
+/**
+ * "<ticket> could not start on <machine>" (07, section 4; owner's new answer 1, lot 4 step A): the
+ * failures in a row a machine caused reached **Machine failures before asking you**. Blocking,
+ * with **Run now**, until a new run of the ticket starts, or the ticket is done or cancelled.
+ */
+export async function machineFailureItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ ticket: schema.tickets, projectKey: schema.projects.key })
+    .from(schema.tickets)
+    .innerJoin(schema.projects, eq(schema.projects.id, schema.tickets.projectId))
+    .where(
+      and(
+        eq(schema.projects.status, 'active'),
+        notInArray(schema.tickets.status, ['done', 'cancelled']),
+        sql`${schema.tickets.machineFailures} <> '[]'::jsonb`,
+      ),
+    );
+  if (rows.length === 0) return [];
+  const names = new Map(
+    (
+      await db.select({ id: schema.machines.id, name: schema.machines.name }).from(schema.machines)
+    ).map((machine) => [machine.id, machine.name]),
+  );
+  const items: Items = [];
+  for (const { ticket, projectKey } of rows) {
+    const entry = askedMachine(machineFailures(ticket));
+    if (!entry || entry.asked === null) continue;
+    items.push({
+      type: 'machine_failures',
+      ticket: { projectKey, number: ticket.number, title: ticket.title },
+      machine: { id: entry.machineId, name: names.get(entry.machineId) ?? 'unknown' },
+      failures: entry.failures,
+      limit: entry.asked.limit,
+      since: entry.asked.at,
     });
   }
   return items;
