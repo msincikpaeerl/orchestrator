@@ -15,7 +15,7 @@ import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { PauseButton } from '../machines/account-parts';
 import { compactDayText } from '../machines/schedule-text';
 import { AccountStatusText, QuestionAnswer, RunActions } from '../runs/components';
-import { resumeText, runPath } from '../runs/text';
+import { resumeText, resumesUsedText, runPath } from '../runs/text';
 import {
   AcceptAction,
   CancelAction,
@@ -66,6 +66,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'pull_request_to_merge':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'run_paused':
+    case 'run_resumes_used':
       return `${item.type}-${item.run.id}`;
     case 'no_claude_account':
     case 'no_machine':
@@ -386,6 +387,29 @@ function CiCancelledCard({ item }: { item: Extract<NeedsYouItem, { type: 'ci_can
         >
           Open the ticket
         </Link>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * A paused run the scheduler resumed **Most resumes per run** times (07, section 5.2; lot 4 step
+ * G): blocking, with **Resume** (which starts the count again) and **Stop run**.
+ */
+function ResumesUsedCard({ item }: { item: Extract<NeedsYouItem, { type: 'run_resumes_used' }> }) {
+  const { title, detail } = resumesUsedText(item);
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold break-words text-slate-900">{title}</h2>
+      <TicketTitle ticket={item.ticket} />
+      <p className="break-words text-slate-700">{detail}</p>
+      <p className="text-sm text-slate-600">Paused since {formatDateTime(item.since)}</p>
+      <RunActions run={item.run} />
+      <div className="flex flex-wrap gap-4">
+        <Link to={runPath(item.run.id)} className="text-blue-700 underline">
+          Open the run
+        </Link>
+        <HelpLink page="runs#usage-limits">What to do</HelpLink>
       </div>
     </Card>
   );
@@ -830,6 +854,8 @@ export function NeedsYouPage() {
                 <CiCancelledCard item={item} />
               ) : item.type === 'machine_failures' ? (
                 <MachineFailuresCard item={item} />
+              ) : item.type === 'run_resumes_used' ? (
+                <ResumesUsedCard item={item} />
               ) : item.type === 'pull_request_not_opened' ? (
                 <PullRequestNotOpenedCard item={item} />
               ) : item.type === 'pull_request_closed' ? (

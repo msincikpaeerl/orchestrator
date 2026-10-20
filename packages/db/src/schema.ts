@@ -801,6 +801,12 @@ export const runs = pgTable(
      */
     resumeLeftOut: jsonb('resume_left_out'),
     /**
+     * The scheduler's resumes of the run since it started or since the owner's latest **Resume**,
+     * one taken back when its machine did not take it: at **Most resumes per run**, the scheduler
+     * no longer resumes it and "Needs you" asks the owner (07, section 5.2; lot 4 step G).
+     */
+    schedulerResumes: integer('scheduler_resumes').notNull().default(0),
+    /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.
      */

@@ -513,6 +513,18 @@ const definitions = {
     perProject: false,
     usedFrom: '0.5.0',
   },
+  maxSchedulerResumes: {
+    group: 'scheduler',
+    label: 'Most resumes per run',
+    description:
+      'How many times the scheduler resumes one run paused on a Claude usage limit, detected or possible. Once reached, the run waits for you in Needs you; your own Resume does not count and starts the count again.',
+    unit: 'resumes',
+    min: 1,
+    max: 50,
+    default: 6,
+    perProject: false,
+    usedFrom: '0.5.0',
+  },
 } satisfies Record<string, SettingDefinition>;
 
 export type SettingName = keyof typeof definitions;

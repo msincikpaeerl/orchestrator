@@ -139,6 +139,11 @@ export const Run = z.object({
    * `estimated` when it comes from the fallback delay (02, section 4). Null otherwise.
    */
   resumeAfter: z.object({ at: z.iso.datetime(), estimated: z.boolean() }).nullable(),
+  /**
+   * The scheduler's resumes of the run since its start or the owner's latest **Resume** (07,
+   * section 5.2; lot 4 step G): at **Most resumes per run**, it no longer resumes it.
+   */
+  schedulerResumes: z.int().min(0),
   failureReason: FailureReason.nullable(),
   /** The daemon's fact at the end, when it reported one. */
   endReason: RunEndReason.nullable(),

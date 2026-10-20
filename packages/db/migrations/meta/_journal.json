@@ -274,6 +274,13 @@
       "when": 1792516841083,
       "tag": "0038_quota_resume",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792520418696,
+      "tag": "0039_scheduler_resumes",
+      "breakpoints": true
     }
   ]
 }

@@ -159,6 +159,7 @@ import {
   refusalMessage,
   quotaWait,
   resumeLeftOut,
+  resumesUsed,
   resumeRefusal,
   ticketRefusal,
   ticketWork,
@@ -995,6 +996,8 @@ export class RunService {
           dispatchMessageId: null,
           ackDeadline: null,
           ...(leftOut === null ? {} : { resumeLeftOut: leftOut }),
+          // A resume not taken is not counted: the scheduler's one added 1, the owner's set 0.
+          schedulerResumes: Math.max(0, locked.run.schedulerResumes - 1),
         },
       });
       return;
@@ -2267,10 +2270,12 @@ export class RunService {
    */
   async resume(runId: string, starter: Starter = OWNER): Promise<Run> {
     const { templates } = await this.files();
-    const { dispatchAckTimeoutSeconds, quotaFallbackDelayMinutes } = await resolveSettings(
-      this.db,
-      ['dispatchAckTimeoutSeconds', 'quotaFallbackDelayMinutes'],
-    );
+    const { dispatchAckTimeoutSeconds, quotaFallbackDelayMinutes, maxSchedulerResumes } =
+      await resolveSettings(this.db, [
+        'dispatchAckTimeoutSeconds',
+        'quotaFallbackDelayMinutes',
+        'maxSchedulerResumes',
+      ]);
     const prepared = await this.withRun(runId, async (tx, locked) => {
       const { run, machine } = locked;
       if (run.status !== 'paused_quota') {
@@ -2303,6 +2308,9 @@ export class RunService {
         if (quotaWait(run, now, quotaFallbackDelayMinutes) !== null) {
           throw new Error('the run waits after a suspected usage limit');
         }
+        if (resumesUsed(run, maxSchedulerResumes) !== null) {
+          throw new Error('the run was resumed Most resumes per run times: it waits for the owner');
+        }
       }
       if (run.claudeSessionId === null) {
         throw new Error(`paused run ${run.id} has no Claude session to resume`);
@@ -2320,8 +2328,11 @@ export class RunService {
             dispatchKind: 'resume',
             ackDeadline,
             acknowledgedAt: null,
-            // The owner's Resume takes back a machine left out of the scheduler's resumes.
-            ...(starter.by === 'owner' ? { resumeLeftOut: null } : {}),
+            // The owner's Resume takes back a machine left out of the scheduler's resumes, and
+            // starts the count of the scheduler's resumes again (lot 4 step G).
+            ...(starter.by === 'owner'
+              ? { resumeLeftOut: null, schedulerResumes: 0 }
+              : { schedulerResumes: run.schedulerResumes + 1 }),
           },
         },
       );

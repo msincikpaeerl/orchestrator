@@ -168,6 +168,8 @@ export function blockingItemText(item: BlockingItem, machine: string | null): st
       return 'its review did not finish';
     case 'machine_failures':
       return `it could not start${on}`;
+    case 'run_resumes_used':
+      return 'the scheduler resumed its run as many times as Most resumes per run allows, and it still hits a usage limit';
   }
 }
 
@@ -400,6 +402,21 @@ export function resumeText(reason: QueueReason | null): string {
     default:
       return `The scheduler resumes it by itself once this changes: ${queueReasonText(reason)}`;
   }
+}
+
+/**
+ * A paused run the scheduler resumed **Most resumes per run** times (07, section 5.2; lot 4 step
+ * G), for its blocking "Needs you" item: what happened and what **Resume** and **Stop run** do.
+ */
+export function resumesUsedText(item: { resumes: number; limit: number }): {
+  title: string;
+  detail: string;
+} {
+  const times = `${String(item.resumes)} time${item.resumes === 1 ? '' : 's'}`;
+  return {
+    title: `Run paused: resumed ${times}, still at the usage limit`,
+    detail: `The scheduler resumed this run ${times} after a Claude usage limit, and it still hits a usage limit. Most resumes per run is ${String(item.limit)}, so the scheduler no longer resumes it by itself. Check your Claude usage, then use Resume: it continues the run and starts the count again. Stop run ends it.`,
+  };
 }
 
 /**

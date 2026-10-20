@@ -354,6 +354,18 @@ export function quotaWait(
 }
 
 /**
+ * A paused run the scheduler resumed **Most resumes per run** times (`limit`; 07, section 5.2;
+ * lot 4 step G): it waits for the owner's **Resume** in "Needs you"; null below the limit.
+ */
+export function resumesUsed(
+  run: Pick<RunRow, 'status' | 'schedulerResumes'>,
+  limit: number,
+): Extract<QueueReason, { reason: 'needs_you' }> | null {
+  if (run.status !== 'paused_quota' || run.schedulerResumes < limit) return null;
+  return { reason: 'needs_you', item: 'run_resumes_used', machine: null };
+}
+
+/**
  * The machine of a paused run left out of the scheduler's resumes (07, section 5.2; lot 4 step
  * E): its latest resume was not confirmed in time or was refused, and it has not connected since.
  */

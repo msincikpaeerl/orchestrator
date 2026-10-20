@@ -789,6 +789,7 @@ describe('Needs you after a merge', () => {
       'Download',
       'CI cancelled',
       'Machine',
+      'Resumes',
     ];
     for (const title of titles) await h.createTicket({ title });
     /** Submitted, CI started: its pull request open. */
@@ -801,7 +802,7 @@ describe('Needs you after a merge', () => {
       });
       return { ...run, commit: h.lastPushed ?? '' };
     };
-    for (const number of [1, 2, 3, 4, 5, 6, 10, 12]) {
+    for (const number of [1, 2, 3, 4, 5, 6, 10, 12, 13]) {
       const { runId, commit } = await handedIn(number);
       for (const run of h.github.runs(repo(), commit)) h.github.completeRun(run, []);
       await h.t.ciTick();
@@ -866,6 +867,30 @@ describe('Needs you after a merge', () => {
       for (const run of h.github.runs(repo(), commit)) h.github.cancelRun(run);
       await h.t.ciTick();
     }
+    // 13: a review run the scheduler resumed Most resumes per run times (6), paused again on a
+    // possible limit, which leaves the account available (lot 4 step G).
+    {
+      const run = await h.reviewing(daemon, 13);
+      const answer = await daemon.request({
+        type: 'run.quota_limited',
+        id: randomUUID(),
+        payload: {
+          runId: run.runId,
+          kind: 'suspected',
+          evidence: {
+            signal: 'stop_failure',
+            error: 'overloaded',
+            message: 'API Error: Overloaded',
+            statusLine: null,
+          },
+        },
+      });
+      expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
+      await h.t.db
+        .update(schema.runs)
+        .set({ schedulerResumes: 6 })
+        .where(eq(schema.runs.id, run.runId));
+    }
     // 1: Quality asks a question.
     const asking = await h.reviewing(daemon, 1);
     await h.ok(daemon, asking.runToken, 'ticket_ask', { question: 'Phone number too?' });
@@ -926,7 +951,7 @@ describe('Needs you after a merge', () => {
         ],
       })
       .where(eq(schema.tickets.number, 12));
-    // The machine goes offline with the runs of 1 and 3 active.
+    // The machine goes offline with the runs of 1, 3 and 13 active.
     await daemon.close();
 
     await eventually('every kind shown', async () => {

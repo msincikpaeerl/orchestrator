@@ -13,6 +13,7 @@ import {
   machineFailureText,
   queueReasonText,
   resumeText,
+  resumesUsedText,
   runBranchText,
   runRefusalText,
   ticketUsageText,
@@ -245,6 +246,22 @@ describe('when the scheduler resumes a paused run (lot 4 step E)', () => {
       }),
     ).toBe(
       `This run can only continue on machine Laptop, which did not take its latest resume at ${formatDateTime(until)} (it refused it): the scheduler resumes it again once the machine connects again, or use Resume.`,
+    );
+  });
+});
+
+describe('Most resumes per run (lot 4 step G)', () => {
+  it('says how many times the scheduler resumed the run, the setting, and what Resume does', () => {
+    expect(resumesUsedText({ resumes: 6, limit: 6 })).toEqual({
+      title: 'Run paused: resumed 6 times, still at the usage limit',
+      detail:
+        'The scheduler resumed this run 6 times after a Claude usage limit, and it still hits a usage limit. Most resumes per run is 6, so the scheduler no longer resumes it by itself. Check your Claude usage, then use Resume: it continues the run and starts the count again. Stop run ends it.',
+    });
+    expect(resumesUsedText({ resumes: 1, limit: 1 }).title).toBe(
+      'Run paused: resumed 1 time, still at the usage limit',
+    );
+    expect(queueReasonText({ reason: 'needs_you', item: 'run_resumes_used', machine: null })).toBe(
+      'Waiting for you in Needs you: the scheduler resumed its run as many times as Most resumes per run allows, and it still hits a usage limit.',
     );
   });
 });
