@@ -530,6 +530,12 @@ export const claudeAccounts = pgTable(
     /** `limited_until` is now plus the fallback delay: no reset time was known (07, section 5.2). */
     limitedUntilEstimated: boolean('limited_until_estimated').notNull().default(false),
     /**
+     * The fallback delay of the account's latest limit with no reset time, in minutes: the next
+     * one doubles it, up to **Longest quota wait**, until a run of the account ends a turn without
+     * a limit (07, section 5.2; lot 4 step E). Null when the doubling starts afresh.
+     */
+    quotaWaitMinutes: integer('quota_wait_minutes'),
+    /**
      * Weekly windows in which runs may start (`Schedule`), none meaning always, and the daily
      * budget (`DailyBudget`), none when null; read in the Orchestrator's time zone (lot 4).
      */
@@ -775,6 +781,25 @@ export const runs = pgTable(
     reviewPostPullRequest: integer('review_post_pull_request'),
     reviewPostStartedAt: timestamp('review_post_started_at', { withTimezone: true }),
     reviewPost: jsonb('review_post'),
+    /**
+     * The daemon's latest `run.state` short of `ended` (05, section 4.7): a report following
+     * `idle` other than the pause tells that the agent's turn ended without a usage limit (07,
+     * section 5.2; lot 4 step E).
+     */
+    daemonState: text('daemon_state'),
+    /**
+     * A suspected usage limit (07, section 5.2; owner's answer 9, lot 4 step E): the wait of the
+     * run's latest pause in minutes, doubled at each new pause until a turn ends without a limit,
+     * and when the scheduler resumes it. Null when none applies.
+     */
+    quotaWaitMinutes: integer('quota_wait_minutes'),
+    quotaResumeAt: timestamp('quota_resume_at', { withTimezone: true }),
+    /**
+     * A resume its machine did not confirm in time or refused (`ResumeLeftOut`): the scheduler
+     * does not resume the run again until that machine connects again, or the owner's **Resume**
+     * (07, sections 4 and 5.2; lot 4 step E). Null otherwise.
+     */
+    resumeLeftOut: jsonb('resume_left_out'),
     /**
      * Milliseconds spent in `starting` and `running`, and in `waiting_human` and `paused_quota`,
      * up to `status_since` (01, section 3.7), added at each status change.

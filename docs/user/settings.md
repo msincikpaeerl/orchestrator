@@ -106,5 +106,5 @@ What these limits apply to: see [Machines](machines.md).
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
 | Scheduler check interval (from version 0.5.0) | 30 seconds | 5 to 600 | No | The scheduler looks for work to start at least this often. |
-| Quota wait when the reset time is unknown | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. |
+| Quota wait when the reset time is unknown | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. A run paused on a possible limit waits this long too before the scheduler resumes it, doubling the same way. |
 | Longest quota wait (from version 0.5.0) | 240 minutes | 1 to 2,880 | No | The doubling wait above never goes above this. |

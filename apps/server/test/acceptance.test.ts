@@ -995,3 +995,276 @@ describe('lot 4 acceptance scenario, real server and daemon, fake GitHub', () =>
     TIMEOUT,
   );
 });
+
+describe('lot 4 step E: usage limits resumed by the scheduler, real server and daemon', () => {
+  beforeEach(async () => {
+    await startHarness({
+      gitOnFakeGitHub: true,
+      now: () => new Date(Date.now() + ahead),
+    });
+  });
+
+  const MINUTE = 60_000;
+  const tick = async () =>
+    (await h.t.schedulerTick()).started.map((start) => `${start.kind} ${start.ticket}`);
+  const now = () => Date.now() + ahead;
+  /** The scenario of a turn reaching a limit: detected with no reset time, or suspected. */
+  const weeklyLimit = {
+    turns: [
+      {
+        steps: [{ do: 'text' as const, text: 'Working on the contact form.' }],
+        end: {
+          kind: 'stopFailure' as const,
+          error: 'rate_limit',
+          message: "You've hit your weekly limit",
+        },
+      },
+    ],
+  };
+  const overloaded = {
+    turns: [
+      {
+        steps: [{ do: 'text' as const, text: 'Working on the contact form.' }],
+        end: {
+          kind: 'stopFailure' as const,
+          error: 'overloaded',
+          message: 'API Error: Overloaded',
+        },
+      },
+    ],
+  };
+  const finishing = {
+    turns: [{ steps: [commit('contact.html', 'Add the contact form'), submit] }],
+  };
+
+  async function pausedOn(runId: string, reason: 'usage_limit' | 'suspected_usage_limit') {
+    await until('the run paused', async () => (await run(runId)).status === 'paused_quota');
+    expect((await run(runId)).pauseReason).toBe(reason);
+    await until('the session closed', () => Promise.resolve(!sessionAlive(runId)));
+  }
+  async function accountRow() {
+    const [row] = await h.t.db.select().from(schema.claudeAccounts);
+    if (!row) throw new Error('no account');
+    return row;
+  }
+  async function runRow(id: string) {
+    const [row] = await h.t.db.select().from(schema.runs).where(eq(schema.runs.id, id));
+    if (!row) throw new Error('no run');
+    return row;
+  }
+  /** The paused run's item in Needs you: why the scheduler does not resume it yet. */
+  async function pausedItem() {
+    const item = (await json((v) => NeedsYouResponse.parse(v), 'GET', '/api/needs-you')).items.find(
+      (each) => each.type === 'run_paused',
+    );
+    if (item?.type !== 'run_paused') throw new Error('no paused run in Needs you');
+    return item;
+  }
+  /** Submitted: CI passes on the fake GitHub, the run ends and the ticket is in review. */
+  async function finishes(runId: string) {
+    await until('the run succeeded and ended', async () => {
+      await h.t.ciTick();
+      return endedSucceeded(runId);
+    });
+    expect(await ticket()).toMatchObject({ status: 'in_review', attemptCount: 0 });
+  }
+  /** The `--resume` launches of the fake, each with the session of the first one. */
+  async function resumes(): Promise<number> {
+    const starts = (await fake.log()).flatMap((entry) =>
+      entry.event === 'start' ? [entry.args] : [],
+    );
+    return starts.filter((args) => args.includes('--resume')).length;
+  }
+  /** The payloads of the events of `type`, oldest first. */
+  const payloads = async (type: string) =>
+    (await h.events(type)).map((event) => event.payload as Record<string, unknown>);
+  const minutesUntil = (at: Date | string | null) =>
+    Math.round((new Date(at ?? 0).getTime() - now()) / MINUTE);
+
+  it(
+    'a detected limit with a reset time: the scheduler resumes the run at that time, on its machine, and it finishes',
+    async () => {
+      // The status line's window full for 8 seconds gives the reset time.
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'text', text: 'Starting on the contact form.' },
+              { do: 'statusLine', fullForSeconds: 8 },
+            ],
+            end: {
+              kind: 'stopFailure',
+              error: 'rate_limit',
+              message: "You've hit your session limit · resets 3:45pm",
+            },
+          },
+        ],
+      });
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const [started] = await h.t.db.select().from(schema.runs);
+      if (!started) throw new Error('no run');
+      await pausedOn(started.id, 'usage_limit');
+      const limited = await accountRow();
+      expect(limited).toMatchObject({ state: 'limited', limitedUntilEstimated: false });
+
+      // Until the reset time: nothing, and Needs you says when it resumes.
+      expect(await tick()).toEqual([]);
+      expect((await pausedItem()).resume).toMatchObject({
+        reason: 'account_limited',
+        until: limited.limitedUntil?.toISOString(),
+      });
+
+      // At the reset time, the same session continues by itself and the agent finishes.
+      await fake.play(finishing);
+      ahead = (limited.limitedUntil?.getTime() ?? 0) - Date.now() + 1000;
+      expect(await tick()).toEqual(['resume WEB-1']);
+      expect((await run(started.id)).machine.id).toBe(machineId);
+      await finishes(started.id);
+      expect(await resumes()).toBe(1);
+      expect(await messages()).toHaveLength(2);
+      const resumed = (await h.events('run.status_changed')).find(
+        (event) => (event.payload as Record<string, unknown>).cause === 'scheduler_resume',
+      );
+      expect(resumed).toMatchObject({
+        actor: 'system',
+        payload: { from: 'paused_quota', to: 'dispatched' },
+      });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a limit with no reset time: resumed after 1 hour, then 2, then capped at Longest quota wait, with no failed attempt',
+    async () => {
+      const set = await h.call('PUT', '/api/settings/quotaFallbackMaxDelayMinutes', {
+        value: 180,
+      });
+      expect(set.statusCode, set.body).toBe(200);
+      await fake.play(weeklyLimit);
+      await enrolAndStart();
+      await h.createTicket();
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const [started] = await h.t.db.select().from(schema.runs);
+      if (!started) throw new Error('no run');
+
+      // Each resume reaches the limit again: the account's wait doubles, up to 180 minutes.
+      for (const [index, wait] of [60, 120, 180, 180].entries()) {
+        await pausedOn(started.id, 'usage_limit');
+        await until('the run paused again', async () => (await resumes()) === index);
+        const limited = await accountRow();
+        expect(limited).toMatchObject({ limitedUntilEstimated: true, quotaWaitMinutes: wait });
+        expect(minutesUntil(limited.limitedUntil)).toBe(wait);
+        ahead += (wait - 1) * MINUTE;
+        expect(await tick()).toEqual([]);
+        ahead += 2 * MINUTE;
+        if (wait === 180 && index === 3) await fake.play(finishing);
+        expect(await tick()).toEqual(['resume WEB-1']);
+      }
+      await finishes(started.id);
+      expect(await resumes()).toBe(4);
+      expect((await payloads('account.limited')).map((p) => p.fallbackMinutes)).toEqual([
+        60, 120, 180, 180,
+      ]);
+      // The resumed run ended its turn without a limit: the next wait is 1 hour again.
+      expect((await accountRow()).quotaWaitMinutes).toBeNull();
+      expect(await h.events('account.quota_wait_restarted')).toMatchObject([
+        { payload: { minutes: 180 } },
+      ]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a suspected limit: the account unchanged, resumed after 1 hour, then 2, then 1 again once a turn ended without a limit',
+    async () => {
+      await fake.play(overloaded);
+      await enrolAndStart();
+      await h.createTicket();
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const [started] = await h.t.db.select().from(schema.runs);
+      if (!started) throw new Error('no run');
+
+      async function waits(minutes: number) {
+        await pausedOn(started?.id ?? '', 'suspected_usage_limit');
+        expect(await accountRow()).toMatchObject({ state: 'available', limitedUntil: null });
+        const row = await runRow(started?.id ?? '');
+        expect(row.quotaWaitMinutes).toBe(minutes);
+        expect(minutesUntil(row.quotaResumeAt)).toBe(minutes);
+        expect((await pausedItem()).resume).toMatchObject({ reason: 'quota_wait', minutes });
+        ahead += (minutes - 1) * MINUTE;
+        expect(await tick()).toEqual([]);
+        ahead += 2 * MINUTE;
+      }
+
+      await waits(60);
+      expect(await tick()).toEqual(['resume WEB-1']);
+      await until('the second pause', async () => (await resumes()) === 1);
+      await waits(120);
+      // This resume works a turn without a limit (the agent stops; a reminder follows), then
+      // reaches a suspected limit again: the wait starts afresh.
+      await fake.play({
+        turns: [
+          { steps: [{ do: 'text', text: 'Looked at the form; continuing.' }] },
+          ...overloaded.turns,
+        ],
+      });
+      expect(await tick()).toEqual(['resume WEB-1']);
+      await until('the third pause', async () => (await resumes()) === 2);
+      await waits(60);
+      await fake.play(finishing);
+      expect(await tick()).toEqual(['resume WEB-1']);
+      await finishes(started.id);
+      const pauses = (await payloads('run.status_changed')).filter((p) => p.to === 'paused_quota');
+      expect(pauses.map((p) => p.quotaWaitMinutes)).toEqual([60, 120, 60]);
+      expect(await h.events('account.limited')).toEqual([]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'an account limited while two runs are paused: both resumed in order, within its maximum',
+    async () => {
+      await fake.play(weeklyLimit);
+      const { account } = await enrolAndStart();
+      const raised = await h.call('PATCH', `/api/accounts/${account.id}`, { maxConcurrentRuns: 2 });
+      expect(raised.statusCode, raised.body).toBe(200);
+      await h.createTicket();
+      await h.createTicket({ title: 'Opening hours', priority: 'high' });
+      expect(await tick()).toEqual(['implement WEB-2', 'implement WEB-1']);
+      const rows = await h.t.db.select().from(schema.runs);
+      const second = rows.find((row) => row.branchName.startsWith('t/2-'));
+      const first = rows.find((row) => row.branchName.startsWith('t/1-'));
+      if (!first || !second) throw new Error('two runs expected');
+      await pausedOn(first.id, 'usage_limit');
+      await pausedOn(second.id, 'usage_limit');
+      // The same limit reported twice waits once, not double.
+      expect(await accountRow()).toMatchObject({ quotaWaitMinutes: 60 });
+      expect(await h.events('account.limited')).toHaveLength(1);
+
+      // One place now: the high-priority ticket's run first, the other once a place is free.
+      const lowered = await h.call('PATCH', `/api/accounts/${account.id}`, {
+        maxConcurrentRuns: 1,
+      });
+      expect(lowered.statusCode, lowered.body).toBe(200);
+      await fake.play({ turns: [{ steps: [{ do: 'text', text: 'Continuing.' }] }] }, second.id);
+      ahead += 61 * MINUTE;
+      expect(await tick()).toEqual(['resume WEB-2']);
+      expect(await tick()).toEqual([]);
+      expect((await run(first.id)).status).toBe('paused_quota');
+      // WEB-2 reaches a suspected limit: its place is free, WEB-1's run resumes.
+      await fake.play(overloaded, second.id);
+      await fake.play(finishing, first.id);
+      await until(
+        'WEB-2 paused again',
+        async () => (await run(second.id)).status === 'paused_quota',
+      );
+      expect(await tick()).toEqual(['resume WEB-1']);
+      await finishes(first.id);
+      expect((await ticket(2)).attemptCount).toBe(0);
+      await h.call('POST', `/api/runs/${second.id}/stop`);
+    },
+    TIMEOUT,
+  );
+});

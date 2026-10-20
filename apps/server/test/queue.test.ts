@@ -212,7 +212,14 @@ async function loopAsks(): Promise<string[]> {
     db,
     pool,
     log: createLogger('silent'),
-    runs: { runNow: start, startReview: start },
+    runs: {
+      runNow: start,
+      startReview: start,
+      resume: (runId: string): Promise<never> => {
+        asked.push(`resume ${runId}`);
+        return Promise.reject(new Error('recorded only'));
+      },
+    },
     now: () => NOW,
     timers: false,
   });

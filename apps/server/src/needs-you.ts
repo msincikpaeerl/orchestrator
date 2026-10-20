@@ -31,6 +31,7 @@ import { requireSession } from './auth/routes.js';
 import type { Database } from './database.js';
 import { accountRows, accountsWithToday } from './machines/accounts.js';
 import { daemonUpdateCommands, doctorErrors } from './machines/model.js';
+import { computeQueue } from './scheduler/queue.js';
 import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
@@ -49,7 +50,7 @@ type Items = NeedsYouResponse['items'];
  * agents, finished work to check and paused runs, on active projects only (archived ones start no
  * work and change nothing).
  */
-async function ticketItems(db: Database, runs: RunService): Promise<Items> {
+async function ticketItems(db: Database, runs: RunService, now: Date): Promise<Items> {
   const items: Items = [];
   const profiles = await profileLinks(db);
   const tickets = await db
@@ -173,14 +174,18 @@ async function ticketItems(db: Database, runs: RunService): Promise<Items> {
               paused.map((run) => run.id),
             ),
           );
+  // When the scheduler resumes each one, as its queue says (07, section 5.2; lot 4 step E).
+  const queue = paused.length === 0 ? null : await computeQueue(db, now);
   for (const run of paused) {
     const ticket = titles.find((row) => row.runId === run.id);
     if (!ticket) continue;
+    const candidate = queue?.candidates.find((each) => each.runId === run.id);
     items.push({
       type: 'run_paused',
       run,
       ticket: { projectKey: run.projectKey, number: ticket.number, title: ticket.title },
       since: run.statusSince,
+      resume: candidate?.reason ?? null,
     });
   }
   return items;
@@ -730,7 +735,7 @@ export function registerNeedsYouRoutes(
         }
       }
     }
-    items.push(...(await ticketItems(db, runs)));
+    items.push(...(await ticketItems(db, runs, now())));
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));
 
     // Setup still to do (02, section 3), before the rest.

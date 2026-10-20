@@ -17,8 +17,9 @@ import { computeQueue } from './queue.js';
 // one run per account per pass, through Run now's and Start review's own path, until a pass
 // starts nothing. It runs when something relevant changes (an event of a ticket, a run, a
 // machine, an account, a project, a setting or the GitHub connection), when a window opens, a
-// day starts or a limit ends, and at least once per **Scheduler check interval**. Resumes stay
-// the owner's until step E.
+// day starts or a limit ends, and at least once per **Scheduler check interval**. From step E it
+// also resumes the runs paused on a usage limit, first in their account's queue, on their own
+// machine, through Resume's own path (07, section 5.2).
 
 /** The advisory lock of the loop (07, section 2): one pass at a time across server instances. */
 export const SCHEDULER_LOCK = 4_701_517_242;
@@ -55,7 +56,7 @@ export interface SchedulerOptions {
   db: Database;
   pool: Pool;
   log: FastifyBaseLogger;
-  runs: Pick<RunService, 'runNow' | 'startReview'>;
+  runs: Pick<RunService, 'runNow' | 'startReview' | 'resume'>;
   /** The changes that trigger a tick; none in tests that run the ticks themselves. */
   feed?: ChangeFeed;
   now?: () => Date;
@@ -151,7 +152,10 @@ export class Scheduler {
     );
   }
 
-  /** A tick when the first window opens, day starts or limit ends among the accounts. */
+  /**
+   * A tick when the first window opens, day starts or limit ends among the accounts, or a paused
+   * run's wait after a suspected limit ends.
+   */
   private armWake(queue: QueueResponse, now: Date): void {
     if (this.options.timers === false || this.closed) return;
     const times = queue.accounts.flatMap(({ unavailable }) => {
@@ -162,6 +166,9 @@ export class Scheduler {
       }
       return [];
     });
+    for (const { reason } of queue.candidates) {
+      if (reason?.reason === 'quota_wait') times.push(reason.until);
+    }
     const first = Math.min(...times.map((at) => Date.parse(at)));
     clearTimeout(this.wake);
     if (!Number.isFinite(first)) return;
@@ -226,8 +233,7 @@ export class Scheduler {
     );
     const picks = new Map<string, QueueCandidate>();
     for (const candidate of queue.candidates) {
-      // Resumes are the owner's until step E (07, section 5.2).
-      if (candidate.kind === 'resume' || candidate.reason !== null || !candidate.machine) continue;
+      if (candidate.reason !== null || !candidate.machine) continue;
       if (tried.has(key(candidate))) continue;
       const account = machines.get(candidate.machine.id);
       if (account !== undefined && !picks.has(account)) picks.set(account, candidate);
@@ -244,9 +250,11 @@ export class Scheduler {
     const ticket = `${projectKey}-${String(number)}`;
     try {
       const run =
-        candidate.kind === 'review'
-          ? await this.options.runs.startReview(projectKey, number, starter)
-          : await this.options.runs.runNow(projectKey, number, starter);
+        candidate.kind === 'resume' && candidate.runId !== null
+          ? await this.options.runs.resume(candidate.runId, starter)
+          : candidate.kind === 'review'
+            ? await this.options.runs.startReview(projectKey, number, starter)
+            : await this.options.runs.runNow(projectKey, number, starter);
       this.options.log.info(
         { run: run.id, ticket, machine: machine.name, kind: candidate.kind },
         'scheduler started a run',

@@ -17,6 +17,7 @@ import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
 import { MachineFailure } from './holds.js';
+import { QueueReason } from './queue.js';
 import { RunDownloadFailure } from './download-failure.js';
 import {
   GITHUB_TOKEN_LIST_URL,
@@ -367,6 +368,12 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     ticket: TicketRef,
     /** When it paused. */
     since: z.iso.datetime(),
+    /**
+     * Why the scheduler does not resume it yet (07, section 5.2; lot 4 step E), in the queue's
+     * reasons: its own wait after a suspected limit (`quota_wait`), its account's limit, pause,
+     * window or budget, or its machine; null when the scheduler resumes it at its next check.
+     */
+    resume: QueueReason.nullable(),
   }),
 ]);
 export type NeedsYouItem = z.infer<typeof NeedsYouItem>;

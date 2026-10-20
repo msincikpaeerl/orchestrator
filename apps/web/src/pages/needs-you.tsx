@@ -15,7 +15,7 @@ import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { PauseButton } from '../machines/account-parts';
 import { compactDayText } from '../machines/schedule-text';
 import { AccountStatusText, QuestionAnswer, RunActions } from '../runs/components';
-import { runPath } from '../runs/text';
+import { resumeText, runPath } from '../runs/text';
 import {
   AcceptAction,
   CancelAction,
@@ -184,6 +184,7 @@ function WorkItemCard({
               : 'Run paused: Claude usage limit reached'}
           </h2>
           <TicketTitle ticket={item.ticket} />
+          <p className="text-slate-700">{resumeText(item.resume)}</p>
           <RunActions run={item.run} />
           <Link to={runPath(item.run.id)} className="text-blue-700 underline">
             Open the run

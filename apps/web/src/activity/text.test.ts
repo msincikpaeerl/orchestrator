@@ -133,6 +133,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     fallbackMinutes: 60,
   },
   'account.available': { label: 'Personal' },
+  'account.quota_wait_restarted': { label: 'Personal', minutes: 120 },
   'account.paused': { label: 'Personal', activeRuns: 1 },
   'account.resumed': { label: 'Personal', limitedUntil: '2026-09-24T15:45:00.000Z' },
   'setting.time_zone_saved': { timeZone: 'Europe/Paris', previous: null },

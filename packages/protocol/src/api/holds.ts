@@ -57,6 +57,17 @@ export const MachineFailureCause = z.enum([
 ]);
 export type MachineFailureCause = z.infer<typeof MachineFailureCause>;
 
+/**
+ * A resume of a paused run that its machine did not confirm in time or refused: the scheduler
+ * does not resume the run again until that machine connects again after `at`, or the owner's
+ * **Resume** (07, sections 4 and 5.2; lot 4 step E).
+ */
+export const ResumeLeftOut = z.object({
+  cause: z.enum(['dispatch_timeout', 'dispatch_refused']),
+  at: z.iso.datetime(),
+});
+export type ResumeLeftOut = z.infer<typeof ResumeLeftOut>;
+
 /** One run of the ticket that a machine caused to fail, and when it ended. */
 export const MachineFailure = z.object({
   cause: MachineFailureCause,

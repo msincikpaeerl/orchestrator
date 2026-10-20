@@ -494,7 +494,7 @@ const definitions = {
     group: 'scheduler',
     label: 'Quota wait when the reset time is unknown',
     description:
-      'When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached.',
+      'When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. A run paused on a possible limit waits this long too before the scheduler resumes it, doubling the same way.',
     unit: 'minutes',
     min: 1,
     max: 1440,

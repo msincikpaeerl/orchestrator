@@ -71,6 +71,7 @@ export const causeText: Record<RunChangeCause, string> = {
   run_now: 'Run now',
   scheduler: 'started by the scheduler',
   resume: 'Resume',
+  scheduler_resume: 'resumed by the scheduler',
   owner_stopped: 'stopped by you',
   ticket_cancelled: 'the ticket was cancelled',
   ticket_done: 'the ticket was marked as done',
@@ -186,6 +187,8 @@ export function queueReasonText(reason: QueueReason): string {
       return `Waiting for you in Needs you: ${blockingItemText(reason.item, reason.machine?.name ?? null)}.`;
     case 'reviews_off':
       return REVIEWS_OFF;
+    case 'quota_wait':
+      return `Paused on a possible usage limit: the scheduler resumes it at ${formatDateTime(reason.until)}, ${waitText(reason.minutes)} after it paused.`;
     default:
       return runRefusalText(reason);
   }
@@ -231,6 +234,10 @@ export function runRefusalText(refusal: RunRefusal): string {
     case 'first_message_too_large':
       return "This ticket is too large for an agent's first message, even with its description shortened. Shorten the ticket, for example its dependencies or acceptance criteria.";
     case 'machine_unavailable':
+      // A resume its machine did not take (lot 4 step E): Resume, not Run now, takes it back.
+      if (refusal.commits === null && refusal.unavailable.why === 'left_out') {
+        return `This run can only continue on machine ${refusal.machine.name}, which did not take its latest resume at ${formatDateTime(refusal.unavailable.at)} (${refusal.unavailable.cause === 'dispatch_timeout' ? 'it did not confirm it in time' : 'it refused it'}): the scheduler resumes it again once the machine connects again, or use Resume.`;
+      }
       return refusal.commits === null
         ? `This run can only continue on machine ${refusal.machine.name}, and ${unavailableText(refusal.unavailable)}.`
         : `The ticket's branch has ${String(refusal.commits)} commit${refusal.commits === 1 ? '' : 's'} not on GitHub, only on machine ${refusal.machine.name}, and ${unavailableText(refusal.unavailable)}. The run can only continue there.`;
@@ -367,6 +374,32 @@ export function usageText(usd: number | null): string {
   return usd === null
     ? 'Not known yet'
     : `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (estimated by Claude Code)`;
+}
+
+/** "1 hour", "2 hours", "90 minutes": a quota wait (lot 4 step E). */
+export function waitText(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${String(hours)} hour${hours === 1 ? '' : 's'}`;
+  }
+  return `${String(minutes)} minute${minutes === 1 ? '' : 's'}`;
+}
+
+/**
+ * When the scheduler resumes a paused run, for its "Needs you" item (02, section 4; 07, section
+ * 5.2; lot 4 step E), from the queue's reason: its own wait, the account's limit, or what else
+ * keeps it paused; null when it resumes at the scheduler's next check.
+ */
+export function resumeText(reason: QueueReason | null): string {
+  if (reason === null) return 'The scheduler resumes it by itself at its next check.';
+  switch (reason.reason) {
+    case 'quota_wait':
+      return `The scheduler resumes it by itself at ${formatDateTime(reason.until)} (${waitText(reason.minutes)} after it paused), if its Claude account and machine can take it then.`;
+    case 'account_limited':
+      return `The scheduler resumes it by itself once the limit resets, at ${formatDateTime(reason.until)}.`;
+    default:
+      return `The scheduler resumes it by itself once this changes: ${queueReasonText(reason)}`;
+  }
 }
 
 /**
