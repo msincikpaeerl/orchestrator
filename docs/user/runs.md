@@ -46,7 +46,9 @@ From version 0.5.0 the Orchestrator's **scheduler** starts runs by itself, so ti
 **What it starts**, each time one Claude Code session from your Claude plan, exactly as you would with the button:
 
 - a ticket in **To do** with an assignee, waiting for no other ticket: a run of its agent, as **Run now** does (one that addresses the request for changes, when Quality or you asked for some);
-- a ticket **Ready for review**: Quality's review, as **Start review** does. If you do not want a review, use **Skip review** before it starts.
+- a ticket **Ready for review**: Quality's review, as **Start review** does, unless you turned off **Start reviews by themselves** in the project's settings (see [Reviews by themselves](projects.md#reviews-by-themselves)). If you do not want a review, use **Skip review** before it starts. "Ready for review" says which: "The review starts by itself as soon as a machine and its Claude account can take it." or "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.".
+
+A fix after a request for changes starts by itself whether the switch is on or off: the switch is only about reviews.
 
 **In which order**: reviews first, then fixes after a request for changes, then new work. Within each of these, in this order:
 
@@ -60,6 +62,8 @@ Projects take turns, so one large project does not hold up the others.
 **Where and how many**: only on a Claude account that can start a run: inside its windows, under its daily budget, not paused and not at its usage limit (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), and on a machine that can take the run, as for **Run now**. It starts one run per account at a time, until the account runs its **Runs at the same time**; the next ticket starts when a run ends.
 
 **How you can tell**: the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
+
+**How much it can start for one ticket**, with the default settings and nothing done by you: the first run, then a review, and after each request for changes by Quality a fix and another review. Quality may ask for changes **Most review rounds per ticket** times (2 by default): one more request stops the ticket, so at most 3 runs of its agent and 3 reviews. Failed runs of its agent count too, at most **Failed attempts before asking you** (2 by default) over the ticket's life before it stops. So at most 8 Claude Code sessions for one ticket before it waits for you, and usually 2 (one run, one review). A run whose machine went offline during it does not count: it can start again once that machine is back, at most **Machine failures before asking you** (2 by default) times in a row on that machine. Each **Request changes** of yours starts a fix and a review again, within the same limits.
 
 **What it never starts by itself**, so nothing is started again and again without you:
 

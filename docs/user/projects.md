@@ -104,6 +104,17 @@ What you can do:
 
 On the project page, click **Project settings**, change the **Name** or **Description**, then click **Save**. The key, the repository and the kind cannot be changed.
 
+## Reviews by themselves
+
+From version 0.5.0, once a ticket's work is ready for review, the scheduler starts Quality's review by itself (see [Review by Quality](tickets.md#review-by-quality)). Each review uses one Claude Code session from your Claude plan. To decide each time yourself, turn it off for the project:
+
+1. On the project page, click **Project settings**.
+2. Under **Reviews by Quality**, uncheck **Start reviews by themselves**. It is saved at once: "Saved: reviews wait for Start review. A review already running goes on."
+
+While it is off, a ticket ready for review waits for you: "Ready for review" in [Needs you](needs-you.md#agents-work) says "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.", and you choose **Start review** or **Skip review**, as in version 0.4.0. A review already running is not stopped. Fixes after a request for changes still start by themselves: the switch is only about reviews.
+
+Check the box again to let the scheduler start reviews: a ticket already waiting for its review is then started in its turn. Every project starts with the box checked, also the projects created before version 0.5.0. Each change is in the [event log](activity.md).
+
 ## Archive a project
 
 Projects are never deleted: you archive the ones you no longer work on.
