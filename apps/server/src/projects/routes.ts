@@ -6,6 +6,7 @@ import {
   ProjectListQuery,
   RepositoryName,
   TicketStatus,
+  ReviewsAutomaticRequest,
   UpdateProjectRequest,
   slugify,
   type AvailabilityResponse,
@@ -337,6 +338,34 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       });
       return updated;
     });
+    return toProject(row);
+  });
+
+  // **Start reviews by themselves** (02, section 6.5; 07, section 1; lot 4 step D3): a review not
+  // started yet waits for Start review once it is off, and is the scheduler's again once it is on;
+  // a review run already started goes on either way.
+  app.put<{ Params: { key: string } }>('/api/projects/:key/reviews-automatic', async (request) => {
+    await requireSession(db, request);
+    const { on } = parseInput(ReviewsAutomaticRequest, request.body);
+    const project = await findByKey(request.params.key);
+    requireActive(project);
+    if (project.reviewsAutomatic === on) return toProject(project);
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(schema.projects)
+        .set({ reviewsAutomatic: on, updatedAt: now() })
+        .where(and(eq(schema.projects.id, project.id), eq(schema.projects.status, 'active')))
+        .returning();
+      if (!updated) throw new HttpError(409, 'project_archived', 'This project is archived');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...projectEntity(updated),
+        type: 'project.reviews_automatic_changed',
+        payload: { key: updated.key, on },
+      });
+      return updated;
+    });
+    request.log.info({ project: row.key, on }, 'Start reviews by themselves changed');
     return toProject(row);
   });
 

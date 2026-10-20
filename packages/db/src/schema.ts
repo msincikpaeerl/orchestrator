@@ -193,6 +193,11 @@ export const projects = pgTable(
      * read GitHub (`PullRequestWatchFailure`), until a check reads every pull request again.
      */
     pullRequestWatchFailure: jsonb('pull_request_watch_failure'),
+    /**
+     * **Start reviews by themselves** (01, section 3.1; 07, section 1; lot 4 step D3): while true,
+     * the scheduler starts a ticket's review once it is ready; while false, only Start review does.
+     */
+    reviewsAutomatic: boolean('reviews_automatic').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -328,7 +328,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       continue;
     }
 
-    // In review: a review to start, while "Ready for review" is offered (lot 3 step H).
+    // In review: a review to start, while "Ready for review" is offered (lot 3 step H); with the
+    // project's Start reviews by themselves off, only Start review starts it (lot 4 step D3).
     if (ticket.pullRequestNumber === null) continue;
     const { review, ready } = await ticketReview(db, ticket);
     if (!review.offered || ready === null) continue;
@@ -350,7 +351,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           ? { reason: 'needs_you', item: 'review_not_finished', machine: latest.machine }
           : item
             ? { reason: 'needs_you', item: item.item, machine: item.machine }
-            : null),
+            : null) ??
+        (project.reviewsAutomatic ? null : { reason: 'reviews_off' }),
       required: capabilities(quality?.id),
       holding: null,
     });

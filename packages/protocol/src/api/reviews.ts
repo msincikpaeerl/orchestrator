@@ -177,6 +177,16 @@ export const TicketReviewLatest = z.discriminatedUnion('kind', [
 ]);
 export type TicketReviewLatest = z.infer<typeof TicketReviewLatest>;
 
+/**
+ * Whether the scheduler starts the review offered by itself (02, sections 4 and 6.4; 07, section
+ * 1; lot 4 step D3): `by_itself` once a machine and its account can take it; never while the
+ * owner's Stop run of a review holds the ticket (`held`), after a review that did not finish
+ * (`not_finished`), or while the project's **Start reviews by themselves** is off (`switch_off`).
+ * In that order, the queue's (an earlier reason hides the later ones).
+ */
+export const ReviewStart = z.enum(['by_itself', 'held', 'not_finished', 'switch_off']);
+export type ReviewStart = z.infer<typeof ReviewStart>;
+
 export const TicketReview = z.object({
   latest: TicketReviewLatest.nullable(),
   /**
@@ -186,6 +196,8 @@ export const TicketReview = z.object({
   current: z.object({ commit: GitHash, earlier: z.boolean() }).nullable(),
   /** **Start review** and **Skip review** offered: in review, a pull request, no run active. */
   offered: z.boolean(),
+  /** While offered: whether the review starts by itself; null otherwise. */
+  start: ReviewStart.nullable(),
 });
 export type TicketReview = z.infer<typeof TicketReview>;
 

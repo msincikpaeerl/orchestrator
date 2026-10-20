@@ -260,6 +260,13 @@
       "when": 1792452887346,
       "tag": "0036_holds",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792477528418,
+      "tag": "0037_reviews_automatic",
+      "breakpoints": true
     }
   ]
 }

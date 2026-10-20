@@ -67,6 +67,7 @@ export {
   SetupStatus,
   SetupStep,
   TicketCounts,
+  ReviewsAutomaticRequest,
   UpdateProjectRequest,
   slugify,
 } from './api/projects.js';
@@ -170,6 +171,7 @@ export {
   ReviewPostProblem,
   ReviewPostView,
   RunReview,
+  ReviewStart,
   TicketReview,
   TicketReviewLatest,
 } from './api/reviews.js';

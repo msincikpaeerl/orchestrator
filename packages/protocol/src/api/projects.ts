@@ -89,6 +89,8 @@ export const Project = z.object({
   /** Linked repositories only: missing elements at the last check; null before the first one. */
   harness: z.object({ missing: z.array(HarnessElement), checkedAt: z.iso.datetime() }).nullable(),
   status: ProjectStatus,
+  /** **Start reviews by themselves** (02, section 6.5; 07, section 1; lot 4 step D3). */
+  reviewsAutomatic: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -141,6 +143,10 @@ export const UpdateProjectRequest = z
     message: 'nothing to change',
   });
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
+
+/** `PUT /api/projects/<key>/reviews-automatic`: the switch **Start reviews by themselves**. */
+export const ReviewsAutomaticRequest = z.strictObject({ on: z.boolean() });
+export type ReviewsAutomaticRequest = z.infer<typeof ReviewsAutomaticRequest>;
 
 /** `GET /api/projects/availability`: each value given is checked. */
 export const AvailabilityQuery = z.object({
