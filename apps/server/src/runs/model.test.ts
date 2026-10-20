@@ -1,6 +1,6 @@
 import { FailureReason } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { isCounted, statusTimes } from './model.js';
+import { isCounted, nextQuotaWait, statusTimes } from './model.js';
 
 // Working and waiting times of a run (01, section 3.7; owner's decision, lot 2 step L).
 
@@ -69,5 +69,24 @@ describe('isCounted', () => {
 
   it.each(FailureReason.options)('%s as decided', (reason) => {
     expect(isCounted(reason)).toBe(decided[reason]);
+  });
+});
+
+describe('nextQuotaWait (07, section 5.2; lot 4 step E)', () => {
+  const settings = { quotaFallbackDelayMinutes: 60, quotaFallbackMaxDelayMinutes: 240 };
+
+  it('starts at Quota wait when the reset time is unknown, then doubles up to Longest quota wait', () => {
+    const waits: number[] = [];
+    let previous: number | null = null;
+    for (let pause = 0; pause < 5; pause += 1) {
+      previous = nextQuotaWait(previous, settings);
+      waits.push(previous);
+    }
+    expect(waits).toEqual([60, 120, 240, 240, 240]);
+  });
+
+  it('follows the settings changed meanwhile', () => {
+    expect(nextQuotaWait(30, settings)).toBe(60);
+    expect(nextQuotaWait(240, { ...settings, quotaFallbackMaxDelayMinutes: 90 })).toBe(90);
   });
 });

@@ -1,7 +1,9 @@
 import type { schema } from '@orchestrator/db';
 import {
+  ResumeLeftOut,
   TicketStatus,
   type AccountToday,
+  type QueueReason,
   type Capability,
   type MachineUnavailable,
   type RunRefusal,
@@ -290,7 +292,8 @@ export function preferredMachine(
 /**
  * **Resume**'s checks of a paused run (07, section 3, lot 2): its account paused, limited or at
  * its maximum, then its own machine, the only one it can continue on (capabilities and the account
- * were checked when it started). `day` adds the scheduler's windows and budget.
+ * were checked when it started). `day` adds the scheduler's windows and budget, `leftOut` the
+ * machine left out of the scheduler's resumes of the run (`resumeLeftOut`).
  */
 export function resumeRefusal(
   machine: MachineRow,
@@ -298,6 +301,7 @@ export function resumeRefusal(
   busy: number,
   now: Date,
   day?: AccountToday,
+  leftOut?: MachineUnavailable | null,
 ): RunRefusal | null {
   const accountRef = { id: account.id, label: account.label };
   if (account.state === 'paused_manual') return { reason: 'account_paused', account: accountRef };
@@ -315,7 +319,9 @@ export function resumeRefusal(
       maxConcurrentRuns: account.maxConcurrentRuns,
     };
   }
-  const unavailable = machineUnavailable(machine, account, 0, [], now, day);
+  const own = machineUnavailable(machine, account, 0, [], now, day);
+  // As for a start (machineChoice): after the machine's own state, before its account's.
+  const unavailable = leftOut && (own === null || own.why.startsWith('account_')) ? leftOut : own;
   if (unavailable) {
     return {
       reason: 'machine_unavailable',
@@ -325,6 +331,40 @@ export function resumeRefusal(
     };
   }
   return null;
+}
+
+/**
+ * The scheduler's wait before it resumes a run paused on a suspected usage limit (07, section 5.2;
+ * owner's answer 9, lot 4 step E), while it lasts; null otherwise. A run paused before version
+ * 0.5.0 has no time stored: it waits **Quota wait when the reset time is unknown** from its pause.
+ */
+export function quotaWait(
+  run: Pick<
+    RunRow,
+    'status' | 'pauseReason' | 'quotaResumeAt' | 'quotaWaitMinutes' | 'statusSince'
+  >,
+  now: Date,
+  fallbackMinutes: number,
+): Extract<QueueReason, { reason: 'quota_wait' }> | null {
+  if (run.status !== 'paused_quota' || run.pauseReason !== 'suspected_usage_limit') return null;
+  const minutes = run.quotaWaitMinutes ?? fallbackMinutes;
+  const until = run.quotaResumeAt ?? new Date(run.statusSince.getTime() + fallbackMinutes * 60_000);
+  if (until.getTime() <= now.getTime()) return null;
+  return { reason: 'quota_wait', until: until.toISOString(), minutes };
+}
+
+/**
+ * The machine of a paused run left out of the scheduler's resumes (07, section 5.2; lot 4 step
+ * E): its latest resume was not confirmed in time or was refused, and it has not connected since.
+ */
+export function resumeLeftOut(
+  run: Pick<RunRow, 'resumeLeftOut'>,
+  machine: Pick<MachineRow, 'connectedAt'>,
+): MachineUnavailable | null {
+  if (run.resumeLeftOut === null) return null;
+  const left = ResumeLeftOut.parse(run.resumeLeftOut);
+  if (machine.connectedAt && machine.connectedAt.getTime() > Date.parse(left.at)) return null;
+  return { why: 'left_out', cause: left.cause, at: left.at };
 }
 
 /** The message of a refusal these checks give, for the API's error and the logs. */

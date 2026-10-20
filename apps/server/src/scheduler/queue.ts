@@ -28,6 +28,7 @@ import {
 import type { ProjectRow } from '../projects/model.js';
 import { isCounted } from '../runs/model.js';
 import { ticketReview } from '../runs/review-view.js';
+import { resolveSettings } from '../settings/store.js';
 import { readTimeZone } from '../settings/time-zone.js';
 import { standingRequest } from '../tickets/changes.js';
 import { applyingHold, leftOutMachines, machineFailures } from '../tickets/holds.js';
@@ -38,6 +39,8 @@ import {
   machineChoice,
   preferredMachine,
   projectRefusal,
+  quotaWait,
+  resumeLeftOut,
   resumeRefusal,
   ticketRefusal,
   ticketWork,
@@ -98,6 +101,10 @@ const runColumns = {
   branchHead: schema.runs.branchHead,
   acknowledgedAt: schema.runs.acknowledgedAt,
   reviewCommit: schema.runs.reviewCommit,
+  pauseReason: schema.runs.pauseReason,
+  quotaResumeAt: schema.runs.quotaResumeAt,
+  quotaWaitMinutes: schema.runs.quotaWaitMinutes,
+  resumeLeftOut: schema.runs.resumeLeftOut,
 };
 type RunFacts = { [Key in keyof typeof runColumns]: (typeof schema.runs.$inferSelect)[Key] };
 
@@ -125,6 +132,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
   const [connection] = await db.select().from(schema.githubConnection);
   const github = githubRefusal(connection);
   const { timeZone } = await readTimeZone(db);
+  const { quotaFallbackDelayMinutes } = await resolveSettings(db, ['quotaFallbackDelayMinutes']);
 
   const projects = new Map(
     (await db.select().from(schema.projects)).map((project) => [project.id, project]),
@@ -287,7 +295,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
         run,
         afterFailure: false,
         since: run.statusSince,
-        early: projectRefusal(project),
+        // A suspected limit's own wait first (07, section 5.2; lot 4 step E).
+        early: projectRefusal(project) ?? quotaWait(run, now, quotaFallbackDelayMinutes),
         required: [],
         holding: null,
       });
@@ -391,7 +400,14 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       const own = machines.find((row) => row.id === draft.run?.machineId);
       const account = accounts.get(draft.run.accountId);
       if (!own || !account) throw new Error(`machine or account of run ${draft.run.id} not found`);
-      reason = resumeRefusal(own, account, places.get(account.id) ?? 0, now, days.get(account.id));
+      reason = resumeRefusal(
+        own,
+        account,
+        places.get(account.id) ?? 0,
+        now,
+        days.get(account.id),
+        resumeLeftOut(draft.run, own),
+      );
       if (reason === null) machine = own;
     } else if (reason === null) {
       const choice = machineChoice(fleet, {

@@ -39,6 +39,19 @@ export function reportedCommits(row: Pick<RunRow, 'commits'>): CommitSummary[] |
  * section 3). A limit reached while the owner stopped new runs is kept on the paused account,
  * which goes back to it at **Resume** (lot 4 step C).
  */
+/**
+ * The wait after a usage limit with no reset time (07, section 5.2; lot 4 step E): **Quota wait
+ * when the reset time is unknown** the first time, then double the previous wait, never above
+ * **Longest quota wait**. `previous` is null when the doubling starts afresh.
+ */
+export function nextQuotaWait(
+  previous: number | null,
+  settings: { quotaFallbackDelayMinutes: number; quotaFallbackMaxDelayMinutes: number },
+): number {
+  const { quotaFallbackDelayMinutes: first, quotaFallbackMaxDelayMinutes: longest } = settings;
+  return Math.min(longest, previous === null ? first : Math.max(first, previous * 2));
+}
+
 export function isLimited(account: Pick<AccountRow, 'state' | 'limitedUntil'>, now: Date): boolean {
   return (
     (account.state === 'limited' || account.state === 'paused_manual') &&

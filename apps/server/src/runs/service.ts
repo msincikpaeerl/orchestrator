@@ -41,6 +41,7 @@ import {
   type RunEndReason,
   type RunEvents,
   type RunQuotaLimited,
+  type ResumeLeftOut,
   type RunRefusal,
   type RunStart,
   type RunState,
@@ -139,6 +140,7 @@ import {
   isCounted,
   isLimited,
   reportedCommits,
+  nextQuotaWait,
   resumeAfter,
   statusOfDaemonState,
   statusTimes,
@@ -155,6 +157,8 @@ import {
   preferredMachine,
   projectRefusal,
   refusalMessage,
+  quotaWait,
+  resumeLeftOut,
   resumeRefusal,
   ticketRefusal,
   ticketWork,
@@ -207,6 +211,14 @@ interface Locked {
 }
 
 const ACTIVE = new Set<string>(ACTIVE_RUN_STATUSES);
+
+/** The ends a turn decides, after the daemon's `idle` (05, section 4.8): no usage limit then. */
+const TURN_DECIDED_ENDS = new Set<RunEndReason>([
+  'submitted',
+  'gave_up',
+  'push_failed',
+  'nudges_exhausted',
+]);
 const TERMINAL = new Set<string>(['succeeded', 'failed', 'cancelled']);
 
 /** Runs a machine can be working on: fetching with a credential is allowed only for them. */
@@ -381,6 +393,8 @@ export class RunService {
     cause: RunChangeCause,
     facts: {
       pauseReason?: PauseReason;
+      /** A suspected limit's pause: when the scheduler resumes it, and the wait (lot 4 step E). */
+      quotaWait?: { resumeAt: Date; minutes: number };
       failureReason?: FailureReason;
       endReason?: RunEndReason;
       detail?: string;
@@ -430,6 +444,12 @@ export class RunService {
           to,
           cause,
           ...(facts.pauseReason === undefined ? {} : { pauseReason: facts.pauseReason }),
+          ...(facts.quotaWait === undefined
+            ? {}
+            : {
+                resumeAt: facts.quotaWait.resumeAt.toISOString(),
+                quotaWaitMinutes: facts.quotaWait.minutes,
+              }),
           ...(facts.failureReason === undefined ? {} : { failureReason: facts.failureReason }),
           ...(facts.endReason === undefined ? {} : { endReason: facts.endReason }),
           ...(facts.detail === undefined ? {} : { detail: facts.detail }),
@@ -965,9 +985,17 @@ export class RunService {
     detail?: string,
   ): Promise<void> {
     if (locked.run.dispatchKind === 'resume') {
+      // Not confirmed or refused: the scheduler leaves the machine out of this run's resumes
+      // until it connects again (07, section 5.2; lot 4 step E); offline, it waits anyway.
+      const leftOut: ResumeLeftOut | null =
+        cause === 'machine_offline' ? null : { cause, at: this.now().toISOString() };
       await this.setStatus(tx, locked, 'paused_quota', cause, {
         detail,
-        set: { dispatchMessageId: null, ackDeadline: null },
+        set: {
+          dispatchMessageId: null,
+          ackDeadline: null,
+          ...(leftOut === null ? {} : { resumeLeftOut: leftOut }),
+        },
       });
       return;
     }
@@ -2232,12 +2260,17 @@ export class RunService {
   // ---------------------------------------------------------------------------------------------
   // Resume and Stop run
 
-  /** **Resume** of a paused run, on its own machine only (07, section 3). */
-  async resume(runId: string): Promise<Run> {
+  /**
+   * **Resume** of a paused run, on its own machine only (07, section 3), or the scheduler's resume
+   * of it (`starter`, 07 section 5.2; lot 4 step E), which also waits for the end of a suspected
+   * limit's wait and leaves out a machine that did not take its latest resume.
+   */
+  async resume(runId: string, starter: Starter = OWNER): Promise<Run> {
     const { templates } = await this.files();
-    const { dispatchAckTimeoutSeconds } = await resolveSettings(this.db, [
-      'dispatchAckTimeoutSeconds',
-    ]);
+    const { dispatchAckTimeoutSeconds, quotaFallbackDelayMinutes } = await resolveSettings(
+      this.db,
+      ['dispatchAckTimeoutSeconds', 'quotaFallbackDelayMinutes'],
+    );
     const prepared = await this.withRun(runId, async (tx, locked) => {
       const { run, machine } = locked;
       if (run.status !== 'paused_quota') {
@@ -2255,21 +2288,43 @@ export class RunService {
       const account = await this.releaseAccount(tx, lockedAccount);
       const busy = (await this.busyRuns(tx, account.id)).get(account.id) ?? 0;
       // The account, then its own machine: the scheduler's checks of a resume (lot 4 step D1).
-      const resumeRefused = resumeRefusal(machine, account, busy, this.now());
+      const now = this.now();
+      const resumeRefused = resumeRefusal(
+        machine,
+        account,
+        busy,
+        now,
+        undefined,
+        starter.by === 'scheduler' ? resumeLeftOut(run, machine) : null,
+      );
       if (resumeRefused !== null) throw refused(resumeRefused);
+      if (starter.by === 'scheduler') {
+        if (starter.machineId !== machine.id) throw new Error('a run resumes on its own machine');
+        if (quotaWait(run, now, quotaFallbackDelayMinutes) !== null) {
+          throw new Error('the run waits after a suspected usage limit');
+        }
+      }
       if (run.claudeSessionId === null) {
         throw new Error(`paused run ${run.id} has no Claude session to resume`);
       }
       const dispatchMessageId = randomUUID();
       const ackDeadline = new Date(Date.now() + dispatchAckTimeoutSeconds * this.secondMs);
-      await this.setStatus(tx, locked, 'dispatched', 'resume', {
-        set: {
-          dispatchMessageId,
-          dispatchKind: 'resume',
-          ackDeadline,
-          acknowledgedAt: null,
+      await this.setStatus(
+        tx,
+        locked,
+        'dispatched',
+        starter.by === 'owner' ? 'resume' : 'scheduler_resume',
+        {
+          set: {
+            dispatchMessageId,
+            dispatchKind: 'resume',
+            ackDeadline,
+            acknowledgedAt: null,
+            // The owner's Resume takes back a machine left out of the scheduler's resumes.
+            ...(starter.by === 'owner' ? { resumeLeftOut: null } : {}),
+          },
         },
-      });
+      );
       return {
         machine,
         ackDeadline,
@@ -2293,7 +2348,7 @@ export class RunService {
         }
       });
     }
-    this.log.info({ run: runId, machine: prepared.machine.name }, 'run resumed');
+    this.log.info({ run: runId, machine: prepared.machine.name, by: starter.by }, 'run resumed');
     return this.view(runId);
   }
 
@@ -3083,6 +3138,7 @@ export class RunService {
       if (locked.run.machineId !== machineId) return false;
       if (!(await this.firstTime(tx, machineId, message.id, message.type))) return true;
       const { run } = locked;
+      await this.followTurns(tx, locked, payload);
       const session = {
         sessionAlive: payload.sessionAlive,
         ...(payload.claudeSessionId === null ? {} : { claudeSessionId: payload.claudeSessionId }),
@@ -3324,40 +3380,116 @@ export class RunService {
   }
 
   /**
-   * `run.quota_limited` (05, section 4.10; 07, section 5.2): the run is paused; a detected limit
-   * makes the account `limited` until the reset time, or now plus the fallback delay.
+   * Keeps the daemon's latest state, and restarts the doubling of the quota waits once the agent's
+   * turn ended without a usage limit (07, section 5.2; lot 4 step E): the daemon reports `idle` at
+   * each turn's end, then the pause on a limit, or else what follows the turn (a message, the wait
+   * for the owner or CI). An end the agent's work decided (its submission, its giving up, the
+   * reminders used up) also tells it, even when the server ended the run before the turn did (CI
+   * passed meanwhile).
+   */
+  private async followTurns(tx: Executor, locked: Locked, payload: RunState['payload']) {
+    const { run } = locked;
+    const turnEnded =
+      payload.state === 'ended'
+        ? TURN_DECIDED_ENDS.has(payload.reason)
+        : run.daemonState === 'idle' &&
+          payload.state !== 'idle' &&
+          payload.state !== 'quota_paused';
+    if (payload.state !== 'ended' || turnEnded) {
+      const set: Partial<typeof schema.runs.$inferInsert> = {
+        ...(payload.state === 'ended' ? {} : { daemonState: payload.state }),
+        ...(turnEnded ? { quotaWaitMinutes: null, quotaResumeAt: null } : {}),
+      };
+      await tx.update(schema.runs).set(set).where(eq(schema.runs.id, run.id));
+      Object.assign(locked.run, set);
+    }
+    if (!turnEnded) return;
+    const [account] = await tx
+      .select()
+      .from(schema.claudeAccounts)
+      .where(eq(schema.claudeAccounts.id, run.accountId))
+      .for('update');
+    if (!account || account.quotaWaitMinutes === null) return;
+    const now = this.now();
+    await tx
+      .update(schema.claudeAccounts)
+      .set({ quotaWaitMinutes: null, updatedAt: now })
+      .where(eq(schema.claudeAccounts.id, account.id));
+    await recordEvent(tx, {
+      actor: 'system',
+      entityType: 'claude_account',
+      entityId: account.id,
+      type: 'account.quota_wait_restarted',
+      payload: { label: account.label, minutes: account.quotaWaitMinutes },
+      at: now,
+    });
+  }
+
+  /**
+   * `run.quota_limited` (05, section 4.10; 07, section 5.2): the run is paused. A suspected limit
+   * leaves the account as it is: the scheduler resumes the run after the fallback delay, doubled
+   * at each pause of the run until a turn ends without a limit (owner's answer 9, lot 4 step E). A
+   * detected limit makes the account `limited` until the reset time, or now plus the fallback
+   * delay, doubled at each limit with no reset time until a run of the account ends a turn
+   * without a limit; both up to **Longest quota wait**.
    */
   async quotaLimited(machineId: string, message: RunQuotaLimited): Promise<Ack['payload']> {
     const { payload } = message;
-    const { quotaFallbackDelayMinutes } = await resolveSettings(this.db, [
+    const settings = await resolveSettings(this.db, [
       'quotaFallbackDelayMinutes',
+      'quotaFallbackMaxDelayMinutes',
     ]);
     const handled = await this.withRun(payload.runId, async (tx, locked) => {
       if (locked.run.machineId !== machineId) return false;
       if (!(await this.firstTime(tx, machineId, message.id, message.type))) return true;
       if (!ACTIVE.has(locked.run.status)) return true;
-      const pauseReason: PauseReason =
-        payload.kind === 'detected' ? 'usage_limit' : 'suspected_usage_limit';
-      await this.setStatus(tx, locked, 'paused_quota', 'daemon', {
-        pauseReason,
-        detail: payload.evidence.message ?? undefined,
-        set: { pauseReason, sessionAlive: false },
-      });
-      if (payload.kind !== 'detected') return true;
-
       const now = this.now();
+      const detail = payload.evidence.message ?? undefined;
+      if (payload.kind !== 'detected') {
+        const minutes = nextQuotaWait(locked.run.quotaWaitMinutes, settings);
+        const resumeAt = new Date(now.getTime() + minutes * 60_000);
+        await this.setStatus(tx, locked, 'paused_quota', 'daemon', {
+          pauseReason: 'suspected_usage_limit',
+          quotaWait: { resumeAt, minutes },
+          detail,
+          set: {
+            pauseReason: 'suspected_usage_limit',
+            sessionAlive: false,
+            daemonState: 'quota_paused',
+            quotaWaitMinutes: minutes,
+            quotaResumeAt: resumeAt,
+          },
+        });
+        return true;
+      }
+      await this.setStatus(tx, locked, 'paused_quota', 'daemon', {
+        pauseReason: 'usage_limit',
+        detail,
+        set: {
+          pauseReason: 'usage_limit',
+          sessionAlive: false,
+          daemonState: 'quota_paused',
+          quotaResumeAt: null,
+        },
+      });
+
       const reset = payload.resetsAt === null ? null : new Date(payload.resetsAt);
       const known = reset !== null && reset.getTime() > now.getTime();
-      const until = known ? reset : new Date(now.getTime() + quotaFallbackDelayMinutes * 60_000);
       const [account] = await tx
         .select()
         .from(schema.claudeAccounts)
         .where(eq(schema.claudeAccounts.id, locked.run.accountId))
         .for('update');
       if (!account) throw new Error('account not found');
+      // A limit with no reset time doubles the account's latest wait; while the account is still
+      // limited, it is the same limit: two runs reporting it wait once (07, section 5.2).
+      const limited = isLimited(account, now);
+      if (limited && !known) return true;
+      const minutes = known ? null : nextQuotaWait(account.quotaWaitMinutes, settings);
+      const until =
+        reset !== null && known ? reset : new Date(now.getTime() + (minutes ?? 0) * 60_000);
       // Two limits reported close together keep the later reset.
-      if (isLimited(account, now) && account.limitedUntil && account.limitedUntil >= until)
-        return true;
+      if (limited && account.limitedUntil && account.limitedUntil >= until) return true;
       await tx
         .update(schema.claudeAccounts)
         .set({
@@ -3365,6 +3497,7 @@ export class RunService {
           state: account.state === 'paused_manual' ? 'paused_manual' : 'limited',
           limitedUntil: until,
           limitedUntilEstimated: !known,
+          ...(minutes === null ? {} : { quotaWaitMinutes: minutes }),
           updatedAt: now,
         })
         .where(eq(schema.claudeAccounts.id, account.id));
@@ -3377,7 +3510,7 @@ export class RunService {
           label: account.label,
           until: until.toISOString(),
           source: known ? 'reset_time' : 'fallback',
-          ...(known ? {} : { fallbackMinutes: quotaFallbackDelayMinutes }),
+          ...(minutes === null ? {} : { fallbackMinutes: minutes }),
         },
         at: now,
       });

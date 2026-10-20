@@ -116,6 +116,7 @@ export const EventType = z.enum([
   'account.updated',
   'account.limited',
   'account.available',
+  'account.quota_wait_restarted',
   'account.paused',
   'account.resumed',
   'machine.created',
@@ -574,6 +575,12 @@ export const EventPayloads = {
   }),
   /** `limited_until` passed: written by the first action that reads the account after it. */
   'account.available': z.object({ label: z.string() }),
+  /**
+   * A run of the account ended a turn without a usage limit: the next limit with no reset time
+   * waits **Quota wait when the reset time is unknown** again, not double (07, section 5.2; lot 4
+   * step E). `minutes`: the wait of the latest one, now forgotten.
+   */
+  'account.quota_wait_restarted': z.object({ label: z.string(), minutes: z.int() }),
   /** The owner's **Stop new runs** (07, section 5.5): `activeRuns` keep going and finish. */
   'account.paused': z.object({ label: z.string(), activeRuns: z.int().min(0) }),
   /** The owner's **Resume**; `limitedUntil` when a usage limit reached meanwhile still holds. */
@@ -652,6 +659,12 @@ export const EventPayloads = {
     to: RunStatus,
     cause: RunChangeCause,
     pauseReason: PauseReason.optional(),
+    /**
+     * A pause on a suspected usage limit (lot 4 step E): when the scheduler resumes the run, and
+     * the wait in minutes (doubled at each pause of the run, up to **Longest quota wait**).
+     */
+    resumeAt: z.iso.datetime().optional(),
+    quotaWaitMinutes: z.int().optional(),
     failureReason: FailureReason.optional(),
     endReason: RunEndReason.optional(),
     /** Plain-words detail from the daemon or the server. */

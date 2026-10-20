@@ -189,6 +189,7 @@ export {
   HoldCause,
   MachineFailure,
   MachineFailureCause,
+  ResumeLeftOut,
   ReleaseAction,
   TicketHold,
   TicketMachineFailures,

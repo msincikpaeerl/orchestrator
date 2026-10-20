@@ -43,6 +43,11 @@ export const RunChangeCause = z.enum([
   /** The scheduler's loop started the run (07, section 2; lot 4 step D2a). */
   'scheduler',
   'resume',
+  /**
+   * The scheduler resumed a run paused on a usage limit, once its wait was over (07, section 5.2;
+   * lot 4 step E).
+   */
+  'scheduler_resume',
   'owner_stopped',
   'ticket_cancelled',
   'ticket_done',

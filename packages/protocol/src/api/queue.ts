@@ -34,6 +34,16 @@ export const QueueReason = z.discriminatedUnion('reason', [
   z.object({ reason: z.literal('needs_you'), item: BlockingItem, machine: MachineRef.nullable() }),
   /** A review while its project's **Start reviews by themselves** is off (07, section 1). */
   z.object({ reason: z.literal('reviews_off') }),
+  /**
+   * A run paused on a suspected usage limit, resumed by the scheduler at `until`: `minutes` after
+   * its pause, **Quota wait when the reset time is unknown** doubled at each pause of the run (07,
+   * section 5.2; owner's answer 9, lot 4 step E). The owner's **Resume** can resume it before.
+   */
+  z.object({
+    reason: z.literal('quota_wait'),
+    until: z.iso.datetime(),
+    minutes: z.int().positive(),
+  }),
 ]);
 export type QueueReason = z.infer<typeof QueueReason>;
 
