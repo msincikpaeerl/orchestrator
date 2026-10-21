@@ -40,8 +40,9 @@ jobs:
       - name: Dependency audit (fails on critical vulnerabilities)
         run: pnpm audit --audit-level critical
 
-  # The tests in three shards on three runners (ADR 0032). Vitest gives each shard a third of the
-  # test files, by a hash of their paths, not by duration: the slowest files decide the balance.
+  # The tests in four shards on four runners (ADR 0032; the fourth since lot 4 step J). Vitest gives
+  # each shard a quarter of the test files, by a hash of their paths, not by duration: the slowest
+  # files decide the balance.
   # One job id for all shards, so `ci` needs `test` once and fails if any shard failed.
   test:
     runs-on: ubuntu-24.04
@@ -51,7 +52,7 @@ jobs:
       fail-fast: false
       matrix:
         # 1 to N, in order: shard i runs `--shard=i/N`, N being the number of shards.
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7.0.1
 
