@@ -26,6 +26,7 @@ import {
   ClaudeAccount,
   NeedsYouResponse,
   EnrollmentResponse,
+  QueueResponse,
   Machine,
   Run,
   RunLogResponse,
@@ -996,6 +997,53 @@ describe('lot 4 acceptance scenario, real server and daemon, fake GitHub', () =>
   );
 });
 
+// Shared by step E's tests and scenario I: a limit reached, the run paused, its resumes.
+
+/** The scenario of a turn reaching a limit: detected with no reset time, or suspected. */
+const weeklyLimit = {
+  turns: [
+    {
+      steps: [{ do: 'text' as const, text: 'Working on the contact form.' }],
+      end: {
+        kind: 'stopFailure' as const,
+        error: 'rate_limit',
+        message: "You've hit your weekly limit",
+      },
+    },
+  ],
+};
+
+const finishing = {
+  turns: [{ steps: [commit('contact.html', 'Add the contact form'), submit] }],
+};
+
+async function pausedOn(runId: string, reason: 'usage_limit' | 'suspected_usage_limit') {
+  await until('the run paused', async () => (await run(runId)).status === 'paused_quota');
+  expect((await run(runId)).pauseReason).toBe(reason);
+  await until('the session closed', () => Promise.resolve(!sessionAlive(runId)));
+}
+
+async function accountRow() {
+  const [row] = await h.t.db.select().from(schema.claudeAccounts);
+  if (!row) throw new Error('no account');
+  return row;
+}
+/** Submitted: CI passes on the fake GitHub, the run ends and the ticket is in review. */
+async function finishes(runId: string) {
+  await until('the run succeeded and ended', async () => {
+    await h.t.ciTick();
+    return endedSucceeded(runId);
+  });
+  expect(await ticket()).toMatchObject({ status: 'in_review', attemptCount: 0 });
+}
+/** The `--resume` launches of the fake, each with the session of the first one. */
+async function resumes(): Promise<number> {
+  const starts = (await fake.log()).flatMap((entry) =>
+    entry.event === 'start' ? [entry.args] : [],
+  );
+  return starts.filter((args) => args.includes('--resume')).length;
+}
+
 describe('lot 4 step E: usage limits resumed by the scheduler, real server and daemon', () => {
   beforeEach(async () => {
     await startHarness({
@@ -1008,19 +1056,6 @@ describe('lot 4 step E: usage limits resumed by the scheduler, real server and d
   const tick = async () =>
     (await h.t.schedulerTick()).started.map((start) => `${start.kind} ${start.ticket}`);
   const now = () => Date.now() + ahead;
-  /** The scenario of a turn reaching a limit: detected with no reset time, or suspected. */
-  const weeklyLimit = {
-    turns: [
-      {
-        steps: [{ do: 'text' as const, text: 'Working on the contact form.' }],
-        end: {
-          kind: 'stopFailure' as const,
-          error: 'rate_limit',
-          message: "You've hit your weekly limit",
-        },
-      },
-    ],
-  };
   const overloaded = {
     turns: [
       {
@@ -1033,20 +1068,7 @@ describe('lot 4 step E: usage limits resumed by the scheduler, real server and d
       },
     ],
   };
-  const finishing = {
-    turns: [{ steps: [commit('contact.html', 'Add the contact form'), submit] }],
-  };
 
-  async function pausedOn(runId: string, reason: 'usage_limit' | 'suspected_usage_limit') {
-    await until('the run paused', async () => (await run(runId)).status === 'paused_quota');
-    expect((await run(runId)).pauseReason).toBe(reason);
-    await until('the session closed', () => Promise.resolve(!sessionAlive(runId)));
-  }
-  async function accountRow() {
-    const [row] = await h.t.db.select().from(schema.claudeAccounts);
-    if (!row) throw new Error('no account');
-    return row;
-  }
   async function runRow(id: string) {
     const [row] = await h.t.db.select().from(schema.runs).where(eq(schema.runs.id, id));
     if (!row) throw new Error('no run');
@@ -1059,21 +1081,6 @@ describe('lot 4 step E: usage limits resumed by the scheduler, real server and d
     );
     if (item?.type !== 'run_paused') throw new Error('no paused run in Needs you');
     return item;
-  }
-  /** Submitted: CI passes on the fake GitHub, the run ends and the ticket is in review. */
-  async function finishes(runId: string) {
-    await until('the run succeeded and ended', async () => {
-      await h.t.ciTick();
-      return endedSucceeded(runId);
-    });
-    expect(await ticket()).toMatchObject({ status: 'in_review', attemptCount: 0 });
-  }
-  /** The `--resume` launches of the fake, each with the session of the first one. */
-  async function resumes(): Promise<number> {
-    const starts = (await fake.log()).flatMap((entry) =>
-      entry.event === 'start' ? [entry.args] : [],
-    );
-    return starts.filter((args) => args.includes('--resume')).length;
   }
   /** The payloads of the events of `type`, oldest first. */
   const payloads = async (type: string) =>
@@ -1452,6 +1459,385 @@ describe('lot 4 step G: a machine offline during a run, real server and daemon',
       await until('the session stopped', () => Promise.resolve(!sessionAlive(review.id)));
       expect((await run(review.id)).status).toBe('failed');
       expect(await tick()).toEqual([]);
+    },
+    TIMEOUT,
+  );
+});
+
+// The lot 4 acceptance scenarios (lot 4 plan, step J): the night the owner leaves the system on,
+// as in step L, with the real server, daemon, tmux, the fake `claude` and the fake GitHub. Only
+// the merges are the owner's; the scheduler starts everything else, one `schedulerTick()` standing
+// for each of its checks, on the server's clock moved by the test.
+
+describe('lot 4 acceptance scenarios, the scheduler overnight, real server and daemon', () => {
+  beforeEach(async () => {
+    await startHarness({
+      gitOnFakeGitHub: true,
+      now: () => new Date(Date.now() + ahead),
+    });
+  });
+
+  const MINUTE = 60_000;
+  const HOUR = 60 * MINUTE;
+  /** What each session costs, by the fake's status line: the run's estimated usage. */
+  const COST_USD = 0.4;
+  const tick = async () =>
+    (await h.t.schedulerTick()).started.map((start) => `${start.kind} ${start.ticket}`);
+  const now = () => Date.now() + ahead;
+  /** The server's clock set to `at`. */
+  const clockAt = (at: number) => {
+    ahead = at - Date.now();
+  };
+  const latestRun = async () => {
+    const runs = await h.t.db.select().from(schema.runs);
+    const last = runs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+    if (!last) throw new Error('no run');
+    return last;
+  };
+  const queue = () => json((v) => QueueResponse.parse(v), 'GET', '/api/queue');
+  /** Each candidate as `kind WEB-n: reason`, in the queue's order. */
+  async function queueLines(): Promise<string[]> {
+    return (await queue()).candidates.map(
+      (candidate) =>
+        `${candidate.kind} WEB-${String(candidate.ticket.number)}: ${candidate.reason?.reason ?? `starts on ${candidate.machine?.name ?? '?'}`}`,
+    );
+  }
+  async function theAccount() {
+    const listed = await json((v) => AccountListResponse.parse(v), 'GET', '/api/accounts');
+    const [account] = listed.accounts;
+    if (!account) throw new Error('no account');
+    return account;
+  }
+  /** The sessions the fake was asked to start, resumes included. */
+  async function sessions(): Promise<number> {
+    return (await fake.log()).filter((entry) => entry.event === 'start').length;
+  }
+  const cost = { do: 'statusLine' as const, input: { cost: { total_cost_usd: COST_USD } } };
+
+  it(
+    'H: three tickets over a night, one high priority, one blocked: nothing before the window, each implemented, reviewed by itself and done in order after the merges',
+    async () => {
+      // The evening: 19:00 in the Orchestrator's time zone, the account's window from 20:00 to
+      // 06:00 every day, a daily budget in estimated usage as a safety net (step L, 4).
+      let evening = new Date(now());
+      evening.setUTCHours(19, 0, 0, 0);
+      while (evening.getTime() < Date.now() + HOUR) {
+        evening = new Date(evening.getTime() + 24 * HOUR);
+      }
+      clockAt(evening.getTime());
+      const zone = await h.call('PUT', '/api/time-zone', { timeZone: 'UTC' });
+      expect(zone.statusCode, zone.body).toBe(200);
+      const { machineId, account } = await enrolAndStart();
+      const everyDay = [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ];
+      const budget = { kind: 'estimated_usage', usd: 2 };
+      const saved = await h.call('PATCH', `/api/accounts/${account.id}`, {
+        schedule: [{ days: everyDay, start: '20:00', end: '06:00' }],
+        dailyBudget: budget,
+      });
+      expect(saved.statusCode, saved.body).toBe(200);
+      await h.createTicket({ title: 'Add a line about the scheduler to README.md' });
+      await h.createTicket({ title: 'Add a CONTRIBUTING.md file', priority: 'high' });
+      await h.createTicket({ title: 'Link CONTRIBUTING.md from README.md', blockedBy: [1] });
+      const windowOpens = evening.getTime() + HOUR;
+
+      // Before the window (step L, 4): WEB-2 first, WEB-1 next, both waiting for the window at
+      // 20:00; WEB-3 blocked by WEB-1. The account's line says why it starts nothing.
+      const before = await queue();
+      expect(before.accounts).toMatchObject([
+        {
+          unavailable: {
+            why: 'account_outside_window',
+            next: new Date(windowOpens).toISOString(),
+          },
+          active: 0,
+          maxConcurrentRuns: 1,
+        },
+      ]);
+      const outside = {
+        reason: 'no_machine',
+        machines: [
+          {
+            machine: { id: machineId, name: 'Laptop' },
+            unavailable: {
+              why: 'account_outside_window',
+              next: new Date(windowOpens).toISOString(),
+            },
+          },
+        ],
+      };
+      expect(before.candidates).toMatchObject([
+        { kind: 'implement', ticket: { number: 2, priority: 'high' }, reason: outside },
+        { kind: 'implement', ticket: { number: 1 }, blocks: 1, reason: outside },
+        {
+          kind: 'implement',
+          ticket: { number: 3 },
+          reason: { reason: 'blocked', tickets: ['WEB-1'] },
+        },
+      ]);
+      expect(await tick()).toEqual([]);
+      clockAt(windowOpens - MINUTE);
+      expect(await tick()).toEqual([]);
+      expect(await sessions()).toBe(0);
+
+      /** One ticket's night: implemented, CI passed, reviewed by Quality by itself. */
+      async function implementedAndReviewed(number: number, file: string, subject: string) {
+        const reference = `WEB-${String(number)}`;
+        await fake.play({ turns: [{ steps: [commit(file, subject), cost, submit] }] });
+        expect(await tick()).toEqual([`implement ${reference}`]);
+        const built = await latestRun();
+        await until(`${reference} submitted, CI passed`, async () => {
+          await h.t.ciTick();
+          return endedSucceeded(built.id);
+        });
+        expect(await ticket(number)).toMatchObject({ status: 'in_review', attemptCount: 0 });
+        await fake.play({
+          turns: [
+            {
+              steps: [cost, { do: 'mcp', tool: 'review_approve', arguments: { summary: SUMMARY } }],
+            },
+          ],
+        });
+        expect(await tick()).toEqual([`review ${reference}`]);
+        const review = await latestRun();
+        await until(`${reference} reviewed`, async () => {
+          const current = await run(review.id);
+          return current.status === 'succeeded' && !current.sessionAlive;
+        });
+        expect(await ticket(number)).toMatchObject({ status: 'awaiting_merge' });
+        expect((await run(review.id)).purpose).toBe('review');
+      }
+
+      // The window opens: the high-priority ticket first, then its review before any new work.
+      clockAt(windowOpens + MINUTE);
+      await implementedAndReviewed(2, 'CONTRIBUTING.md', 'Add CONTRIBUTING.md');
+
+      // After the first ticket: WEB-1 starts at the next check; WEB-3 still waits for it.
+      expect(await queueLines()).toEqual([
+        'implement WEB-1: starts on Laptop',
+        'implement WEB-3: blocked',
+      ]);
+      await implementedAndReviewed(1, 'scheduler.md', 'Add a line about the scheduler');
+
+      // WEB-3 waits for WEB-1's merge all night: nothing else starts.
+      expect(await tick()).toEqual([]);
+      const night = (await theAccount()).today;
+      expect(night.usage).toMatchObject({ runs: 4, runsWithoutEstimate: 0 });
+      expect(night.usage.estimatedUsageUsd).toBeCloseTo(4 * COST_USD);
+      expect(night.budgetUsed).toBe(false);
+
+      // The morning (step L, 5): both awaiting merge, WEB-3 blocked by WEB-1.
+      const morning = evening.getTime() + 12 * HOUR;
+      clockAt(morning);
+      expect(await queueLines()).toEqual(['implement WEB-3: blocked']);
+      expect(await tick()).toEqual([]);
+
+      // The owner merges both on GitHub: each done at the next check, WEB-2 then WEB-1.
+      for (const number of [2, 1]) {
+        const opened = (await ticket(number)).pullRequest.opened;
+        if (!opened) throw new Error(`no pull request for WEB-${String(number)}`);
+        h.github.mergePullRequest(bakery(), opened.number, 'merge');
+        await until(`WEB-${String(number)} done`, async () => {
+          await h.t.ciTick();
+          return (await ticket(number)).status === 'done';
+        });
+      }
+
+      // Outside the window (step L, 6): WEB-3 waits for it now, not for WEB-1.
+      const nextWindow = windowOpens + 24 * HOUR;
+      expect((await queue()).candidates).toMatchObject([
+        {
+          ticket: { number: 3 },
+          reason: {
+            reason: 'no_machine',
+            machines: [
+              {
+                unavailable: {
+                  why: 'account_outside_window',
+                  next: new Date(nextWindow).toISOString(),
+                },
+              },
+            ],
+          },
+        },
+      ]);
+      expect(await tick()).toEqual([]);
+
+      // The next evening's window: WEB-3, then its review, then the owner's merge.
+      clockAt(nextWindow + MINUTE);
+      await implementedAndReviewed(3, 'link.md', 'Link CONTRIBUTING.md from README.md');
+      const opened = (await ticket(3)).pullRequest.opened;
+      if (!opened) throw new Error('no pull request for WEB-3');
+      h.github.mergePullRequest(bakery(), opened.number, 'merge');
+      await until('WEB-3 done', async () => {
+        await h.t.ciTick();
+        return (await ticket(3)).status === 'done';
+      });
+
+      // At the end: nothing waits, and the second night stayed within the budget too.
+      expect(await queue()).toMatchObject({ candidates: [] });
+      expect(await tick()).toEqual([]);
+      const second = (await theAccount()).today;
+      expect(second.usage).toMatchObject({ runs: 2, runsWithoutEstimate: 0 });
+      expect(second.budgetUsed).toBe(false);
+
+      // Every run started by the scheduler, inside a window, in the expected order; none failed.
+      const runs = (await h.t.db.select().from(schema.runs)).sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+      const numbers = new Map(
+        (await h.t.db.select().from(schema.tickets)).map((row) => [row.id, row.number]),
+      );
+      expect(
+        runs.map((row) => `${row.purpose} WEB-${String(numbers.get(row.ticketId ?? ''))}`),
+      ).toEqual([
+        'implement WEB-2',
+        'review WEB-2',
+        'implement WEB-1',
+        'review WEB-1',
+        'implement WEB-3',
+        'review WEB-3',
+      ]);
+      for (const row of runs) {
+        expect(row.status).toBe('succeeded');
+        const hour = (row.startedAt ?? new Date(0)).getUTCHours();
+        expect(hour >= 20 || hour < 6, `${row.id} started at ${String(hour)}:00`).toBe(true);
+      }
+      // Done in that order: WEB-2, WEB-1, then the blocked WEB-3.
+      const done = (await h.events('ticket.status_changed'))
+        .filter((event) => (event.payload as { to: string }).to === 'done')
+        .map((event) => numbers.get(event.entityId ?? ''));
+      expect(done).toEqual([2, 1, 3]);
+      expect(await sessions()).toBe(6);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'I: a usage limit with no reset time: paused, resumed by itself after 1 hour, then after 2, then submitted, no failed attempt',
+    async () => {
+      await fake.play(weeklyLimit);
+      await enrolAndStart();
+      await h.createTicket();
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const started = await latestRun();
+
+      for (const [index, wait] of [60, 120].entries()) {
+        await pausedOn(started.id, 'usage_limit');
+        await until('the pause recorded', async () => (await resumes()) === index);
+        const limited = await accountRow();
+        expect(limited).toMatchObject({
+          state: 'limited',
+          limitedUntilEstimated: true,
+          quotaWaitMinutes: wait,
+        });
+        expect(Math.round(((limited.limitedUntil?.getTime() ?? 0) - now()) / MINUTE)).toBe(wait);
+        // The queue says the run waits for the account's limit; nothing starts before.
+        expect((await queue()).candidates).toMatchObject([
+          {
+            kind: 'resume',
+            runId: started.id,
+            reason: {
+              reason: 'account_limited',
+              until: limited.limitedUntil?.toISOString(),
+            },
+          },
+        ]);
+        ahead += (wait - 1) * MINUTE;
+        expect(await tick()).toEqual([]);
+        ahead += 2 * MINUTE;
+        if (wait === 120) await fake.play(finishing);
+        expect(await tick()).toEqual(['resume WEB-1']);
+      }
+      await finishes(started.id);
+
+      // One run, paused twice and resumed twice in its own session: no failed attempt.
+      const runs = await h.t.db.select().from(schema.runs);
+      expect(runs.map((row) => row.status)).toEqual(['succeeded']);
+      expect(await resumes()).toBe(2);
+      expect(await sessions()).toBe(3);
+      expect(
+        (await h.events('account.limited')).map(
+          (event) => (event.payload as { fallbackMinutes: number }).fallbackMinutes,
+        ),
+      ).toEqual([60, 120]);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'J: the daemon stopped longer than Runs of an offline machine fail after: the run failed, not counted, started again once the machine is back',
+    async () => {
+      // The agent commits, then works on for a minute: the daemon is stopped meanwhile.
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              commit('contact.html', 'Add the contact form'),
+              { do: 'bash', command: 'touch working' },
+              { do: 'sleep', ms: 60_000 },
+            ],
+          },
+        ],
+      });
+      const { machineId } = await enrolAndStart();
+      await h.createTicket();
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const started = await latestRun();
+      await until('the agent at work', async () =>
+        (
+          await readdir(join(home.paths.home, 'worktrees', started.id)).catch((): string[] => [])
+        ).includes('working'),
+      );
+
+      // Stopped for 11 minutes (Runs of an offline machine fail after: 10): failed, not counted.
+      const daemon = daemons[0];
+      if (!daemon) throw new Error('no daemon');
+      await stopDaemon(daemon);
+      await until('the machine offline', async () => !(await machine(machineId)).online);
+      ahead += 11 * MINUTE;
+      expect(await tick()).toEqual([]);
+      expect(await run(started.id)).toMatchObject({
+        status: 'failed',
+        failureReason: 'machine_offline',
+      });
+      expect(await ticket()).toMatchObject({ status: 'todo', attemptCount: 0 });
+      expect((await h.events('ticket.status_changed')).at(-1)?.payload).toMatchObject({
+        to: 'todo',
+        attemptCounted: false,
+      });
+      // While it stays away, nothing starts: the queue says the machine is offline.
+      expect((await queue()).candidates).toMatchObject([
+        {
+          ticket: { number: 1 },
+          reason: {
+            reason: 'no_machine',
+            machines: [{ machine: { name: 'Laptop' }, unavailable: { why: 'offline' } }],
+          },
+        },
+      ]);
+      expect(await tick()).toEqual([]);
+
+      // Back: its old session stopped, and the scheduler starts the ticket again there.
+      startDaemon();
+      await until('the machine online', async () => (await machine(machineId)).online);
+      await until('the old session stopped', () => Promise.resolve(!sessionAlive(started.id)));
+      await fake.play({
+        turns: [{ steps: [commit('thanks.html', 'Add the thank-you message'), submit] }],
+      });
+      expect(await tick()).toEqual(['implement WEB-1']);
+      const next = await latestRun();
+      expect(next.id).not.toBe(started.id);
+      expect(next.machineId).toBe(machineId);
+      await finishes(next.id);
+      expect(await sessions()).toBe(2);
     },
     TIMEOUT,
   );
