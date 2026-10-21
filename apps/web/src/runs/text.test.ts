@@ -5,6 +5,7 @@ import {
   QueueReason,
   RunRefusal,
   type MachineUnavailable,
+  type Run,
 } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { formatDateTime } from '../github/text';
@@ -16,6 +17,8 @@ import {
   resumesUsedText,
   runBranchText,
   runRefusalText,
+  runTimes,
+  runTimesText,
   ticketUsageText,
   unavailableText,
 } from './text';
@@ -354,5 +357,61 @@ describe("a ticket's estimated usage (lot 4 step C)", () => {
     expect(ticketUsageText([{ estimatedUsageUsd: 0.5 }, { estimatedUsageUsd: null }])).toBe(
       'Estimated usage: $0.50 over 2 runs (estimated by Claude Code); 1 of them has no estimate yet and counts as $0.00.',
     );
+  });
+});
+
+describe("a run's waiting time split between you, CI and the usage limit (lot 4 step H)", () => {
+  const since = '2026-10-21T04:00:00.000Z';
+  const now = Date.parse('2026-10-21T04:10:00.000Z');
+  const run = (fields: Partial<Parameters<typeof runTimes>[0]> = {}) => ({
+    status: 'running' as const,
+    workingMs: 20 * 60_000,
+    waitingMs: 35 * 60_000,
+    waiting: { ownerMs: 5 * 60_000, ciMs: 30 * 60_000, quotaMs: 0 },
+    statusSince: since,
+    ...fields,
+  });
+
+  it('adds the current period to what the run waits for', () => {
+    expect(runTimes(run({ status: 'waiting_human' }), now)).toEqual({
+      workingMs: 20 * 60_000,
+      waitingMs: 45 * 60_000,
+      waiting: { ownerMs: 15 * 60_000, ciMs: 30 * 60_000, quotaMs: 0 },
+    });
+    expect(runTimes(run({ status: 'paused_quota' }), now).waiting.quotaMs).toBe(10 * 60_000);
+    const ci = { waitingSince: since } as NonNullable<Run['ci']>;
+    expect(runTimes(run({ ci }), now)).toEqual({
+      workingMs: 20 * 60_000,
+      waitingMs: 45 * 60_000,
+      waiting: { ownerMs: 5 * 60_000, ciMs: 40 * 60_000, quotaMs: 0 },
+    });
+    expect(runTimes(run(), now).workingMs).toBe(30 * 60_000);
+    expect(runTimes(run({ status: 'succeeded' }), now)).toEqual({
+      workingMs: 20 * 60_000,
+      waitingMs: 35 * 60_000,
+      waiting: { ownerMs: 5 * 60_000, ciMs: 30 * 60_000, quotaMs: 0 },
+    });
+  });
+
+  it('names each part that has time, and none when the run never waited', () => {
+    expect(runTimesText(runTimes(run({ status: 'failed' }), now))).toBe(
+      'working 20 min · waiting 35 min (for you 5 min, for CI 30 min)',
+    );
+    expect(
+      runTimesText({
+        workingMs: 3_600_000,
+        waitingMs: 7_500_000,
+        waiting: { ownerMs: 60_000, ciMs: 240_000, quotaMs: 7_200_000 },
+      }),
+    ).toBe(
+      'working 1 h · waiting 2 h 5 min (for you 1 min, for CI 4 min, for the usage limit 2 h)',
+    );
+    expect(
+      runTimesText({
+        workingMs: 45_000,
+        waitingMs: 0,
+        waiting: { ownerMs: 0, ciMs: 0, quotaMs: 0 },
+      }),
+    ).toBe('working 45 s · waiting 0 s');
   });
 });

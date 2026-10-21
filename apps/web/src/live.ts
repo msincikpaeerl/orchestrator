@@ -40,7 +40,7 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
   switch (message.entity) {
     case 'ticket':
     case 'project':
-      return [[...keys.projects], [...keys.runs], [...keys.needsYou]];
+      return [[...keys.projects], [...keys.runs], [...keys.needsYou], [...keys.queue]];
     case 'run':
       return [
         [...keys.runs],
@@ -48,10 +48,17 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
         [...keys.needsYou],
         [...keys.machines],
         [...keys.accounts],
+        [...keys.queue],
       ];
     case 'machine':
     case 'claude_account':
-      return [[...keys.machines], [...keys.accounts], [...keys.needsYou], [...keys.runs]];
+      return [
+        [...keys.machines],
+        [...keys.accounts],
+        [...keys.needsYou],
+        [...keys.runs],
+        [...keys.queue],
+      ];
     case 'setting':
       // The time zone moves every account's windows and day.
       return [
@@ -60,11 +67,13 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
         [...keys.timeZone],
         [...keys.accounts],
         [...keys.needsYou],
+        [...keys.queue],
       ];
     case 'github_connection':
-      return [[...keys.github], [...keys.setup], [...keys.needsYou]];
+      return [[...keys.github], [...keys.setup], [...keys.needsYou], [...keys.queue]];
     case 'agent_profile':
-      return [[...keys.agents]];
+      // An agent's required capabilities choose the machines of its tickets (07, section 4).
+      return [[...keys.agents], [...keys.queue]];
     case 'owner':
     case 'session':
       return [[...keys.session]];

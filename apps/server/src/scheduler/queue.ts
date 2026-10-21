@@ -17,7 +17,7 @@ import { count, desc, eq, inArray, max } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../database.js';
 import { accountToday, accountUsage, todayKey } from '../machines/account-day.js';
-import type { MachineRow } from '../machines/model.js';
+import { toAccount, type MachineRow } from '../machines/model.js';
 import {
   ciCancelledItems,
   ciTimeoutItems,
@@ -459,11 +459,30 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
 
   const lines: QueueAccount[] = accountRows.map((account) => ({
     account: { id: account.id, label: account.label },
+    status: accountStatus(
+      account,
+      days.get(account.id) ?? accountToday(account, undefined, timeZone, now),
+      now,
+    ),
     active: busy.get(account.id) ?? 0,
     maxConcurrentRuns: account.maxConcurrentRuns,
     unavailable: accountUnavailable(account, busy.get(account.id) ?? 0, now, days.get(account.id)),
   }));
   return { at: now.toISOString(), accounts: lines, candidates };
+}
+
+/** The account's state, window and day, as its page shows them (02, section 7; lot 4 step H). */
+function accountStatus(
+  account: typeof schema.claudeAccounts.$inferSelect,
+  today: AccountToday,
+  now: Date,
+): QueueAccount['status'] {
+  const { state, limitedUntil, limitedUntilEstimated, dailyBudget } = toAccount(
+    account,
+    today,
+    now,
+  );
+  return { state, limitedUntil, limitedUntilEstimated, dailyBudget, today };
 }
 
 /**

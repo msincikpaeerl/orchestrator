@@ -11,8 +11,8 @@ import {
   RunPurpose,
   RunStatus,
   UNCOUNTED_FAILURES,
-  WAITING_RUN_STATUSES,
   WORKING_RUN_STATUSES,
+  runWaitKind,
   type DaemonRunState,
   type PullRequestState,
   type Run,
@@ -235,6 +235,11 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     review: runReview(row, context.pullRequest?.number ?? null),
     workingMs: row.workingMs,
     waitingMs: row.waitingMs,
+    waiting: {
+      ownerMs: row.waitingOwnerMs,
+      ciMs: row.waitingCiMs,
+      quotaMs: row.waitingQuotaMs,
+    },
     statusSince: row.statusSince.toISOString(),
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
@@ -242,24 +247,36 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
   };
 }
 
+/** A run's time totals (01, section 3.7): working, waiting, and waiting split by what for. */
+export type RunTimes = Pick<
+  RunRow,
+  'workingMs' | 'waitingMs' | 'waitingOwnerMs' | 'waitingCiMs' | 'waitingQuotaMs'
+>;
+
 /**
  * The run's working and waiting totals when its status changes at `now` (01, section 3.7): the
- * time since `statusSince` goes to the total of the status it leaves, if any.
+ * time since `statusSince` goes to the total of the status it leaves, if any, and its waiting time
+ * to what the run waited for (07, section 7; lot 4 step H).
  */
 export function statusTimes(
-  row: Pick<RunRow, 'status' | 'statusSince' | 'workingMs' | 'waitingMs'> & {
-    ciWaitingSince?: Date | null;
-  },
+  row: Pick<RunRow, 'status' | 'statusSince'> &
+    RunTimes & {
+      ciWaitingSince?: Date | null;
+    },
   now: Date,
-): Pick<RunRow, 'statusSince' | 'workingMs' | 'waitingMs'> {
+): Pick<RunRow, 'statusSince'> & RunTimes {
   const status = RunStatus.parse(row.status);
   const spent = Math.max(0, now.getTime() - row.statusSince.getTime());
   // A run waiting for CI is `running`, its time waiting (01, section 3.7; lot 3 step G1a).
-  const waitingForCi = status === 'running' && (row.ciWaitingSince ?? null) !== null;
+  const waitingFor = runWaitKind(status, (row.ciWaitingSince ?? null) !== null);
   return {
     statusSince: now,
-    workingMs: row.workingMs + (WORKING_RUN_STATUSES.includes(status) && !waitingForCi ? spent : 0),
-    waitingMs: row.waitingMs + (WAITING_RUN_STATUSES.includes(status) || waitingForCi ? spent : 0),
+    workingMs:
+      row.workingMs + (WORKING_RUN_STATUSES.includes(status) && waitingFor === null ? spent : 0),
+    waitingMs: row.waitingMs + (waitingFor === null ? 0 : spent),
+    waitingOwnerMs: row.waitingOwnerMs + (waitingFor === 'owner' ? spent : 0),
+    waitingCiMs: row.waitingCiMs + (waitingFor === 'ci' ? spent : 0),
+    waitingQuotaMs: row.waitingQuotaMs + (waitingFor === 'quota' ? spent : 0),
   };
 }
 

@@ -370,3 +370,27 @@ export async function startRun(page: Page, runId: string): Promise<string> {
   await reportState(page, runId, 'working');
   return runToken;
 }
+
+/**
+ * The scripted daemon reports a usage limit for the run (05, section 4.10): `detected`, with its
+ * reset time when given, or `suspected`. The run is then paused.
+ */
+export async function limited(
+  page: Page,
+  runId: string,
+  kind: 'detected' | 'suspected',
+  resetsAt?: string,
+) {
+  const answer = await daemonRequest(page, 'run.quota_limited', {
+    runId,
+    kind,
+    ...(kind === 'detected' ? { resetsAt: resetsAt ?? null } : {}),
+    evidence: {
+      signal: 'stop_failure',
+      error: kind === 'detected' ? 'rate_limit' : 'overloaded',
+      message: kind === 'detected' ? "You've hit your session limit" : 'API Error: 529 Overloaded',
+      statusLine: null,
+    },
+  });
+  expect(answer).toMatchObject({ type: 'ack', payload: { ok: true } });
+}

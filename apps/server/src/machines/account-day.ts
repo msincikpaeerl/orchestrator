@@ -50,6 +50,9 @@ export async function accountUsage(
       statusSince: schema.runs.statusSince,
       workingMs: schema.runs.workingMs,
       waitingMs: schema.runs.waitingMs,
+      waitingOwnerMs: schema.runs.waitingOwnerMs,
+      waitingCiMs: schema.runs.waitingCiMs,
+      waitingQuotaMs: schema.runs.waitingQuotaMs,
       ciWaitingSince: schema.runs.ciWaitingSince,
       estimatedUsageUsd: schema.runs.estimatedUsageUsd,
     })

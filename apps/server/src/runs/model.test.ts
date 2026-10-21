@@ -7,42 +7,63 @@ import { isCounted, nextQuotaWait, statusTimes } from './model.js';
 const since = new Date('2026-09-29T10:00:00Z');
 const now = new Date('2026-09-29T10:01:30Z');
 
-function leaving(status: string) {
-  return statusTimes({ status, statusSince: since, workingMs: 1000, waitingMs: 2000 }, now);
+const before = {
+  workingMs: 1000,
+  waitingMs: 2000,
+  waitingOwnerMs: 500,
+  waitingCiMs: 700,
+  waitingQuotaMs: 800,
+};
+
+function leaving(status: string, ciWaitingSince: Date | null = null) {
+  return statusTimes({ status, statusSince: since, ciWaitingSince, ...before }, now);
 }
 
 describe('statusTimes', () => {
   it('adds the time since the last change to working for starting and running', () => {
-    expect(leaving('starting')).toEqual({ statusSince: now, workingMs: 91_000, waitingMs: 2000 });
-    expect(leaving('running')).toEqual({ statusSince: now, workingMs: 91_000, waitingMs: 2000 });
+    expect(leaving('starting')).toEqual({ ...before, statusSince: now, workingMs: 91_000 });
+    expect(leaving('running')).toEqual({ ...before, statusSince: now, workingMs: 91_000 });
   });
 
-  it('adds it to waiting for waiting_human and paused_quota', () => {
+  // The waiting time split between the owner, CI and the quota (07, section 7; lot 4 step H).
+  it('adds it to waiting for the owner in waiting_human', () => {
     expect(leaving('waiting_human')).toEqual({
+      ...before,
       statusSince: now,
-      workingMs: 1000,
       waitingMs: 92_000,
+      waitingOwnerMs: 90_500,
     });
+  });
+
+  it('adds it to waiting for the quota in paused_quota', () => {
     expect(leaving('paused_quota')).toEqual({
+      ...before,
       statusSince: now,
-      workingMs: 1000,
       waitingMs: 92_000,
+      waitingQuotaMs: 90_800,
+    });
+  });
+
+  it('adds it to waiting for CI while running with its session idle waiting for CI', () => {
+    expect(leaving('running', since)).toEqual({
+      ...before,
+      statusSince: now,
+      waitingMs: 92_000,
+      waitingCiMs: 90_700,
     });
   });
 
   it('counts queued and dispatched in neither', () => {
-    expect(leaving('queued')).toEqual({ statusSince: now, workingMs: 1000, waitingMs: 2000 });
-    expect(leaving('dispatched')).toEqual({ statusSince: now, workingMs: 1000, waitingMs: 2000 });
+    expect(leaving('queued')).toEqual({ ...before, statusSince: now });
+    expect(leaving('dispatched')).toEqual({ ...before, statusSince: now });
   });
 
   it('never subtracts when the clock went back', () => {
     const earlier = new Date('2026-09-29T09:00:00Z');
-    expect(
-      statusTimes(
-        { status: 'running', statusSince: since, workingMs: 1000, waitingMs: 0 },
-        earlier,
-      ),
-    ).toEqual({ statusSince: earlier, workingMs: 1000, waitingMs: 0 });
+    expect(statusTimes({ status: 'running', statusSince: since, ...before }, earlier)).toEqual({
+      ...before,
+      statusSince: earlier,
+    });
   });
 });
 

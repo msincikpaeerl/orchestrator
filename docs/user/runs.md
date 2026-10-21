@@ -62,7 +62,7 @@ Projects take turns, so one large project does not hold up the others.
 
 **Where and how many**: only on a Claude account that can start a run: inside its windows, under its daily budget, not paused and not at its usage limit (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), and on a machine that can take the run, as for **Run now**. It starts one run per account at a time, until the account runs its **Runs at the same time**; the next ticket starts when a run ends.
 
-**How you can tell**: the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
+**How you can tell**: **Activity > Queue** shows what it starts next and why each other ticket waits (see [Queue](activity.md#queue)); the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
 
 **How much it can start for one ticket**, with the default settings and nothing done by you: the first run, then a review, and after each request for changes by Quality a fix and another review. Quality may ask for changes **Most review rounds per ticket** times (2 by default): one more request stops the ticket, so at most 3 runs of its agent and 3 reviews. Failed runs of its agent count too, at most **Failed attempts before asking you** (2 by default) over the ticket's life before it stops. So at most 8 Claude Code sessions for one ticket before it waits for you, and usually 2 (one run, one review). A run whose machine went offline during it does not count: it can start again once that machine is back, at most **Machine failures before asking you** (2 by default) times in a row on that machine. Each **Request changes** of yours starts a fix and a review again, within the same limits.
 
@@ -85,7 +85,7 @@ The screens update on their own while you look at them: you never need to reload
 - The **run page** shows:
   - its status, with the reason when it is paused or has failed;
   - the agent, the machine and the Claude account;
-  - the time spent **working**, and **waiting** for you or for the usage limit;
+  - the time spent **working**, and **waiting**, split between **for you**, **for CI** and **for the usage limit** (see [Live runs](activity.md#live-runs));
   - the **estimated usage**: what the run would cost in US dollars, as Claude Code estimates it. With a Pro or Max plan you pay nothing more: it only helps compare runs;
   - the agent's latest progress line, and its outcome at the end;
   - the **Branch**: the ticket's branch on the run's machine as the run left it, with its commits. When the run ended because the machine could not download the project from GitHub, it says "No branch was made on machine …", or shows the branch as it was before the run when the machine already had it from an earlier run;

@@ -37,8 +37,11 @@ test('reading the event log and filtering it by project and ticket', async ({ pa
   await expect(
     page.getByRole('main').getByRole('link', { name: 'Help', exact: true }),
   ).toHaveAttribute('href', '/help/activity');
-  // The queue comes with a later version; the event log fields are those of its own section.
-  await expect(page.getByText(/^Coming in a later version: the tickets waiting/)).toBeVisible();
+  // The queue (lot 4 step H): WEB-2 waits for the scheduler, with no machine yet; the event log
+  // fields are those of its own section.
+  await expect(page.getByRole('list', { name: 'Queue', exact: true })).toContainText(
+    'WEB-2 · Second ticket',
+  );
   const log = page.getByRole('region', { name: 'Event log' });
 
   const events = page.getByRole('list', { name: 'Events' });
@@ -107,9 +110,10 @@ test('Live runs shows what the agent does now, then History keeps the ended run'
   await expect(latest).toContainText('Running the tests');
   await live.getByText('Watch it in a terminal').click();
   await expect(live.getByLabel('Attach command')).toHaveText(`orchestrator-daemon attach ${runId}`);
-  await expect(
-    page.getByText('Coming in a later version: the tickets waiting to run'),
-  ).toBeVisible();
+  // The running ticket is not in the queue: nothing else waits (lot 4 step H).
+  await expect(page.getByText(/^Nothing is waiting: no ticket in To do/)).toBeVisible();
+  // Its times, the waiting time split once it waits (lot 4 step H).
+  await expect(live).toContainText(/working \d+ s · waiting 0 s/);
   await expectFitsScreen(page);
 
   await live.getByRole('button', { name: 'Stop run' }).click();

@@ -121,12 +121,7 @@ async function ownerStarts(): Promise<number> {
   return (await h.events('run.created')).filter((event) => event.actor === 'owner').length;
 }
 
-// The first cases run a whole cycle of runs: about 1.5 seconds alone, up to 5.2 under the full
-// suite's load (the file run 8 times beside a full `pnpm test`), every case of the file about three
-// times slower, with no wait among its steps (lot 4 step E, as `conflicts-moved-head.test.ts`).
-const SCENARIO = { timeout: 15_000 };
-
-describe('reviews and fixes by themselves (07, section 1)', SCENARIO, () => {
+describe('reviews and fixes by themselves (07, section 1)', () => {
   it('implement, review, changes requested, fix, review, approved: Awaiting merge with no owner action', async () => {
     await h.start();
     await h.createTicket();
@@ -238,7 +233,7 @@ describe('reviews and fixes by themselves (07, section 1)', SCENARIO, () => {
   });
 });
 
-describe('the switch Start reviews by themselves (02, section 6.5)', SCENARIO, () => {
+describe('the switch Start reviews by themselves (02, section 6.5)', () => {
   it('off: the review waits for Start review, the queue and the screens say so; on again: it starts', async () => {
     await h.start();
     await h.createTicket();

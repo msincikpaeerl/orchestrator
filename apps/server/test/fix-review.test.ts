@@ -358,9 +358,7 @@ describe('the rounds limit (answer 2)', () => {
         ?.split('## Earlier reviews')[0] ?? '';
     expect(previous).toMatch(/Quality requested changes on commit [0-9a-f]{40} at [^.(]+ UTC\. /);
     expect(previous).not.toContain('(round');
-    // Four runs through to their reviews: 1.6 seconds on an idle machine, up to 5.3 under a full
-    // run with two more suites (lot 3 step J3a, measured): the default 5 seconds was too short.
-  }, 15_000);
+  });
 
   it('refuses Try again on a ticket that is not stopped', async () => {
     await inReview();

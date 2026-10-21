@@ -24,6 +24,7 @@ import {
   openQuestion,
   pausedText,
   runTimes,
+  runTimesText,
   shortHash,
 } from './text';
 
@@ -68,15 +69,10 @@ export function ResetCountdown({ account }: { account: Pick<AccountStatus, 'limi
   return <> (in {durationText(Math.max(60_000, left))})</>;
 }
 
-/** "Working 12 min · waiting 3 min" (01, section 3.7). */
+/** "working 12 min · waiting 3 min (for you 3 min)" (01, section 3.7; 07, section 7). */
 export function RunTimes({ run }: { run: Run }) {
   const now = useNow(isActive(run.status));
-  const { workingMs, waitingMs } = runTimes(run, now);
-  return (
-    <>
-      working {durationText(workingMs)} · waiting {durationText(waitingMs)}
-    </>
-  );
+  return <>{runTimesText(runTimes(run, now))}</>;
 }
 
 /** Commits of a branch, newest first: short hash and subject. */

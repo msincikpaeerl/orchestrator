@@ -185,6 +185,16 @@ export const Run = z.object({
    */
   workingMs: z.int().min(0),
   waitingMs: z.int().min(0),
+  /**
+   * `waitingMs` split by what the run waited for (07, section 7; lot 4 step H): the owner
+   * (`waiting_human`), CI (waiting for CI, its session idle) and the quota (`paused_quota`). Their
+   * sum is `waitingMs`.
+   */
+  waiting: z.object({
+    ownerMs: z.int().min(0),
+    ciMs: z.int().min(0),
+    quotaMs: z.int().min(0),
+  }),
   /** When the current status began. */
   statusSince: z.iso.datetime(),
   createdAt: z.iso.datetime(),
@@ -211,6 +221,21 @@ export type RunDetail = z.infer<typeof RunDetail>;
 /** Statuses whose time counts as working, and as waiting (01, section 3.7). */
 export const WORKING_RUN_STATUSES: readonly RunStatus[] = ['starting', 'running'];
 export const WAITING_RUN_STATUSES: readonly RunStatus[] = ['waiting_human', 'paused_quota'];
+
+/** What a run's waiting time waits for (07, section 7; lot 4 step H). */
+export const RunWaitKind = z.enum(['owner', 'ci', 'quota']);
+export type RunWaitKind = z.infer<typeof RunWaitKind>;
+
+/**
+ * What a run in `status` waits for, or null when its time is working time or neither (01, section
+ * 3.7): the owner in `waiting_human`, the quota in `paused_quota`, CI while `running` with its
+ * session idle waiting for CI (`waitingForCi`; lot 3 step G1a).
+ */
+export function runWaitKind(status: RunStatus, waitingForCi: boolean): RunWaitKind | null {
+  if (status === 'waiting_human') return 'owner';
+  if (status === 'paused_quota') return 'quota';
+  return status === 'running' && waitingForCi ? 'ci' : null;
+}
 
 /** `GET /api/projects/:key/tickets/:number/runs`: newest first. */
 export const RunListResponse = z.object({ runs: z.array(Run) });

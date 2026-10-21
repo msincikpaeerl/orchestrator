@@ -168,6 +168,8 @@ Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish;
 - The queue: next candidates in order, with the reason when something cannot start ("waiting for window at 00:00", "no machine with android-sdk", "blocked by WEB-3", "Held: you stopped its run").
 - Per run: time working, time waiting (owner, CI, quota).
 
+**As built in lot 4 step H**: Activity > **Queue** (02, section 7) shows `GET /api/queue`, whose account lines also carry the account's state, limit, daily budget and day; the run's waiting time is kept split (01, section 3.7, `waiting_owner_ms`, `waiting_ci_ms`, `waiting_quota_ms`) and shown "waiting 1 h 5 min (for you 5 min, for CI 1 h, for the usage limit …)".
+
 ## 8. Settings
 
 | Setting | Default | Allowed range | Scope |

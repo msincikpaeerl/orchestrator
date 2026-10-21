@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { HoldCause } from './holds.js';
+import { ClaudeAccount } from './machines.js';
 import { AccountRef, MachineRef, MachineUnavailable, RunRefusal } from './runs.js';
 import { TicketPriority } from './tickets.js';
 
@@ -71,9 +72,19 @@ export const QueueCandidate = z.object({
 });
 export type QueueCandidate = z.infer<typeof QueueCandidate>;
 
-/** A Claude account's line (02, section 7): runs using it now, and why it starts none, if so. */
+/**
+ * A Claude account's line (02, section 7): its state, window and day against its budget (lot 4
+ * step H), runs using it now, and why it starts none, if so.
+ */
 export const QueueAccount = z.object({
   account: AccountRef,
+  status: ClaudeAccount.pick({
+    state: true,
+    limitedUntil: true,
+    limitedUntilEstimated: true,
+    dailyBudget: true,
+    today: true,
+  }),
   /** Runs counted against its maximum (01, invariant 3; waiting for CI included, 07, 3). */
   active: z.int().min(0),
   maxConcurrentRuns: z.int().positive(),

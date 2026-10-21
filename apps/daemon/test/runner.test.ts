@@ -23,7 +23,7 @@ import {
   useRunnerHarness,
 } from './runner-harness.js';
 import { runStartPayload } from './run-start.js';
-import { captureLogger, waitFor } from './testing.js';
+import { captureLogger, linkSystemTool, waitFor } from './testing.js';
 
 // The runner with the real tmux and the fake `claude` (ADR 0027): the session's start, input,
 // nudges, timeouts, the end with the branch, and a daemon restart. The server is a recorder
@@ -221,17 +221,30 @@ describe('runner', () => {
   it(
     'stops a run without activity at the idle timeout, never while a command runs',
     async () => {
-      const manager = daemon({ secondMs: 20 });
-      // One minute lasts 1.2 s: the command takes longer, then the session hangs.
+      // One minute lasts 6 s: the command takes longer, then the session hangs. The idle clock
+      // runs from SessionStart until the PreToolUse hook reaches the daemon, a hook process
+      // started cold: 0.35 s alone, up to 1.1 s under the full suite's load (lot 4 step H), when
+      // a minute of 1.2 s ended the run before the command. The pause stands for a slower start.
+      // The test home's PATH holds only the fakes: without the host's `sleep`, the command failed
+      // at once (exit code 127) and the test proved nothing about a command running.
+      await linkSystemTool(home.bin, 'sleep');
+      const manager = daemon({ secondMs: 100 });
       await fake.play({
-        turns: [{ steps: [{ do: 'bash', command: 'sleep 2.5' }, { do: 'hang' }] }],
+        turns: [
+          {
+            steps: [{ do: 'sleep', ms: 1500 }, { do: 'bash', command: 'sleep 8' }, { do: 'hang' }],
+          },
+        ],
       });
       const run = await start(manager, {
         limits: { idleTimeoutMinutes: 1, sessionStartTimeoutSeconds: 600 },
       });
       const end = await ended(run.runId);
       expect(end.reason).toBe('idle_timeout');
-      expect((await fake.log()).some((entry) => entry.event === 'bash')).toBe(true);
+      // The command ran to its end: the idle timeout came after it, not during it.
+      expect((await fake.log()).filter((entry) => entry.event === 'bash')).toEqual([
+        { event: 'bash', command: 'sleep 8', exitCode: 0, output: '' },
+      ]);
       // No nudge: the agent never finished a turn.
       expect(await messagesReceived()).toEqual(['Implement ticket NOTES-1.']);
     },

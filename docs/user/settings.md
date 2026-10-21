@@ -22,7 +22,7 @@ What a change affects:
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
 - Every change is recorded in the [event log](activity.md#event-log).
 
-Limits marked "Used from version ..." in **Settings > Limits**, and "(from version ...)" in the reference below, belong to features of later versions (the scheduler from version 0.5.0, plans from version 0.6.0). You can already set them, but they change nothing yet; the mark goes away in the version that uses them.
+Limits marked "Used from version ..." in **Settings > Limits**, and "(from version ...)" in the reference below, belong to features of a version not released yet: the scheduler's from version 0.5.0 (they already apply on a server built from the code being prepared for it), plans' from version 0.6.0. You can already set them; the mark goes away with the release of the version that uses them.
 
 ## Override a limit for one project
 
