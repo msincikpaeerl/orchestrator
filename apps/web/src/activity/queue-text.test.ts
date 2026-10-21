@@ -17,6 +17,7 @@ import {
   accountUnavailableText,
   candidateFactsText,
   candidateReasonText,
+  candidateStartOffered,
 } from './queue-text';
 
 // Activity > Queue in words (02, section 7; 07, section 7; lot 4 step H): every line the owner may
@@ -456,5 +457,118 @@ describe('when the queue is read again (lot 4 step H)', () => {
     expect(queueRefreshMs(queue([candidate({ since: '2026-10-20T18:00:00.000Z' })]), now)).toBe(
       60_000,
     );
+  });
+});
+
+// The line's start (Run now, Start review, Resume), with or without it per reason (owner, review
+// of lot 4 step H): shown where it starts the line or lifts what stops it, hidden where only
+// another action of the owner, elsewhere, can. A new reason fails the type check here.
+describe('the start offered on a queue line (review of lot 4 step H)', () => {
+  const offered: { [Reason in QueueReason['reason']]: boolean | 'machine' } = {
+    held: true,
+    quota_wait: true,
+    reviews_off: true,
+    machine_unavailable: 'machine',
+    no_machine: 'machine',
+    blocked: false,
+    no_assignee: false,
+    project_archived: false,
+    project_not_ready: false,
+    github_not_connected: false,
+    github_token_unreadable: false,
+    github_token_invalid: false,
+    github_account_unknown: false,
+    ticket_stopped: false,
+    needs_you: false,
+    first_message_too_large: false,
+    account_limited: false,
+    account_paused: false,
+    account_busy: false,
+    ticket_not_todo: false,
+    run_not_paused: false,
+    ticket_not_in_review: false,
+    no_pull_request: false,
+    review_active: false,
+    review_head_moved: false,
+    pull_request_not_open: false,
+    github_problem: false,
+  };
+  // Run now ignores windows and the budget and releases a machine left out (07, sections 3 to 5).
+  const machineOffered: { [Why in MachineUnavailable['why']]: boolean } = {
+    account_outside_window: true,
+    account_budget_used: true,
+    left_out: true,
+    waiting_enrollment: false,
+    offline: false,
+    disabled: false,
+    revoked: false,
+    daemon_incompatible: false,
+    unusable: false,
+    missing_capabilities: false,
+    account_limited: false,
+    account_paused: false,
+    account_busy: false,
+  };
+
+  it('offers it on a candidate that can start', () => {
+    expect(candidateStartOffered(candidate({ machine }))).toBe(true);
+    expect(candidateStartOffered(candidate({ kind: 'review', machine }))).toBe(true);
+  });
+
+  it.each(everyReason.map((reason) => [JSON.stringify(reason), reason] as const))(
+    'offers it or not on %s',
+    (_, reason) => {
+      const rule = offered[reason.reason];
+      const expected =
+        rule !== 'machine'
+          ? rule
+          : reason.reason === 'machine_unavailable'
+            ? machineOffered[reason.unavailable.why]
+            : reason.reason === 'no_machine' &&
+              reason.machines.some(({ unavailable }) => machineOffered[unavailable.why]);
+      for (const kind of ['implement', 'fix_review', 'review', 'resume'] as const) {
+        expect(candidateStartOffered(candidate({ kind, reason }))).toBe(expected);
+      }
+    },
+  );
+
+  it('words the overnight lines with or without it', () => {
+    const outside = { why: 'account_outside_window' as const, account, next: at };
+    // Step L's evening: TESTB-4 and TESTB-3 waiting for the window, TESTB-5 blocked by TESTB-3.
+    expect(
+      candidateStartOffered(
+        candidate({
+          reason: { reason: 'no_machine', machines: [{ machine, unavailable: outside }] },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      candidateStartOffered(candidate({ reason: { reason: 'blocked', tickets: ['TESTB-3'] } })),
+    ).toBe(false);
+    // One machine not enrolled and one outside its window: Run now can start on the second.
+    expect(
+      candidateStartOffered(
+        candidate({
+          reason: {
+            reason: 'no_machine',
+            machines: [
+              { machine, unavailable: { why: 'waiting_enrollment' } },
+              { machine: { ...machine, name: 'Desktop' }, unavailable: outside },
+            ],
+          },
+        }),
+      ),
+    ).toBe(true);
+    // Every machine offline: nothing the line can do.
+    expect(
+      candidateStartOffered(
+        candidate({
+          reason: {
+            reason: 'no_machine',
+            machines: [{ machine, unavailable: { why: 'offline', since: at } }],
+          },
+        }),
+      ),
+    ).toBe(false);
   });
 });
