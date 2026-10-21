@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); next: step J (F and I removed)
+> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); J done (2026-10-22); next: step K (F and I removed)
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -273,7 +273,7 @@ Removed by the owner's answer Q7 B: no `run.pause` and no protocol raise in lot 
 
 Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 and Help keep the known limit.
 
-### [ ] J. End-to-end lot 4 test
+### [x] J. End-to-end lot 4 test (branch `lot4/j-acceptance`, 2026-10-22)
 
 - `apps/server/test/acceptance.test.ts` gains, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub, and the server's clock moved by the test, three scenarios whose letters follow the file's (G is step D2b's, renamed from this plan's first G in step D3 so the two agree):
   - scenario H: three tickets (one high priority, one blocked by another) on an account of maximum 1 with a window opening later: nothing before the window; then, with no owner action but the merges on the fake GitHub, each ticket implemented, reviewed (Q1) and `done` in the expected order, the blocked one after its blocker's merge;
@@ -282,6 +282,17 @@ Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 
   - every process and folder of the test homes cleaned (lot 3 step M's checks).
 
 **Done when** the three scenarios pass in `pnpm test`, within CI's 8 minutes per shard.
+
+*Done 2026-10-22*, in one session:
+
+- **First, the owner's answer to step H's question** (own commit): a queue line offers **Run now** (**Start review**, **Resume**) only where it can start the line: a candidate with no reason, or one whose reason the start overrides or releases (outside the window, the daily budget used, held, a machine left out, a suspected limit's wait, reviews switched off). Hidden where only another action of the owner elsewhere lifts the refusal: blocked (a cancelled blocker included), no assignee, the project archived or not ready, GitHub (not connected, token unreadable or refused, account unknown), stopped after repeated failures, a blocking "Needs you" item. Read from the owner's rule, not in their list, also hidden: the account limited, paused or at its maximum, a machine that cannot take it (offline, disabled, not enrolled, unusable, missing a capability), the first message too large, and **Start review**'s own refusals; so a paused run's line on a detected limit has no **Resume** before the reset (`queue.e2e.ts` changed accordingly). `candidateStartOffered` in `apps/web/src/activity/queue-text.ts`; web unit test listing every reason and machine reason with or without the button; Help > Activity > Queue, spec 02 section 7, CHANGELOG.
+- **Scenarios H, I and J** in `apps/server/test/acceptance.test.ts`, describe "lot 4 acceptance scenarios, the scheduler overnight" (real server, real daemon, tmux, fake `claude`, fake GitHub, the server's clock moved; every process and folder of the test homes checked cleaned by the file's `afterEach`, as since lot 3 step M):
+  - **H** (22 s alone): time zone UTC, the clock at 19:00, a window from 20:00 to 06:00 every day, a daily budget of $2.00 in estimated usage, each session costing $0.40 by the fake's status line. Queue before the window: WEB-2 (high) then WEB-1, both "outside its window" until 20:00, WEB-3 blocked by WEB-1; nothing at 19:00 nor at 19:59. From 20:01: WEB-2 implemented, CI passed, reviewed by itself, awaiting merge; the queue then has WEB-1 starting on Laptop and WEB-3 blocked; WEB-1 the same; nothing more that night; the day's usage 4 runs, $1.60, budget not reached. Morning: WEB-3 blocked. The merges on the fake GitHub: WEB-2 then WEB-1 done; WEB-3 now waits for the next window, not for WEB-1. Next evening's window: WEB-3 implemented, reviewed, merged, done; usage 2 runs, budget not reached; the queue empty. The six runs in order, all succeeded, all started inside a window; done in the order WEB-2, WEB-1, WEB-3. **Sessions: 6** (step L's estimate for three tickets).
+  - **I** (7 s): a limit with no reset time: paused, the account limited for 60 minutes (the queue: the resume refused by the account's limit until then), nothing at 59 minutes, resumed at 61; limited again for 120, nothing at 119, resumed at 121, submitted; one run, succeeded, no failed attempt. **Sessions: 3** (the start and two `--resume`).
+  - **J** (8.5 s): the scheduler's run, the daemon stopped 11 minutes: failed `machine_offline`, the ticket back to To do with `attemptCounted: false`; while away the queue says Laptop is offline and nothing starts; back, its old session stopped, the scheduler starts the ticket again on Laptop, submitted. **Sessions: 2**.
+  - Step E's limit helpers moved to the file's level, shared with I.
+- **CI time** (own commit): on `main`, `test (2)` (holding `acceptance.test.ts`) took 471 s and `test (1)` 458 s; `acceptance.test.ts` goes from about 153 to 191 s locally. A fourth test shard (ADR 0032's rule): locally 207, 40, 188 and 65 s (before: 224, 199, 81 s with three), the heaviest holding 813 s of test file time instead of 1,049 s. `test (1)`'s time is mostly `github-smoke.test.ts` (206 s locally), unchanged by this step. Under the load of a full `pnpm test` beside it, H took 25 to 69 s (its timeout 120 s), I 8 to 20 s, J 9 to 23 s, 3 runs of 3 passed.
+- **No daemon change**, no new message: a 0.4.0 daemon is unaffected.
 
 ### [ ] K. Version 0.5.0
 
