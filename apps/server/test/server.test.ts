@@ -58,7 +58,7 @@ describe('server started on a new database', () => {
     const response = await fetch(`${baseUrl}/version`);
     expect(response.status).toBe(200);
     expect(VersionResponse.parse(await response.json())).toEqual({
-      server: '0.4.0',
+      server: '0.5.0',
       protocol: 2,
       // Null when `pnpm build` has not built the daemon package yet.
       daemonBuild: providedDaemonBuild(defaultDaemonPackageDir()),
