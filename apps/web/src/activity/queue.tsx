@@ -9,7 +9,12 @@ import { refusalText } from '../refusals';
 import { runPath } from '../runs/text';
 import { RunNowAction, StartReviewAction } from '../tickets/actions';
 import { ticketPath, ticketRef } from '../tickets/text';
-import { accountLineText, candidateFactsText, candidateReasonText } from './queue-text';
+import {
+  accountLineText,
+  candidateFactsText,
+  candidateReasonText,
+  candidateStartOffered,
+} from './queue-text';
 
 /** **Resume** of a paused run from its line: the run page opens; a refusal says why. */
 function ResumeAction({ runId }: { runId: string }) {
@@ -40,7 +45,8 @@ function ResumeAction({ runId }: { runId: string }) {
 
 /**
  * The owner's start from a line (02, section 7): **Run now** for work to do, **Start review** for
- * a review, **Resume** for a paused run; each with its own checks and refusals.
+ * a review, **Resume** for a paused run; each with its own checks and refusals. Offered only where
+ * it can start the line (`candidateStartOffered`).
  */
 function CandidateAction({ candidate }: { candidate: QueueCandidate }) {
   const ticket = { projectKey: candidate.ticket.projectKey, number: candidate.ticket.number };
@@ -65,9 +71,11 @@ function CandidateItem({ candidate, place }: { candidate: QueueCandidate; place:
       <p className="break-words text-slate-800" aria-label="Why it is not running">
         {candidateReasonText(candidate)}
       </p>
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        <CandidateAction candidate={candidate} />
-      </div>
+      {candidateStartOffered(candidate) && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <CandidateAction candidate={candidate} />
+        </div>
+      )}
     </li>
   );
 }

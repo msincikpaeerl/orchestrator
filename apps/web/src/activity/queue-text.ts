@@ -51,6 +51,41 @@ export function candidateReasonText(candidate: QueueCandidate): string {
 }
 
 /**
+ * The machine reasons the owner's start overrides or releases (07, sections 3 to 5): **Run now**
+ * ignores windows and the daily budget, and lets a machine left out for the ticket take it again.
+ */
+const OVERRIDDEN: readonly MachineUnavailable['why'][] = [
+  'account_outside_window',
+  'account_budget_used',
+  'left_out',
+];
+
+/**
+ * Whether the line offers its start (**Run now**, **Start review** or **Resume**; owner, review of
+ * lot 4 step H): on a candidate that can start, and where the start overrides or releases what
+ * stops it (a window, the daily budget, a hold, a machine left out, a suspected limit's wait,
+ * reviews switched off). Not where only another action elsewhere lifts the refusal: a blocker, no
+ * assignee, the project, GitHub, a stopped ticket, a blocking "Needs you" item with its own button,
+ * the account's limit, pause or maximum, a machine that cannot take it.
+ */
+export function candidateStartOffered(candidate: QueueCandidate): boolean {
+  const { reason } = candidate;
+  if (reason === null) return true;
+  switch (reason.reason) {
+    case 'held':
+    case 'quota_wait':
+    case 'reviews_off':
+      return true;
+    case 'machine_unavailable':
+      return OVERRIDDEN.includes(reason.unavailable.why);
+    case 'no_machine':
+      return reason.machines.some(({ unavailable }) => OVERRIDDEN.includes(unavailable.why));
+    default:
+      return false;
+  }
+}
+
+/**
  * Why an account starts no run now (07, sections 3 and 5): its limit, **Stop new runs**, its
  * maximum, its windows or its daily budget; null when it can start one.
  */

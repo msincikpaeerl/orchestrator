@@ -86,6 +86,10 @@ test('the queue says why each ticket waits, follows changes live, and starts one
   await expect(line(page, 'WEB-3').getByLabel('Why it is not running')).toHaveText(
     'This ticket waits for WEB-1, which is not done yet.',
   );
+  // Run now where it goes past the window or releases the hold; none where only WEB-1's end can.
+  await expect(line(page, 'WEB-1').getByRole('button', { name: 'Run now' })).toBeVisible();
+  await expect(line(page, 'WEB-2').getByRole('button', { name: 'Run now' })).toBeVisible();
+  await expect(line(page, 'WEB-3').getByRole('button')).toHaveCount(0);
   await expectFitsScreen(page);
   await screenshot(queue, testInfo, 'queue-waiting');
 
@@ -109,7 +113,8 @@ test('the queue says why each ticket waits, follows changes live, and starts one
   );
   await expect(account).toContainText(/Personal: Limited until .+ · 0 of 1 run at a time/);
   await expect(account).toContainText('Starts no run until its usage limit resets.');
-  await expect(line(page, 'WEB-1').getByRole('button', { name: 'Resume' })).toBeVisible();
+  // Resume would be refused until the reset: the line offers no button (review of step H).
+  await expect(line(page, 'WEB-1').getByRole('button')).toHaveCount(0);
   // The paused run's time waits for the usage limit (07, section 7).
   await expect(page.getByRole('list', { name: 'Live runs' })).toContainText(
     /waiting \d+ s \(for the usage limit \d+ s\)/,

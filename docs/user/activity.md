@@ -36,7 +36,9 @@ What the scheduler starts next, in its order, and why each one is not running ye
 - "Waiting for you in Needs you: …", for a ticket with an item to handle first, such as "it could not start on Laptop" or "the scheduler resumed its run as many times as Most resumes per run allows, and it still hits a usage limit";
 - "The scheduler starts it at its next check, on machine Laptop." when nothing stops it: it starts within **Scheduler check interval**.
 
-Each line has the button that starts it now: **Run now** (**Start review** for a review, **Resume** for a paused run). It goes through the same checks as on the ticket page: a ticket that cannot start shows the reason under the button, and one that starts opens its run page.
+A line has the button that starts it now, **Run now** (**Start review** for a review, **Resume** for a paused run), when that button can help: on a ticket the scheduler would start at its next check, and where the button goes past what stops it (outside the window, the daily budget used, held, a machine left out after its failures, a paused run's wait, reviews not started by themselves). It goes through the same checks as on the ticket page: a ticket that cannot start shows the reason under the button, and one that starts opens its run page.
+
+A line without the button waits for something you do elsewhere: the ticket it waits for done (or the dependency removed), an assignee, the project or GitHub set up again, **Try again** on a stopped ticket, the button of its item in "Needs you", or the account or a machine available again.
 
 **It follows by itself**, without reloading: the queue is read again at every change of a ticket, a project, a run, a machine, a Claude account, a setting, the GitHub connection or an agent, at the time a line names (a window opening, a limit or a wait ending, the day's end), and at least every minute.
 

@@ -24,6 +24,7 @@ With about 1.5 min of setup per job (checkout, install from the cache, tmux, Pos
 - `ci` needs the job `test` once: its result is a failure when any shard failed, was cancelled or was skipped. Branch protection still requires only `ci`, which shards do not change.
 - Tests check that the workflow runs the sharded command, that the shards are numbered 1 to their count (none left out), and that a job missing from the needs of `ci` is refused.
 - A shard is added (the next number in the list, nothing else to change) when a shard takes more than 8 minutes, rather than raising the timeout.
+- When one test file is most of a shard's time, a shard more does not shorten it: the file is split, and the new file's name is checked to land apart from the other long files (Vitest places files by a hash of their paths; lot 4 step J, where `acceptance.test.ts` was split and a fourth shard added).
 - `pnpm verify` stays the local command, unchanged: it runs every test in one process.
 
 ## Alternatives considered
