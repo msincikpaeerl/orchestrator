@@ -304,6 +304,8 @@ Type these commands on the machine, in its Ubuntu terminal:
 | Check the machine: tools and versions, Claude Code login, systemd, the service and its process scopes, WSL settings, the Orchestrator's certificate | `orchestrator-daemon doctor` |
 | See whether the daemon runs (as the service or in a terminal), its version and build, its connection to the Orchestrator, versions, capabilities, process scopes and runs on this machine, or why it last stopped; and the ticket branches kept on this machine with their commits not on GitHub yet (listed even when the daemon is stopped) | `orchestrator-daemon status` |
 | Restart the daemon, for example after fixing a problem | `systemctl --user restart orchestrator-daemon` |
+| Stop the daemon: the machine shows **Offline** and gets no run until you start it again (a run it was doing fails after **Runs of an offline machine fail after**) | `systemctl --user stop orchestrator-daemon` |
+| Start it again | `systemctl --user start orchestrator-daemon` |
 
 If a run fails at its start with "The ticket branch … is checked out by another run on this machine": a run of the same ticket on that machine still waits for your answer or is paused, holding the branch (this happens only when that run was stopped while the machine was offline). Its branch is left as it is. Wait until the machine is online again: the old run is stopped when it reconnects, and **Run now** works again.
 
