@@ -163,6 +163,8 @@ Instead, you can keep an Ubuntu window open. Details: [Microsoft's WSL settings 
 
 The daemon cannot read this Windows file: its checks show "Check this yourself" for it, with a link to this section.
 
+**Keep the computer awake.** Runs go on only while the computer is awake: when Windows sleeps or hibernates, WSL stops with it, and so do the daemon and its agents; the machine shows **Offline** (see [When a machine goes offline during a run](#when-a-machine-goes-offline-during-a-run)). Before leaving runs to go on overnight, open Windows **Settings** > **System** > **Power & battery** (**Power** on a desktop computer) and set the times after which it sleeps and hibernates to **Never** when plugged in; keep a laptop plugged in, with its lid open.
+
 ### Lingering
 
 Linux normally stops your services when you close your last terminal or log out. **Lingering** tells it to keep them running, and to start them when the computer starts, even before you log in. The daemon's service needs it. `orchestrator-daemon install-service` turns it on for you.
