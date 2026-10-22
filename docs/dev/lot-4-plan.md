@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); J done (2026-10-22); next: step K (F and I removed)
+> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); J and K done (2026-10-22, version 0.5.0 prepared); next: step L, the owner's check (F and I removed)
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -20,7 +20,7 @@ From the specs and earlier lots; nothing here waits for an answer.
 - **What the owner sees** (07, section 7; 02, sections 4, 7 and 9.1): per account its state, next window, time until reset, working time and estimated usage today against the budget, runs today, and the history of limits reached; Activity > **Queue** with the next candidates and why each is not running ("waiting for window at 00:00", "no machine with android-sdk", "blocked by WEB-3"); per run the time working and the time waiting, split between the owner, CI and the quota. The account status line on "Needs you" gains "Paused" and the next window.
 - **Reconciliation** (05, section 6): the daemon is the source of truth for processes, the server for tickets; at `hello` a run unknown to the server is stopped (lot 2) and a run the server thinks active that the daemon does not report fails with `machine_offline`; a run whose machine stays offline too long fails and follows the retry policy (the delay: Q10).
 - **The blocking rule** (10, lot 4; 04, section 5.1): a failure that is not counted (`ci_timeout`, `push_failed`, `download_failed`, a review run that did not finish) leaves a blocking "Needs you" item, and the scheduler never starts that ticket again while the item stands. A counted failure returns the ticket to the queue behind the other candidates of its category (07, section 6), until **Failed attempts before asking you** stops it (lot 3 step K1).
-- **Settings marks**: **Scheduler check interval** and **Longest quota wait** lose their "Used from version 0.5.0" in step L (rule 14); **Most tickets per plan** (0.6.0) keeps its mark and stays the one `settings.e2e.ts` checks.
+- **Settings marks**: **Scheduler check interval** and **Longest quota wait** lose their "Used from version 0.5.0" in step K (rule 14); **Most tickets per plan** (0.6.0) keeps its mark and stays the one `settings.e2e.ts` checks.
 
 ### The owner's answers (2026-10-18)
 
@@ -295,40 +295,78 @@ Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 
 - **Review of step J** (owner, 2026-10-22): (1) A: the button stays hidden for every reason the start would refuse anyway, a paused run's **Resume** before a detected limit's reset included (its line says when it resumes by itself). (2) A, at once: lot 4's scenarios (step D2b's G, step E's four, step G's three, and H, I, J) moved to `apps/server/test/acceptance-lot4.test.ts`; both files share `apps/server/test/acceptance-harness.ts` (homes, fake `claude`, harness, helpers, the clean-up checks in `acceptanceHooks()`, the clock as `clock.ahead`); lot 2's Git server is closed in lot 2's own `afterEach`. Locally `acceptance.test.ts` takes about 73 s and `acceptance-lot4.test.ts` about 110 s. Shards: named `acceptance-scheduler.test.ts` (the owner's example), the new file shared shard 3 with `acceptance.test.ts` (124 s, 824 s of file time); Vitest places files by the SHA-1 of their path, checked with a copy of its split on the measured file times (it matched the measured split), so the name `acceptance-lot4.test.ts` puts it in shard 2: locally **209, 113, 94 and 63 s**, holding 371, 520, 759 and 412 s of test file time. testing.md and ADR 0032 (one line: a file most of a shard's time is split, its name checked) updated.
 - **No daemon change**, no new message: a 0.4.0 daemon is unaffected.
 
-### [ ] K. Version 0.5.0
+### [x] K. Version 0.5.0 (branch `lot4/k-release-0.5.0`, 2026-10-22)
 
 - Version 0.5.0 prepared (rule 14): every `package.json` and the `/version` test, a dated CHANGELOG section summing up lot 4, README.md's status line, CLAUDE.md's "Current state", the "(from version 0.5.0)" labels removed from `docs/user/settings.md` (its note then names only 0.6.0, plans).
 
 **Done when** `pnpm verify` and `pnpm test:e2e` pass with 0.5.0 everywhere, and the owner's checklist of step L is written below.
 
+*Done 2026-10-22*:
+
+- 0.5.0 in the eight `package.json` files and `server.test.ts`'s `/version`; CHANGELOG's "Unreleased" became "0.5.0 — 2026-10-22" with a paragraph for the owner (a 0.4.0 daemon keeps working, updating it is optional); README.md's status line; CLAUDE.md's "Current state" (step L waits for the owner).
+- The "(from version 0.5.0)" labels removed from `docs/user/settings.md`: **Machine failures before asking you**, **Runs of an offline machine fail after**, **Scheduler check interval**, **Longest quota wait**, **Most resumes per run** (no other setting had `usedFrom: '0.5.0'`). The note now names only plans (0.6.0); "In version 0.4.0, every limit a project can override" reads 0.5.0. Settings > Limits drops its marks by itself. `settings.e2e.ts` checked the global screen's mark on **Scheduler check interval**: it now checks **Most tickets per plan**'s 0.6.0 mark there and that **Scheduler check interval** has none (rule 14).
+- Review of step J: the CI shard times on its pull request recorded in `testing.md`, `test (1)` and `test (3)` named as the shards to watch (about one minute of margin); `github-smoke.test.ts` not split.
+- Step L's checklist below: the safety-net budget set to **$1.20 a day of estimated usage** from the owner's 0.4.0 run pages, the window **00:00 to 07:00**, and the morning's budget check reordered: the window is checked before the budget (`scheduler/checks.ts`), so the line names the budget only once the window is removed.
+
 ### [ ] L. Lot 4 check by the owner
 
-On the branch of step K, from `docs/user/` alone. The owner:
+On the branch of step K (or `main` once K is merged), from `docs/user/` alone. Tag `v0.5.0` only after this step.
 
-1. starts the server of this branch; the installed 0.4.0 daemon stays usable (no protocol change): the machine page shows it online and usable, with the warning that its build is not the one this Orchestrator provides (updating it with Help > Machines > "Update the daemon" is optional);
-2. if Claude Code changed since 2.1.302: `claude-code-probe.sh` and `allowlist-smoke.sh` (`architect`, `quality`), as in lot 3;
-3. runs `github-smoke.sh --repository <owner>/<test repository> --only-a27` (A27, step B; a few minutes, no Claude usage);
-4. **in the evening**, in the `test 0.4.0` project (key `TESTB`, its skeleton CI): sets the time zone, a window on the account from about an hour later until 07:00, a **daily budget in estimated usage** on the account as a safety net, reviews by themselves on (Q1); the budget is high enough for a normal night (6 sessions, below) and low enough to cut a night that goes wrong (at most 8 sessions per ticket with the defaults, step D3, so 24 for the three tickets); its amount is **to be set in step K from the per-run estimates recorded by then** (the budget counts per calendar day, so a window crossing midnight can use it twice: the amount is chosen with that in mind, Help > Machines > "Keep Claude usage for yourself"); creates three tickets (type **Documentation**, assignee **Web Developer**):
-   - `TESTB-3` `Add a line about the scheduler to README.md`, priority normal, description `Add the line "Built while you sleep." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with the line "Built while you sleep."`;
-   - `TESTB-4` `Add a CONTRIBUTING.md file`, priority **high**, description `Create CONTRIBUTING.md containing the line "Open a ticket in the Orchestrator." and commit it. Do nothing else.`, criterion `CONTRIBUTING.md contains the line "Open a ticket in the Orchestrator."`;
-   - `TESTB-5` `Link CONTRIBUTING.md from README.md`, priority normal, **blocked by** `TESTB-3`, description `Add the line "See [CONTRIBUTING.md](CONTRIBUTING.md)." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with a link to CONTRIBUTING.md`;
+**Before step L**: do not start a server built from `main` (or this branch) with your real daemon connected. From 0.5.0 the scheduler starts runs by itself as soon as the server runs, and an account with no window may start one at any time. Update nothing on the daemon (lot 4 has no protocol change): only the server is rebuilt.
 
-   then checks Activity > **Queue** before leaving: `TESTB-4` first, `TESTB-3` next, both "waiting for the window at …", `TESTB-5` "blocked by TESTB-3". With **Stop new runs** on the account, the account's line says "Paused"; **Resume** it before leaving. Paste: the queue as shown.
-5. **in the morning**: `TESTB-4` and `TESTB-3` **Awaiting merge**, each implemented then reviewed by Quality with no action of the owner, `TESTB-4` started first (its run page's start time); `TESTB-5` still waiting, "blocked by TESTB-3". The account page: working time and estimated usage of the night, runs today. Paste: both tickets' run lists, the account page's lines, any "Needs you" item.
-6. merges both pull requests on GitHub; both **Done**; `TESTB-5`'s queue line now says "waiting for the window at …". Sets a budget of $0.01 of estimated usage on the account: the line says the budget is used for today (no session). Puts back the evening's budget and removes the window: `TESTB-5` starts by itself within **Scheduler check interval**. Then: CI, review by itself, **Awaiting merge**, merge, **Done**. Paste: `TESTB-5`'s run page (status history) and README.md's last lines on GitHub.
-7. **If the usage limit is reached** during the lot (the check or personal use; Q12): runs `tools/spike/claude-code-spike.sh --scan-limit`, and `--probe-limit` while the limit still shows, and pastes both; otherwise says so.
+**Back up first, and how to go back.** At its start the 0.5.0 server applies migrations 0035 to 0041 to your database, and the 0.4.0 server cannot run on it afterwards. Help has no backup command yet (spec 09, section 7.3: the `backup` command and its Help come with lot 7, Hardening). Commands typed in `~/orchestrator`:
 
-- **Quota** (estimates, from lot 3's measures: an implement run with no CI failure costs one session and one message; each message makes the agent take several steps):
+- **Back up**, with the 0.4.0 server still installed and no run active: `docker compose -f docker/compose.yml stop orchestrator`, then `docker compose -f docker/compose.yml exec -T postgres pg_dump -U orchestrator -d orchestrator > ~/orchestrator-0.4.0.sql`. Check the file is not empty (`ls -l ~/orchestrator-0.4.0.sql`). Keep `.env` as it is: its secret key reads the GitHub token saved in this backup.
+- **Go back to 0.4.0** if the check goes wrong: stop the daemon (`systemctl --user stop orchestrator-daemon`), then `docker compose -f docker/compose.yml stop orchestrator`; `docker compose -f docker/compose.yml exec -T postgres psql -U orchestrator -d postgres -c "DROP DATABASE orchestrator WITH (FORCE)" -c "CREATE DATABASE orchestrator OWNER orchestrator"`; `docker compose -f docker/compose.yml exec -T postgres psql -U orchestrator -d orchestrator -v ON_ERROR_STOP=1 < ~/orchestrator-0.4.0.sql`; `git checkout v0.4.0`, then `docker compose -f docker/compose.yml up -d --build`; start the daemon again (`systemctl --user start orchestrator-daemon`, it is still 0.4.0). Everything done after the backup is gone from the Orchestrator (the tickets `TESTB-3` to `TESTB-5`, their runs), not from GitHub: close the pull requests and delete the branches the check left there. `git switch main` once you move forward again. (Tried in step K's session on a throwaway database of the same PostgreSQL image: back to the backup's state, the later tables gone.)
 
-  | Item | Sessions | Messages | Model |
-  |---|---|---|---|
-  | `TESTB-3`, `TESTB-4`, `TESTB-5`: implement | 3 | 3 | `sonnet` |
-  | Their reviews, started by themselves | 3 | 3 | `sonnet` |
-  | Probe and allowlist smoke tests (only if Claude Code changed after 2.1.302) | 4 | 3 | `haiku` |
-  | `--probe-limit` (only while limited: refused at no cost) | 1 | 1 | `sonnet` |
+**Figures for the budget** (the owner's 0.4.0 run pages, estimated usage): `TESTB-1` Web Developer $0.14; `TESTB-2` Web Developer $0.09, Quality $0.07, Web Developer (fix) $0.09. So a session costs about $0.07 to $0.14. A normal night of 6 sessions (3 implement, 3 reviews) costs about **$0.60**, at most **$0.85** if each costs the dearest. A daily budget of **$1.20** of estimated usage lets that through and stops a night that goes wrong after about 8 to 12 sessions, well before the 24 the defaults allow for three tickets (8 per ticket, step D3). The window starts at 00:00, so the whole check (the night and the morning's `TESTB-5`) counts on one calendar day and uses one budget (Help > Machines > "Keep Claude usage for yourself").
 
-  In all: **6 `sonnet` sessions with 6 messages**, each reminder adding 1, and each request for changes by Quality 2 sessions and 2 messages (Q16 A).
-- **A pass**: the three tickets `done` in the expected order with nothing started by the owner after the evening; no run started outside the window; the evening's budget not reached (the account page's lines for each day of the night); the queue's reasons true at each step; no failed attempt; nothing on GitHub but the merged pull requests (and A27's closed one, its branch deleted).
+The owner:
+
+1. **Start the server, safely.** With no run active, stop the daemon first (Help > Machines > "Troubleshooting": `systemctl --user stop orchestrator-daemon`). Rebuild and start the server from this branch (Help > Getting started > "Stop, start and update": `docker compose -f docker/compose.yml up -d --build`). Click **Stop new runs** on the Claude account (it shows **Paused**). Then start the daemon again (`systemctl --user start orchestrator-daemon`). The machine page shows it online and usable, with "The daemon on … is not the one this Orchestrator provides": expected, it does not block runs. Do not update it.
+2. If Claude Code changed since 2.1.302: `claude-code-probe.sh` and `allowlist-smoke.sh` (`architect`, `quality`), as in lot 3.
+3. `github-smoke.sh --repository <owner>/<test repository> --only-a27` (A27, step B; a few minutes, no Claude usage).
+4. **In the evening, before going to bed**, in the `test 0.4.0` project (key `TESTB`, its skeleton CI):
+   - **Settings** > **Time zone**: check it is yours, **Save the time zone**;
+   - the account's **Windows, budget and history**: one window, every day, from **00:00** until **07:00**, **Save windows**; daily budget **Estimated usage** **1.20**, **Save the budget**;
+   - **Project settings** > **Start reviews by themselves**: checked;
+   - create the three tickets (type **Documentation**, assignee **Web Developer**):
+     - `TESTB-3` `Add a line about the scheduler to README.md`, priority normal, description `Add the line "Built while you sleep." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with the line "Built while you sleep."`;
+     - `TESTB-4` `Add a CONTRIBUTING.md file`, priority **high**, description `Create CONTRIBUTING.md containing the line "Open a ticket in the Orchestrator." and commit it. Do nothing else.`, criterion `CONTRIBUTING.md contains the line "Open a ticket in the Orchestrator."`;
+     - `TESTB-5` `Link CONTRIBUTING.md from README.md`, priority normal, **blocked by** `TESTB-3`, description `Add the line "See [CONTRIBUTING.md](CONTRIBUTING.md)." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with a link to CONTRIBUTING.md`;
+   - Activity > **Queue**, account still paused: the account's line says "Starts no run: you stopped new runs on it. …". Click **Resume** on that line;
+   - the **check before bed**, in the Queue: the account's line "Starts no run by itself until its window opens at … 12:00 AM. Run now still starts one."; then `TESTB-4` first and `TESTB-3` next, both "No machine can take the run: <machine>: its Claude account <account> is outside its window until … 12:00 AM."; `TESTB-5` "This ticket waits for TESTB-3, which is not done yet."; no other line (any other ticket listed would start tonight too: remove its assignee or move it out of **To do** first);
+   - **the computer stays awake tonight** (Help > Machines > "Keep WSL running", "Keep the computer awake"): in Windows **Settings** > **System** > **Power & battery** (**Power** on a desktop), sleep and hibernate **Never** when plugged in; a laptop plugged in, its lid open. When Windows sleeps, WSL stops with it. Leave the daemon and the computer on.
+5. **In the morning**: `TESTB-4` and `TESTB-3` **Awaiting merge**, each implemented then reviewed by Quality with nothing done by the owner, `TESTB-4` started first (its run page's start time), every start after 00:00 and before 07:00; `TESTB-5` still "waits for TESTB-3". The account page: today's working time, estimated usage (expected about $0.40, below $1.20) and runs (4).
+   **If the computer slept** in the night: the machine was **Offline** (its page and the Queue say since when, or it is online again since you woke it). A run it was doing when it slept more than **Runs of an offline machine fail after** (10 minutes) failed as "machine offline" (its ticket's timeline says so), which does not count as a failed attempt; its ticket is back in **To do** (a review's ticket stays **In review**, with "Review did not finish" in Needs you). If the computer woke before 07:00, the scheduler started the ticket again on it; otherwise it waits for the next window. A computer asleep before 00:00 started nothing. Say so in the paste, and run the night again.
+6. Merge both pull requests on GitHub; both **Done**; `TESTB-5`'s line now names the window ("outside its window until … 12:00 AM"). Then, in this order (the window is checked before the budget): set the budget to **0.01**, then remove the window: the account's line says "Starts no run by itself: its daily budget is used for today, until … 12:00 AM. …" and nothing starts. Set the budget back to **1.20**: `TESTB-5` starts by itself within **Scheduler check interval** (30 seconds). Then: CI, review by itself, **Awaiting merge**, merge, **Done**. Today's estimated usage on the account page: about $0.60, below $1.20.
+7. **If the usage limit is reached** during the lot (the check or personal use; Q12): `tools/spike/claude-code-spike.sh --scan-limit`, and `--probe-limit` while the limit still shows; otherwise say so.
+8. **After the check**, item 6 leaves the account with no window and a budget of $1.20, so the 0.5.0 server would start any ticket it can by itself. Click **Stop new runs** on the account: it shows **Paused**, and nothing starts by itself until you click **Resume** (**Run now** is refused too while it is paused; for a run by hand, **Resume**, then **Stop new runs** again). Activity > **Queue**: the account's line says "Starts no run: you stopped new runs on it. …" and no line says "The scheduler starts it at its next check". (Not a window instead: with one, every eligible ticket of every project starts by itself each night.)
+
+**Paste back**, one by one:
+
+1. The machine page's lines after item 1 (online, usable, the build warning).
+2. Probe and allowlist results, or "Claude Code unchanged since 2.1.302".
+3. `github-smoke.sh --only-a27`'s result block.
+4. The Queue before bed (item 4).
+5. Morning: `TESTB-4`'s and `TESTB-3`'s run lists (start times, status), the account page's "today" lines, any "Needs you" item, and whether the computer slept.
+6. The budget line at $0.01 (item 6).
+7. `TESTB-5`'s run page (status history) and README.md's last lines on GitHub.
+8. The account page's "today" lines after `TESTB-5` is done.
+9. The usage-limit capture, or "limit not reached".
+10. The Queue after **Stop new runs** (item 8).
+
+- **Quota** (estimates, from lot 3's measures and the owner's 0.4.0 run pages: an implement run with no CI failure costs one session and one message; each message makes the agent take several steps):
+
+  | Item | Sessions | Messages | Model | Estimated usage |
+  |---|---|---|---|---|
+  | `TESTB-3`, `TESTB-4`, `TESTB-5`: implement | 3 | 3 | `sonnet` | $0.27 to $0.42 |
+  | Their reviews, started by themselves | 3 | 3 | `sonnet` | about $0.21 |
+  | Probe and allowlist smoke tests (only if Claude Code changed after 2.1.302) | 4 | 3 | `haiku` | not counted (no account budget) |
+  | `--probe-limit` (only while limited: refused at no cost) | 1 | 1 | `sonnet` | — |
+
+  In all: **6 `sonnet` sessions with 6 messages, about $0.60** (at most $0.85), each reminder adding 1 message, and each request for changes by Quality 2 sessions and 2 messages (about $0.16, Q16 A). The budget, **$1.20 a day**, is the safety net.
+- **A pass**: the three tickets `done` in the expected order with nothing started by the owner after the evening; the account paused at the end (item 8), nothing in the Queue starting; no run started outside the window (00:00 to 07:00) before the window was removed in item 6; the day's estimated usage below $1.20 (the account page); the queue's reasons true at each step; no failed attempt; nothing on GitHub but the merged pull requests (and A27's closed one, its branch deleted).
 - Gaps found are fixed, each with its test; results recorded here.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 4 is closed as version 0.5.0.

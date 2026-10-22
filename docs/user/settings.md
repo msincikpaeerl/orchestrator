@@ -22,7 +22,7 @@ What a change affects:
 - Existing tickets and comments keep their text when you lower a length limit. When you edit one of them, it must fit the new limit: the message names the field that is too long.
 - Every change is recorded in the [event log](activity.md#event-log).
 
-Limits marked "Used from version ..." in **Settings > Limits**, and "(from version ...)" in the reference below, belong to features of a version not released yet: the scheduler's from version 0.5.0 (they already apply on a server built from the code being prepared for it), plans' from version 0.6.0. You can already set them; the mark goes away with the release of the version that uses them.
+Limits marked "Used from version ..." in **Settings > Limits**, and "(from version ...)" in the reference below, belong to plans, a feature of version 0.6.0. You can already set them, but they change nothing yet; the mark goes away with the release of that version.
 
 ## Override a limit for one project
 
@@ -32,7 +32,7 @@ Some limits can have a different value for one project: the reference below says
 2. Each limit says whether the project uses the global value (the one in **Settings > Limits**) or its own value. Type a value and click **Save**: it applies to this project only.
 3. **Reset to default** removes the project's own value: the project uses the global value again, and follows it when you change it.
 
-The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In version 0.4.0, every limit a project can override already changes something (**Most tickets an agent creates per run**, **Failed attempts before asking you**, **CI wait at submission**, **Wait for CI to start**, **Most CI failures per run** and **Most review rounds per ticket**), except **Most tickets per plan**, which belongs to plans (version 0.6.0).
+The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In version 0.5.0, every limit a project can override already changes something (**Most tickets an agent creates per run**, **Failed attempts before asking you**, **CI wait at submission**, **Wait for CI to start**, **Most CI failures per run** and **Most review rounds per ticket**), except **Most tickets per plan**, which belongs to plans (version 0.6.0).
 
 ## Settings reference
 
@@ -67,7 +67,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan proposing more tickets than this is refused. |
 | Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
 | Failed attempts before asking you | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
-| Machine failures before asking you (from version 0.5.0) | 2 failures | 1 to 10 | No | After this many failures in a row caused by a machine, not by the ticket's work, the scheduler stops starting the ticket on that machine and asks you. See [When a machine keeps failing a ticket](runs.md#when-a-machine-keeps-failing-a-ticket). |
+| Machine failures before asking you | 2 failures | 1 to 10 | No | After this many failures in a row caused by a machine, not by the ticket's work, the scheduler stops starting the ticket on that machine and asks you. See [When a machine keeps failing a ticket](runs.md#when-a-machine-keeps-failing-a-ticket). |
 | CI wait at submission | 20 minutes | 1 to 240 | Yes | How long a run waits for CI on GitHub after the agent's work is accepted. When it is reached, the run stops without counting as a failed attempt, and Needs you offers Check CI again, or Run now when CI had failed or the pull request conflicts. |
 | Wait for CI to start | 5 minutes | 1 to 60 | Yes | When no CI run or status appears on GitHub for this long after the pull request is open, the submission passes as "No CI found" (unless the pull request conflicts with its base branch, or is closed on GitHub). |
 | Most CI failures per run | 2 failures | 1 to 10 | Yes | How many CI failures an agent gets back to fix in one run; a conflict with the default branch counts as one. One more ends the run as a failed attempt. |
@@ -100,13 +100,13 @@ What these limits apply to: see [Machines](machines.md).
 | Enrollment code lifetime | 15 minutes | 1 to 1,440 | No | How long the code shown by **Add machine** can be used to connect the machine; after that, click **New enrollment code** on the machine's page. |
 | Heartbeat interval | 15 seconds | 5 to 120 | No | How often a connected machine tells the Orchestrator it is still there. A machine uses the value it received when it connected. |
 | Machine offline after | 60 seconds | 15 to 600 | No | A machine that sends nothing for this long is shown offline. At least twice the heartbeat interval. |
-| Runs of an offline machine fail after (from version 0.5.0) | 10 minutes | 1 to 1,440 | No | A run working on a machine that stays offline this long fails, without counting as a failed attempt; its ticket can start again, on that machine once it is back when its commits are not on GitHub. Runs waiting for you or paused on a usage limit keep waiting. See [When a machine goes offline during a run](machines.md#when-a-machine-goes-offline-during-a-run). |
+| Runs of an offline machine fail after | 10 minutes | 1 to 1,440 | No | A run working on a machine that stays offline this long fails, without counting as a failed attempt; its ticket can start again, on that machine once it is back when its commits are not on GitHub. Runs waiting for you or paused on a usage limit keep waiting. See [When a machine goes offline during a run](machines.md#when-a-machine-goes-offline-during-a-run). |
 
 ### Scheduler
 
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
-| Scheduler check interval (from version 0.5.0) | 30 seconds | 5 to 600 | No | The scheduler looks for work to start at least this often. |
+| Scheduler check interval | 30 seconds | 5 to 600 | No | The scheduler looks for work to start at least this often. |
 | Quota wait when the reset time is unknown | 60 minutes | 1 to 1,440 | No | When the Claude usage limit is reached without a reset time, the account waits this long; the wait doubles each time the limit is still reached. A run paused on a possible limit waits this long too before the scheduler resumes it, doubling the same way. |
-| Longest quota wait (from version 0.5.0) | 240 minutes | 1 to 2,880 | No | The doubling wait above never goes above this. |
-| Most resumes per run (from version 0.5.0) | 6 resumes | 1 to 50 | No | How many times the scheduler resumes one run paused on a Claude usage limit, detected or possible. Once reached, the run waits for you in Needs you; your own Resume does not count and starts the count again. See [Usage limits](runs.md#usage-limits). |
+| Longest quota wait | 240 minutes | 1 to 2,880 | No | The doubling wait above never goes above this. |
+| Most resumes per run | 6 resumes | 1 to 50 | No | How many times the scheduler resumes one run paused on a Claude usage limit, detected or possible. Once reached, the run waits for you in Needs you; your own Resume does not count and starts the count again. See [Usage limits](runs.md#usage-limits). |
