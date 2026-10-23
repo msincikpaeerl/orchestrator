@@ -1,6 +1,6 @@
 # Lot 4 — Implementation plan
 
-> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); J and K done (2026-10-22, version 0.5.0 prepared); next: step L, the owner's check (F and I removed)
+> Status: steps A to C and D1 done (2026-10-19; step A: the plan and the spec changes approved, the two new questions answered); step D2 split in D2a and D2b (owner, 2026-10-20); D2a, D2b, D3, E, G and H done (2026-10-20); J and K done (2026-10-22, version 0.5.0 prepared); step L, the owner's check, passed (2026-10-22 and 23): **lot 4 checked**, the owner tags `v0.5.0` after the merge (F and I removed)
 > Scope: "Lot 4 — Scheduler and quota" in [10 — Delivery Plan](../specs/10-delivery-plan.md), and the items of lot 3's "Carried to lot 4" ([lot 3 plan](lot-3-plan.md#carried-to-lot-4)).
 > **Lot 4 is done when** the owner leaves the system running overnight and finds the eligible tickets processed, with quota limits handled without repeated failures.
 
@@ -308,7 +308,7 @@ Removed by the owner's answer Q11 A: it stays in lot 7 (10), and 05 section 7.2 
 - Review of step J: the CI shard times on its pull request recorded in `testing.md`, `test (1)` and `test (3)` named as the shards to watch (about one minute of margin); `github-smoke.test.ts` not split.
 - Step L's checklist below: the safety-net budget set to **$1.20 a day of estimated usage** from the owner's 0.4.0 run pages, the window **00:00 to 07:00**, and the morning's budget check reordered: the window is checked before the budget (`scheduler/checks.ts`), so the line names the budget only once the window is removed.
 
-### [ ] L. Lot 4 check by the owner
+### [x] L. Lot 4 check by the owner (branch `lot4/l-owner-check`, 2026-10-23)
 
 On the branch of step K (or `main` once K is merged), from `docs/user/` alone. Tag `v0.5.0` only after this step.
 
@@ -328,18 +328,18 @@ The owner:
 3. `github-smoke.sh --repository <owner>/<test repository> --only-a27` (A27, step B; a few minutes, no Claude usage).
 4. **In the evening, before going to bed**, in the `test 0.4.0` project (key `TESTB`, its skeleton CI):
    - **Settings** > **Time zone**: check it is yours, **Save the time zone**;
-   - the account's **Windows, budget and history**: one window, every day, from **00:00** until **07:00**, **Save windows**; daily budget **Estimated usage** **1.20**, **Save the budget**;
+   - **Machines**, under the account, the link **Windows, budget and history**: it opens the account's page, titled with the account's name; there, **Schedule windows**: **Add a window**, every day, from **00:00** until **07:00**, **Save windows**; **Daily budget**: **Estimated usage**, **1.20**, **Save the budget**;
    - **Project settings** > **Start reviews by themselves**: checked;
    - create the three tickets (type **Documentation**, assignee **Web Developer**):
      - `TESTB-3` `Add a line about the scheduler to README.md`, priority normal, description `Add the line "Built while you sleep." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with the line "Built while you sleep."`;
      - `TESTB-4` `Add a CONTRIBUTING.md file`, priority **high**, description `Create CONTRIBUTING.md containing the line "Open a ticket in the Orchestrator." and commit it. Do nothing else.`, criterion `CONTRIBUTING.md contains the line "Open a ticket in the Orchestrator."`;
      - `TESTB-5` `Link CONTRIBUTING.md from README.md`, priority normal, **blocked by** `TESTB-3`, description `Add the line "See [CONTRIBUTING.md](CONTRIBUTING.md)." at the end of README.md and commit it. Do nothing else.`, criterion `README.md ends with a link to CONTRIBUTING.md`;
    - Activity > **Queue**, account still paused: the account's line says "Starts no run: you stopped new runs on it. …". Click **Resume** on that line;
-   - the **check before bed**, in the Queue: the account's line "Starts no run by itself until its window opens at … 12:00 AM. Run now still starts one."; then `TESTB-4` first and `TESTB-3` next, both "No machine can take the run: <machine>: its Claude account <account> is outside its window until … 12:00 AM."; `TESTB-5` "This ticket waits for TESTB-3, which is not done yet."; no other line (any other ticket listed would start tonight too: remove its assignee or move it out of **To do** first);
+   - the **check before bed**, in the Queue: the account's line "Starts no run by itself until its window opens at … 12:00 AM. Run now still starts one."; then `TESTB-4` first and `TESTB-3` next, each line starting "No machine can take the run: <machine>: its Claude account <name> is …", here "No machine can take the run: <machine>: its Claude account <name> is outside its window until … 12:00 AM."; `TESTB-5` "This ticket waits for TESTB-3, which is not done yet."; no other line (any other ticket listed would start tonight too: remove its assignee or move it out of **To do** first);
    - **the computer stays awake tonight** (Help > Machines > "Keep WSL running", "Keep the computer awake"): in Windows **Settings** > **System** > **Power & battery** (**Power** on a desktop), sleep and hibernate **Never** when plugged in; a laptop plugged in, its lid open. When Windows sleeps, WSL stops with it. Leave the daemon and the computer on.
-5. **In the morning**: `TESTB-4` and `TESTB-3` **Awaiting merge**, each implemented then reviewed by Quality with nothing done by the owner, `TESTB-4` started first (its run page's start time), every start after 00:00 and before 07:00; `TESTB-5` still "waits for TESTB-3". The account page: today's working time, estimated usage (expected about $0.40, below $1.20) and runs (4).
+5. **In the morning**: `TESTB-4` and `TESTB-3` **Awaiting merge**, each implemented then reviewed by Quality with nothing done by the owner, `TESTB-4` started first (its run page's start time), every start after 00:00 and before 07:00; `TESTB-5` still "waits for TESTB-3". The account's page (Machines, **Windows, budget and history**), its "Today" line: working time, estimated usage (expected about $0.40, below $1.20) and runs (4).
    **If the computer slept** in the night: the machine was **Offline** (its page and the Queue say since when, or it is online again since you woke it). A run it was doing when it slept more than **Runs of an offline machine fail after** (10 minutes) failed as "machine offline" (its ticket's timeline says so), which does not count as a failed attempt; its ticket is back in **To do** (a review's ticket stays **In review**, with "Review did not finish" in Needs you). If the computer woke before 07:00, the scheduler started the ticket again on it; otherwise it waits for the next window. A computer asleep before 00:00 started nothing. Say so in the paste, and run the night again.
-6. Merge both pull requests on GitHub; both **Done**; `TESTB-5`'s line now names the window ("outside its window until … 12:00 AM"). Then, in this order (the window is checked before the budget): set the budget to **0.01**, then remove the window: the account's line says "Starts no run by itself: its daily budget is used for today, until … 12:00 AM. …" and nothing starts. Set the budget back to **1.20**: `TESTB-5` starts by itself within **Scheduler check interval** (30 seconds). Then: CI, review by itself, **Awaiting merge**, merge, **Done**. Today's estimated usage on the account page: about $0.60, below $1.20.
+6. Merge both pull requests on GitHub; both **Done**; `TESTB-5`'s line now names the window ("No machine can take the run: <machine>: its Claude account <name> is outside its window until … 12:00 AM."). Then, in this order (the window is checked before the budget): set the budget to **0.01**, then remove the window: the account's line says "Starts no run by itself: its daily budget is used for today, until … 12:00 AM. …" and nothing starts. Set the budget back to **1.20**: `TESTB-5` starts by itself within **Scheduler check interval** (30 seconds). Then: CI, review by itself, **Awaiting merge**, merge, **Done**. Today's estimated usage on the account's page: about $0.60, below $1.20.
 7. **If the usage limit is reached** during the lot (the check or personal use; Q12): `tools/spike/claude-code-spike.sh --scan-limit`, and `--probe-limit` while the limit still shows; otherwise say so.
 8. **After the check**, item 6 leaves the account with no window and a budget of $1.20, so the 0.5.0 server would start any ticket it can by itself. Click **Stop new runs** on the account: it shows **Paused**, and nothing starts by itself until you click **Resume** (**Run now** is refused too while it is paused; for a run by hand, **Resume**, then **Stop new runs** again). Activity > **Queue**: the account's line says "Starts no run: you stopped new runs on it. …" and no line says "The scheduler starts it at its next check". (Not a window instead: with one, every eligible ticket of every project starts by itself each night.)
 
@@ -349,10 +349,10 @@ The owner:
 2. Probe and allowlist results, or "Claude Code unchanged since 2.1.302".
 3. `github-smoke.sh --only-a27`'s result block.
 4. The Queue before bed (item 4).
-5. Morning: `TESTB-4`'s and `TESTB-3`'s run lists (start times, status), the account page's "today" lines, any "Needs you" item, and whether the computer slept.
+5. Morning: `TESTB-4`'s and `TESTB-3`'s run lists (start times, status), the account's page's "Today" line, any "Needs you" item, and whether the computer slept.
 6. The budget line at $0.01 (item 6).
 7. `TESTB-5`'s run page (status history) and README.md's last lines on GitHub.
-8. The account page's "today" lines after `TESTB-5` is done.
+8. The account's page's "Today" line after `TESTB-5` is done.
 9. The usage-limit capture, or "limit not reached".
 10. The Queue after **Stop new runs** (item 8).
 
@@ -370,6 +370,27 @@ The owner:
 - Gaps found are fixed, each with its test; results recorded here.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 4 is closed as version 0.5.0.
+
+*Done 2026-10-23*: the owner's check, on 2026-10-22 and 23, **passed**, with no gap to fix. Lot 4 is checked and closed as version 0.5.0; the owner tags `v0.5.0` after this step's merge. The paste, item by item:
+
+1. **Server and daemon** (the backup and item 1): database backed up, server rebuilt to 0.5.0, daemon 0.4.0 kept. The machine **Online** with "Another daemon build" (the build warning, expected); runs work with the 0.4.0 daemon.
+2. **Claude Code** changed from 2.1.302 to **2.1.308**. `claude-code-probe.sh` (2026-10-22T17:10:06.295Z, model `haiku`): checks 1 to 4 and 6 PASS, 5 INFO, transcript line types `ai-title` 3, `api-request` 6, `api-request-blob` 15, `api-request-shape` 2, `assistant` 12, `atis-latch` 4, `attachment` 19, `cost-state` 2, `file-history-snapshot` 3, `last-prompt` 4, `mode` 4, `permission-mode` 4, `system` 2, `user` 6, "Unknown to the daemon: none". `allowlist-smoke.sh` `architect` and `quality`: all PASS. The probe's fixtures are committed in `apps/daemon/test/fixtures/claude-code-2.1.308/`, reviewed first: only the probe's placeholder paths (`<probe>/home/…`), no e-mail address, name, account or organisation id, token, key, cookie or authorization header. Their one new field is `permissionDecision`'s `reasonCode` and `ruleSource` on the kept lines, which the daemon does not read. Check 6 passes on them (`claude-code-probe-fixtures.test.ts`). `CLAUDE_CODE_VALIDATED_VERSION` is 2.1.308 (spec 05 section 9, ADR 0002, CHANGELOG): a machine with it shows no warning.
+3. `github-smoke.sh --only-a27` on `msincikpaeerl/test-0.4.0`, Git 2.53.0: step 12 PASS, **A27 PASS**, A35 PASS; pull request #3 closed, its branch deleted.
+4. **The Queue before bed** matched the list: the account's line "Starts no run by itself until its window opens at Oct 23, 2026, 12:00 AM. Run now still starts one."; `TESTB-4` then `TESTB-3`, both outside the window; `TESTB-5` waiting for `TESTB-3`; nothing else.
+5. **Morning**: `TESTB-4` implement started at 12:00 AM, its review at 12:00 AM; `TESTB-3` implement and review at 12:01 AM. Both reached **Awaiting merge** with nothing done by the owner, CI passed, no failed attempt. "Today: working 1 min, $0.31 of $1.20, 4 runs". The computer did not sleep.
+6. After merging pull requests #4 and #5, both tickets **Done**; `TESTB-5`'s line then said "outside its window until Oct 24, 2026, 12:00 AM". Budget 0.01, then the window removed: the account's line "Starts no run by itself: its daily budget is used for today, until Oct 24, 2026, 12:00 AM. Run now still starts one.", and nothing started.
+7. Budget back to 1.20: `TESTB-5` started by the scheduler at 8:13 AM, its review started by the scheduler, **Awaiting merge** at 8:14 AM; pull request #6 merged, **Done** at 8:15 AM. README.md ends with `Built while you sleep.` then `See [CONTRIBUTING.md](CONTRIBUTING.md).`.
+8. "Today: working 1 min, $0.50 of $1.20, 6 runs" (expected about $0.60).
+9. **Usage limit not reached** during the lot: the usage-limit signal capture (`autoContinueAtUsageLimit`, the limit's signal) stays open, carried to lot 5 (below).
+10. After **Stop new runs**: the account **Paused**, its line "Starts no run: you stopped new runs on it. Resume it to let the scheduler start runs again.", and "Nothing is waiting".
+
+The pass criteria all hold: the three tickets done in the expected order (`TESTB-4`, high priority, first) with nothing started by the owner after the evening; every start of the night inside 00:00 to 07:00; the day's estimated usage $0.50, below $1.20; the queue's reasons true at each step; no failed attempt; nothing left on GitHub but the merged pull requests and A27's closed one, its branch deleted; the account paused at the end.
+
+Wording of this checklist corrected to match the screens: a ticket's line in the Queue starts with "No machine can take the run: <machine>: its Claude account <name> is …"; **Windows, budget and history** is the link under the account in **Machines**, which opens the account's page, titled with its name, whose sections are **Schedule windows**, **Daily budget**, **Estimated usage per day** and **Usage limits reached**, with the "Today" line at its top. Help already used these names (Machines > "Keep Claude usage for yourself", Activity > "Queue"): no change there.
+
+## Carried to lot 5
+
+- **The usage-limit signal capture** (owner, lot 4 step L): no Claude usage limit was reached during lots 2 to 4, so the real signal (the `StopFailure` hook's data, the status line's `rate_limits` at the limit, whether `autoContinueAtUsageLimit` is honoured) is still unconfirmed; detection keeps relying on the documentation and the fixtures in `apps/daemon/test/fixtures/usage-limit/`. Lot 5's plan lists it as an open point: whenever the limit happens, the owner runs `tools/spike/claude-code-spike.sh --scan-limit`, and `--probe-limit` while the limit still shows. If lot 5 does not reach the limit either, lot 7 keeps it (10).
 
 ## Carried from lot 3, where each item went
 
