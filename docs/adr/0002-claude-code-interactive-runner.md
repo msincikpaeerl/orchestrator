@@ -106,3 +106,7 @@ Run by the owner on Claude Code 2.1.287: the probe passed checks 1 to 4 again (5
 ## Update 2026-10-18 (lot 3 step N, owner's check)
 
 Run by the owner on Claude Code 2.1.302: the probe passed checks 1 to 4 and 6 (check 6, the `dontAsk` permission mode a session runs in, for the first time against the real Claude Code; 5 is information only; fixtures in `apps/daemon/test/fixtures/claude-code-2.1.302/`), and the real runs of the lot's check passed end to end. The highest validated version is now 2.1.302. Its transcripts have three more line types, `api-request`, `api-request-shape` and `api-request-blob`, Claude Code's record of each request to the model, none holding the agent's work (05, section 4.5).
+
+## Update 2026-10-23 (lot 4 step L, owner's check)
+
+Run by the owner on Claude Code 2.1.308: the probe passed checks 1 to 4 and 6 (5 is information only; fixtures in `apps/daemon/test/fixtures/claude-code-2.1.308/`), with no transcript line type unknown to the daemon; the allowlist smoke test passed for `architect` and `quality`; and the real runs of the lot's check, started by the scheduler overnight and in the morning, passed end to end. The highest validated version is now 2.1.308. The only new field in the kept lines is `permissionDecision`'s `reasonCode` and `ruleSource` (`mode:dontAsk`, `rule:flagSettings`, `flagSettings`), which the daemon does not read. The usage-limit capture is still to be done: no limit was reached during the lot.
