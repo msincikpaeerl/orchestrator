@@ -92,7 +92,7 @@ An agent can read anything in its own project. It can only change **its own tick
 
 Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
 
-`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A):
+`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A). From protocol 3 (lot 5; owner's answer 1, lot 5 step A) it counts from 1 for a run on a protocol 3 daemon, whose relay describes the tool that way; the server keeps reading it from 0 for a run on a protocol 2 daemon, which still describes it "from 0", so each run is read as its own daemon told its agent:
 
 ```json
 {
@@ -119,6 +119,12 @@ Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.g
 |---|---|
 | `request.ask` | Asks the owner a clarifying question about the request before planning. The request stays open until answered. |
 | `plan.propose` | Submits a plan: summary, optional new project, and tickets. Tickets reference each other through local keys for dependencies. The server validates the plan (limits, assignees exist, no dependency cycle, each ticket has acceptance criteria) and shows it to the owner. |
+
+**As decided for lot 5** (owner's answers 7, 8, 10 and 11, lot 5 step A):
+
+- `request.ask` works as `ticket.ask` (section 4.2): the agent ends its turn and the answer comes as the next message, live or by resume; a second question while one waits is refused.
+- `plan.propose` also refuses: an assignee that is not an existing profile (so `writer` and `android_dev` until lot 7), the kind `android_app` ("Android projects come with version 0.8.0"), more tickets than **Most tickets per plan** (its value stated), a ticket breaking the owner's form limits (title, description, criteria), and for a new project a plan without exactly one ticket marked `bootstrap: true` of type `chore`, assigned to `architect` and blocked by nothing, or a bootstrap ticket marked in a plan for an existing project. Each refusal lists every problem in the agent's words (`VALIDATION_FAILED`, template `mcp-tools.md`), and the run goes on. Accepted, the server adds the bootstrap's missing fixed criteria (08, section 3.2) from a template and adds the bootstrap ticket to every other ticket's `blocked_by`; the tickets are `proposed`, the request `plan_proposed`, and the answer tells the agent to end its turn.
+- A second `plan.propose` in the same run is refused, as a second decision is in a review run.
 
 `plan.propose` input (abridged):
 

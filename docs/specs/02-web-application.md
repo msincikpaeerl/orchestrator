@@ -42,6 +42,8 @@ The wizard covers only the steps that exist in the current version and ends on a
 Before these wizard steps exist, accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine enrolled yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
 5. **Done**: links to Help; once requests exist, suggests submitting a first request.
 
+**As decided for lot 5** (owner's answer 15, lot 5 step A): steps 3 and 4 are shown on a fresh install only; an owner who went through the wizard before 0.6.0 is not sent through it again (the "Needs you" items above stay). Step 4 has **Skip for now**, since a machine may not be ready yet: "No machine enrolled yet" then stays in "Needs you" until one enrolls.
+
 ### 3.1 GitHub token requirements
 
 A fine-grained personal access token whose resource owner is the owner's **personal GitHub account** (a fine-grained token covers a single account or organization; organizations are not supported in v1), with:
@@ -82,8 +84,8 @@ The check is a convenience. The safety net is normal operation: any request GitH
 
 The owner's task list, ordered by age:
 
-- plans to approve or reject;
-- questions from agents (tickets and requests), answerable inline;
+- plans to approve or reject; from lot 5 also "Planning stopped" for a request stopped after **Failed attempts before asking you** failed planning runs, with **Try again** (01, section 3.2; owner's answer 10, lot 5 step A);
+- questions from agents (tickets and requests), answerable inline; a request's question works as a ticket's (owner's answer 11, lot 5 step A);
 - tickets proposed by agents (`ticket.create`), each with **Accept** and **Reject**;
 - work finished by an agent and waiting for the owner's check (lot 2: tickets in `in_review`, see 04 section 1; from lot 3 step H only tickets left in `in_review` by 0.3.0 without a pull request, the others getting "Ready for review" below), with the run's summary, **Mark as done manually** and **Request changes** (a required comment; the ticket returns to `todo`, 04 section 2); once **Request changes** succeeds, its confirmation offers **Run now** directly (the usual action, with its usual refusals) (owner's decision, lot 2 step L2);
 - runs paused by a usage limit ("Claude usage limit reached: you can resume after <time>", with "estimated" next to the time when it comes from the fallback delay, 07 section 5.2) or a suspected one ("Run paused: possible Claude usage limit", with the note "the run may pause again if it was the limit"), with **Resume** (for a detected limit, only after that time; for a suspected one, at once) and **Stop run**. Before lot 4 nothing resumes by itself (owner's decision, lot 2 step L2); from lot 4 the item also says when the scheduler resumes it (07, section 5.2; owner's answer 9, lot 4 step A): "The scheduler resumes it by itself at <time> (1 hour after it paused), if its Claude account and machine can take it then." after a suspected limit, "The scheduler resumes it by itself once the limit resets, at <time>." after a detected one, or "The scheduler resumes it by itself once this changes: " with the queue's reason (a window, the budget, the account paused, its machine), as built in step E;
@@ -124,7 +126,9 @@ Open and closed requests, with their status and project.
 - The proposed plan, when available:
   - summary and new project details, if any;
   - tickets as a list and as a dependency graph, each with type, assignee and acceptance criteria;
-  - actions: **Approve**, **Reject with feedback**, and edit a ticket before approving (title, criteria, assignee, dependencies).
+  - actions: **Approve**, **Reject with feedback**, and edit a ticket before approving (title, criteria, assignee, dependencies). From lot 5 (owner's answer 12, lot 5 step A) also its description, type and priority, and **Remove** a ticket from the plan; a ticket cannot be added;
+  - for a plan creating a project (owner's answer 9), the approval form: name, key (suggested), repository name (checked free on the owner's account) and visibility (private by default), filled in from the plan; **Approve** creates the project, its repository and the skeleton (02 section 6.2, 08 section 3.1), and the project page then shows the setup;
+  - the dependency graph (owner's answer 14): drawn by the UI with no new dependency, tickets in columns by dependency depth (a ticket blocked by nothing in the first); on a phone, a list ordered by depth, each ticket naming what it waits for.
 - History of superseded plans.
 
 ## 6. Projects
@@ -149,10 +153,10 @@ The project page shows the repository setup while it runs (refreshing on its own
 ### 6.3 Project board
 
 - Header: key, name, repository link, setup status, branch protection status (applied, or not available on the owner's GitHub plan, with a help link), and for a linked repository the missing harness elements with **Check again**.
-- Columns by state (04, section 1); `done` and `cancelled` collapsed. `proposed` is hidden by default, except that tickets proposed by agents (no plan) are shown in a "Proposed" column whenever there is at least one (owner's decision, lot 2 step A); the toggle for plan tickets comes with lot 5.
+- Columns by state (04, section 1); `done` and `cancelled` collapsed. `proposed` is hidden by default, except that tickets proposed by agents (no plan) are shown in a "Proposed" column whenever there is at least one (owner's decision, lot 2 step A); the toggle for plan tickets comes with lot 5: "Show plan tickets" adds the `proposed` tickets of plans waiting for approval to that column.
 - On a wide screen the columns sit side by side; on a phone they are stacked one below the other, each with its ticket count, so nothing scrolls sideways (owner's decision, lot 1 step F).
 - Cards show number, title, type, assignee, a "Blocked" badge (only for `proposed` and `todo` tickets, 04 section 1), a "Stopped" badge for a ticket stopped by the retry policy (lot 3 step I2), "created by agent" when an agent created it, active run indicator with the last progress line.
-- Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph)*.
+- Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph: the same component, section 5.3)*.
 - Actions: create a ticket manually, open project settings.
 
 ### 6.4 Ticket detail
@@ -215,6 +219,7 @@ Lot 4 (owner's answers 5, 6 and 7, lot 4 step A): the account page shows its sta
 - Actions: add machine (shows install and enrollment commands), disable and enable, revoke token (with confirmation), new enrollment code (for a machine waiting for enrollment or revoked, 01 section 3.8), edit capabilities.
 - **Add machine** shows two commands: `npm install -g <server URL>/downloads/orchestrator-daemon-<version>.tgz`, which installs the daemon of the server's own version from the server itself, and `orchestrator-daemon enroll <server URL> <code>`. Then it tells the owner to run `orchestrator-daemon login` and `orchestrator-daemon install-service`, and waits until the machine connects (owner's decision, lot 2 step A; 05, section 2). When the server's address is plain `http://` and not this computer (`localhost`, `127.0.0.0/8`, `::1`), **Add machine** warns that the daemon refuses that address (05, section 3.2) and links to Help > Machines > Orchestrator on another computer (owner's decision, lot 2 step E).
 - Diagnostic information reported by `doctor`.
+- From lot 5 (owner's answer 5, lot 5 step A): the **Browser tests** check and the detected capability `browser-tests`, with a link to Help > Machines > "Browser tests" (the owner's command for the system libraries, then `orchestrator-daemon browsers`; 05, section 2).
 
 ## 10. Settings
 

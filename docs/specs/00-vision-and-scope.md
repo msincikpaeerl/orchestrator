@@ -75,7 +75,7 @@ The system has two parts.
 ### Out of scope for v1
 
 - Multiple users, roles and permissions between humans.
-- Deploying generated projects (hosting websites, publishing apps to stores). Deploying projects to a server is a planned evolution after v1; updating the Orchestrator itself would then be one case of it (owner's decision, lot 2 step N).
+- Deploying generated projects (hosting websites, publishing apps to stores). Deploying projects to a server is a planned evolution after v1 (section 9); updating the Orchestrator itself would then be one case of it (owner's decision, lot 2 step N).
 - Android emulator or on-device tests.
 - Automatic merge by agents.
 - Non-Claude runners (the abstraction exists, no second implementation).
@@ -89,7 +89,7 @@ The system has two parts.
 |---|---|
 | Claude Pro subscription shared with personal use | One run at a time per account, time windows, automatic pause on limit, Sonnet by default, small focused tickets. |
 | Interactive Claude Code only | Daemon drives tmux; state comes from hooks, transcripts and MCP. |
-| Runs first on WSL, later on a VPS or a home server | Web app is fully containerised (Docker Compose). Daemon connects outbound; no inbound port needed on dev machines. |
+| Runs first on WSL, later on a dedicated server | Web app is fully containerised (Docker Compose). Daemon connects outbound; no inbound port needed on dev machines. Agents get a machine or environment of their own in lot 6 (10, Isolated agent workspace). |
 | No public endpoint in v1 | GitHub state (PR merged, CI status) is read by polling, not webhooks. |
 | Owner does not read the code | User documentation is a deliverable of every feature. |
 
@@ -115,3 +115,14 @@ v1 is successful when the owner can, using only the UI and the user documentatio
 | Agents produce low-quality or unreviewed work | Broken projects | Enforced Definition of Done, Quality agent review, human merge. |
 | Runaway planning (too many tickets) | Quota waste | Plan approval by the owner; limits on tickets per plan. |
 | WSL shuts down when idle | Daemon goes offline | Daemon runs as a systemd service; the user documentation explains how to keep WSL running. |
+
+## 9. Planned evolutions after v1
+
+**Operations agents** (owner's decision, lot 5 step A). Agents that deploy, update and maintain the projects, driven through the daemon, targeting a dedicated server for the projects:
+
+- the agent prepares an **action plan** (what it will change, on which server, how to go back), which the owner approves before anything runs, as a plan of tickets today (principle 1);
+- credentials (server access, registries, secrets of the deployed projects) are held by the daemon and used by it for one action, never shown to the agent, as the GitHub token today (05, section 7);
+- a dry run first wherever the tool offers one, its result shown with the plan;
+- every action, its result and its output summary written to the event log (01, section 3.10).
+
+Nothing is built for it in v1. Choices made before then must not block it: the runner abstraction and the MCP tools stay the only channel between agents and the system, credentials never reach an agent, the plan-and-approve flow of requests (lot 5) is general enough to carry another kind of plan, and the daemon stays the only component that acts on a machine.
