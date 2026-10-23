@@ -62,7 +62,7 @@ erDiagram
 | branch_protection | `applied`, `not_available` (GitHub plan does not allow it), `failed`, `not_applied` (linked repositories). |
 | missing_harness | For a linked repository: the harness elements not found at the last check (08, section 3.4), with the check time. |
 | status | `active`, `archived`. |
-| required_capabilities | Capabilities every run on this project needs (for example `android-sdk` for Android projects). |
+| required_capabilities | Capabilities every run on this project needs (for example `android-sdk` for Android projects). From lot 5 (owner's answer 5, lot 5 step A), a `website` or `web_app` project created from version 0.6.0, from the Projects screen or a plan's approval, requires `browser-tests` by default, so its end-to-end tests run on the machine; the owner can remove it in project settings. Projects created before are unchanged. A planning run needs none of the project's capabilities (07, section 4). |
 | reviews_automatic | **Start reviews by themselves** (lot 4; owner's answer 1, lot 4 step A): when on (the default), the scheduler starts a `review` run when a ticket enters `in_review` with a pull request; when off, only the owner's **Start review** does (07, section 1). Each change writes an event. |
 | created_at, updated_at | Timestamps. |
 
@@ -78,9 +78,15 @@ Projects are never deleted. Archiving a project hides it from the default lists 
 | project_id | Optional. Empty when the request asks for a new project. |
 | body | The owner's text. |
 | status | `open`, `planning`, `plan_proposed`, `closed`. |
+| attempt_count, stopped | From lot 5: the request's failed planning runs, and its stop at **Failed attempts before asking you** (below). |
 | created_at | Timestamp. |
 
 The owner and the Project Manager can exchange messages on a request before a plan is produced (clarifying questions). These messages are stored as comments on the request.
+
+**As decided for lot 5** (owner's answers 10 and 11, lot 5 step A):
+
+- A question (`request.ask`) works as a ticket's question (04, section 6): a "Needs you" item and the same answer box, the answer delivered live or by resume within **Waiting run lifetime**. The request stays `planning` and shows its open question.
+- A planning run that fails (a crash, a timeout, `ticket_give_up`, its reminders used up without a plan) counts as a failed attempt of its request (`attempt_count`); a run stopped by the owner or failed because of its machine does not, as for tickets (section 3.4). At **Failed attempts before asking you** the request is **stopped** (with its cause and when): no planning run starts for it until the owner's **Try again**, which clears it and resets the count ("Planning stopped" in "Needs you").
 
 ### 3.3 Plan
 
@@ -98,6 +104,13 @@ Tickets proposed by a plan exist in the `proposed` state. Tickets an agent creat
 
 Limit: a plan contains at most 15 tickets by default (configurable, see 04 section 8). Larger work is split into several plans.
 
+**As decided for lot 5** (owner's answers 8, 9 and 12, lot 5 step A):
+
+- **new_project** holds the Project Manager's name, kind and description. At approval the owner confirms or changes the name, the key (suggested from the name), the repository name (the name's slug, checked free on the owner's account) and the visibility (private by default); **Approve** then creates the project with a new repository and the skeleton (08, section 3.1). Linking an existing repository stays on the Projects screen. The kind `android_app` is refused until lot 7 (Agent management, with the Android Developer).
+- A plan for a new project has exactly one **bootstrap ticket** (`chore`, assigned to the Architect, blocked by nothing), to which the server adds the fixed criteria of 08 section 3.2 it lacks; every other ticket of the plan is blocked by it.
+- Before approving, the owner can edit a plan ticket's title, description, acceptance criteria, type, priority, assignee and dependencies, and remove a ticket (it is `cancelled`); a ticket cannot be added. Each edit writes an event. **Approve** checks the plan again as `plan.propose` does (06, section 4.4).
+- The plan's tickets become `todo` at approval; for a new project they wait for its setup to be `ready`, as any ticket of a project not ready.
+
 ### 3.4 Ticket
 
 | Field | Description |
@@ -105,12 +118,12 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 | id, number | Identifier and human number per project: the project key and a sequence starting at 1 (`WEB-12`). Numbers are never reused. |
 | project_id | Owning project. |
 | plan_id | Plan that created it, if any. Empty for a ticket created by the owner or by an agent with `ticket.create`. |
-| parent_id | Optional parent ticket, used to group work (epic). A parent ticket has no run of its own. |
+| parent_id | Optional parent ticket, used to group work (epic). A parent ticket has no run of its own. Not built yet: left out of lot 5, for later, in no lot (owner's answer 13, lot 5 step A). |
 | type | `feature`, `bug`, `chore`, `docs`, `spike`. See 04 for DoD per type. |
 | title | Short title. |
 | description | What must be done and why. |
 | acceptance_criteria | Ordered list of verifiable statements. |
-| assignee_profile_id | Agent profile expected to do the work. Optional; set by the owner or by the agent that created the ticket. Any existing profile can be assigned until the assignment rules of 03, section 4 arrive (lot 6). |
+| assignee_profile_id | Agent profile expected to do the work. Optional; set by the owner or by the agent that created the ticket. Any existing profile can be assigned until the assignment rules of 03, section 4 arrive (lot 7, Agent management). |
 | status | See 04. |
 | priority | `low`, `normal`, `high`. |
 | blocked_by | List of tickets that must be `done` before this one can start. |
@@ -168,7 +181,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | mcp_permissions | Set of MCP tools this agent may call (see 06). |
 | required_capabilities | Capabilities needed on the machine. |
 | is_default | True for the six built-in profiles. Defaults can be edited and reset. |
-| version | Incremented on each change. Each run records the version it used. Until profiles can be edited (lot 6), the version of a default profile goes up when the server starts with a changed shipped file: its own file, the shared rules or the rules its role's runs receive (03, section 3; owner's decision, lot 2 step I; lot 3 step H5). Lot 6 keeps the owner's edits when the rules change (03, section 5). |
+| version | Incremented on each change. Each run records the version it used. Until profiles can be edited (lot 7, Agent management), the version of a default profile goes up when the server starts with a changed shipped file: its own file, the shared rules or the rules its role's runs receive (03, section 3; owner's decision, lot 2 step I; lot 3 step H5). Lot 7 keeps the owner's edits when the rules change (03, section 5). |
 
 ### 3.7 Run
 
@@ -213,7 +226,7 @@ A run in `paused_quota` keeps its session and worktree. It resumes on the same m
 | id, name | Identifier and display name. The name is 1 to 80 characters, unique among machines without regard to case (a revoked machine keeps its name, so it can be enrolled again). |
 | os | `linux` or `wsl`, reported at connection. |
 | account_id | Claude account the machine's Claude Code is logged into. |
-| capabilities | Tags (`node`, `android-sdk`, `docker`, …), from three lists: **detected** (reported by the daemon at each connection: `git`, `node`, `docker`, replaced each time), **added** and **removed** by the owner. The machine's capabilities are the detected and added tags, minus the removed ones: a tag the owner removed stays removed even when detected again, and a detected tag the owner never touched follows the machine (owner's decision, lot 2 step C). |
+| capabilities | Tags (`node`, `android-sdk`, `docker`, …), from three lists: **detected** (reported by the daemon at each connection: `git`, `node`, `docker`, and from lot 5 `browser-tests` when `doctor`'s **Browser tests** check passes, 05 section 8; replaced each time), **added** and **removed** by the owner. The machine's capabilities are the detected and added tags, minus the removed ones: a tag the owner removed stays removed even when detected again, and a detected tag the owner never touched follows the machine (owner's decision, lot 2 step C). |
 | daemon_version, daemon_build, claude_code_version | Reported at connection. The build identifier (05, section 2; lot 3) tells two packages of one version apart; a build other than the one the server serves gives a warning (02, section 4). |
 | doctor | The daemon's `doctor` results, reported at connection (05, section 8). |
 | unusable | Why the machine cannot receive runs, from its last connection: its Claude Code is missing or below the supported minimum, or a `doctor` check reports an **error** (for example `git` or `tmux` missing or too old). Warnings (a Claude Code version above the highest validated one, managed Claude Code settings found, the WSL idle timeout to check yourself) are shown on the machine page and never make it unusable. Cleared by the next connection whose checks pass (owner's decision, lot 2 step C; 05, section 3.2). |

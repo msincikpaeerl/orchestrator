@@ -51,7 +51,7 @@ Candidates are ordered by category, then within a category.
 | 1 | Resumes (quota pause, answered questions) | Their context already exists; finishing them is the cheapest progress. |
 | 2 | `review` | Unblocks finished work quickly and is usually short. |
 | 3 | `fix_review` | Finishes work already started. |
-| 4 | `plan` | The owner is waiting for a proposal. |
+| 4 | `plan` | The owner is waiting for a proposal. From lot 5: one candidate per request in `open` (just submitted, or after **Reject with feedback**; an answered question resumes its run, category 1), not stopped (01, section 3.2), oldest first; a request for a new project counts as its own project for "projects in turn". |
 | 5 | `implement` | New work. |
 
 Within a category: ticket priority (`high` first), then tickets that block the most other tickets (counting the tickets waiting on it directly or through others; owner's answer 15a, lot 4 step A), then oldest first. When several projects have candidates at the same level, projects are served in turn so one large project does not starve the others.
@@ -86,7 +86,7 @@ A machine can take a run when it is:
 - `online` and not `disabled`;
 - logged into the run's Claude account;
 - holding every capability required by the project and the agent profile;
-- running a daemon version compatible with the server (09, section 6).
+- running a daemon version compatible with the server (09, section 6): from lot 5, protocol 3; a protocol 2 machine takes no run at all, with the reason "Update the daemon to 0.6.0" in the queue and on the machine page (owner's answer 1 and simplification, lot 5 step A). A planning run needs none of the project's or profile's capabilities: it runs no test (01, section 3.1).
 
 **Failures the machine caused** (owner's answer 3 and its condition, lot 4 step A). A run that fails without counting and without a "Needs you" item of its ticket, because of its machine, leaves that machine out of the choice until something changes:
 
@@ -158,6 +158,7 @@ Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish;
 ## 6. Other rules
 
 - **Retries** follow 04, section 5. A failed candidate returns to the queue behind other candidates of the same category. A failure that is not counted and leaves a blocking "Needs you" item (04, section 5.1) keeps the ticket out of the queue while the item stands; one the machine caused follows section 4.
+- **Planning runs that fail** (lot 5; owner's answer 10, lot 5 step A): counted on their request, which returns to the queue behind the other `plan` candidates until **Failed attempts before asking you** stops it (01, section 3.2); **Try again** puts it back. A planning run stopped by the owner, or failed because of its machine, is not counted, as for tickets.
 - **Cancelled tickets** stop their active run immediately (`run.stop`).
 - **Machine offline** with an active run: handled by the daemon reconciliation rules (05, section 6), after **Runs of an offline machine fail after** (section 8). The scheduler's tick fails those runs first, before it reads its queue, and wakes when the next one is due (lot 4 step G).
 - **Fairness between runs of one ticket**: never more than one active run per ticket (01, invariant 2).

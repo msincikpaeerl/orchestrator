@@ -130,7 +130,7 @@ If the Orchestrator runs on another computer, read [Orchestrator on another comp
 
 The machine's key, and your GitHub token for each Git command, travel between the daemon and the Orchestrator. So the daemon accepts a plain `http://` address only when the Orchestrator runs on the same computer (`http://localhost:8080`). Otherwise it refuses the address and asks for `https://`.
 
-To use machines with an Orchestrator on another computer (a home server such as Unraid, or a VPS):
+To use machines with an Orchestrator on another computer (a dedicated server, or a VPS):
 
 1. Put the Orchestrator behind a reverse proxy with HTTPS (such as Nginx Proxy Manager or Caddy), and set its `PUBLIC_URL` to the `https://` address: see [Open the Orchestrator from another device](network-access.md).
 2. Add the machine: the commands then use the `https://` address.

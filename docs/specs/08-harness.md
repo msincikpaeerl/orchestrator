@@ -95,6 +95,13 @@ Every plan for a new project starts with a bootstrap ticket assigned to the Arch
 
 All other tickets of the plan depend on it.
 
+**As decided for lot 5** (owner's answers 5, 6 and 8, lot 5 step A):
+
+- The Project Manager proposes the bootstrap ticket (`bootstrap: true`, `chore`, `architect`, blocked by nothing); the server adds the fixed criteria above that it lacks, from a template in `agents/templates/`, and adds it to every other ticket's `blocked_by` (06, section 4.4). The owner may edit them before approving, as any criterion.
+- **End-to-end tests run locally and in CI**: on a machine with the capability `browser-tests` (05, section 2), which a new `website` or `web_app` project requires, the builders and Quality run them in the worktree; browsers come from `PLAYWRIGHT_BROWSERS_PATH`, set by the daemon, never a path written in the project. So the criterion "a sample test runs at each test level" holds on the machine and in CI, whose workflow installs the browsers and their libraries itself.
+- **No Docker and no database locally** until lot 6, Isolated agent workspace (05, section 4.6): for a `web_app` with PostgreSQL, the integration tests' criterion holds in CI only, and its bootstrap ticket and `docs/dev/testing.md` say so.
+- A project generator runs without prompts, and the bootstrap's checks use the build and the tests, never a development server left running (03, section 2.2).
+
 ### 3.3 Default stacks
 
 Defaults keep projects consistent so agents and the owner do not relearn everything each time. The Architect may deviate with an ADR explaining why.
@@ -106,6 +113,8 @@ Defaults keep projects consistent so agents and the owner do not relearn everyth
 | `android_app` | Kotlin, Jetpack Compose, Gradle Kotlin DSL | JUnit unit tests, Compose UI tests written but not run in v1 (no emulator) |
 
 Common to all: ESLint and Prettier for TypeScript, ktlint for Kotlin, a lock file committed, Node.js LTS.
+
+A `website` that must handle input on a server (a contact form saving its messages, for example) may add Astro's Node.js server adapter to the default stack, with an ADR recording why (owner's answer 2, lot 5 step A). Until lot 6, the `web_app` stack's PostgreSQL and Docker Compose are used in CI only (section 3.2).
 
 ### 3.4 Linked repositories
 
