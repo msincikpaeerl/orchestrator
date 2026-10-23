@@ -126,7 +126,7 @@ function CriteriaEditor({
   );
 }
 
-/** The agent expected to do the work: any profile until lot 6 (01, section 3.4). */
+/** The agent expected to do the work: any profile until lot 7 (01, section 3.4). */
 function AssigneeField({
   value,
   onChange,

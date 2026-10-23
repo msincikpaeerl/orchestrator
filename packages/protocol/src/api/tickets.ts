@@ -158,7 +158,7 @@ export const TicketSummary = z.object({
    * ticket out of To do, a stopped review's ticket out of review).
    */
   held: TicketHold.nullable(),
-  /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
+  /** The agent profile expected to do the work; any profile until lot 7 (01, section 3.4). */
   assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
   /** For a ticket created by an agent ("created by agent"): its profile and run. */
