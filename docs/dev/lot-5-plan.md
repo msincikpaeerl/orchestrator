@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A in progress (2026-10-24): this plan, the owner's answers and the spec changes they make
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -24,7 +24,7 @@ From the specs and earlier lots; nothing here waits for an answer.
 
 Step A's questions, answered by the owner: A to every question except 5 and 16, which have the owner's own answers. The specs named carry them (this step).
 
-1. **The daemon for planning runs: A** (05 sections 2, 4.1 and 4.2; 06 section 4.2; 09 section 6; 03 section 3.2). `PROTOCOL_VERSION` 3 in lot 5. A planning run for a new project starts in an empty scratch folder with no repository; for an existing project, in a worktree detached at GitHub's head of the base branch, with no branch of its own, never pushed. **Criteria numbered from 1 in `ticket_submit`** come with this update, as 03 section 3.2 said they would ("the next lot that requires an updated daemon"); the server keeps reading indexes from 0 for a run on a protocol 2 daemon, whose relay still describes the tool "from 0". The general rule only: an older daemon (protocol 2) stays connected and keeps taking the runs it can do, takes no planning run, and the Queue says why ("needs a daemon of version 0.6.0"); nothing special for 0.4.0 (the owner installs the lot 5 daemon for the check). Lot 7's daemon items (**Push again**, the unreadable `state.json`; now lot 8, below) stay there.
+1. **The daemon for planning runs: A** (05 sections 2, 4.1 and 4.2; 06 section 4.2; 09 section 6; 03 section 3.2). `PROTOCOL_VERSION` 3 in lot 5. A planning run for a new project starts in an empty scratch folder with no repository; for an existing project, in a worktree detached at GitHub's head of the base branch, with no branch of its own, never pushed. **Criteria numbered from 1 in `ticket_submit`** come with this update, everywhere, as 03 section 3.2 said they would ("the next lot that requires an updated daemon"). **An older daemon** (owner's simplification, approval of step A): a protocol 2 daemon stays connected but takes no run at all (it is unusable, as a protocol 1 daemon was from lot 3), and the Queue and the machine page say "Update the daemon to 0.6.0"; so the server never reads an index from 0 again and has a single reading of `ticket_submit`. Nothing special for 0.4.0 (the owner installs the lot 5 daemon for the check). Lot 7's daemon items (**Push again**, the unreadable `state.json`; now lot 8, below) stay there.
 2. **What "a working contact form" means: A** (this plan, "What the website must be"). The owner submits a fixed request text so the scenario is repeatable.
 3. **How the owner runs and sees the site: A** (this plan).
 4. **What its CI, tests and documentation contain: A** (this plan).
@@ -88,22 +88,24 @@ The owner submits exactly: "A simple website with a home page and a contact form
 
 ## Steps
 
-### [ ] A. Plan and spec decisions (branch `lot5/a-plan`)
+### [x] A. Plan and spec decisions (branch `lot5/a-plan`, 2026-10-24)
 
 - This plan; the owner's answers above written into the specs they change: 00 (operations agents, the host), 01 (requests, plans, the bootstrap, epics later, the `browser-tests` capability), 02 (wizard, Needs you, requests, plan review, graph), 03 (the Project Manager, the restrictions, criteria from 1, Quality's browser tests), 04 (lot numbers), 05 (protocol 3, planning runs, browser tests), 06 (`request.get`, `request.ask`, `plan.propose`'s validation, criteria from 1), 07 (the `plan` candidate, planning failures, the daemon's version), 08 (sections 3.2 and 3.3), 09 (protocol 3, the targets, no Unraid) and 10 (lot 5, the new lot 6, lots 7 and 8); Help > Machines' "Orchestrator on another computer" without Unraid; CLAUDE.md's "Current state".
 
 **Done when** the owner has approved this plan and the spec changes.
+
+*Done 2026-10-24*: approved by the owner, with one simplification of answer 1 (own commit): no dual reading of `ticket_submit`'s criteria; a protocol 2 daemon stays connected but takes no run at all, the queue and the machine page saying "Update the daemon to 0.6.0"; criteria from 1 everywhere from protocol 3 (specs 03, 05, 06, 07 and 09).
 
 ### [ ] B. Protocol 3: planning runs on the daemon (branch `lot5/b-protocol-3`)
 
 - **First** (own commit): the four code comments that say "lot 6" for Agent management (`apps/server/src/agents/routes.ts`, `seed.ts`, `apps/web/src/pages/ticket-form.tsx`, `packages/protocol/src/api/tickets.ts`) say "lot 7".
 - `PROTOCOL_VERSION` 3 (rule 13; 09 section 6): `run.start`'s `repository` absent for a planning run of a new project, and a planning run of an existing project has no ticket branch.
 - The daemon: a planning run of a new project in an empty scratch folder `~/.orchestrator/worktrees/<run-id>/` (no clone, no Git, workspace trust for that folder); of an existing project, a worktree detached at `origin/<base>` after the usual fetch, no local branch created, no branch report, never pushed; the clean-up removes either.
-- **Criteria from 1** in `ticket_submit` for a protocol 3 run (description, schema and the server's reading; 06 section 4.2), indexes from 0 kept for a run on a protocol 2 daemon; the rules and templates name criterion numbers only, with "(index 0)" kept on protocol 2 runs (03 section 3.2).
-- The server: a protocol 2 machine takes no planning run; the queue's machine reason "needs a daemon of version 0.6.0" (words in `queue-text.ts`); "Update the daemon" in Help names 0.6.0.
+- **Criteria from 1** in `ticket_submit` (description, schema and the server's reading; 06 section 4.2); the rules and templates name criterion numbers only, "(index 0)" gone (03 section 3.2).
+- The server: a protocol 2 daemon is accepted, connected and **unusable** (09 section 6, lot 3's rule for the previous protocol): no run of any kind; "Update the daemon to 0.6.0" on the machine page, in "Needs you" ("Update the daemon on X") and as the queue's machine reason (words in `queue-text.ts`); "Update the daemon" in Help names 0.6.0. A run still active on a machine whose daemon reconnects with protocol 2 follows 05 section 6 (the owner updates with no run active: step M).
 - No planning run starts yet (no candidate before step E2): tests start one through the test harness.
 
-**Done when** daemon tests with the fake `claude` cover both planning workspaces (no Git in the scratch folder, a detached worktree, no branch report, no push, the clean-up), a protocol 2 daemon refused a planning run with the queue's words, `ticket_submit` from 1 on protocol 3 and from 0 on protocol 2 (a scripted protocol 2 daemon), and lot 4's scenarios pass unchanged.
+**Done when** daemon tests with the fake `claude` cover both planning workspaces (no Git in the scratch folder, a detached worktree, no branch report, no push, the clean-up), `ticket_submit` from 1 (a report naming criterion 1 for the first, one naming 0 refused), a scripted protocol 2 daemon connected but given no run of any kind with "Update the daemon to 0.6.0" on the machine page, in Needs you and in the queue, and lot 4's scenarios pass unchanged (their daemon now protocol 3).
 
 ### [ ] C. Browser tests on the machine (branch `lot5/c-browsers`, answer 5)
 
@@ -140,7 +142,7 @@ The owner submits exactly: "A simple website with a home page and a contact form
 - The queue's lines and words for a planning candidate; "Started by the scheduler" in its first message.
 - Help > Runs > "What starts by itself" (one session per request, then one per rejection; at most **Failed attempts before asking you** failed sessions per request).
 
-**Done when** server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request and **Try again**, the order against reviews and `implement` candidates, a protocol 2 machine left out; Playwright on both viewports shows a planning candidate in Activity > Queue.
+**Done when** server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request and **Try again**, the order against reviews and `implement` candidates; Playwright on both viewports shows a planning candidate in Activity > Queue.
 
 ### [ ] F. Plan review (branch `lot5/f-plan-review`)
 
@@ -176,7 +178,7 @@ The owner submits exactly: "A simple website with a home page and a contact form
 - `apps/server/test/acceptance-lot5.test.ts`, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub:
   - scenario K1: a request for a new website, a question answered, a plan rejected with feedback, a second plan approved with the form; the repository created with the skeleton; the bootstrap then a feature implemented, reviewed by themselves and merged on the fake GitHub; done, the session count recorded;
   - scenario K2: a request on an existing project, the planning worktree detached at the base branch, a plan approved, its tickets in `todo`;
-  - scenario K3: a planning run on a protocol 2 daemon refused, then taken by a protocol 3 one;
+  - scenario K3: a machine whose daemon connects with protocol 2 takes no run (a planning run and an `implement` run wait, the queue saying "Update the daemon to 0.6.0"); the same machine with the protocol 3 daemon then takes both;
   - every process and folder of the test homes cleaned.
 
 **Done when** the three scenarios pass in `pnpm test`, within CI's 8 minutes per shard (placement checked as above).
@@ -213,7 +215,7 @@ The owner:
 **Feedback wanted** (the owner's judgement, not pass criteria): the plans' quality (ticket size, criteria a test can check, the PM's questions worth asking), the graph's readability on a phone, the documentation written for someone who never reads the code, the wizard's words.
 
 - **Quota** (estimates, refined in step L): planning runs 3 sessions (`TESTB` twice, the website at least once, more with questions answered by resume); `TESTB`'s tickets 2 to 4 sessions; the website 4 to 6 tickets, each implement and review, the bootstrap the dearest; in all about 15 to 25 `sonnet` sessions, a few dollars of estimated usage. The **$15** budget is the safety net only.
-- **A pass**: both requests planned and approved, `TESTB`'s rejection answered by a new plan and the old one superseded; the website repository created by the approval with the skeleton; every ticket `done` through its merged pull request, with nothing done by the owner but answers, approvals and merges; the site working as "What the website must be" says, run from its documentation alone; its CI green with every job listed; no planning run on a protocol 2 machine; the account paused at the end.
+- **A pass**: both requests planned and approved, `TESTB`'s rejection answered by a new plan and the old one superseded; the website repository created by the approval with the skeleton; every ticket `done` through its merged pull request, with nothing done by the owner but answers, approvals and merges; the site working as "What the website must be" says, run from its documentation alone; its CI green with every job listed; the account paused at the end.
 - Gaps found are fixed, each with its test; results recorded here.
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 5 is closed as version 0.6.0.

@@ -92,12 +92,12 @@ An agent can read anything in its own project. It can only change **its own tick
 
 Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
 
-`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A). From protocol 3 (lot 5; owner's answer 1, lot 5 step A) it counts from 1 for a run on a protocol 3 daemon, whose relay describes the tool that way; the server keeps reading it from 0 for a run on a protocol 2 daemon, which still describes it "from 0", so each run is read as its own daemon told its agent:
+`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A). From protocol 3 (lot 5; owner's answer 1, lot 5 step A) it counts from 1, everywhere: a protocol 2 daemon, whose relay still describes the tool "from 0", takes no run (09, section 6), so the server has a single reading:
 
 ```json
 {
   "criteria": [
-    { "index": 0, "status": "met", "justification": "Form validates email on submit, see ContactForm.test.ts" }
+    { "index": 1, "status": "met", "justification": "Form validates email on submit, see ContactForm.test.ts" }
   ],
   "tests": { "paths": ["src/contact/ContactForm.test.ts"], "justification": null },
   "docs": { "paths": ["docs/user/contact-form.md"], "justification": null },
