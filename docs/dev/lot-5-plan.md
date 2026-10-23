@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 done (2026-10-24)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -108,7 +108,7 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 - **Tests before step E2: A.** Only the daemon's tests start a planning run, through the scripted server's `run.start`; no server code for it before step D.
 - Also agreed: a planning run of an existing project gets the bare clone's Git configuration restored at its end, as a review run; a scratch folder left by a crash is removed by the daemon's start clean-up; a run still active when its machine's daemon reconnects with protocol 2 follows 05 section 6, with no new code.
 
-### [ ] B1. Protocol 3 and criteria from 1 (branch `lot5/b-protocol-3`)
+### [x] B1. Protocol 3 and criteria from 1 (branch `lot5/b-protocol-3`, 2026-10-24)
 
 - **First** (own commit): the four code comments that say "lot 6" for Agent management (`apps/server/src/agents/routes.ts`, `seed.ts`, `apps/web/src/pages/ticket-form.tsx`, `packages/protocol/src/api/tickets.ts`) say "lot 7".
 - `PROTOCOL_VERSION` 3 (rule 13; 09 section 6).
@@ -116,6 +116,8 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 - The server: a protocol 2 daemon is accepted, connected and **unusable** (09 section 6, lot 3's rule for the previous protocol): no run of any kind; "Update the daemon to <version>" on the machine page, in "Needs you" ("Update the daemon on X") and as the queue's machine reason; "Update the daemon" in Help names 0.6.0; CHANGELOG.
 
 **Done when** `ticket_submit` counts from 1 (a report naming criterion 1 for the first accepted, one naming 0 refused, one past the last refused, each in criterion numbers), a scripted protocol 2 daemon is connected but given no run of any kind with "Update the daemon to <version>" on the machine page, in Needs you and in the queue, and lot 4's scenarios pass unchanged (their daemon now protocol 3).
+
+*Done 2026-10-24*: `DodReport` is the agent's form (`number` from 1, 0 refused by the schema in criterion numbers, a number past the last by the template's words); `StoredDodReport` keeps lot 4's form (`index` from 0) on the ticket, the run and the screens, converted once at `ticket_submit` (`storedReport`) and back for `ticket_get` (`agentReport`). Tests: `tools.test.ts` (0, lot 4's `index`, past the ceiling, the conversions), `submission.test.ts` (criterion 0 and 6 refused through the MCP path, the report kept by index and read back by number), `files.test.ts` (no agent text says "index"), and in `scheduler-reviews.test.ts` a protocol 2 daemon given neither the scheduler's implement and review runs nor **Run now** and **Start review**, with the words on the machine page and in Needs you (and the queue's in `runs/text.test.ts`). No new test file: the CI shards are unchanged.
 
 ### [ ] B2. Planning workspaces on the daemon (branch `lot5/b2-planning-workspaces`)
 
