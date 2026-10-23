@@ -18,7 +18,7 @@ Project: {{project_name}}. Type: {{type}}. Priority: {{priority}}.
 
 ## Acceptance criteria
 
-They are numbered from 1, as the owner sees them: use these numbers in every text the owner reads. In `ticket_submit`, report each one by its index, which counts from 0: criterion 1 is index 0.
+They are numbered from 1, as the owner sees them: use these numbers in every text the owner reads. In `ticket_submit`, report each one by the same number: the first one is number 1.
 
 {{acceptance_criteria}}
 

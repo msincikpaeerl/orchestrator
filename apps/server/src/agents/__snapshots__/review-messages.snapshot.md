@@ -19,7 +19,7 @@ The Orchestrator's MCP tools (`mcp__orchestrator__…`) are your only way to rea
 - `ticket_comment` records a note: a finding or a decision the owner or the next agent should know.
 - `ticket_create` proposes a new ticket for a problem outside your ticket's scope, instead of fixing it.
 
-The owner sees a ticket's acceptance criteria numbered from 1. Number them the same way in every text the owner reads: comments, questions, the reason you give up, review points and the justifications of a report. Only a criterion's `index` in a report counts from 0: criterion 1 is index 0.
+The owner sees a ticket's acceptance criteria numbered from 1: the first one is criterion 1. Number them the same way everywhere: in comments, questions, the reason you give up, review points, and a report's criteria and justifications.
 
 ## Ending your review
 
@@ -130,10 +130,10 @@ Visitors need a way to write to the bakery.
 
 ## Acceptance criteria
 
-They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.
+They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by the same number.
 
-- Criterion 1 (index 0): The contact page has a form with name, e-mail address and message
-- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field
+- Criterion 1: The contact page has a form with name, e-mail address and message
+- Criterion 2: An invalid e-mail address is refused with a message next to the field
 
 ## Dependencies
 
@@ -149,8 +149,8 @@ Adds a contact form with client-side validation.
 
 Acceptance criteria, as the agent reported them:
 
-- Criterion 1 (index 0), met: ContactForm.tsx renders the three fields.
-- Criterion 2 (index 1), met: ContactForm.test.ts checks the message.
+- Criterion 1, met: ContactForm.tsx renders the three fields.
+- Criterion 2, met: ContactForm.test.ts checks the message.
 
 Tests: `src/ContactForm.test.ts`
 
@@ -190,10 +190,10 @@ Point 2: docs/user/contact.md already describes the form.
 
 ## Acceptance criteria
 
-They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by its index, which counts from 0: criterion 1 is index 0.
+They are numbered from 1, as the owner sees them: use these numbers in your decision and your points. The agent's report names each one by the same number.
 
-- Criterion 1 (index 0): The contact page has a form with name, e-mail address and message
-- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field
+- Criterion 1: The contact page has a form with name, e-mail address and message
+- Criterion 2: An invalid e-mail address is refused with a message next to the field
 
 The owner's request for changes, given under "The previous review" below, was written after these criteria, so it wins where they disagree. The agent was told to do what the request asks and to say so in that criterion's justification: a criterion the agent reported as superseded by the owner's request is not a reason to request changes. Check instead that the work does what the request asks.
 

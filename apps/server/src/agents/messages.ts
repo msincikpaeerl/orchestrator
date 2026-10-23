@@ -264,9 +264,7 @@ function firstMessage(
     ticket.acceptanceCriteria.length === 0
       ? part(template, 'no-criteria')
       : ticket.acceptanceCriteria
-          .map((text, index) =>
-            part(template, 'criterion', { number: String(index + 1), index: String(index), text }),
-          )
+          .map((text, index) => part(template, 'criterion', { number: String(index + 1), text }))
           .join('\n');
   const dependencies =
     ticket.dependencies.length === 0

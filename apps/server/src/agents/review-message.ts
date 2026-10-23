@@ -1,6 +1,6 @@
 import {
   FIRST_MESSAGE_MAX_BYTES,
-  type DodReport,
+  type StoredDodReport,
   type TicketPriority,
   type TicketStatus,
   type TicketType,
@@ -72,7 +72,7 @@ export interface ReviewTicket {
   /** The ticket's workflow flag: `changed`, `not_listed` (may have changed), or none. */
   workflows: 'changed' | 'not_listed' | null;
   /** The accepted submission's report. */
-  report: DodReport;
+  report: StoredDodReport;
 }
 
 const bytes = (text: string) => Buffer.byteLength(text, 'utf8');
@@ -221,7 +221,6 @@ function report(template: Template, ticket: ReviewTicket): string {
           .map((criterion) =>
             part(template, 'report-criterion', {
               number: String(criterion.index + 1),
-              index: String(criterion.index),
               status: part(template, criterion.status === 'met' ? 'status-met' : 'status-not-met'),
               justification: criterion.justification.trim(),
             }),
@@ -255,9 +254,7 @@ export function reviewFirstMessage(
     ticket.acceptanceCriteria.length === 0
       ? part(template, 'no-criteria')
       : ticket.acceptanceCriteria
-          .map((text, index) =>
-            part(template, 'criterion', { number: String(index + 1), index: String(index), text }),
-          )
+          .map((text, index) => part(template, 'criterion', { number: String(index + 1), text }))
           .join('\n');
   const dependencies =
     ticket.dependencies.length === 0

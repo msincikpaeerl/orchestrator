@@ -15,32 +15,80 @@ const SubmittedFiles = z
     path: ['justification'],
   });
 
-/** `ticket_submit` input: the Definition of Done report (04, section 3.1; 06, section 4.2). */
-export const DodReport = z.strictObject({
-  criteria: z
-    .array(
-      z.strictObject({
-        /** Position of the acceptance criterion, from 0. */
-        index: z
-          .int()
-          .min(0)
-          .max(CRITERIA_CEILING - 1),
-        status: z.enum(['met', 'not_met']),
-        justification: requiredText(),
-      }),
-    )
-    .max(CRITERIA_CEILING)
-    .refine((criteria) => new Set(criteria.map((c) => c.index)).size === criteria.length, {
-      message: 'each criterion is reported once',
-    }),
+const CriterionStatus = z.enum(['met', 'not_met']);
+
+/** The report's fields other than its criteria. */
+const reportFields = {
   tests: SubmittedFiles,
   docs: SubmittedFiles,
   /** ADR files added, when a technical decision was made. */
   adrs: z.array(requiredText()),
   /** Short summary of the change, for the pull request description. */
   summary: requiredText(),
+};
+
+/**
+ * `ticket_submit` input: the Definition of Done report (04, section 3.1; 06, section 4.2). Each
+ * criterion is named by its number from 1, as the owner sees it (protocol 3; owner's answers,
+ * lot 5 steps A and B): never an index, which suggests counting from 0 to a model.
+ */
+export const DodReport = z.strictObject({
+  criteria: z
+    .array(
+      z.strictObject({
+        /** Number of the acceptance criterion, from 1: the first criterion is number 1. */
+        number: z
+          .int()
+          .min(1, 'acceptance criteria are numbered from 1: the first criterion is number 1')
+          .max(CRITERIA_CEILING),
+        status: CriterionStatus,
+        justification: requiredText(),
+      }),
+    )
+    .max(CRITERIA_CEILING)
+    .refine((criteria) => new Set(criteria.map((c) => c.number)).size === criteria.length, {
+      message: 'each criterion is reported once',
+    }),
+  ...reportFields,
 });
 export type DodReport = z.infer<typeof DodReport>;
+
+/**
+ * The report as the server keeps it on the ticket and the run, and the screens read it: each
+ * criterion by its index from 0, as lot 4 stored it. The server converts an agent's report once,
+ * where it receives it (owner's answer, lot 5 step B), so the reports kept from lot 4 keep their
+ * reading.
+ */
+export const StoredDodReport = z.object({
+  criteria: z.array(
+    z.object({
+      /** Position of the acceptance criterion, from 0. */
+      index: z.int().min(0),
+      status: CriterionStatus,
+      justification: z.string(),
+    }),
+  ),
+  ...reportFields,
+});
+export type StoredDodReport = z.infer<typeof StoredDodReport>;
+
+/** An agent's report as the server keeps it: criterion number 1 is index 0. */
+export function storedReport(report: DodReport): StoredDodReport {
+  const { criteria, ...rest } = report;
+  return {
+    ...rest,
+    criteria: criteria.map(({ number, ...entry }) => ({ index: number - 1, ...entry })),
+  };
+}
+
+/** A kept report as an agent reads it (`ticket_get`): index 0 is criterion number 1. */
+export function agentReport(report: StoredDodReport): DodReport {
+  const { criteria, ...rest } = report;
+  return {
+    ...rest,
+    criteria: criteria.map(({ index, ...entry }) => ({ number: index + 1, ...entry })),
+  };
+}
 
 /** The report's list a path came from: tests, documentation or ADRs. */
 export const ReportList = z.enum(['tests', 'docs', 'adrs']);
@@ -125,7 +173,7 @@ export type WorkflowReason = z.infer<typeof WorkflowReason>;
  */
 export const SubmissionRecord = z.object({
   at: z.iso.datetime(),
-  report: DodReport,
+  report: StoredDodReport,
   checks: z.array(DodCheckResult),
   /** The branch changes `.github/workflows/`, or its changed files were cut or not sent. */
   workflowChanges: z.boolean(),

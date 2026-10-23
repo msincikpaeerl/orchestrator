@@ -4,7 +4,7 @@ import {
   ACTIVE_RUN_STATUSES,
   AgentRole,
   CommentKind,
-  DodReport,
+  StoredDodReport,
   HarnessElement,
   MCP_OUTPUT_MAX_CHARACTERS,
   MCP_TICKET_LIST_PAGE_SIZE,
@@ -16,7 +16,9 @@ import {
   TicketPriority,
   TicketStatus,
   TicketType,
+  agentReport,
   shorten,
+  storedReport,
   type McpCall,
   type McpCiStatus,
   type McpComment,
@@ -479,7 +481,9 @@ export class McpBackend {
       blocked_by: blockedBy.map(link),
       blocks: blocks.map(link),
       created_by: creator,
-      dod_report: ticket.dodReport === null ? null : DodReport.parse(ticket.dodReport),
+      // Kept by index from 0, read by agents by number from 1 (owner's answer, lot 5 step B).
+      dod_report:
+        ticket.dodReport === null ? null : agentReport(StoredDodReport.parse(ticket.dodReport)),
       pull_request_url: null,
     };
   }
@@ -1344,9 +1348,11 @@ export class McpBackend {
       baseBranch: call.run.baseBranch,
     });
     const at = this.now();
+    // Converted once, here: kept by index from 0, as lot 4 kept it (owner's answer, lot 5 step B).
+    const stored = storedReport(report);
     const record: SubmissionRecord = {
       at: at.toISOString(),
-      report,
+      report: stored,
       checks: checked.checks,
       workflowChanges: checked.workflowChanges,
       workflowReason: checked.workflowReason,
@@ -1356,7 +1362,7 @@ export class McpBackend {
     const [updated] = await tx
       .update(schema.tickets)
       .set({
-        dodReport: report,
+        dodReport: stored,
         dodChecks: checked.checks,
         workflowChanges: checked.workflowChanges,
         workflowReason: checked.workflowReason,

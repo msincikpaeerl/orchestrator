@@ -21,8 +21,8 @@ beforeAll(async () => {
 const HEAD = 'a'.repeat(40);
 const REPORT: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'Done' },
-    { index: 1, status: 'met', justification: 'Done' },
+    { number: 1, status: 'met', justification: 'Done' },
+    { number: 2, status: 'met', justification: 'Done' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -100,7 +100,7 @@ describe('checkSubmission', () => {
     const checked = checkSubmission(
       texts,
       facts({
-        report: { ...REPORT, criteria: [{ index: 0, status: 'not_met', justification: 'No' }] },
+        report: { ...REPORT, criteria: [{ number: 1, status: 'not_met', justification: 'No' }] },
       }),
     );
     const refused = refusal(texts, checked);
@@ -110,11 +110,11 @@ describe('checkSubmission', () => {
       {
         check: 'criteria_met',
         message:
-          'Criterion 1 (index 0) is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
+          'Criterion 1 is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
       },
       {
         check: 'criteria_met',
-        message: 'Criterion 2 (index 1) is not reported: "The e-mail address is checked".',
+        message: 'Criterion 2 is not reported: "The e-mail address is checked".',
       },
     ]);
   });
@@ -122,34 +122,34 @@ describe('checkSubmission', () => {
   it('refuses criteria the ticket does not have, as wrong input', () => {
     const error = criteriaOutOfRange(texts, ['One'], {
       ...REPORT,
-      criteria: [{ index: 3, status: 'met', justification: 'Done' }],
+      criteria: [{ number: 4, status: 'met', justification: 'Done' }],
     });
     expect(error).toEqual({
       code: 'VALIDATION_FAILED',
       message:
-        'The ticket has 1 acceptance criteria, criteria 1 to 1 (indexes 0 to 0): your report names criterion 4 (index 3), which the ticket does not have.',
-      details: [{ field: 'criteria.0.index', message: 'no criterion 4 (index 3)' }],
+        'The ticket has 1 acceptance criteria, criteria 1 to 1: your report names criterion 4, which the ticket does not have.',
+      details: [{ field: 'criteria.0.number', message: 'no criterion 4' }],
     });
-    // Several past the last, each by both numbers; a ticket without criteria (lot 4 step B).
+    // Several past the last, each by its number; a ticket without criteria (lot 4 step B).
     const several = {
       ...REPORT,
       criteria: [
-        { index: 0, status: 'met' as const, justification: 'Done' },
-        { index: 2, status: 'met' as const, justification: 'Done' },
-        { index: 4, status: 'met' as const, justification: 'Done' },
+        { number: 1, status: 'met' as const, justification: 'Done' },
+        { number: 3, status: 'met' as const, justification: 'Done' },
+        { number: 5, status: 'met' as const, justification: 'Done' },
       ],
     };
     expect(criteriaOutOfRange(texts, ['One', 'Two'], several)).toEqual({
       code: 'VALIDATION_FAILED',
       message:
-        'The ticket has 2 acceptance criteria, criteria 1 to 2 (indexes 0 to 1): your report names criterion 3 (index 2), criterion 5 (index 4), which the ticket does not have.',
+        'The ticket has 2 acceptance criteria, criteria 1 to 2: your report names criterion 3, criterion 5, which the ticket does not have.',
       details: [
-        { field: 'criteria.1.index', message: 'no criterion 3 (index 2)' },
-        { field: 'criteria.2.index', message: 'no criterion 5 (index 4)' },
+        { field: 'criteria.1.number', message: 'no criterion 3' },
+        { field: 'criteria.2.number', message: 'no criterion 5' },
       ],
     });
     expect(criteriaOutOfRange(texts, [], several)?.message).toBe(
-      'The ticket has no acceptance criteria: your report names criterion 1 (index 0), criterion 3 (index 2), criterion 5 (index 4), which the ticket does not have.',
+      'The ticket has no acceptance criteria: your report names criterion 1, criterion 3, criterion 5, which the ticket does not have.',
     );
   });
 
@@ -403,7 +403,7 @@ describe('reasons for the owner (lot 3 step F4)', () => {
         ticketType: 'docs',
         report: {
           ...REPORT,
-          criteria: [{ index: 0, status: 'not_met', justification: 'No' }],
+          criteria: [{ number: 1, status: 'not_met', justification: 'No' }],
           tests: { paths: ['../secrets.txt', 'src'], justification: null },
           docs: { paths: [], justification: 'None' },
           adrs: ['docs/adr/0002-other.md'],

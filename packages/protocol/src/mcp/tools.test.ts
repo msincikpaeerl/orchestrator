@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { settingCeiling, TEXT_CEILING } from '../text-limits.js';
+import { agentReport, DodReport, StoredDodReport, storedReport } from './dod-report.js';
 import { McpError } from './errors.js';
 import { MCP_TOOLS, McpToolName } from './tools.js';
 
@@ -33,7 +34,7 @@ const comment = {
 };
 
 const report = {
-  criteria: [{ index: 0, status: 'met', justification: 'See ContactForm.test.ts' }],
+  criteria: [{ number: 1, status: 'met', justification: 'See ContactForm.test.ts' }],
   tests: { paths: ['src/contact/ContactForm.test.ts'], justification: null },
   docs: { paths: [], justification: 'No user-visible change.' },
   adrs: [],
@@ -310,7 +311,7 @@ describe('wrong types and inconsistent inputs', () => {
     [
       'a criterion status other than met or not_met',
       'ticket_submit',
-      { ...report, criteria: [{ index: 0, status: 'done', justification: 'x' }] },
+      { ...report, criteria: [{ number: 1, status: 'done', justification: 'x' }] },
     ],
     [
       'the same criterion twice',
@@ -323,6 +324,30 @@ describe('wrong types and inconsistent inputs', () => {
       { ...report, tests: { paths: [], justification: null } },
     ],
     ['a report without its docs', 'ticket_submit', { ...report, docs: undefined }],
+    [
+      'a criterion numbered 0 (protocol 3)',
+      'ticket_submit',
+      { ...report, criteria: [{ number: 0, status: 'met', justification: 'x' }] },
+    ],
+    [
+      "a criterion by lot 4's index (protocol 3)",
+      'ticket_submit',
+      { ...report, criteria: [{ index: 0, status: 'met', justification: 'x' }] },
+    ],
+    [
+      'a criterion number past the most criteria a ticket can have',
+      'ticket_submit',
+      {
+        ...report,
+        criteria: [
+          {
+            number: settingCeiling('ticketMaxAcceptanceCriteria') + 1,
+            status: 'met',
+            justification: 'x',
+          },
+        ],
+      },
+    ],
     ['a request for changes without a point', 'review_request_changes', { points: [] }],
     [
       'a point with a line but no file',
@@ -345,6 +370,45 @@ describe('wrong types and inconsistent inputs', () => {
 
   it.each(refused)('refuses %s', (_, tool, input) => {
     expect(MCP_TOOLS[tool].input.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("ticket_submit's criteria from 1 (protocol 3; owner's answers, lot 5 steps A and B)", () => {
+  it('describes the criteria by their number from 1', () => {
+    expect(MCP_TOOLS.ticket_submit.description).toContain(
+      'every acceptance criterion, by its number from 1 as the ticket lists it (the first criterion is number 1)',
+    );
+    expect(MCP_TOOLS.ticket_submit.description).not.toMatch(/index|from 0/);
+  });
+
+  it('refuses criterion 0 in words naming criterion numbers', () => {
+    const parsed = DodReport.safeParse({
+      ...report,
+      criteria: [{ number: 0, status: 'met', justification: 'x' }],
+    });
+    expect(parsed.error?.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['criteria', 0, 'number'],
+        message: 'acceptance criteria are numbered from 1: the first criterion is number 1',
+      },
+    ]);
+  });
+
+  it('keeps a report by index from 0, and gives it back to agents by number from 1', () => {
+    const sent = DodReport.parse({
+      ...report,
+      criteria: [
+        { number: 1, status: 'met', justification: 'First' },
+        { number: 3, status: 'not_met', justification: 'Third' },
+      ],
+    });
+    const kept = storedReport(sent);
+    expect(kept.criteria).toEqual([
+      { index: 0, status: 'met', justification: 'First' },
+      { index: 2, status: 'not_met', justification: 'Third' },
+    ]);
+    expect(StoredDodReport.parse(kept)).toEqual(kept);
+    expect(agentReport(kept)).toEqual(sent);
   });
 });
 

@@ -178,8 +178,8 @@ test('a finished run shows the branch and its commits on the ticket page', async
     'ticket_submit',
     {
       criteria: [
-        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: [], justification: 'No user documentation in this project yet.' },
@@ -310,8 +310,8 @@ test('the ticket page says where the branch is: on the machine, pushed, both, or
     'ticket_submit',
     {
       criteria: [
-        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: [], justification: 'No user documentation in this project yet.' },

@@ -123,8 +123,8 @@ describe('GET /api/stream', () => {
     const { runId, runToken } = await h.running(daemon);
     await h.ok(daemon, runToken, 'ticket_submit', {
       criteria: [
-        { index: 0, status: 'met', justification: 'The form is there' },
-        { index: 1, status: 'met', justification: 'Checked by its test' },
+        { number: 1, status: 'met', justification: 'The form is there' },
+        { number: 2, status: 'met', justification: 'Checked by its test' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -151,8 +151,8 @@ describe('GET /api/stream', () => {
     const { runId, runToken } = await h.running(daemon);
     await h.ok(daemon, runToken, 'ticket_submit', {
       criteria: [
-        { index: 0, status: 'met', justification: 'The form is there' },
-        { index: 1, status: 'met', justification: 'Checked by its test' },
+        { number: 1, status: 'met', justification: 'The form is there' },
+        { number: 2, status: 'met', justification: 'Checked by its test' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: ['docs/user/contact.md'], justification: null },

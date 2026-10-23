@@ -3,6 +3,7 @@ import {
   DodCheckResult,
   NeedsYouResponse,
   SubmissionRecord,
+  storedReport,
   type DodReport,
   type McpError,
   type McpResult,
@@ -43,8 +44,8 @@ async function working(ticket: object = {}) {
 
 const REPORT: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'ContactForm renders the form' },
-    { index: 1, status: 'met', justification: 'Tested in contact.test.ts' },
+    { number: 1, status: 'met', justification: 'ContactForm renders the form' },
+    { number: 2, status: 'met', justification: 'Tested in contact.test.ts' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -80,7 +81,7 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
         daemon,
         runToken,
         'ticket_submit',
-        { ...REPORT, criteria: [{ index: 0, status: 'not_met', justification: 'Not yet' }] },
+        { ...REPORT, criteria: [{ number: 1, status: 'not_met', justification: 'Not yet' }] },
         cleanWorkspace({ clean: false, commitsAhead: [], push: null }),
       ),
     );
@@ -94,29 +95,48 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
       'worktree_clean',
       'commits_ahead',
     ]);
-    // Criterion numbers from 1, as the owner reads them, with the tool's index (lot 4 step B).
+    // Criterion numbers from 1, as the tool counts them (protocol 3, lot 5 step B).
     expect(failed.details?.slice(0, 2).map((detail) => detail.message)).toEqual([
-      'Criterion 1 (index 0) is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
-      'Criterion 2 (index 1) is not reported: "The e-mail address is checked".',
+      'Criterion 1 is reported not_met: "The contact page has a form". Meet it, or use ticket_ask to get a decision.',
+      'Criterion 2 is not reported: "The e-mail address is checked".',
     ]);
+    // Criterion 0 does not exist: the input is wrong, nothing is kept.
+    expect(
+      refusal(
+        await h.tool(daemon, runToken, 'ticket_submit', {
+          ...REPORT,
+          criteria: [{ number: 0, status: 'met', justification: 'Done' }],
+        }),
+      ),
+    ).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: [
+        {
+          field: 'criteria.0.number',
+          message: 'acceptance criteria are numbered from 1: the first criterion is number 1',
+        },
+      ],
+    });
     // Criteria the ticket does not have: the input is wrong, nothing is kept.
     expect(
       refusal(
         await h.tool(daemon, runToken, 'ticket_submit', {
           ...REPORT,
-          criteria: [{ index: 5, status: 'met', justification: 'Done' }],
+          criteria: [{ number: 6, status: 'met', justification: 'Done' }],
         }),
       ),
     ).toMatchObject({
       code: 'VALIDATION_FAILED',
       message:
-        'The ticket has 2 acceptance criteria, criteria 1 to 2 (indexes 0 to 1): your report names criterion 6 (index 5), which the ticket does not have.',
-      details: [{ field: 'criteria.0.index', message: 'no criterion 6 (index 5)' }],
+        'The ticket has 2 acceptance criteria, criteria 1 to 2: your report names criterion 6, which the ticket does not have.',
+      details: [{ field: 'criteria.0.number', message: 'no criterion 6' }],
     });
 
     // The run keeps its latest refused submission, with each check's result.
     const kept = SubmissionRecord.parse((await runRow(runId)).refusedSubmission);
     expect(kept.report.criteria[0]?.status).toBe('not_met');
+    // Kept by index from 0, as lot 4 kept reports (owner's answer, lot 5 step B).
+    expect(kept.report.criteria[0]?.index).toBe(0);
     expect(results(kept.checks)).toEqual({
       criteria_met: 'failed',
       worktree_clean: 'failed',
@@ -134,13 +154,15 @@ describe("ticket_submit's checks (04, section 3.1)", () => {
     const accepted = await h.ok(daemon, runToken, 'ticket_submit', REPORT);
     // The run waits for CI from step G1a (04, section 3.1).
     expect(accepted).toMatchObject({ result: 'pending_ci', ticket: { status: 'in_progress' } });
+    // Agents read the report back by number from 1, as they sent it (lot 5 step B).
+    expect(accepted).toMatchObject({ ticket: { dod_report: REPORT } });
     const run = await runRow(runId);
     // The refusal before it is kept beside the accepted submission.
     expect(SubmissionRecord.parse(run.refusedSubmission).report.criteria[0]?.status).toBe(
       'not_met',
     );
     const submission = SubmissionRecord.parse(run.submission);
-    expect(submission.report).toEqual(REPORT);
+    expect(submission.report).toEqual(storedReport(REPORT));
     expect(Object.values(results(submission.checks))).toEqual(Array(6).fill('passed'));
     const ticket = await ticketRow();
     expect(results(ticket.dodChecks)).toEqual(results(submission.checks));

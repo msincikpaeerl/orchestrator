@@ -15,7 +15,7 @@ The Orchestrator's MCP tools (`mcp__orchestrator__…`) are your only way to rea
 - `ticket_comment` records a note: a finding or a decision the owner or the next agent should know.
 - `ticket_create` proposes a new ticket for a problem outside your ticket's scope, instead of fixing it.
 
-The owner sees a ticket's acceptance criteria numbered from 1. Number them the same way in every text the owner reads: comments, questions, the reason you give up, review points and the justifications of a report. Only a criterion's `index` in a report counts from 0: criterion 1 is index 0.
+The owner sees a ticket's acceptance criteria numbered from 1: the first one is criterion 1. Number them the same way everywhere: in comments, questions, the reason you give up, review points, and a report's criteria and justifications.
 
 {{work}}
 

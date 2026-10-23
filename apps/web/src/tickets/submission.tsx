@@ -2,7 +2,7 @@ import {
   GITHUB_TOKEN_LIST_URL,
   PullRequestTryAgainResponse,
   type DodCheckResult,
-  type DodReport,
+  type StoredDodReport,
   type PullRequestFailure,
 } from '@orchestrator/protocol';
 import { useMutation } from '@tanstack/react-query';
@@ -153,7 +153,7 @@ function FilesPart({
 }
 
 /** The tests, documentation and architecture decisions the agent listed. */
-export function ReportFiles({ report }: { report: DodReport }) {
+export function ReportFiles({ report }: { report: StoredDodReport }) {
   return (
     <div className="space-y-3">
       <FilesPart title="Tests" {...report.tests} />

@@ -24,8 +24,8 @@ afterEach(async () => {
 
 const REPORT: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'ContactForm renders the form' },
-    { index: 1, status: 'met', justification: 'Tested in contact.test.ts' },
+    { number: 1, status: 'met', justification: 'ContactForm renders the form' },
+    { number: 2, status: 'met', justification: 'Tested in contact.test.ts' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -128,7 +128,7 @@ describe('Start review', () => {
     expect(prompt).toContain(`CI passed on GitHub for commit ${commit}.`);
     expect(prompt).toContain('CI already ran on GitHub: do not run the test suite again');
     expect(prompt).toContain('Adds the contact form.');
-    expect(prompt).toContain('- Criterion 2 (index 1), met: Tested in contact.test.ts');
+    expect(prompt).toContain('- Criterion 2, met: Tested in contact.test.ts');
     expect(start.payload.nudgeMessage).toContain('`review_approve`, `review_request_changes`');
 
     // Started like any run; the ticket stays in review (04, section 2).

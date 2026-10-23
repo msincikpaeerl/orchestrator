@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
-import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
+import { DodCheckResult, StoredDodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { TicketHold } from './holds.js';
 import {
@@ -367,7 +367,7 @@ export const TicketDetail = TicketSummary.extend({
    * The latest Definition of Done report accepted from an agent (04, section 3.1). Agent text,
    * credentials masked.
    */
-  dodReport: DodReport.nullable(),
+  dodReport: StoredDodReport.nullable(),
   /** Each check's result of that submission; null when accepted before 0.4.0, or none. */
   dodChecks: z.array(DodCheckResult).nullable(),
   /** Its workflow flag; null when not raised. */

@@ -234,7 +234,7 @@ describe('a closed session stopped while it is resumed', () => {
                   do: 'mcp',
                   tool: 'ticket_submit',
                   arguments: {
-                    criteria: [{ index: 0, status: 'met', justification: 'Done.' }],
+                    criteria: [{ number: 1, status: 'met', justification: 'Done.' }],
                     tests: { paths: [], justification: 'No code.' },
                     docs: { paths: [], justification: 'No user-visible change.' },
                     adrs: [],

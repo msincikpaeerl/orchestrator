@@ -184,8 +184,8 @@ describe('a download that fails at the start of a run', () => {
 describe('a review run whose download fails', () => {
   const REPORT: DodReport = {
     criteria: [
-      { index: 0, status: 'met', justification: 'ContactForm renders the form' },
-      { index: 1, status: 'met', justification: 'Tested in contact.test.ts' },
+      { number: 1, status: 'met', justification: 'ContactForm renders the form' },
+      { number: 2, status: 'met', justification: 'Tested in contact.test.ts' },
     ],
     tests: { paths: ['src/contact.test.ts'], justification: null },
     docs: { paths: ['docs/user/contact.md'], justification: null },
