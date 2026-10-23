@@ -92,12 +92,12 @@ An agent can read anything in its own project. It can only change **its own tick
 
 Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.give_up` need the ticket `in_progress`. A second question while the first waits, and any of the three after an accepted `ticket.submit` or `ticket.give_up`, are refused with `INVALID_TRANSITION`, telling the agent to end its turn. An accepted `ticket.submit` stores the report at once; the run ends `succeeded` and the ticket moves to `in_review` when the turn ends (05, section 4.8).
 
-`ticket.submit` input (`index` counts acceptance criteria from 0 in lot 4, while agents name them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A). From protocol 3 (lot 5; owner's answer 1, lot 5 step A) it counts from 1, everywhere: a protocol 2 daemon, whose relay still describes the tool "from 0", takes no run (09, section 6), so the server has a single reading:
+`ticket.submit` input (lot 4 named each criterion by an `index` from 0, while agents named them from 1 in texts the owner reads; 03, section 3.2, owner's answer 13, lot 4 step A). From protocol 3 (lot 5; owner's answer 1, lot 5 step A) each criterion is named by its `number`, from 1, everywhere: the field is no longer `index`, which suggests counting from 0 to a model (owner's answer, lot 5 step B). A number of 0 or past the last criterion is refused, in criterion numbers. A protocol 2 daemon, whose relay still describes the tool "from 0", takes no run (09, section 6), so the server has a single reading; it converts the number once, where it receives the report, so the reports stored from lot 4 and the screens keep their reading:
 
 ```json
 {
   "criteria": [
-    { "index": 1, "status": "met", "justification": "Form validates email on submit, see ContactForm.test.ts" }
+    { "number": 1, "status": "met", "justification": "Form validates email on submit, see ContactForm.test.ts" }
   ],
   "tests": { "paths": ["src/contact/ContactForm.test.ts"], "justification": null },
   "docs": { "paths": ["docs/user/contact-form.md"], "justification": null },
