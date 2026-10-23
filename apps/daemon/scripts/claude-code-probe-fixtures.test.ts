@@ -203,8 +203,8 @@ describe("check 6, the session's permission mode (lot 3 step L)", () => {
       'utf8',
     );
 
-  it("passes on the transcripts the owner's probe runs recorded with Claude Code 2.1.283, 2.1.287 and 2.1.302", () => {
-    for (const version of ['2.1.283', '2.1.287', '2.1.302']) {
+  it("passes on the transcripts the owner's probe runs recorded with Claude Code 2.1.283, 2.1.287, 2.1.302 and 2.1.308", () => {
+    for (const version of ['2.1.283', '2.1.287', '2.1.302', '2.1.308']) {
       expect(permissionModeCheck(fixture(version)), version).toEqual({
         verdict: 'PASS',
         detail: 'dontAsk on 1 transcript line(s), no other mode',

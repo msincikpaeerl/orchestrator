@@ -101,6 +101,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Project Manager profile.
 - Project creation from an approved plan, with the bootstrap ticket (08, section 3.2).
 - Setup wizard steps 3 to 5.
+- Carried from lot 4's check (lot 4 plan, "Carried to lot 5"): the usage-limit signal capture, an open point of lot 5's plan, done by the owner if the limit is reached during the lot.
 
 **Done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation.
 
@@ -127,7 +128,7 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 - Agents run under a separate system user from the daemon (05, section 7.2): today an agent runs as the daemon's user, so it can read the daemon's machine token and ask the server for the GitHub credential of an active run. It stays here (owner's answer 11, lot 4 step A).
 - **Push again** for a push GitHub refused, without a session, with the design of lot 3's plan ("Carried to lot 4"; owner's answer 8, lot 4 step A). It needs a daemon command, so a raise of the protocol version; `ticket_submit`'s criteria counted from 1 (03, section 3.2) can come with the same daemon update.
 - **A run whose `state.json` the daemon cannot read** (found in lot 4 step G; owner's answer, review of step G): the same daemon update removes its worktree (or reports it in `hello`), so the next run of its ticket on that machine no longer fails its preparation with "checked out by another run" (05, section 6, a known limit until then).
-- The usage-limit signal capture, if lot 4 did not reach the limit (owner's answer 12, lot 4 step A).
+- The usage-limit signal capture, if neither lot 4 nor lot 5 reached the limit (owner's answer 12, lot 4 step A; carried to lot 5 first by the owner, lot 4 step L).
 - Trust the forwarded client address from a configured reverse proxy, for login throttling (see ADR 0015).
 - Point to settle: whether the server's shutdown forces busy HTTP connections closed after a grace period. Since lot 2 step L1, SIGTERM ends the realtime streams at once and the server exits in milliseconds, but a response still being sent (for example a daemon package download the client stops reading) keeps the close waiting until Docker kills the process, 10 seconds by default; PostgreSQL rolls back any write interrupted by the kill. Left unchanged in lot 2 (owner's decision, review of step L1).
 
