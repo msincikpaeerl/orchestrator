@@ -253,6 +253,25 @@ describe('when the scheduler resumes a paused run (lot 4 step E)', () => {
   });
 });
 
+describe('a daemon of the previous protocol (lot 5 step B)', () => {
+  it("says to update it to the server's version, before any other reason", () => {
+    const outdated = {
+      type: 'daemon_outdated',
+      daemonVersion: '0.5.0',
+      protocolVersion: 2,
+      serverVersion: '0.6.0',
+      serverProtocolVersion: 3,
+    } as const;
+    expect(
+      unavailableText({
+        why: 'unusable',
+        reasons: [outdated, { type: 'claude_code_unsupported', version: null, minimum: '2.1.280' }],
+      }),
+    ).toBe('its daemon must be updated to 0.6.0');
+    expect(unavailableText(unavailable.unusable)).toBe('it cannot receive runs (see its page)');
+  });
+});
+
 describe('a machine offline (lot 4 step G)', () => {
   it('says since when, when it is known', () => {
     expect(unavailableText({ why: 'offline', since: until })).toBe(

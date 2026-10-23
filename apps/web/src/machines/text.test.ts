@@ -136,7 +136,9 @@ describe('needsYouText', () => {
     expect(outdated.detail).toMatch(
       /^Daemon 0\.3\.0 is older than this Orchestrator \(0\.4\.0\)\./,
     );
-    expect(outdated.detail).toContain('receives no runs');
+    expect(outdated.detail).toContain(
+      'Update the daemon to 0.4.0: the machine receives no runs until then.',
+    );
     // A server built between two releases has the same version number: still true.
     const same = needsYouText({
       ...examples.daemon_outdated,
@@ -189,7 +191,7 @@ describe('machine texts', () => {
         }),
       ),
     ).toMatch(
-      /^Daemon 0\.3\.0 is older than this Orchestrator \(0\.4\.0\)\. The machine receives no runs/,
+      /^Daemon 0\.3\.0 is older than this Orchestrator \(0\.4\.0\)\. Update the daemon to 0\.4\.0: the machine receives no runs until then\./,
     );
     const other = daemonUpdateText(
       machine({ daemonBuildDiffers: true, updateCommands: UPDATE_COMMANDS }),

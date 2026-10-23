@@ -4,6 +4,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Machines: this version needs the daemon 0.6.0 on every machine. A machine whose daemon is 0.5.0 stays connected but gets no runs at all, by the scheduler or by you, until you update it: "Needs you" shows **Update the daemon on …**, and the machine's page and Activity > **Queue** say "Update the daemon to 0.6.0" with the commands to type. Update it when no agent works on the machine. Help: "Machines" > "Update the daemon".
 - Agents: an agent now names each acceptance criterion by its number from 1 everywhere, also when it hands its work in. Under "What the agent was told" on a ticket, a refused submission now names the criterion number only ("Criterion 1 is not reported"), without an index. Reports handed in before this version show as they did.
 
 ## 0.5.0 — 2026-10-22

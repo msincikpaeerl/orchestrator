@@ -346,3 +346,53 @@ describe('the switch Start reviews by themselves (02, section 6.5)', () => {
     expect(await readyItems()).toMatchObject([{ start: 'held' }]);
   });
 });
+
+describe('a daemon of the previous protocol (09, section 6; lot 5 step B)', () => {
+  it('stays connected but takes no run of any kind, and every screen says to update it', async () => {
+    await h.start();
+    await h.createTicket({ title: 'Contact form' });
+    const laptop = await h.machine();
+    expect(await tick()).toEqual(['implement WEB-1']);
+    await builds(laptop.daemon);
+    await h.createTicket({ title: 'Opening hours' });
+
+    // The same machine, its daemon now of protocol 2 (0.5.0).
+    await laptop.daemon.close();
+    await eventually('the machine offline', async () => {
+      const [row] = await h.t.db
+        .select({ status: schema.machines.status })
+        .from(schema.machines)
+        .where(eq(schema.machines.id, laptop.id));
+      expect(row?.status).toBe('offline');
+    });
+    const old = await h.connect(laptop.token, { protocolVersion: 2, daemonVersion: '0.5.0' });
+    const outdated = { why: 'unusable', reasons: [{ type: 'daemon_outdated' }] };
+
+    // Neither the review of WEB-1 nor the implement run of WEB-2 starts by itself.
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    const candidates = await queue();
+    expect(candidates.map((candidate) => candidate.kind).sort()).toEqual(['implement', 'review']);
+    for (const candidate of candidates) {
+      expect(candidate.reason).toMatchObject({ machines: [{ unavailable: outdated }] });
+    }
+    // Nor by the owner: Run now and Start review are refused for the same reason.
+    for (const path of ['/api/projects/WEB/tickets/2/run', '/api/projects/WEB/tickets/1/review']) {
+      const refused = await h.call('POST', path);
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(JSON.stringify(refused.json())).toContain('daemon_outdated');
+    }
+    expect(starts(old)).toEqual([]);
+
+    // The machine page and Needs you say to update it, to this server's version.
+    const machine = await h.call('GET', `/api/machines/${laptop.id}`);
+    expect(machine.json()).toMatchObject({
+      state: 'online',
+      protocolVersion: 2,
+      unusable: [{ type: 'daemon_outdated', daemonVersion: '0.5.0', serverProtocolVersion: 3 }],
+    });
+    const items = NeedsYouResponse.parse((await h.call('GET', '/api/needs-you')).json()).items;
+    expect(items).toContainEqual(
+      expect.objectContaining({ type: 'daemon_outdated', daemonVersion: '0.5.0' }),
+    );
+  });
+});

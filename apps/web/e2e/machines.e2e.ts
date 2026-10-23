@@ -230,12 +230,12 @@ test('a daemon to update, and a daemon of another build than the one provided', 
   page,
 }) => {
   await completeSetup(page);
-  // A 0.3.0 daemon: the previous protocol, no build.
+  // A 0.5.0 daemon: the previous protocol, run from its sources (lot 5 step B).
   const old = await createMachine(page, { name: 'Desktop', account: 'Personal' });
   expect(
     await connectDaemon(page, old.code, {
-      protocolVersion: 1,
-      daemonVersion: '0.3.0',
+      protocolVersion: 2,
+      daemonVersion: '0.5.0',
       daemonBuild: null,
     }),
   ).toBe(204);
@@ -245,7 +245,7 @@ test('a daemon to update, and a daemon of another build than the one provided', 
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Update the daemon on Desktop' })).toBeVisible();
-  await expect(page.getByText(/Daemon 0\.3\.0 is older than this Orchestrator/)).toBeVisible();
+  await expect(page.getByText(/Daemon 0\.5\.0 is older than this Orchestrator/)).toBeVisible();
   await expect(
     page.getByRole('heading', {
       name: 'The daemon on Laptop is not the one this Orchestrator provides',
@@ -270,8 +270,10 @@ test('a daemon to update, and a daemon of another build than the one provided', 
   await page.goto(`/machines/${old.id}`);
   await expect(page.getByRole('heading', { name: 'Desktop', level: 1 })).toBeVisible();
   await expect(page.getByText('Daemon to update')).toBeVisible();
-  await expect(page.getByText('Not reported (older daemon)')).toBeVisible();
-  await expect(page.getByText(/The machine receives no runs until you update it/)).toBeVisible();
+  await expect(page.getByText('None (run from its sources)')).toBeVisible();
+  await expect(
+    page.getByText(/Update the daemon to [\d.]+: the machine receives no runs until then\./),
+  ).toBeVisible();
   await expect(page.getByLabel('Update commands')).toBeVisible();
   await expectFitsScreen(page);
 
