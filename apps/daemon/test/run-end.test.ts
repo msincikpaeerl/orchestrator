@@ -23,6 +23,7 @@ import {
   tmux,
   useRunnerHarness,
 } from './runner-harness.js';
+import type { TicketRunStart } from './run-start.js';
 import { waitFor } from './testing.js';
 
 // The push at a run's end (05, sections 4.9 and 4.11; lot 3 step D2), with the real tmux and Git,
@@ -75,7 +76,7 @@ function remoteHead(ref: string): string | null {
   }
 }
 
-function localHead(runStart: RunStart['payload'], ref = `refs/heads/${BRANCH}`): string | null {
+function localHead(runStart: TicketRunStart, ref = `refs/heads/${BRANCH}`): string | null {
   try {
     const bare = bareClonePath(home.paths, runStart.repository);
     return gitIn(bare, ['rev-parse', '--verify', '--quiet', ref], home.env).trim();
@@ -85,7 +86,7 @@ function localHead(runStart: RunStart['payload'], ref = `refs/heads/${BRANCH}`):
 }
 
 /** Waits for the agent's commit on the local ticket branch. */
-async function committed(runStart: RunStart['payload']): Promise<string> {
+async function committed(runStart: TicketRunStart): Promise<string> {
   await waitFor(
     () => localHead(runStart) !== null && localHead(runStart) !== remoteHead('refs/heads/main'),
     20_000,

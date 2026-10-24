@@ -26,14 +26,26 @@ import { RUN_MARKER } from './processes.js';
 import type { TrustRegistry } from './trust.js';
 
 // A run's Git workspace (05, section 4.2): one bare clone per repository, reused across runs,
-// and one worktree per run on the ticket branch. The bare clone receives the remote's branches
+// and one worktree per run on the ticket branch. A planning run (protocol 3, lot 5) has no ticket
+// branch: its worktree is detached at GitHub's base branch, or, for a new project, an empty
+// scratch folder with no Git. The bare clone receives the remote's branches
 // in `refs/remotes/origin/*`, so a fetch never overwrites a ticket branch holding commits not
 // pushed yet. Fetches and pushes hold the credential and run in an isolated repository
 // (`isolated-git.ts`), never reading the bare clone's configuration, which an agent can change;
 // the bare clone's empty `credential.helper` keeps the owner's own helpers away from the agent's
 // own Git commands.
 
-type Repository = RunStart['payload']['repository'];
+type Repository = NonNullable<RunStart['payload']['repository']>;
+
+/** The repository of a run that works on a ticket branch: every run but a planning run. */
+export type TicketRepository = Repository & { ticketBranch: string };
+
+/** The run's repository with its ticket branch; null for a planning run, which has none. */
+export function ticketRepository(start: RunStart['payload']): TicketRepository | null {
+  const { repository } = start;
+  if (repository?.ticketBranch === undefined) return null;
+  return { ...repository, ticketBranch: repository.ticketBranch };
+}
 
 export interface WorkspaceOptions {
   paths: DaemonPaths;
@@ -80,9 +92,12 @@ export class ReviewCommitMoved extends Error {
   }
 }
 
-/** A prepared workspace; `review` for a review run. */
+/**
+ * A prepared workspace; `review` for a review run. `bare` is null for a planning run of a new
+ * project, whose worktree is a scratch folder.
+ */
 export interface PreparedWorkspace {
-  bare: string;
+  bare: string | null;
   worktree: string;
   review: ReviewStart | null;
 }
@@ -119,8 +134,9 @@ export class Workspaces {
   async prepare(start: RunStart['payload'], runFolder: string): Promise<PreparedWorkspace> {
     const { git, paths } = this.options;
     const { repository } = start;
-    const bare = bareClonePath(paths, repository);
     const worktree = worktreePath(paths, start.runId);
+    if (repository === undefined) return this.prepareScratch(worktree);
+    const bare = bareClonePath(paths, repository);
     const marker = { [RUN_MARKER]: start.runId };
     let review: ReviewStart | null = null;
     await this.locked(bare, async () => {
@@ -140,15 +156,23 @@ export class Workspaces {
       // repository or its worktrees (05, section 7). Set at each preparation, so bare clones made
       // by 0.2.0 get it too.
       await git.run(['-C', bare, 'config', '--replace-all', 'credential.helper', '']);
-      await isolatedFetch(this.isolated(start, runFolder), bare);
+      await isolatedFetch(this.isolated(start, repository, runFolder), bare);
       if (await exists(worktree)) return;
       await mkdir(dirname(worktree), { recursive: true, mode: 0o700 });
       await git.run(['-C', bare, 'worktree', 'prune'], marker);
-      const branch = repository.ticketBranch;
-      if (start.purpose === 'review') {
-        review = await this.addReviewWorktree(bare, worktree, branch, start.reviewCommit, marker);
+      const ticket = ticketRepository(start);
+      if (ticket === null) {
+        await this.addPlanningWorktree(bare, worktree, repository.baseBranch, marker);
+      } else if (start.purpose === 'review') {
+        review = await this.addReviewWorktree(
+          bare,
+          worktree,
+          ticket.ticketBranch,
+          start.reviewCommit,
+          marker,
+        );
       } else {
-        await this.addWorktree(bare, worktree, start, marker);
+        await this.addWorktree(bare, worktree, ticket, marker);
       }
       // The commit author, for this worktree only (04, section 4).
       await git.run(['-C', worktree, 'config', '--worktree', 'user.name', start.commitAuthor.name]);
@@ -163,6 +187,18 @@ export class Workspaces {
     });
     await this.options.trust.ensure(bare);
     return { bare, worktree, review };
+  }
+
+  /**
+   * The workspace of a planning run of a new project (05, section 4.2): an empty scratch folder,
+   * no Git, trusted for its own path, since there is no bare clone to hold the trust. Kept as it
+   * is for a resumed run.
+   */
+  private async prepareScratch(worktree: string): Promise<PreparedWorkspace> {
+    await mkdir(dirname(worktree), { recursive: true, mode: 0o700 });
+    await mkdir(worktree, { recursive: true, mode: 0o700 });
+    await this.options.trust.ensure(worktree);
+    return { bare: null, worktree, review: null };
   }
 
   /** A ref's commit in the bare clone; null when the ref does not exist. */
@@ -199,11 +235,10 @@ export class Workspaces {
   private async addWorktree(
     bare: string,
     worktree: string,
-    start: RunStart['payload'],
+    repository: TicketRepository,
     marker: Record<string, string>,
   ): Promise<void> {
     const { git } = this.options;
-    const { repository } = start;
     const branch = repository.ticketBranch;
     const local = await this.head(bare, `refs/heads/${branch}`);
     if (local !== null) {
@@ -259,6 +294,25 @@ export class Workspaces {
     const localBranch = await this.head(bare, `refs/heads/${branch}`);
     await this.options.git.run(['-C', bare, 'worktree', 'add', '--detach', worktree, head], marker);
     return { head, localBranch };
+  }
+
+  /**
+   * The worktree of a planning run of an existing project (05, section 4.2): detached at GitHub's
+   * head of the base branch as fetched just now; no local branch is created.
+   */
+  private async addPlanningWorktree(
+    bare: string,
+    worktree: string,
+    baseBranch: string,
+    marker: Record<string, string>,
+  ): Promise<void> {
+    const head = await this.head(bare, `refs/remotes/origin/${baseBranch}`);
+    if (head === null) {
+      throw new Error(
+        `The base branch ${baseBranch} is not on GitHub: there is nothing to plan from.`,
+      );
+    }
+    await this.options.git.run(['-C', bare, 'worktree', 'add', '--detach', worktree, head], marker);
   }
 
   /**
@@ -336,9 +390,9 @@ export class Workspaces {
     bare: string,
     runFolder: string,
   ): Promise<PushResult | null> {
-    const head = await this.head(bare, `refs/heads/${start.repository.ticketBranch}`).catch(
-      () => null,
-    );
+    const repository = ticketRepository(start);
+    if (repository === null) return null;
+    const head = await this.head(bare, `refs/heads/${repository.ticketBranch}`).catch(() => null);
     if (head === null) return null;
     const unpushed = await this.unpushed(bare, head).catch(() => []);
     if (unpushed.length === 0) return null;
@@ -407,9 +461,14 @@ export class Workspaces {
    * before the agent is told to merge it after a conflict. Throws with the masked reason.
    */
   async fetchBase(start: RunStart['payload'], runFolder: string, bare: string): Promise<void> {
-    const base = start.repository.baseBranch;
+    const { repository } = start;
+    if (repository === undefined)
+      throw new Error('A planning run of a new project has no repository.');
+    const base = repository.baseBranch;
     try {
-      await this.locked(bare, () => isolatedFetch(this.isolated(start, runFolder), bare, base));
+      await this.locked(bare, () =>
+        isolatedFetch(this.isolated(start, repository, runFolder), bare, base),
+      );
     } catch (error) {
       throw new Error(`Downloading ${base} from GitHub failed: ${(error as Error).message}`, {
         cause: error,
@@ -417,8 +476,11 @@ export class Workspaces {
     }
   }
 
-  private isolated(start: RunStart['payload'], runFolder: string): IsolatedGitOptions {
-    const { repository } = start;
+  private isolated(
+    start: RunStart['payload'],
+    repository: Repository,
+    runFolder: string,
+  ): IsolatedGitOptions {
     return {
       git: this.options.git,
       folder: runFolder,
@@ -444,10 +506,18 @@ export class Workspaces {
     runFolder: string,
     head: string,
   ): Promise<PushResult> {
-    const branch = start.repository.ticketBranch;
     try {
+      const repository = ticketRepository(start);
+      // A planning run never pushes (05, section 4.2): no caller asks, so this is a bug.
+      if (repository === null) throw new Error('a planning run has no ticket branch');
+      const branch = repository.ticketBranch;
       return await this.locked(bare, async () => {
-        const result = await isolatedPush(this.isolated(start, runFolder), bare, branch, head);
+        const result = await isolatedPush(
+          this.isolated(start, repository, runFolder),
+          bare,
+          branch,
+          head,
+        );
         if (result.status === 'pushed') {
           // As Git does after a push: the bare clone knows the head is on GitHub now, so the end
           // push and `status` do not count it as not on GitHub (no credential: a local command).
@@ -481,7 +551,7 @@ export class Workspaces {
    */
   async branchReport(
     bare: string,
-    repository: Pick<Repository, 'baseBranch' | 'ticketBranch'>,
+    repository: Pick<TicketRepository, 'baseBranch' | 'ticketBranch'>,
     at?: string,
   ): Promise<BranchReport | null> {
     const { git } = this.options;
@@ -531,7 +601,7 @@ export class Workspaces {
   async facts(
     bare: string,
     worktree: string,
-    repository: Pick<Repository, 'baseBranch' | 'ticketBranch'>,
+    repository: Pick<TicketRepository, 'baseBranch' | 'ticketBranch'>,
     runId: string,
   ): Promise<WorkspaceFacts | null> {
     const status = await this.options.git.run(
@@ -639,9 +709,17 @@ export class Workspaces {
     });
   }
 
-  /** Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). */
-  async remove(bare: string, worktree: string): Promise<void> {
+  /**
+   * Removes the run's worktree; its branch stays in the bare clone (05, section 4.11). Without a
+   * bare clone (a scratch folder, or a run that stopped before it knew its bare clone), the folder
+   * is deleted; Git forgets a worktree whose folder is gone at the next preparation.
+   */
+  async remove(bare: string | null, worktree: string): Promise<void> {
     const { git } = this.options;
+    if (bare === null) {
+      await rm(worktree, { recursive: true, force: true });
+      return;
+    }
     await this.locked(bare, async () => {
       if (await exists(worktree)) {
         const removed = await git.exec(['-C', bare, 'worktree', 'remove', '--force', worktree]);

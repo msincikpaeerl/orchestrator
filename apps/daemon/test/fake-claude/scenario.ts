@@ -93,7 +93,12 @@ export type FakeLogEntry =
       pid: number;
       args: string[];
       cwd: string;
-      env: { CLAUDE_CONFIG_DIR: string | null; TMUX: string | null; TMUX_PANE: string | null };
+      env: {
+        CLAUDE_CONFIG_DIR: string | null;
+        TMUX: string | null;
+        TMUX_PANE: string | null;
+        GIT_CEILING_DIRECTORIES: string | null;
+      };
     }
   | { event: 'arguments_refused'; message: string }
   | { event: 'message'; text: string }

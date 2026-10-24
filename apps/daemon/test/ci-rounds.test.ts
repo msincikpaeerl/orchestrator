@@ -6,7 +6,6 @@ import {
   SESSION_ALIVE_REFUSAL,
   type DodReport,
   type GitCredentialRequest,
-  type RunStart,
 } from '@orchestrator/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CredentialAnswer } from '../src/credentials.js';
@@ -30,6 +29,7 @@ import {
   tmux,
   useRunnerHarness,
 } from './runner-harness.js';
+import type { TicketRunStart } from './run-start.js';
 import { waitFor } from './testing.js';
 
 // A CI result sent back to a run waiting for CI (05, sections 4.4 and 4.9; lot 3 step G2a): the
@@ -110,7 +110,7 @@ async function commitOnGitHub(branch: string, file: string): Promise<string> {
   return head;
 }
 
-function bareRef(runStart: RunStart['payload'], ref: string): string | null {
+function bareRef(runStart: TicketRunStart, ref: string): string | null {
   try {
     const bare = bareClonePath(home.paths, runStart.repository);
     return gitIn(bare, ['rev-parse', '--verify', '--quiet', ref], home.env).trim();

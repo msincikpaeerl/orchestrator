@@ -11,7 +11,7 @@ import { TrustRegistry } from '../src/trust.js';
 import { Workspaces } from '../src/workspace.js';
 import { startGitHttpServer, type GitHttpServer } from './git-http-server.js';
 import { createRemote, gitIn } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import { prepareTicketRun, runStartPayload } from './run-start.js';
 import {
   DAEMON_COMMAND,
   captureLogger,
@@ -72,7 +72,7 @@ async function prepare(spaces: Workspaces, limits: { pushTimeoutSeconds?: number
   const start = runStartPayload(`${server.url}/owner/notes.git`, { limits });
   const folder = join(home.paths.home, 'runs', start.runId);
   await mkdir(folder, { recursive: true, mode: 0o700 });
-  return { start, folder, ...(await spaces.prepare(start, folder)) };
+  return { start, folder, ...(await prepareTicketRun(spaces, start, folder)) };
 }
 
 function commit(worktree: string, message: string): string {

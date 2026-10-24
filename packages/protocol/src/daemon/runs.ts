@@ -126,14 +126,20 @@ export const RunStart = message(
         z.object({ kind: z.literal('ticket'), id: z.uuid(), number: TicketReference }),
         z.object({ kind: z.literal('request'), id: z.uuid() }),
       ]),
-      repository: z.object({
-        owner: RepositoryOwner,
-        name: RepositoryName,
-        cloneUrl: CloneUrl,
-        baseBranch: GitBranchName,
-        ticketBranch: GitBranchName,
-      }),
-      /** Set for the worktree (04, section 4). */
+      /**
+       * Absent for a planning run of a new project, which starts in an empty scratch folder
+       * (protocol 3, lot 5; 05, section 4.2). A planning run has no ticket branch.
+       */
+      repository: z
+        .object({
+          owner: RepositoryOwner,
+          name: RepositoryName,
+          cloneUrl: CloneUrl,
+          baseBranch: GitBranchName,
+          ticketBranch: GitBranchName.optional(),
+        })
+        .optional(),
+      /** Set for the worktree (04, section 4); unused in a scratch folder. */
       commitAuthor: z.object({ name: requiredText(), email: z.email() }),
       profile: z.object({
         key: AgentKey,
@@ -176,7 +182,24 @@ export const RunStart = message(
     .refine((payload) => (payload.purpose === 'review') === (payload.reviewCommit !== undefined), {
       message: 'a review run, and only a review run, carries the commit under review',
       path: ['reviewCommit'],
-    }),
+    })
+    // Protocol 3 (lot 5; owner's answer, step B): a planning run has the request as subject and
+    // never a ticket branch, and only a planning run may have no repository.
+    .refine((payload) => (payload.purpose === 'plan') === (payload.subject.kind === 'request'), {
+      message: 'a planning run, and only a planning run, has a request as subject',
+      path: ['subject'],
+    })
+    .refine(
+      (payload) =>
+        payload.repository === undefined
+          ? payload.purpose === 'plan'
+          : (payload.purpose === 'plan') === (payload.repository.ticketBranch === undefined),
+      {
+        message:
+          'a planning run has no ticket branch, every other run has a repository and a ticket branch',
+        path: ['repository'],
+      },
+    ),
 );
 export type RunStart = z.infer<typeof RunStart>;
 

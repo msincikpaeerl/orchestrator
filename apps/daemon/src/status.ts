@@ -101,7 +101,11 @@ export async function status(
   else {
     out('Runs:');
     for (const run of s.runs) {
-      out(`  ${run.ticket ?? 'planning'}  run ${run.runId}  ${run.state}`);
+      // A planning run has no ticket: its request, and its repository or the new project.
+      const what =
+        run.ticket ??
+        `planning (request ${run.request ?? 'unknown'}, ${run.repository ?? 'new project'})`;
+      out(`  ${what}  run ${run.runId}  ${run.state}`);
     }
   }
   await branchLines(paths, git, s.runs, out);

@@ -384,6 +384,7 @@ describe('decision tools', () => {
           state: 'waiting_human',
           claudeSessionId: waiting?.claudeSessionId,
           ticket: 'NOTES-1',
+          request: null,
           repository: 'owner/notes',
           branch: 't/1-add-notes',
         },
