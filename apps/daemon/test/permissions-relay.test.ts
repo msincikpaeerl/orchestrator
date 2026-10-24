@@ -29,7 +29,7 @@ import { waitFor } from './testing.js';
 useRunnerHarness();
 
 const SUBMISSION: DodReport = {
-  criteria: [{ index: 0, status: 'met', justification: 'Notes are saved, see notes.test.ts' }],
+  criteria: [{ number: 1, status: 'met', justification: 'Notes are saved, see notes.test.ts' }],
   tests: { paths: ['notes.test.ts'], justification: null },
   docs: { paths: [], justification: 'No user-visible change.' },
   adrs: [],

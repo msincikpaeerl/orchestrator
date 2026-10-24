@@ -1062,7 +1062,7 @@ async function submit(
       tool: 'ticket_submit',
       runToken,
       input: {
-        criteria: [{ index: 0, status, justification: 'Checked by its test' }],
+        criteria: [{ number: 1, status, justification: 'Checked by its test' }],
         tests: { paths: ['src/contact.test.ts'], justification: null },
         docs: { paths: [], justification: 'Nothing user-facing' },
         adrs: [],

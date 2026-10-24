@@ -1,6 +1,6 @@
 import { schema } from '@orchestrator/db';
 import {
-  DodReport,
+  StoredDodReport,
   PullRequestFailure,
   maskSecrets,
   type PullRequestFailureReason,
@@ -175,7 +175,7 @@ export class PullRequestOpener {
     if (wanted === null || FINISHED.includes(ticket.status)) return;
     const reference = ticketReference(project.key, ticket.number);
     const log = this.options.log.child({ ticket: reference });
-    const report = DodReport.safeParse(ticket.dodReport);
+    const report = StoredDodReport.safeParse(ticket.dodReport);
     if (!report.success || ticket.branchName === null || project.defaultBranch === null) {
       log.error('pull request wanted without a report, a branch or a default branch');
       return;

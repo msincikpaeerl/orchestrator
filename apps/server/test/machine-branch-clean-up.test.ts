@@ -29,8 +29,8 @@ afterEach(async () => {
 const BRANCH = 't/1-contact-form';
 const REPORT: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'ContactForm renders the form' },
-    { index: 1, status: 'met', justification: 'Tested in contact.test.ts' },
+    { number: 1, status: 'met', justification: 'ContactForm renders the form' },
+    { number: 2, status: 'met', justification: 'Tested in contact.test.ts' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -323,13 +323,13 @@ describe('the local branch deleted on the machines after a merge', () => {
     expect(deletes(daemon)).toEqual([]);
   });
 
-  it('never sends it to a daemon of protocol 1 (0.3.0), which waits for its update', async () => {
+  it('never sends it to a daemon of protocol 2 (0.5.0), which waits for its update', async () => {
     const { daemon, id, token } = await inReview();
     await offline(id, daemon);
     h.github.mergePullRequest(repo(), 1);
     await h.t.ciTick();
     const old = await ScriptedDaemon.connect(h.t.url, token);
-    expect((await old.hello({ protocolVersion: 1, daemonVersion: '0.3.0' })).accepted).toBe(true);
+    expect((await old.hello({ protocolVersion: 2, daemonVersion: '0.5.0' })).accepted).toBe(true);
     await h.t.ciTick();
     expect(await machines()).toMatchObject([{ state: 'wanted', waiting: 'daemon_outdated' }]);
     expect(deletes(old)).toEqual([]);

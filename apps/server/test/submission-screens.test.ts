@@ -18,8 +18,8 @@ const SECRET = `github_pat_${'A1b2C3d4'.repeat(4)}`;
 
 const REPORT: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'ContactForm renders the form' },
-    { index: 1, status: 'met', justification: 'Tested in contact.test.ts' },
+    { number: 1, status: 'met', justification: 'ContactForm renders the form' },
+    { number: 2, status: 'met', justification: 'Tested in contact.test.ts' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -127,8 +127,8 @@ describe('the ticket page (02, section 6.4)', () => {
       ...REPORT,
       summary: `Uses ${SECRET} to log in.`,
       criteria: [
-        { index: 0, status: 'met', justification: `Token ${SECRET}` },
-        { index: 1, status: 'met', justification: 'Tested' },
+        { number: 1, status: 'met', justification: `Token ${SECRET}` },
+        { number: 2, status: 'met', justification: 'Tested' },
       ],
     });
     const ticket = await h.ticket();
@@ -143,7 +143,7 @@ describe('the run page (02, section 7)', () => {
     const { daemon, runId, runToken } = await working();
     await h.tool(daemon, runToken, 'ticket_submit', {
       ...REPORT,
-      criteria: [{ index: 0, status: 'not_met', justification: 'Not yet' }],
+      criteria: [{ number: 1, status: 'not_met', justification: 'Not yet' }],
     });
     const refused = await h.run(runId);
     expect(refused.acceptedSubmissionAt).toBeNull();

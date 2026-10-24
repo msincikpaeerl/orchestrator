@@ -65,8 +65,9 @@ export interface SubmissionFacts {
    */
   requestCommit?: { commit: string; by: 'quality' | 'owner' } | null;
   ticketType: TicketType;
-  /** The ticket's acceptance criteria, by index. */
+  /** The ticket's acceptance criteria, in order: criterion number 1 first. */
   criteria: readonly string[];
+  /** As the agent sent it, each criterion by its number from 1. */
   report: DodReport;
   workspace: WorkspaceFacts;
   baseBranch: string;
@@ -80,25 +81,16 @@ export interface CheckedSubmission {
   pushFailed: boolean;
 }
 
-/**
- * A criterion as the agent reads it in a refusal: its number from 1, as the owner sees it, and
- * its index from 0, as `ticket_submit` counts (03, section 3.2; owner's answer 13, lot 4 step A).
- */
-const criterionNumbers = (index: number) => ({
-  number: String(index + 1),
-  index: String(index),
-});
-
-/** Criteria reported with an index the ticket does not have: the input is wrong. */
+/** Criteria reported with a number the ticket does not have: the input is wrong. */
 export function criteriaOutOfRange(
   texts: Template,
   criteria: readonly string[],
   report: DodReport,
 ): McpError | null {
-  const outOfRange = report.criteria.filter((entry) => entry.index >= criteria.length);
+  const outOfRange = report.criteria.filter((entry) => entry.number > criteria.length);
   if (outOfRange.length === 0) return null;
   const missing = outOfRange
-    .map((entry) => part(texts, 'criteria-out-of-range-entry', criterionNumbers(entry.index)))
+    .map((entry) => part(texts, 'criteria-out-of-range-entry', { number: String(entry.number) }))
     .join(part(texts, 'criteria-out-of-range-separator'));
   return {
     code: 'VALIDATION_FAILED',
@@ -107,12 +99,11 @@ export function criteriaOutOfRange(
         ? part(texts, 'criteria-out-of-range-none', { missing })
         : part(texts, 'criteria-out-of-range', {
             count: String(criteria.length),
-            last: String(criteria.length - 1),
             missing,
           }),
     details: outOfRange.map((entry) => ({
-      field: `criteria.${String(report.criteria.indexOf(entry))}.index`,
-      message: part(texts, 'criteria-out-of-range-field', criterionNumbers(entry.index)),
+      field: `criteria.${String(report.criteria.indexOf(entry))}.number`,
+      message: part(texts, 'criteria-out-of-range-field', { number: String(entry.number) }),
     })),
   };
 }
@@ -137,9 +128,9 @@ export function checkSubmission(texts: Template, facts: SubmissionFacts): Checke
 
   const criteria: Issue[] = [];
   facts.criteria.forEach((text, index) => {
-    const entry = report.criteria.find((each) => each.index === index);
+    const entry = report.criteria.find((each) => each.number === index + 1);
     const short = shorten(text, 120);
-    const values = { ...criterionNumbers(index), text: short };
+    const values = { number: String(index + 1), text: short };
     if (!entry) {
       criteria.push({
         message: part(texts, 'criterion-missing', values),

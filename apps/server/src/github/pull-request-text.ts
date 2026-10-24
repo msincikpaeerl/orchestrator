@@ -1,4 +1,4 @@
-import { isLoopback, maskSecrets, type DodReport } from '@orchestrator/protocol';
+import { isLoopback, maskSecrets, type StoredDodReport } from '@orchestrator/protocol';
 import type { Template } from '../agents/files.js';
 import { fill, part } from '../agents/messages.js';
 
@@ -114,7 +114,7 @@ export interface PullRequestBodyInput {
   number: string;
   /** The ticket's acceptance criteria, by index. */
   criteria: readonly string[];
-  report: DodReport;
+  report: StoredDodReport;
   workflowChanges: boolean;
   link: { url: string; loopback: boolean };
 }

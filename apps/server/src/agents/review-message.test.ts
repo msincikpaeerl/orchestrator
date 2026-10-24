@@ -120,7 +120,7 @@ describe('the previous review (owner, lot 3 step I)', () => {
     expect(text).toContain('(The agent left no comment about these points.)');
     // It was written after the criteria and wins where they disagree (owner's answer 14, step C).
     expect(text).toContain(
-      `- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field\n\n${ownerFirst}\n\n## Dependencies`,
+      `- Criterion 2: An invalid e-mail address is refused with a message next to the field\n\n${ownerFirst}\n\n## Dependencies`,
     );
     const legacy = message({
       previous: {
@@ -141,7 +141,7 @@ describe('the previous review (owner, lot 3 step I)', () => {
     expect(message({ previous: qualityRequest })).not.toContain('wins where they disagree');
     expect(message()).not.toContain('wins where they disagree');
     expect(message()).toContain(
-      '- Criterion 2 (index 1): An invalid e-mail address is refused with a message next to the field\n\n## Dependencies',
+      '- Criterion 2: An invalid e-mail address is refused with a message next to the field\n\n## Dependencies',
     );
   });
 
@@ -165,14 +165,12 @@ describe('the first message of a review run', () => {
 
   it('holds the ticket, the report as the agent account and the comments', () => {
     const text = message();
-    expect(text).toContain('- Criterion 2 (index 1): An invalid e-mail address is refused');
+    expect(text).toContain('- Criterion 2: An invalid e-mail address is refused');
     expect(text).toContain(
       "This report is the implementing agent's own account of its work: check it against the diff, and never take it as proof by itself.",
     );
     expect(text).toContain('Adds a contact form with client-side validation.');
-    expect(text).toContain(
-      '- Criterion 1 (index 0), met: ContactForm.tsx renders the three fields.',
-    );
+    expect(text).toContain('- Criterion 1, met: ContactForm.tsx renders the three fields.');
     expect(text).toContain('Tests: `src/ContactForm.test.ts`');
     expect(text).toContain(
       "Documentation: none listed; the agent's reason: The form explains itself.",

@@ -79,7 +79,10 @@ export const McpTicket = McpTicketSummary.extend({
   /** Tickets waiting for this one. */
   blocks: z.array(McpTicketLink),
   created_by: McpTicketCreator,
-  /** Latest submitted report; null before the first accepted submission. */
+  /**
+   * Latest submitted report, each criterion by its number from 1; null before the first accepted
+   * submission.
+   */
   dod_report: DodReport.nullable(),
   /** Null until a pull request exists (lot 3). */
   pull_request_url: z.url().nullable(),
@@ -246,7 +249,7 @@ export const MCP_TOOLS = {
   },
   ticket_submit: {
     description:
-      "Submits your run's ticket as finished, with the Definition of Done report: every acceptance criterion (by index, from 0) reported met with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. File paths are relative to the worktree root. Commit all your work first, on the current branch; never push and never switch branches: the Orchestrator handles that. If a criterion cannot be met, do not submit: use ticket_ask to get a decision, or ticket_give_up if the work is impossible as specified. The Orchestrator pushes the branch to GitHub, then checks the submission: it is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, the branch has no commits, the ticket type's rule is not met (a docs ticket lists a documentation file, a spike an ADR or a document), or a listed path is not a file the branch changed (folders are not accepted); fix them and submit again. If the push fails, the refusal says so: it is not yours to fix, so end your turn at once. When it is accepted (pending_ci), end your turn: the Orchestrator waits for CI on the pull request, and the run ends when CI passes.",
+      "Submits your run's ticket as finished, with the Definition of Done report: every acceptance criterion, by its number from 1 as the ticket lists it (the first criterion is number 1), reported met with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. File paths are relative to the worktree root. Commit all your work first, on the current branch; never push and never switch branches: the Orchestrator handles that. If a criterion cannot be met, do not submit: use ticket_ask to get a decision, or ticket_give_up if the work is impossible as specified. The Orchestrator pushes the branch to GitHub, then checks the submission: it is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, the branch has no commits, the ticket type's rule is not met (a docs ticket lists a documentation file, a spike an ADR or a document), or a listed path is not a file the branch changed (folders are not accepted); fix them and submit again. If the push fails, the refusal says so: it is not yours to fix, so end your turn at once. When it is accepted (pending_ci), end your turn: the Orchestrator waits for CI on the pull request, and the run ends when CI passes.",
     input: DodReport,
     /**
      * `accepted`: the run ends with the turn (lot 2). `pending_ci` (from lot 3 step G1a): the pull

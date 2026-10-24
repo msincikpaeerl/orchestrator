@@ -116,8 +116,13 @@ export function unavailableText(unavailable: MachineUnavailable): string {
       return 'it is revoked';
     case 'daemon_incompatible':
       return 'its daemon must be updated';
-    case 'unusable':
-      return 'it cannot receive runs (see its page)';
+    case 'unusable': {
+      // A daemon of the previous protocol says what to do before any other reason (lot 5 step B).
+      const outdated = unavailable.reasons.find((reason) => reason.type === 'daemon_outdated');
+      return outdated
+        ? `its daemon must be updated to ${outdated.serverVersion}`
+        : 'it cannot receive runs (see its page)';
+    }
     case 'missing_capabilities':
       return `it lacks ${unavailable.capabilities.join(', ')}`;
     case 'account_limited':

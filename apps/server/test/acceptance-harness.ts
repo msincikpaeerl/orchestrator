@@ -255,8 +255,8 @@ export const commit = (file: string, subject: string) => ({
 
 export const report: DodReport = {
   criteria: [
-    { index: 0, status: 'met', justification: 'contact.html holds the form.' },
-    { index: 1, status: 'met', justification: 'The address field has type email.' },
+    { number: 1, status: 'met', justification: 'contact.html holds the form.' },
+    { number: 2, status: 'met', justification: 'The address field has type email.' },
   ],
   tests: { paths: [], justification: 'A static page with no test setup yet.' },
   docs: { paths: [], justification: 'Nothing for the owner to read.' },

@@ -454,8 +454,8 @@ describe('the daemon connection', () => {
     const created = await createMachine();
     const token = await enrollToken(t.url, created.enrollment.code);
     const old = await connect(token);
-    // A 0.3.0 daemon's hello: protocol 1, no build.
-    const welcome = await old.hello({ protocolVersion: 1, daemonVersion: '0.3.0' });
+    // A 0.5.0 daemon's hello: protocol 2, run from its sources (lot 5 step B).
+    const welcome = await old.hello({ protocolVersion: 2, daemonVersion: '0.5.0' });
     expect(welcome).toEqual({
       accepted: true,
       protocolVersion: PROTOCOL_VERSION,
@@ -463,8 +463,8 @@ describe('the daemon connection', () => {
     });
     expect(await machine(created.machine.id)).toMatchObject({
       state: 'online',
-      daemonVersion: '0.3.0',
-      protocolVersion: 1,
+      daemonVersion: '0.5.0',
+      protocolVersion: 2,
       daemonBuild: null,
       daemonIncompatible: false,
       daemonBuildDiffers: false,
@@ -472,8 +472,8 @@ describe('the daemon connection', () => {
       unusable: [
         {
           type: 'daemon_outdated',
-          daemonVersion: '0.3.0',
-          protocolVersion: 1,
+          daemonVersion: '0.5.0',
+          protocolVersion: 2,
           serverVersion: SERVER_VERSION,
           serverProtocolVersion: PROTOCOL_VERSION,
         },
@@ -483,7 +483,7 @@ describe('the daemon connection', () => {
     expect(item).toEqual({
       type: 'daemon_outdated',
       machine: { id: created.machine.id, name: 'Laptop' },
-      daemonVersion: '0.3.0',
+      daemonVersion: '0.5.0',
       serverVersion: SERVER_VERSION,
       updateCommands: UPDATE_COMMANDS,
       since: expect.any(String) as string,
@@ -491,12 +491,12 @@ describe('the daemon connection', () => {
     const online = await machineEvents();
     expect(online.at(-1)).toMatchObject({
       type: 'machine.online',
-      payload: { daemonVersion: '0.3.0', daemonBuild: null, unusable: ['daemon_outdated'] },
+      payload: { daemonVersion: '0.5.0', daemonBuild: null, unusable: ['daemon_outdated'] },
     });
     // Reconnecting with the same daemon keeps when the item began.
     await old.close();
     const again = await connect(token);
-    await again.hello({ protocolVersion: 1, daemonVersion: '0.3.0' });
+    await again.hello({ protocolVersion: 2, daemonVersion: '0.5.0' });
     expect((await needsYou()).find((each) => each.type === 'daemon_outdated')?.since).toBe(
       item?.since,
     );

@@ -6,7 +6,7 @@ import {
   AnswerRequest,
   CheckCiAgainRequest,
   DodCheckResult,
-  DodReport,
+  StoredDodReport,
   CreateTicketRequest,
   EDITABLE_STATUSES,
   MarkDoneRequest,
@@ -419,7 +419,8 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       timeline,
       attemptCount: ticket.attemptCount,
       branch,
-      dodReport: ticket.dodReport === null ? null : maskStrings(DodReport.parse(ticket.dodReport)),
+      dodReport:
+        ticket.dodReport === null ? null : maskStrings(StoredDodReport.parse(ticket.dodReport)),
       dodChecks:
         ticket.dodChecks === null
           ? null

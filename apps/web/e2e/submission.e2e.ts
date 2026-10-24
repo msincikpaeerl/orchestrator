@@ -22,8 +22,8 @@ import {
 
 const REPORT = {
   criteria: [
-    { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-    { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+    { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+    { number: 2, status: 'met', justification: 'An invalid address is refused.' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },
@@ -202,8 +202,8 @@ test("a run page shows its latest refused submission, why in plain words and the
     input: {
       ...REPORT,
       criteria: [
-        { index: 0, status: 'not_met', justification: 'The phone field is missing.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'not_met', justification: 'The phone field is missing.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       docs: { paths: [longPath, 'docs/user'], justification: null },
     },
@@ -253,7 +253,7 @@ test('a refused submission followed by an accepted one says the work was accepte
     runToken,
     input: {
       ...REPORT,
-      criteria: [{ index: 0, status: 'not_met', justification: 'The phone field is missing.' }],
+      criteria: [{ number: 1, status: 'not_met', justification: 'The phone field is missing.' }],
     },
     workspace: workspace({ listed: CHANGED, count: CHANGED.length }),
   });

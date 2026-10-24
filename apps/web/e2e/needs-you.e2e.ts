@@ -142,8 +142,8 @@ test('finished work is sent back with Request changes, then Run now starts the n
     'ticket_submit',
     {
       criteria: [
-        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: [], justification: 'No user documentation in this project yet.' },
@@ -192,8 +192,8 @@ test("a push GitHub refused names the token's permission, then Run now goes on",
     runToken,
     input: {
       criteria: [
-        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: [], justification: 'No user documentation in this project yet.' },
@@ -258,8 +258,8 @@ test('a pull request GitHub could not open is opened with Try again', async ({
     'ticket_submit',
     {
       criteria: [
-        { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-        { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+        { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+        { number: 2, status: 'met', justification: 'An invalid address is refused.' },
       ],
       tests: { paths: ['src/contact.test.ts'], justification: null },
       docs: { paths: [], justification: 'No user documentation in this project yet.' },

@@ -7,7 +7,12 @@ import type { FixReviewTicket, ImplementTicket } from '../agents/messages.js';
 import type { PreviousReview, ReviewCi, ReviewTicket } from '../agents/review-message.js';
 import { resolveSettings } from '../settings/store.js';
 import { latestRequest } from '../tickets/changes.js';
-import { ChangeRequest, DodReport, ReviewDecision, maskSecrets } from '@orchestrator/protocol';
+import {
+  ChangeRequest,
+  StoredDodReport,
+  ReviewDecision,
+  maskSecrets,
+} from '@orchestrator/protocol';
 import { maskStrings } from '../event-log.js';
 
 /**
@@ -105,7 +110,7 @@ export async function reviewTicket(
           : 'not_listed'
         : null,
     // Masked as on the ticket page: an agent never receives a credential (03, section 3).
-    report: maskStrings(DodReport.parse(ticket.dodReport)),
+    report: maskStrings(StoredDodReport.parse(ticket.dodReport)),
   };
 }
 

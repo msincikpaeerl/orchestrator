@@ -129,7 +129,7 @@ describe('daemon runs over the connection', () => {
 
       const status = await runDaemon(['status'], home.env);
       expect(status.stdout).toMatch(/^Daemon [\d.]+ \(run from its sources, no build\) running /);
-      expect(server.hellos()[0]?.payload).toMatchObject({ protocolVersion: 2, daemonBuild: null });
+      expect(server.hellos()[0]?.payload).toMatchObject({ protocolVersion: 3, daemonBuild: null });
       expect(status.stdout).toContain(`NOTES-1  run ${payload.runId}  working`);
       // The run's branch, created from the base branch: nothing on it that GitHub lacks yet.
       expect(status.stdout).toMatch(

@@ -1,4 +1,4 @@
-import type { DodReport } from '@orchestrator/protocol';
+import type { StoredDodReport } from '@orchestrator/protocol';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadTemplates, type Template } from '../agents/files.js';
 import {
@@ -17,7 +17,7 @@ beforeAll(async () => {
   template = (await loadTemplates())['pull-request'];
 });
 
-const report: DodReport = {
+const report: StoredDodReport = {
   criteria: [
     { index: 1, status: 'met', justification: 'see Form.test.ts' },
     { index: 0, status: 'met', justification: 'the page shows it' },

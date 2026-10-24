@@ -54,7 +54,7 @@ export function unusableText(reason: UnusableReason): string {
     case 'doctor_error':
       return `Problem found by doctor: ${reason.check.name}: ${reason.check.message}`;
     case 'daemon_outdated':
-      return `${olderDaemon(reason.daemonVersion, reason.serverVersion)} Update it.`;
+      return `${olderDaemon(reason.daemonVersion, reason.serverVersion)} ${updateTo(reason.serverVersion)}`;
   }
 }
 
@@ -67,6 +67,14 @@ function olderDaemon(daemonVersion: string, serverVersion: string): string {
   return daemonVersion === serverVersion
     ? `Daemon ${daemonVersion} is older than this Orchestrator, though both say version ${serverVersion}.`
     : `Daemon ${daemonVersion} is older than this Orchestrator (${serverVersion}).`;
+}
+
+/**
+ * What to do about a daemon of the previous protocol (09, section 6; owner's answer, lot 5 step B):
+ * the version is the server's own, 0.6.0 once lot 5 is released.
+ */
+function updateTo(serverVersion: string): string {
+  return `Update the daemon to ${serverVersion}: the machine receives no runs until then.`;
 }
 
 /** A build as shown: its 16 digits, or why there is none. */
@@ -88,7 +96,7 @@ export function daemonUpdateText(machine: Machine): string | null {
   }
   const outdated = machine.unusable.find((reason) => reason.type === 'daemon_outdated');
   if (outdated) {
-    return `${olderDaemon(outdated.daemonVersion, outdated.serverVersion)} The machine receives no runs until you update it. On the machine, type these commands one after the other:`;
+    return `${olderDaemon(outdated.daemonVersion, outdated.serverVersion)} ${updateTo(outdated.serverVersion)} On the machine, type these commands one after the other:`;
   }
   return 'The daemon on this machine is not the one this Orchestrator provides: it is another build, older or newer. The machine still receives runs. When no agent works on it, type these commands on the machine, one after the other:';
 }
@@ -176,7 +184,7 @@ export function needsYouText(item: MachineNeedsYouItem): {
     case 'daemon_outdated':
       return {
         title: `Update the daemon on ${item.machine.name}`,
-        detail: `${olderDaemon(item.daemonVersion, item.serverVersion)} Until you update it, the machine receives no runs. On that machine, type these commands one after the other.`,
+        detail: `${olderDaemon(item.daemonVersion, item.serverVersion)} ${updateTo(item.serverVersion)} On that machine, type these commands one after the other.`,
       };
     case 'daemon_build_differs':
       return {

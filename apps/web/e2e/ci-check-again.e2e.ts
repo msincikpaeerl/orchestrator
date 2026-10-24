@@ -22,8 +22,8 @@ import {
 
 const REPORT = {
   criteria: [
-    { index: 0, status: 'met', justification: 'The contact page shows the form.' },
-    { index: 1, status: 'met', justification: 'An invalid address is refused.' },
+    { number: 1, status: 'met', justification: 'The contact page shows the form.' },
+    { number: 2, status: 'met', justification: 'An invalid address is refused.' },
   ],
   tests: { paths: ['src/contact.test.ts'], justification: null },
   docs: { paths: ['docs/user/contact.md'], justification: null },

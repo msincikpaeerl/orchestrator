@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CommitSummary, GitHash, PushFailureReason } from '../daemon/git.js';
-import { DodCheckResult, DodReport } from '../mcp/dod-report.js';
+import { DodCheckResult, StoredDodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { TicketHold } from './holds.js';
 import {
@@ -158,7 +158,7 @@ export const TicketSummary = z.object({
    * ticket out of To do, a stopped review's ticket out of review).
    */
   held: TicketHold.nullable(),
-  /** The agent profile expected to do the work; any profile until lot 6 (01, section 3.4). */
+  /** The agent profile expected to do the work; any profile until lot 7 (01, section 3.4). */
   assignee: AgentLink.nullable(),
   createdBy: TicketCreator,
   /** For a ticket created by an agent ("created by agent"): its profile and run. */
@@ -367,7 +367,7 @@ export const TicketDetail = TicketSummary.extend({
    * The latest Definition of Done report accepted from an agent (04, section 3.1). Agent text,
    * credentials masked.
    */
-  dodReport: DodReport.nullable(),
+  dodReport: StoredDodReport.nullable(),
   /** Each check's result of that submission; null when accepted before 0.4.0, or none. */
   dodChecks: z.array(DodCheckResult).nullable(),
   /** Its workflow flag; null when not raised. */

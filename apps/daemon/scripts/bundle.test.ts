@@ -67,7 +67,7 @@ describe('the build identifier', { timeout: 60_000 }, () => {
   it('changes when bundled code of another package changes (the protocol)', async () => {
     const changed = await bundleDaemon(root, manifest, [
       changing(/[/\\]packages[/\\]protocol[/\\]src[/\\]version\.ts$/, (text) =>
-        text.replace('PROTOCOL_VERSION = 2', 'PROTOCOL_VERSION = 3'),
+        text.replace('PROTOCOL_VERSION = 3', 'PROTOCOL_VERSION = 4'),
       ),
     ]);
     expect(changed.build).not.toBe(first.build);

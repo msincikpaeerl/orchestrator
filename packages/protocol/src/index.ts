@@ -416,8 +416,11 @@ export {
   CheckReason,
   DodCheckResult,
   ReportList,
+  StoredDodReport,
   SubmissionRecord,
   WorkflowReason,
+  agentReport,
+  storedReport,
   type CheckReasonKind,
 } from './mcp/dod-report.js';
 export {

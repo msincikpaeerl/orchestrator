@@ -3,7 +3,7 @@ import {
   ACTIVE_RUN_STATUSES,
   CLAUDE_CODE_MIN_VERSION,
   DoctorCheck,
-  DodReport,
+  StoredDodReport,
   PullRequestFailure,
   PullRequestReopenFailure,
   SubmissionRecord,
@@ -130,7 +130,7 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
         .where(and(eq(schema.runs.ticketId, ticket.id), eq(schema.runs.status, 'succeeded')))
         .orderBy(desc(schema.runs.endedAt))
         .limit(1);
-      const report = DodReport.safeParse(ticket.dodReport);
+      const report = StoredDodReport.safeParse(ticket.dodReport);
       items.push({
         type: 'work_to_check',
         ticket: ref,

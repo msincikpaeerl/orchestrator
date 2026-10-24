@@ -2,6 +2,11 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
+## Unreleased
+
+- Machines: this version needs the daemon 0.6.0 on every machine. A machine whose daemon is 0.5.0 stays connected but gets no runs at all, by the scheduler or by you, until you update it: "Needs you" shows **Update the daemon on …**, and the machine's page and Activity > **Queue** say "Update the daemon to 0.6.0" with the commands to type. Update it when no agent works on the machine. Help: "Machines" > "Update the daemon".
+- Agents: an agent now names each acceptance criterion by its number from 1 everywhere, also when it hands its work in. Under "What the agent was told" on a ticket, a refused submission now names the criterion number only ("Criterion 1 is not reported"), without an index. Reports handed in before this version show as they did.
+
 ## 0.5.0 — 2026-10-22
 
 Lot 4, Scheduler and quota: tickets now get done while you are away. The **scheduler** starts runs by itself: an agent's run on each ticket in **To do** with an assignee and nothing to wait for, Quality's review once the work is ready (unless **Start reviews by themselves** is off for the project), and the fix after a request for changes, in an order you can read in Activity > **Queue**, with why each ticket is not running yet. Each Claude account has **windows** (when runs may start), a **daily budget** (working time or estimated usage) and **Stop new runs**, in the Orchestrator's **time zone**; **Run now** still starts a run at once. A run paused at a Claude usage limit resumes by itself once the limit resets, or after a wait that doubles when the reset time is unknown. A run whose machine stays offline fails without counting and starts again once the machine is back. A ticket whose run you stopped is **Held** until you start it, and a machine that keeps failing a ticket is left out and reported in "Needs you". Every run's waiting time says what it waited for: you, CI or the usage limit. Each automatic start uses Claude Code sessions from your plan, as if you had clicked: Help > Runs > "What starts by itself" says what starts and how often at most. A 0.4.0 daemon keeps working with this version: its machine page says it is not the one this Orchestrator provides, which does not stop its runs, and updating it (Help > Machines > "Update the daemon") is optional.

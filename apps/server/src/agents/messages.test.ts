@@ -123,7 +123,7 @@ describe('the first message of a fix_review run (lot 3 step I)', () => {
     expect(text).not.toContain('comes first');
     // Then the ticket as in implement.md.
     expect(text).toContain('# WEB-12: Contact form');
-    expect(text).toContain('- Criterion 2 (index 1): An invalid e-mail address is refused');
+    expect(text).toContain('- Criterion 2: An invalid e-mail address is refused');
     expect(text).toContain('Keep the form short: no phone number.');
   });
 

@@ -54,16 +54,16 @@ describe('server started on a new database', () => {
     expect(HealthResponse.parse(await response.json())).toEqual({ status: 'ok', database: 'ok' });
   });
 
-  it('returns the server version, daemon protocol 2 and the build it provides', async () => {
+  it('returns the server version, daemon protocol 3 and the build it provides', async () => {
     const response = await fetch(`${baseUrl}/version`);
     expect(response.status).toBe(200);
     expect(VersionResponse.parse(await response.json())).toEqual({
       server: '0.5.0',
-      protocol: 2,
+      protocol: 3,
       // Null when `pnpm build` has not built the daemon package yet.
       daemonBuild: providedDaemonBuild(defaultDaemonPackageDir()),
     });
-    expect(PROTOCOL_VERSION).toBe(2);
+    expect(PROTOCOL_VERSION).toBe(3);
   });
 });
 

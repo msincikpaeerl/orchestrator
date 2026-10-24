@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 done (2026-10-24)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -96,16 +96,37 @@ The owner submits exactly: "A simple website with a home page and a contact form
 
 *Done 2026-10-24*: approved by the owner, with one simplification of answer 1 (own commit): no dual reading of `ticket_submit`'s criteria; a protocol 2 daemon stays connected but takes no run at all, the queue and the machine page saying "Update the daemon to 0.6.0"; criteria from 1 everywhere from protocol 3 (specs 03, 05, 06, 07 and 09).
 
-### [ ] B. Protocol 3: planning runs on the daemon (branch `lot5/b-protocol-3`)
+### Step B, split in two (owner's decision, 2026-10-24)
+
+Step B was too large for one session (rule 15): criteria from 1 change about 48 test files and the agents' texts, the planning workspaces about 22 places of the daemon's run. The owner approved the split below and answered the session's questions:
+
+- **Where the count from 1 applies: A.** The server converts the report once, where it receives it; what is stored (lot 4's submissions included), the screens and the pull request text keep their reading. No migration.
+- **The field's name: B, the owner's reason.** `ticket_submit`'s field is `number` (from 1), no longer `index`: for a model, "index" suggests counting from 0, the confusion protocol 3 removes. 06 section 4.2 and its example say so. 0 and a number past the last criterion are refused, in the agent's words naming criterion numbers.
+- **The outdated daemon's words: A.** The version named is the server's own (0.6.0 once step L sets it), never written as "0.6.0" in the code: the machine page and Needs you's detail say "Update the daemon to <version>: the machine receives no runs until then."; the queue says "its daemon must be updated to <version>", before any other reason.
+- **`run.start` of a planning run: A.** `repository` absent for a new project, `ticketBranch` absent for every planning run; the schema refuses any other combination (a planning run has the request as subject and never a ticket branch; only a planning run may have no repository); `commitAuthor` stays required.
+- **A resumed planning run: A.** Its folder is kept like any worktree; the detached worktree stays at the commit it started on.
+- **Tests before step E2: A.** Only the daemon's tests start a planning run, through the scripted server's `run.start`; no server code for it before step D.
+- Also agreed: a planning run of an existing project gets the bare clone's Git configuration restored at its end, as a review run; a scratch folder left by a crash is removed by the daemon's start clean-up; a run still active when its machine's daemon reconnects with protocol 2 follows 05 section 6, with no new code.
+
+### [x] B1. Protocol 3 and criteria from 1 (branch `lot5/b-protocol-3`, 2026-10-24)
 
 - **First** (own commit): the four code comments that say "lot 6" for Agent management (`apps/server/src/agents/routes.ts`, `seed.ts`, `apps/web/src/pages/ticket-form.tsx`, `packages/protocol/src/api/tickets.ts`) say "lot 7".
-- `PROTOCOL_VERSION` 3 (rule 13; 09 section 6): `run.start`'s `repository` absent for a planning run of a new project, and a planning run of an existing project has no ticket branch.
-- The daemon: a planning run of a new project in an empty scratch folder `~/.orchestrator/worktrees/<run-id>/` (no clone, no Git, workspace trust for that folder); of an existing project, a worktree detached at `origin/<base>` after the usual fetch, no local branch created, no branch report, never pushed; the clean-up removes either.
-- **Criteria from 1** in `ticket_submit` (description, schema and the server's reading; 06 section 4.2); the rules and templates name criterion numbers only, "(index 0)" gone (03 section 3.2).
-- The server: a protocol 2 daemon is accepted, connected and **unusable** (09 section 6, lot 3's rule for the previous protocol): no run of any kind; "Update the daemon to 0.6.0" on the machine page, in "Needs you" ("Update the daemon on X") and as the queue's machine reason (words in `queue-text.ts`); "Update the daemon" in Help names 0.6.0. A run still active on a machine whose daemon reconnects with protocol 2 follows 05 section 6 (the owner updates with no run active: step M).
-- No planning run starts yet (no candidate before step E2): tests start one through the test harness.
+- `PROTOCOL_VERSION` 3 (rule 13; 09 section 6).
+- **Criteria from 1** in `ticket_submit`: the field `number` (description, schema, the server's reading converting it once; 06 section 4.2); the rules and templates name criterion numbers only, "(index 0)" gone (03 section 3.2); the fake `claude`'s and every test's reports.
+- The server: a protocol 2 daemon is accepted, connected and **unusable** (09 section 6, lot 3's rule for the previous protocol): no run of any kind; "Update the daemon to <version>" on the machine page, in "Needs you" ("Update the daemon on X") and as the queue's machine reason; "Update the daemon" in Help names 0.6.0; CHANGELOG.
 
-**Done when** daemon tests with the fake `claude` cover both planning workspaces (no Git in the scratch folder, a detached worktree, no branch report, no push, the clean-up), `ticket_submit` from 1 (a report naming criterion 1 for the first, one naming 0 refused), a scripted protocol 2 daemon connected but given no run of any kind with "Update the daemon to 0.6.0" on the machine page, in Needs you and in the queue, and lot 4's scenarios pass unchanged (their daemon now protocol 3).
+**Done when** `ticket_submit` counts from 1 (a report naming criterion 1 for the first accepted, one naming 0 refused, one past the last refused, each in criterion numbers), a scripted protocol 2 daemon is connected but given no run of any kind with "Update the daemon to <version>" on the machine page, in Needs you and in the queue, and lot 4's scenarios pass unchanged (their daemon now protocol 3).
+
+*Done 2026-10-24*: `DodReport` is the agent's form (`number` from 1, 0 refused by the schema in criterion numbers, a number past the last by the template's words); `StoredDodReport` keeps lot 4's form (`index` from 0) on the ticket, the run and the screens, converted once at `ticket_submit` (`storedReport`) and back for `ticket_get` (`agentReport`). Tests: `tools.test.ts` (0, lot 4's `index`, past the ceiling, the conversions), `submission.test.ts` (criterion 0 and 6 refused through the MCP path, the report kept by index and read back by number), `files.test.ts` (no agent text says "index"), and in `scheduler-reviews.test.ts` a protocol 2 daemon given neither the scheduler's implement and review runs nor **Run now** and **Start review**, with the words on the machine page and in Needs you (and the queue's in `runs/text.test.ts`). No new test file: the CI shards are unchanged.
+
+### [ ] B2. Planning workspaces on the daemon (branch `lot5/b2-planning-workspaces`)
+
+- `run.start` (protocol 3, unreleased): `repository` absent for a planning run of a new project, no `ticketBranch` for any planning run (09 section 6).
+- The daemon: a planning run of a new project in an empty scratch folder `~/.orchestrator/worktrees/<run-id>/` (no clone, no Git, workspace trust for that folder); of an existing project, a worktree detached at `origin/<base>` after the usual fetch, no local branch created, no branch report, never pushed; the clean-up removes either (the start clean-up too); `status` without a ticket branch.
+- The fake `claude` started in a scratch folder with no Git repository.
+- No planning run starts yet (no candidate before step E2): the daemon's tests start one through the scripted server.
+
+**Done when** daemon tests with the fake `claude` cover both planning workspaces (no Git in the scratch folder, a detached worktree, no branch report, no push, the clean-up, a resume keeping the folder), and the new test file's shard placement is checked with the shard times in the summary.
 
 ### [ ] C. Browser tests on the machine (branch `lot5/c-browsers`, answer 5)
 
