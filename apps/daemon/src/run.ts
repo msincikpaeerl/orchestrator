@@ -68,7 +68,7 @@ import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
 import { assessTurn, type Assessment, type TurnEnd } from './usage-limit.js';
 import { DownloadFailed } from './isolated-git.js';
-import { ReviewCommitMoved, type Workspaces } from './workspace.js';
+import { ReviewCommitMoved, ticketRepository, worktreePath, type Workspaces } from './workspace.js';
 
 // One run on this machine (05, section 4): its workspace, its Claude Code session in tmux, the
 // state machine of section 4.7 driven by hooks, the permission rules of the `PreToolUse` hook,
@@ -211,13 +211,22 @@ export class Run {
     return this.data.claudeSessionId;
   }
 
-  /** Its ticket, and the repository and branch it works on, for `status`. */
-  get where(): { ticket: string | null; repository: string; branch: string } {
-    const { repository } = this.data.start;
+  /**
+   * Its ticket, and the repository and branch it works on, for `status`: a planning run has no
+   * ticket branch, and for a new project no repository.
+   */
+  get where(): {
+    ticket: string | null;
+    request: string | null;
+    repository: string | null;
+    branch: string | null;
+  } {
+    const { repository, subject } = this.data.start;
     return {
       ticket: ticketOf(this.data.start) ?? null,
-      repository: `${repository.owner}/${repository.name}`,
-      branch: repository.ticketBranch,
+      request: subject.kind === 'request' ? subject.id : null,
+      repository: repository ? `${repository.owner}/${repository.name}` : null,
+      branch: repository?.ticketBranch ?? null,
     };
   }
 
@@ -447,7 +456,8 @@ export class Run {
         (request) => this.onSocket(request),
         this.connections,
       );
-      await this.context.trust.ensure(this.data.bare ?? '');
+      // A worktree is trusted through its bare clone, a scratch folder for its own path.
+      await this.context.trust.ensure(this.data.bare ?? this.data.worktree ?? '');
       this.releaseStart = await this.context.trust.beginStart();
       await Promise.all(Object.values(this.scopeFiles).map((file) => rm(file, { force: true })));
       // The last moment a stop can keep the session from being launched; one landing during the
@@ -462,6 +472,9 @@ export class Run {
           // No Git command of the agent prompts or opens Git Credential Manager (05, section 7).
           GIT_TERMINAL_PROMPT: '0',
           GCM_INTERACTIVE: 'never',
+          // Git never looks above a run's folder for a repository: a planning run's scratch
+          // folder has no Git, even when a parent folder is a repository (05, section 4.3).
+          GIT_CEILING_DIRECTORIES: join(this.context.paths.home, 'worktrees'),
           // Inherited by every process of the run, found again by the sweep (05, section 4.11).
           [RUN_MARKER]: this.runId,
         },
@@ -732,10 +745,11 @@ export class Run {
         };
       }
       const { bare, worktree } = this.data;
+      const repository = ticketRepository(start);
       const facts =
-        bare && worktree
+        bare && worktree && repository
           ? await this.context.workspaces
-              .facts(bare, worktree, start.repository, this.runId)
+              .facts(bare, worktree, repository, this.runId)
               .catch((error: unknown) => {
                 this.log.error({ err: error }, 'worktree facts not read');
                 return null;
@@ -1205,7 +1219,10 @@ export class Run {
       let push: PushResult | null = null;
       let headMoved: boolean | null = null;
       let gitConfigRestored: string | null = null;
-      const { bare, worktree, reviewStart, start } = this.data;
+      const { bare, reviewStart, start } = this.data;
+      // Also a folder made by a preparation the daemon stopped in, before it was recorded.
+      const worktree = this.data.worktree ?? worktreePath(this.context.paths, this.runId);
+      const repository = ticketRepository(start);
       const { workspaces } = this.context;
       const logged =
         <T>(what: string, fallback: T) =>
@@ -1213,21 +1230,22 @@ export class Run {
           this.log.error({ err: error }, what);
           return fallback;
         };
-      if (bare) {
+      // A planning run has no ticket branch: no branch report and no push (05, section 4.2).
+      if (bare && repository) {
         let reviewed: string | undefined;
-        if (start.purpose === 'review' && reviewStart && worktree) {
+        if (start.purpose === 'review' && reviewStart && this.data.worktree) {
           const heads = await workspaces
-            .reviewHeads(bare, worktree, start.repository.ticketBranch, reviewStart)
+            .reviewHeads(bare, worktree, repository.ticketBranch, reviewStart)
             .catch(logged('review head not read', { moved: true, head: null }));
           headMoved = heads.moved;
           reviewed = heads.head ?? reviewStart.head;
         }
         branch = await workspaces
-          .branchReport(bare, start.repository, reviewed)
+          .branchReport(bare, repository, reviewed)
           .catch(logged('branch not read', null));
-        if (worktree) {
-          await workspaces.remove(bare, worktree).catch(logged('worktree not removed', undefined));
-        }
+      }
+      await workspaces.remove(bare, worktree).catch(logged('worktree not removed', undefined));
+      if (bare && start.repository) {
         gitConfigRestored = await workspaces
           .restoreConfig(bare, start.repository.cloneUrl)
           .catch(logged('Git configuration not restored', null));

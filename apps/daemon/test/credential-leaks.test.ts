@@ -11,7 +11,7 @@ import { Workspaces } from '../src/workspace.js';
 import { startGitHttpServer, type GitHttpServer } from './git-http-server.js';
 import { REAL_GITHUB_PROXY_ENV } from './real-github-guard.js';
 import { createRemote, gitIn } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import { prepareTicketRun, runStartPayload } from './run-start.js';
 import {
   DAEMON_COMMAND,
   captureLogger,
@@ -222,7 +222,7 @@ async function runFolder(runId: string): Promise<string> {
 async function prepare() {
   const start = runStartPayload(`${server.url}/owner/notes.git`);
   const folder = await runFolder(start.runId);
-  return { start, folder, ...(await workspaces.prepare(start, folder)) };
+  return { start, folder, ...(await prepareTicketRun(workspaces, start, folder)) };
 }
 
 /**

@@ -432,6 +432,41 @@ describe('payload checks', () => {
       serverExamples['run.start'],
       (p) => (p.reviewCommit = 'a'.repeat(40)),
     ],
+    [
+      'run.start of an implement run without a repository',
+      serverExamples['run.start'],
+      (p) => delete p.repository,
+    ],
+    [
+      'run.start of an implement run without a ticket branch',
+      serverExamples['run.start'],
+      (p) => delete (p.repository as Json).ticketBranch,
+    ],
+    [
+      'run.start of an implement run for a request',
+      serverExamples['run.start'],
+      (p) => (p.subject = { kind: 'request', id: runId }),
+    ],
+    [
+      'run.start of a planning run for a ticket',
+      serverExamples['run.start'],
+      (p) => ((p.purpose = 'plan'), delete (p.repository as Json).ticketBranch),
+    ],
+    [
+      'run.start of a planning run with a ticket branch',
+      serverExamples['run.start'],
+      (p) => ((p.purpose = 'plan'), (p.subject = { kind: 'request', id: runId })),
+    ],
+    [
+      'run.start of a planning run without its commit author',
+      serverExamples['run.start'],
+      (p) => (
+        (p.purpose = 'plan'),
+        (p.subject = { kind: 'request', id: runId }),
+        delete p.repository,
+        delete p.commitAuthor
+      ),
+    ],
     ['run.input with a number as text', serverExamples['run.input'], (p) => (p.text = 42)],
     [
       'branch.delete of a name read as an option',
@@ -566,6 +601,17 @@ describe('payload checks', () => {
     // A daemon run from its sources has no build.
     const sources = withPayload(daemonExamples.hello, (p) => (p.daemonBuild = null));
     expect(DaemonMessage.safeParse(sources).success).toBe(true);
+  });
+
+  it('accepts the planning runs of protocol 3: no ticket branch, no repository for a new project', () => {
+    const existing = withPayload(serverExamples['run.start'], (p) => {
+      p.purpose = 'plan';
+      p.subject = { kind: 'request', id: runId };
+      delete (p.repository as Json).ticketBranch;
+    });
+    expect(ServerMessage.safeParse(existing).success).toBe(true);
+    const fresh = withPayload(existing, (p) => delete p.repository);
+    expect(ServerMessage.safeParse(fresh).success).toBe(true);
   });
 
   it('reads the messages of a protocol 1 daemon, the protocol 2 facts null (09, section 6)', () => {

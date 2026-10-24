@@ -49,7 +49,8 @@ export class RunManager {
     this.branches = new BranchDeletes({
       paths: context.paths,
       workspaces: context.workspaces,
-      activeRepositories: () => this.list().map((run) => run.repository),
+      activeRepositories: () =>
+        this.list().flatMap((run) => (run.repository === null ? [] : [run.repository])),
       log: context.log,
     });
   }
@@ -151,8 +152,9 @@ export class RunManager {
     state: DaemonRunState;
     claudeSessionId: string | null;
     ticket: string | null;
-    repository: string;
-    branch: string;
+    request: string | null;
+    repository: string | null;
+    branch: string | null;
   }[] {
     return [...this.runs.values()]
       .filter((run) => !run.ended)

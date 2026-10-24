@@ -473,6 +473,7 @@ async function main(): Promise<void> {
       CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null,
       TMUX: process.env.TMUX ?? null,
       TMUX_PANE: process.env.TMUX_PANE ?? null,
+      GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES ?? null,
     },
   });
   const launch = parseLaunch(args);

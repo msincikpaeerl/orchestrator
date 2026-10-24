@@ -473,7 +473,9 @@ async function prepareMachine(
   const folder = join(home, 'run');
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const prepared = await spaces.prepare(start, folder);
-  return { name, spaces, git, start, folder, ...prepared };
+  // A ticket run always has its bare clone; only a planning run of a new project has none.
+  if (prepared.bare === null) throw new Error('No bare clone was prepared.');
+  return { name, spaces, git, start, folder, ...prepared, bare: prepared.bare };
 }
 
 /** Writes the page and commits it in the machine's worktree, as an agent would. */

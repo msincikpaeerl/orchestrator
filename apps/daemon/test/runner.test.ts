@@ -81,6 +81,7 @@ describe('runner', () => {
           state: 'working',
           claudeSessionId: working?.claudeSessionId,
           ticket: 'NOTES-1',
+          request: null,
           repository: 'owner/notes',
           branch: 't/1-add-notes',
         },
@@ -90,7 +91,13 @@ describe('runner', () => {
       const folder = join(home.paths.home, 'runs', run.runId);
       expect(launch).toMatchObject({
         cwd: join(home.paths.home, 'worktrees', run.runId),
-        env: { CLAUDE_CONFIG_DIR: home.paths.claudeConfig, TMUX: null, TMUX_PANE: null },
+        env: {
+          CLAUDE_CONFIG_DIR: home.paths.claudeConfig,
+          TMUX: null,
+          TMUX_PANE: null,
+          // Git never looks above a run's folder (05, section 4.3; lot 5 step B2).
+          GIT_CEILING_DIRECTORIES: join(home.paths.home, 'worktrees'),
+        },
         args: [
           '--mcp-config',
           join(folder, 'mcp.json'),
@@ -344,6 +351,7 @@ describe('runner', () => {
           state: 'working',
           claudeSessionId: expect.any(String) as unknown,
           ticket: 'NOTES-1',
+          request: null,
           repository: 'owner/notes',
           branch: 't/1-add-notes',
         },

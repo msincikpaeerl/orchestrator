@@ -6,7 +6,7 @@ import { TrustRegistry } from '../src/trust.js';
 import { Workspaces, bareClonePath, worktreePath } from '../src/workspace.js';
 import { startGitHttpServer, type GitHttpServer } from './git-http-server.js';
 import { gitIn } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import { prepareTicketRun, runStartPayload } from './run-start.js';
 import {
   TIMEOUT,
   daemon,
@@ -74,7 +74,7 @@ async function branchAheadOfGitHub(): Promise<{ github: string; local: string; c
   const earlier = runStartPayload(cloneUrl);
   const folder = join(home.paths.home, 'runs', earlier.runId);
   await mkdir(folder, { recursive: true, mode: 0o700 });
-  const prepared = await spaces.prepare(earlier, folder);
+  const prepared = await prepareTicketRun(spaces, earlier, folder);
   gitIn(prepared.worktree, ['commit', '--quiet', '--allow-empty', '-m', 'Not pushed'], home.env);
   await spaces.remove(prepared.bare, prepared.worktree);
   const local = head(prepared.bare, `refs/heads/${BRANCH}`) ?? '';

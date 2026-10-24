@@ -10,7 +10,7 @@ import { TrustRegistry } from '../src/trust.js';
 import { Workspaces } from '../src/workspace.js';
 import { startGitHttpServer, type GitHttpServer } from './git-http-server.js';
 import { createRemote, gitIn } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import { prepareTicketRun, runStartPayload } from './run-start.js';
 import {
   DAEMON_COMMAND,
   captureLogger,
@@ -71,7 +71,7 @@ async function prepare(
   url = `${server.url}/owner/notes.git`,
 ) {
   const start = runStartPayload(url, changes);
-  return { start, ...(await workspaces.prepare(start, await runFolder(start.runId))) };
+  return { start, ...(await prepareTicketRun(workspaces, start, await runFolder(start.runId))) };
 }
 
 /** Every Git configuration file of the bare clone and its worktrees. */

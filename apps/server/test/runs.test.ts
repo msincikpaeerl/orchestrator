@@ -1226,7 +1226,7 @@ describe('where the ticket branch is (07, section 3; lot 3 step D3)', () => {
     expect((await call('POST', `/api/machines/${id}/disable`)).statusCode).toBe(200);
     const { run: next, start: message } = await started(desk.daemon);
     expect(next.machine.name).toBe('Desk');
-    expect(message.payload.repository.ticketBranch).toBe('t/1-contact-form');
+    expect(message.payload.repository?.ticketBranch).toBe('t/1-contact-form');
     expect(message.payload.initialPrompt).toContain(
       "The ticket's branch already has commits from an earlier attempt.",
     );

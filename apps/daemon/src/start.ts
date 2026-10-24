@@ -288,10 +288,11 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     os: lastHello?.os ?? machineOs(environment.wsl),
     capabilities: lastHello?.capabilities ?? [],
     processScopes: scopes.check(),
-    runs: runs.list().map(({ runId, state, ticket, repository, branch }) => ({
+    runs: runs.list().map(({ runId, state, ticket, request, repository, branch }) => ({
       runId,
       state,
       ticket,
+      request,
       repository,
       branch,
     })),

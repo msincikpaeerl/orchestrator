@@ -7,7 +7,6 @@ import type {
   McpCall,
   McpResult,
   RunLogEvent,
-  RunStart,
   RunState,
 } from '@orchestrator/protocol';
 import type { Logger } from 'pino';
@@ -24,7 +23,7 @@ import { TrustRegistry } from '../src/trust.js';
 import { Workspaces } from '../src/workspace.js';
 import { installFakeClaude, type FakeClaude } from './fake-claude/install.js';
 import { createRemote } from './remote.js';
-import { runStartPayload } from './run-start.js';
+import { runStartPayload, type TicketRunStart } from './run-start.js';
 import {
   DAEMON_COMMAND,
   captureLogger,
@@ -181,7 +180,7 @@ export function daemon(
 export async function start(
   manager: RunManager,
   changes: Parameters<typeof runStartPayload>[1] = {},
-): Promise<RunStart['payload']> {
+): Promise<TicketRunStart> {
   const payload = runStartPayload(cloneUrl, changes);
   expect(await manager.handle({ type: 'run.start', id: randomUUID(), payload })).toEqual({
     ok: true,

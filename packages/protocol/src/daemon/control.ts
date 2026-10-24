@@ -50,16 +50,19 @@ export const ControlStatus = z.object({
    */
   processScopes: DoctorCheck.nullable(),
   /**
-   * Live runs, each with its ticket (null for a planning run), its repository (`owner/name`) and
-   * its ticket branch, so `status` says which local branch a live run uses.
+   * Live runs, each with its ticket (null for a planning run), its repository (`owner/name`, null
+   * for a planning run of a new project) and its ticket branch (null for a planning run), so
+   * `status` says which local branch a live run uses.
    */
   runs: z.array(
     z.object({
       runId: RunId,
       state: DaemonRunState,
       ticket: TicketReference.nullable(),
-      repository: z.string(),
-      branch: GitBranchName,
+      /** The request a planning run plans; null for every other run. */
+      request: z.uuid().nullable(),
+      repository: z.string().nullable(),
+      branch: GitBranchName.nullable(),
     }),
   ),
 });

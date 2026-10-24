@@ -1,16 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { McpPermission, runMcpTools, type RunLimits, type RunStart } from '@orchestrator/protocol';
+import { ticketRepository, type TicketRepository, type Workspaces } from '../src/workspace.js';
 
 type Payload = RunStart['payload'];
+
+/** The `run.start` payload of a ticket run: a repository with its ticket branch. */
+export type TicketRunStart = Payload & { repository: TicketRepository };
 
 /** A `run.start` payload for a ticket of `owner/name`, with its fields changed by `changes`. */
 export function runStartPayload(
   cloneUrl: string,
   changes: Partial<Omit<Payload, 'limits' | 'repository'>> & {
     limits?: Partial<RunLimits>;
-    repository?: Partial<Payload['repository']>;
+    repository?: Partial<TicketRepository>;
   } = {},
-): Payload {
+): TicketRunStart {
   const { limits, repository, ...rest } = changes;
   return {
     runId: randomUUID(),
@@ -53,4 +57,21 @@ export function runStartPayload(
     mcpTools: runMcpTools(McpPermission.options, rest.purpose ?? 'implement'),
     ...rest,
   };
+}
+
+/** Prepares a ticket run's workspace: its bare clone is never null. */
+export async function prepareTicketRun(
+  workspaces: Workspaces,
+  start: Payload,
+  folder: string,
+): Promise<{
+  bare: string;
+  worktree: string;
+  review: Awaited<ReturnType<Workspaces['prepare']>>['review'];
+}> {
+  const prepared = await workspaces.prepare(start, folder);
+  if (prepared.bare === null || ticketRepository(start) === null) {
+    throw new Error('not a ticket run: no bare clone');
+  }
+  return { ...prepared, bare: prepared.bare };
 }
