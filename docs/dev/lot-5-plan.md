@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 done (2026-10-24)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -119,7 +119,7 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 
 *Done 2026-10-24*: `DodReport` is the agent's form (`number` from 1, 0 refused by the schema in criterion numbers, a number past the last by the template's words); `StoredDodReport` keeps lot 4's form (`index` from 0) on the ticket, the run and the screens, converted once at `ticket_submit` (`storedReport`) and back for `ticket_get` (`agentReport`). Tests: `tools.test.ts` (0, lot 4's `index`, past the ceiling, the conversions), `submission.test.ts` (criterion 0 and 6 refused through the MCP path, the report kept by index and read back by number), `files.test.ts` (no agent text says "index"), and in `scheduler-reviews.test.ts` a protocol 2 daemon given neither the scheduler's implement and review runs nor **Run now** and **Start review**, with the words on the machine page and in Needs you (and the queue's in `runs/text.test.ts`). No new test file: the CI shards are unchanged.
 
-### [ ] B2. Planning workspaces on the daemon (branch `lot5/b2-planning-workspaces`)
+### [x] B2. Planning workspaces on the daemon (branch `lot5/b2-planning-workspaces`, 2026-10-24)
 
 - `run.start` (protocol 3, unreleased): `repository` absent for a planning run of a new project, no `ticketBranch` for any planning run (09 section 6).
 - The daemon: a planning run of a new project in an empty scratch folder `~/.orchestrator/worktrees/<run-id>/` (no clone, no Git, workspace trust for that folder); of an existing project, a worktree detached at `origin/<base>` after the usual fetch, no local branch created, no branch report, never pushed; the clean-up removes either (the start clean-up too); `status` without a ticket branch.
@@ -127,6 +127,8 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 - No planning run starts yet (no candidate before step E2): the daemon's tests start one through the scripted server.
 
 **Done when** daemon tests with the fake `claude` cover both planning workspaces (no Git in the scratch folder, a detached worktree, no branch report, no push, the clean-up, a resume keeping the folder), and the new test file's shard placement is checked with the shard times in the summary.
+
+*Done 2026-10-24*, with the owner's answers (A to all, no split): `run.start`'s `repository` optional and its `ticketBranch` optional, one refine each for "a planning run, and only one, has a request as subject" and "a planning run has no ticket branch, every other run a repository and a ticket branch"; `commitAuthor` still required. Every session's environment gets `GIT_CEILING_DIRECTORIES=~/.orchestrator/worktrees` (05 section 4.3), so Git finds no repository from a scratch folder even when a parent folder is one. A base branch missing on GitHub fails the preparation ("… there is nothing to plan from."). A run's end removes `worktrees/<run-id>/` even when it was not recorded (a stop during the preparation), Git forgetting it at the next preparation. The scratch folder's trust entry is left. `status` lists a planning run as "planning (request <id>, <owner/name> or new project)" (the control socket's runs gain `request`, `repository` and `branch` nullable). Tests: `planning-run.test.ts` (new, five tests: the scratch folder with the daemon's folder inside a Git repository, its resume, the stop during the preparation; the detached worktree with a commit neither reported nor pushed and the configuration restored; the missing base branch), `messages.test.ts` (each refused combination, both planning shapes accepted), `runner.test.ts` (the variable in the session's environment). No CHANGELOG or Help change: no planning run starts before step E2. Shards (local, `vitest run --shard=N/4`): 195, 104, 93 and 62 s (2026-10-22: 209, 113, 94, 63 s); the new file lands in shard 1 (17 s of file time), `tickets/branch.test.ts` moves from 1 to 2 and `projects.test.ts` (27 s) from 2 to 3; no fifth shard.
 
 ### [ ] C. Browser tests on the machine (branch `lot5/c-browsers`, answer 5)
 
