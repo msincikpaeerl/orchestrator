@@ -203,6 +203,11 @@ export const projects = pgTable(
      * project created before 0.6.0, `browser-tests` by default for a new website or web app.
      */
     requiredCapabilities: jsonb('required_capabilities').notNull().default([]),
+    /**
+     * **Merge automatically** (01, section 3.1; 04, section 4; lot 5 step 5bis B): while true, a
+     * pull request Quality approved is merged by the server once CI passed on the approved commit.
+     */
+    mergesAutomatic: boolean('merges_automatic').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -331,6 +336,11 @@ export const tickets = pgTable(
      * next accepted submission answered it; standing while not answered (lot 3 step I).
      */
     changeRequest: jsonb('change_request'),
+    /**
+     * The latest automatic merge (`AutomaticMerge`; 01, section 3.4; 04, section 4; lot 5 step
+     * 5bis B): wanted by Quality's approval, sent, merged or failed; null when none is wanted.
+     */
+    automaticMerge: jsonb('automatic_merge'),
     changeRequestAnsweredAt: timestamp('change_request_answered_at', { withTimezone: true }),
     /**
      * The last push of the ticket branch the daemon reported as done (submission or run end): the

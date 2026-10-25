@@ -134,6 +134,7 @@ export class ReviewPoster {
       number: reference,
       link: ticketLink(this.options.publicUrl, project.key, ticket.number),
       runId,
+      mergesAutomatic: project.mergesAutomatic,
     });
     const afterRestart = run.reviewPostStartedAt !== null;
     const outcome = await this.post(runId, repo, pullRequest, decision.commit, body, afterRestart);

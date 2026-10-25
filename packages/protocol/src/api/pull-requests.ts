@@ -166,3 +166,84 @@ export const PullRequestHeadMoved = z.object({
   comparison: HeadComparisonResult.nullable(),
 });
 export type PullRequestHeadMoved = z.infer<typeof PullRequestHeadMoved>;
+
+/**
+ * Why an automatic merge failed (04, section 4; lot 5 step 5bis B), each said in the owner's
+ * words in `message`: the head is no longer the approved commit (read before, or GitHub's 409),
+ * the pull request no longer into the default branch or not from the project's repository, a
+ * conflict, CI no longer passed on the commit or none ran, GitHub's 405 (not mergeable), a missing
+ * permission, the token, GitHub's request limit, any other refusal, or the answer lost with the
+ * pull request not merged.
+ */
+export const AutomaticMergeFailureReason = z.enum([
+  'head_moved',
+  'base_changed',
+  'not_project_repository',
+  'conflict',
+  'ci_not_passed',
+  'no_ci',
+  'not_mergeable',
+  'permission_missing',
+  'token',
+  'rate_limited',
+  'refused',
+  'answer_lost',
+]);
+export type AutomaticMergeFailureReason = z.infer<typeof AutomaticMergeFailureReason>;
+
+/** The merge method the owner uses (answer 1, lot 5 step 5bis B). */
+export const AUTOMATIC_MERGE_METHOD = 'squash';
+
+const AutomaticMergeFacts = {
+  pullRequest: z.int().positive(),
+  /** The commit Quality approved, passed to GitHub as `sha`. */
+  commit: GitHash,
+  /** When Quality's approval wanted it. */
+  wantedAt: z.iso.datetime(),
+};
+
+/**
+ * The ticket's latest automatic merge (01, section 3.4; 04, section 4; lot 5 step 5bis B): wanted
+ * by Quality's approval (with why the latest try waited, GitHub not reached, before anything was
+ * sent), sent (the merge request left: never sent again), merged, or failed.
+ */
+export const AutomaticMerge = z.discriminatedUnion('state', [
+  z.object({
+    state: z.literal('wanted'),
+    ...AutomaticMergeFacts,
+    waiting: z.object({ message: z.string(), at: z.iso.datetime() }).nullable(),
+  }),
+  z.object({ state: z.literal('sent'), ...AutomaticMergeFacts, sentAt: z.iso.datetime() }),
+  z.object({
+    state: z.literal('merged'),
+    ...AutomaticMergeFacts,
+    method: z.literal(AUTOMATIC_MERGE_METHOD),
+    /** GitHub's merge commit; null when the merge was found by a read after a lost answer. */
+    mergeCommit: GitHash.nullable(),
+    at: z.iso.datetime(),
+  }),
+  z.object({
+    state: z.literal('failed'),
+    ...AutomaticMergeFacts,
+    /** Null when it failed before the merge request was sent. */
+    sentAt: z.iso.datetime().nullable(),
+    reason: AutomaticMergeFailureReason,
+    /** In the owner's words, GitHub's masked. */
+    message: z.string(),
+    /** The permission GitHub's refusal names, in the token page's words; null otherwise. */
+    permission: z.enum(['contents', 'workflows']).nullable(),
+    at: z.iso.datetime(),
+  }),
+]);
+export type AutomaticMerge = z.infer<typeof AutomaticMerge>;
+
+/**
+ * The automatic merge as the screens show it (02, sections 4 and 6.4): the stored one, and while
+ * it is wanted or sent, the Claude accounts whose **Stop new runs** holds it (owner's answer 7,
+ * lot 5 step 5bis B; empty when none).
+ */
+export const AutomaticMergeView = z.object({
+  merge: AutomaticMerge,
+  heldBy: z.array(z.string()),
+});
+export type AutomaticMergeView = z.infer<typeof AutomaticMergeView>;

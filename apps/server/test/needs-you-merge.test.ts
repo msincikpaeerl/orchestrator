@@ -120,6 +120,7 @@ describe('a pull request to merge', () => {
       conflict: null,
       headMoved: null,
       watchFailure: null,
+      automaticMerge: null,
       since: await enteredAt(1),
     });
 

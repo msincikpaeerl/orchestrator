@@ -130,6 +130,35 @@ To see or change them:
 
 Each change is saved at once ("Saved. A run already started goes on where it is.") and written in the [event log](activity.md). From then on, a ticket of the project waits in Activity > [Queue](activity.md#queue) while no machine has them all, which says "Laptop: it lacks browser-tests"; **Run now** and **Start review** give the same reason. Add the capability to a machine (Help > [Browser tests](machines.md#browser-tests) for `browser-tests`), or remove it from the project. A paused run resumes on its own machine, even when you added a capability since. An archived project's list cannot be changed.
 
+## Merge automatically
+
+From version 0.6.0, the Orchestrator can merge a ticket's pull request for you, so the next tickets can start while you are away. It is off for every project until you turn it on:
+
+1. On the project page, click **Project settings**.
+2. Under **Merge automatically**, check **Merge approved pull requests automatically**. It is saved at once: "Saved: approved pull requests are merged automatically."
+
+From then on, each time Quality approves a ticket's work, the Orchestrator merges its pull request into the default branch by itself, with **squash** and GitHub's usual commit title. Just before merging, it checks again that:
+
+- the ticket is still on **Awaiting merge**, and you did not ask for changes since;
+- the pull request is open, goes into the project's default branch and comes from the project's repository;
+- its latest commit is still the one Quality approved;
+- GitHub does not say it conflicts with the default branch;
+- CI passed on GitHub on that commit (a project with no CI is never merged this way).
+
+The ticket then moves to **Done** as when you merge (see [Merging the pull request](tickets.md#merging-the-pull-request)): its branch is deleted and the tickets waiting for it can start. The ticket page says "Merged automatically by the Orchestrator at …", and the [event log](activity.md) records it.
+
+**The risk: nobody reads the change before it is merged.** Quality's review and CI are the only checks. An agent's mistake that Quality and the tests miss reaches your default branch, and text an agent read (a web page, a file in the repository) could mislead Quality. CI tested each pull request with the default branch as it was when the agent last pushed: if another pull request was merged since, by you or automatically, the two changes reach the default branch without ever being tested together, and GitHub stops nothing unless they change the same lines. So a change merged this way can still break the default branch even when each pull request passed CI. Tickets that wait for another one are not affected: they start after its merge. Turn it on only for projects where that is acceptable, for example a website you can fix later, and look at the merged changes from time to time.
+
+What it never does:
+
+- it never merges a review you skipped with **Skip review**: you merge those yourself;
+- it never merges tickets that were already waiting when you turned the option on: only the ones Quality approves afterwards;
+- it never tries a second time. When something is wrong (the branch changed, CI no longer passes, a conflict, GitHub refused, a missing token permission), the ticket stays on **Awaiting merge** and [Needs you](needs-you.md#pull-requests-to-merge) says why: "Not merged automatically: … Merge it on GitHub yourself, as before."
+
+**Stop new runs holds it.** While **Stop new runs** is on for a Claude account (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), nothing is merged automatically: you stopped the agents because something looks wrong, so their work waits. Needs you says "Merge held: …". Once you click **Resume**, the waiting merges are tried. Time windows and the daily budget do not hold merges: a merge uses no Claude usage.
+
+Uncheck the box to merge pull requests yourself again ("Saved: you merge pull requests on GitHub. A merge already sent to GitHub goes on."). No new GitHub token permission is needed: merging uses **Contents (Read and write)**, which your token already has. An archived project's box cannot be changed.
+
 ## Archive a project
 
 Projects are never deleted: you archive the ones you no longer work on.

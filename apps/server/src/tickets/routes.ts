@@ -51,6 +51,7 @@ import type { CiCheckAgain } from '../runs/ci-again.js';
 import { ticketCi } from '../runs/ci-outcome.js';
 import { ticketReview } from '../runs/review-view.js';
 import type { RunService } from '../runs/service.js';
+import { automaticMergeView } from './automatic-merge.js';
 import type { PullRequestWatcher } from './merge-watch.js';
 import { headMoved, ticketConflict, ticketWatchFailure } from './pull-request-facts.js';
 import type { PullRequestOpener } from './pull-request.js';
@@ -136,6 +137,7 @@ async function ticketPullRequest(
     watchFailure: ticketWatchFailure(project, ticket),
     conflict: ticketConflict(ticket),
     headMoved: await headMoved(executor, ticket),
+    automaticMerge: await automaticMergeView(executor, ticket),
   };
 }
 

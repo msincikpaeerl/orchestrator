@@ -13,6 +13,7 @@ import {
   headMovedText,
   mergedElsewhereText,
   reopenFailureText,
+  automaticMergeText,
   toMergeText,
   watchFailureText,
 } from './merge-text';
@@ -39,6 +40,7 @@ function toMerge(more: Partial<ToMerge> = {}): ToMerge {
     conflict: null,
     headMoved: null,
     watchFailure: null,
+    automaticMerge: null,
     since: AT,
     ...more,
   };
@@ -275,6 +277,59 @@ describe('the closed state on the ticket page (lot 3 step J4b)', () => {
     expect(closeWantedText({ since: AT, failure: permission }, 12, 'BAK-12')).toEqual({
       sentence: `Pull request #12 not closed on GitHub yet, though BAK-12 was cancelled at ${formatDateTime(AT)}: at ${formatDateTime(LATER)}, the token needs Pull requests (Read and write). The Orchestrator tries again at each GitHub check.`,
       where: 'tokens',
+    });
+  });
+});
+
+describe('automaticMergeText (lot 5 step 5bis B)', () => {
+  const facts = { pullRequest: 12, commit: COMMIT, wantedAt: AT };
+  it("says a merge wanted, held, merged and failed in the owner's words", () => {
+    expect(
+      automaticMergeText({ merge: { ...facts, state: 'wanted', waiting: null }, heldBy: [] })?.text,
+    ).toBe(
+      'Merging automatically: the Orchestrator checks CI on commit abc1234 again, then merges.',
+    );
+    expect(
+      automaticMergeText({
+        merge: { ...facts, state: 'sent', sentAt: AT },
+        heldBy: ['Laptop account'],
+      }),
+    ).toEqual({
+      text: 'Merge held: Stop new runs is on for Laptop account, so the Orchestrator does not merge automatically. It merges once you resume, or merge it on GitHub yourself.',
+      warning: true,
+      tokens: false,
+    });
+    expect(
+      automaticMergeText({
+        merge: {
+          ...facts,
+          state: 'merged',
+          method: 'squash',
+          mergeCommit: HEAD,
+          at: LATER,
+        },
+        heldBy: [],
+      })?.text,
+    ).toMatch(
+      /^Merged automatically by the Orchestrator at .+ \(commit abc1234, approved by Quality;/,
+    );
+    expect(
+      automaticMergeText({
+        merge: {
+          ...facts,
+          state: 'failed',
+          sentAt: AT,
+          reason: 'permission_missing',
+          message: 'the token lacks Contents (Read and write)',
+          permission: 'contents',
+          at: LATER,
+        },
+        heldBy: [],
+      }),
+    ).toEqual({
+      text: 'Not merged automatically: the token lacks Contents (Read and write). Merge it on GitHub yourself, as before.',
+      warning: true,
+      tokens: true,
     });
   });
 });

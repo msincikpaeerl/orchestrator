@@ -109,6 +109,8 @@ export const Project = z.object({
   reviewsAutomatic: z.boolean(),
   /** Every run on the project needs a machine with all of them (01, section 3.1; lot 5 step C2). */
   requiredCapabilities: z.array(Capability),
+  /** **Merge automatically** (01, section 3.1; 04, section 4; lot 5 step 5bis B). */
+  mergesAutomatic: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -165,6 +167,10 @@ export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
 /** `PUT /api/projects/<key>/reviews-automatic`: the switch **Start reviews by themselves**. */
 export const ReviewsAutomaticRequest = z.strictObject({ on: z.boolean() });
 export type ReviewsAutomaticRequest = z.infer<typeof ReviewsAutomaticRequest>;
+
+/** **Merge automatically** (02, section 6.5; lot 5 step 5bis B). */
+export const MergesAutomaticRequest = z.strictObject({ on: z.boolean() });
+export type MergesAutomaticRequest = z.infer<typeof MergesAutomaticRequest>;
 
 /** `PUT /api/projects/<key>/required-capabilities`: the whole list the project should require. */
 export const SetRequiredCapabilitiesRequest = z.strictObject({

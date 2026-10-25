@@ -1,7 +1,12 @@
-import { GITHUB_TOKEN_LIST_URL, type TicketDetail } from '@orchestrator/protocol';
+import {
+  GITHUB_TOKEN_LIST_URL,
+  type AutomaticMergeView,
+  type TicketDetail,
+} from '@orchestrator/protocol';
 import { Link } from 'react-router';
 import { ReopenPullRequestAction } from './actions';
 import {
+  automaticMergeText,
   closeWantedText,
   closedStateText,
   conflictFlagText,
@@ -18,6 +23,30 @@ import { ticketRef } from './text';
 
 export const warningClass =
   'rounded border border-amber-300 bg-amber-50 p-2 break-words text-slate-800';
+
+/** The automatic merge's line (lot 5 step 5bis B), with the token list for a missing permission. */
+export function AutomaticMergeLine({ view }: { view: AutomaticMergeView }) {
+  const line = automaticMergeText(view);
+  if (line === null) return null;
+  return (
+    <div
+      aria-label="Automatic merge"
+      className={line.warning ? `${warningClass} space-y-1` : 'break-words text-slate-700'}
+    >
+      <p>{line.text}</p>
+      {line.tokens && (
+        <a
+          href={GITHUB_TOKEN_LIST_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="text-blue-700 underline"
+        >
+          Open your tokens on GitHub
+        </a>
+      )}
+    </div>
+  );
+}
 
 /** The moved head: the sentence, then the commits added or the approved commit no longer part. */
 export function HeadMovedLines({

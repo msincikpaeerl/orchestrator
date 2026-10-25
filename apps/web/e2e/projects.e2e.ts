@@ -240,6 +240,10 @@ test('archiving and unarchiving a project, with confirmation', async ({ page }) 
     page.getByText('This project is archived: it is read-only and no work starts on it.'),
   ).toBeVisible();
   await expect(page.getByLabel('Name', { exact: true })).toBeDisabled();
+  // Merge automatically too (lot 5 step 5bis B).
+  await expect(
+    page.getByRole('checkbox', { name: /Merge approved pull requests automatically/ }),
+  ).toBeDisabled();
 
   // Hidden from the list unless "Show archived" is ticked.
   await openSection(page, 'Projects');

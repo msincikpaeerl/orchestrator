@@ -43,7 +43,7 @@ import { ciTimeoutItemText } from '../runs/ci-outcome-text';
 import { downloadFailedText, showsGitHubWords } from '../runs/download-text';
 import { ciCancelledText, machineFailuresText } from '../runs/machine-failures-text';
 import { PullRequestFailureDetails } from '../tickets/submission';
-import { HeadMovedLines, warningClass } from '../tickets/pull-request-lines';
+import { AutomaticMergeLine, HeadMovedLines, warningClass } from '../tickets/pull-request-lines';
 import { pullRequestNotOpenedText, pushFailedText, ticketPath, ticketRef } from '../tickets/text';
 
 function itemKey(item: NeedsYouItem): string {
@@ -541,6 +541,7 @@ function ToMergeCard({
     <Card className="space-y-2">
       <h2 className="font-semibold break-words text-slate-900">{text.title}</h2>
       <TicketTitle ticket={item.ticket} />
+      {item.automaticMerge && <AutomaticMergeLine view={item.automaticMerge} />}
       <p>
         <a
           href={item.pullRequest.url}

@@ -425,3 +425,31 @@ export async function deleteBranch(
   }
   return refused(refusal);
 }
+
+/** "pull-request-merge-result", as a merge returns it. */
+const MergeResult = z.object({ sha: z.string(), merged: z.boolean(), message: z.string() });
+
+/**
+ * "Merge a pull request" (`PUT .../pulls/{pull_number}/merge`; 04, section 4; lot 5 step 5bis
+ * B): merges only while the head is `sha` (409 otherwise); 405 when GitHub cannot merge it. Needs
+ * Contents write ("Permissions required for fine-grained personal access tokens"). The answer's
+ * `sha` is the merge commit.
+ */
+export async function mergePullRequest(
+  client: GitHubClient,
+  repo: RepositoryRef,
+  number: number,
+  merge: { sha: string; method: 'merge' | 'squash' | 'rebase' },
+): Promise<GitHubResult<{ mergeCommit: string; merged: boolean }>> {
+  const merged = await ask(
+    client,
+    {
+      method: 'PUT',
+      path: `${pullPath(repo, number)}/merge`,
+      body: { sha: merge.sha, merge_method: merge.method },
+    },
+    200,
+    MergeResult,
+  );
+  return mapped(merged, (body) => ({ mergeCommit: body.sha, merged: body.merged }));
+}

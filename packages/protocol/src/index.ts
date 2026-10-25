@@ -70,6 +70,7 @@ export {
   SetupStatus,
   SetupStep,
   TicketCounts,
+  MergesAutomaticRequest,
   ReviewsAutomaticRequest,
   UpdateProjectRequest,
   slugify,
@@ -130,6 +131,10 @@ export {
 } from './api/needs-you.js';
 export { RunDownloadFailure } from './api/download-failure.js';
 export {
+  AUTOMATIC_MERGE_METHOD,
+  AutomaticMerge,
+  AutomaticMergeFailureReason,
+  AutomaticMergeView,
   HeadComparison,
   HeadComparisonResult,
   MOVED_HEAD_TITLE_MAX_CHARS,

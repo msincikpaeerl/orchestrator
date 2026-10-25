@@ -45,6 +45,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   },
   'project.updated': { key: 'WEB', name: 'Online shop', description: 'Sells things' },
   'project.reviews_automatic_changed': { key: 'WEB', on: false },
+  'project.merges_automatic_changed': { key: 'WEB', on: true },
   'project.required_capabilities_changed': {
     key: 'WEB',
     previous: ['browser-tests'],
@@ -372,6 +373,22 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     reason: 'unreachable',
     message: 'GitHub could not be reached',
   },
+  'ticket.merged_automatically': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    pullRequest: 12,
+    commit: 'c'.repeat(40),
+    method: 'squash',
+    mergeCommit: 'd'.repeat(40),
+  },
+  'ticket.automatic_merge_failed': {
+    project: 'WEB',
+    ticket: 'WEB-12',
+    pullRequest: 12,
+    commit: 'c'.repeat(40),
+    reason: 'ci_not_passed',
+    message: 'CI no longer passes on commit ccccccc: deploy-check failed',
+  },
   'ticket.review_posted': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -546,6 +563,15 @@ describe('eventText', () => {
       }),
     ).toBe(
       "WEB-12: GitHub did not answer the post of Quality's review of commit ccccccc, and pull request #12 could not be checked; the decision stands — GitHub could not be reached",
+    );
+    expect(plainText(eventText(entry('ticket.merged_automatically')))).toBe(
+      'WEB-12: pull request #12 merged automatically with commit ccccccc, approved by Quality (squash)',
+    );
+    expect(plainText(eventText(entry('ticket.automatic_merge_failed')))).toBe(
+      'WEB-12: pull request #12 not merged automatically — CI no longer passes on commit ccccccc: deploy-check failed',
+    );
+    expect(plainText(eventText(entry('project.merges_automatic_changed')))).toBe(
+      'WEB: Merge automatically turned on, approved pull requests are merged by the Orchestrator',
     );
     expect(plainText(eventText(entry('ticket.review_posted')))).toBe(
       "WEB-12: Quality's review of commit ccccccc posted on pull request #12 on GitHub",

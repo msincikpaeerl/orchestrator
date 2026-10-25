@@ -3,6 +3,7 @@ import { schema } from '@orchestrator/db';
 import {
   ACCOUNT_BUSY_RUN_STATUSES,
   ACTIVE_RUN_STATUSES,
+  AutomaticMerge,
   CLAUDE_CODE_MIN_VERSION,
   Capability,
   FIRST_MESSAGE_MAX_BYTES,
@@ -191,6 +192,8 @@ export interface RunServiceOptions {
   pullRequestWanted?: (ticketId: string) => void;
   /** After Quality's decision is applied: post its comment review (lot 3 step H3). */
   reviewPostWanted?: (runId: string) => void;
+  /** After Quality's approval on a project with **Merge automatically** (lot 5 step 5bis B). */
+  automaticMergeWanted?: (ticketId: string) => void;
   /** After a run of a ticket reported its end: its machine's clean-up may go (lot 3 step J2b). */
   endReported?: (ticketId: string) => void;
 }
@@ -706,16 +709,21 @@ export class RunService {
   /**
    * Quality's decision applied when its run ended `submitted` (06, section 4.5; owner's answer
    * 2d, lot 3 step H2): the `review` comments, the ticket's status and their events, with the
-   * agent as actor; `review_applied_at` set, and its comment review wanted (true then). A decision
-   * the ticket no longer allows is thrown away.
+   * agent as actor; `review_applied_at` set, its comment review wanted (`reviewPost`), and on a
+   * project with **Merge automatically** an approval's merge wanted (`automaticMerge`; 04,
+   * section 4; lot 5 step 5bis B). A decision the ticket no longer allows is thrown away.
    */
-  private async applyReview(tx: Executor, locked: Locked): Promise<boolean> {
+  private async applyReview(
+    tx: Executor,
+    locked: Locked,
+  ): Promise<{ reviewPost: boolean; automaticMerge: boolean }> {
     const { run, ticket } = locked;
     const decision = pendingDecision(run);
-    if (!ticket || decision === null) return false;
+    const none = { reviewPost: false, automaticMerge: false };
+    if (!ticket || decision === null) return none;
     if (ticket.status !== 'in_review') {
       await this.reviewDiscarded(tx, locked, decision);
-      return false;
+      return none;
     }
     const [profile] = await tx
       .select()
@@ -783,6 +791,27 @@ export class RunService {
       now,
     });
     if (decision.kind === 'changes_requested') await this.stopAfterRounds(tx, locked, round, now);
+    // Wanted in the approval's transaction, with the approved commit; a skipped review never
+    // wants one (owner's answer 3, lot 5 step 5bis B).
+    const automaticMerge =
+      decision.kind === 'approved' &&
+      locked.project.mergesAutomatic &&
+      locked.project.status === 'active' &&
+      ticket.pullRequestNumber !== null;
+    if (automaticMerge && ticket.pullRequestNumber !== null) {
+      await tx
+        .update(schema.tickets)
+        .set({
+          automaticMerge: AutomaticMerge.parse({
+            state: 'wanted',
+            pullRequest: ticket.pullRequestNumber,
+            commit: decision.commit,
+            wantedAt: now.toISOString(),
+            waiting: null,
+          }),
+        })
+        .where(eq(schema.tickets.id, ticket.id));
+    }
     // Its comment review is wanted on the pull request reviewed, from this transaction on, so a
     // stop right after it still posts it at the next start (owner's answer 1, lot 3 step H3).
     const pullRequest = ticket.pullRequestNumber;
@@ -795,7 +824,7 @@ export class RunService {
           : { reviewPostWantedAt: now, reviewPostPullRequest: pullRequest }),
       })
       .where(eq(schema.runs.id, run.id));
-    return pullRequest !== null;
+    return { reviewPost: pullRequest !== null, automaticMerge };
   }
 
   /**
@@ -3254,9 +3283,17 @@ export class RunService {
             endReason: payload.reason,
             detail: payload.detail ?? undefined,
           });
-          if (await this.applyReview(tx, locked)) {
+          const applied = await this.applyReview(tx, locked);
+          if (applied.reviewPost) {
             after.push(() => {
               this.options.reviewPostWanted?.(run.id);
+              return Promise.resolve();
+            });
+          }
+          if (applied.automaticMerge && locked.ticket) {
+            const ticketId = locked.ticket.id;
+            after.push(() => {
+              this.options.automaticMergeWanted?.(ticketId);
               return Promise.resolve();
             });
           }

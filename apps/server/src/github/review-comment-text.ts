@@ -28,6 +28,8 @@ export interface ReviewCommentInput {
   number: string;
   link: { url: string; loopback: boolean };
   runId: string;
+  /** The project's **Merge automatically** (06, section 4.5; lot 5 step 5bis B). */
+  mergesAutomatic?: boolean;
 }
 
 /** `text` in a code span: a fence longer than any run of backticks in it. */
@@ -76,7 +78,15 @@ export function reviewCommentBody(
   const heading = approved
     ? part(template, 'heading-approved', { commit })
     : part(template, 'heading-changes', { commit, count: plural(decision.points.length, 'point') });
-  const footer = part(template, approved ? 'footer-approved' : 'footer-changes', { number, link });
+  const footer = part(
+    template,
+    !approved
+      ? 'footer-changes'
+      : input.mergesAutomatic === true
+        ? 'footer-merged-automatically'
+        : 'footer-approved',
+    { number, link },
+  );
   const marker = part(template, 'cut');
   const mark = reviewMark(input.runId);
   const whole = (text: string) =>

@@ -6,6 +6,7 @@ import { RunCiOutcome } from './ci.js';
 import { ClaudeAccount } from './machines.js';
 import { ProjectKey, SetupStep } from './projects.js';
 import {
+  AutomaticMergeView,
   PullRequestConflict,
   PullRequestFailure,
   PullRequestHeadMoved,
@@ -358,6 +359,11 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     headMoved: PullRequestHeadMoved.nullable(),
     /** The watch could not read this pull request at its latest check (step J3a). */
     watchFailure: PullRequestWatchFailure.nullable(),
+    /**
+     * On a project with **Merge automatically** (lot 5 step 5bis B): the automatic merge that
+     * failed, or that **Stop new runs** holds; one wanted or sent and not held shows no item.
+     */
+    automaticMerge: AutomaticMergeView.nullable(),
     /** When the ticket entered **Awaiting merge**. */
     since: z.iso.datetime(),
   }),

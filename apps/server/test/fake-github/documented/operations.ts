@@ -24,6 +24,7 @@ export const OPERATIONS: [string, string][] = [
   ['GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '200'],
   ['POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '200'],
   ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch', '202'],
+  ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', '200'],
   ['GET /repos/{owner}/{repo}/actions/runs', '200'],
   ['GET /repos/{owner}/{repo}/actions/runs/{run_id}', '200'],
   ['GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs', '200'],
@@ -40,4 +41,9 @@ export const OPERATIONS: [string, string][] = [
   ['POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '422'],
   ['POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews', '403'],
   ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch', '422'],
+  // The merge's refusals (lot 5 step 5bis B): not mergeable, head changed, invalid, forbidden.
+  ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', '405'],
+  ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', '409'],
+  ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', '422'],
+  ['PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', '403'],
 ];

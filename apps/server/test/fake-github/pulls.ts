@@ -34,7 +34,9 @@ import { has, notFound, paged, refuse, unprocessable } from './common.js';
 //   for create are the fake's, from GitHub's known answers: lot 3 step E confirms them.
 // - Permissions: Pull requests write to create, update and review; Pull requests read to list,
 //   check merged and list reviews; Pull requests read or Contents read to get one. Merging needs
-//   Contents write: the owner merges on GitHub's site, so the fake offers it as a test control.
+//   Contents write: the owner merges on GitHub's site, which the fake offers as a test control,
+//   and the server merges with "Merge a pull request" on a project with **Merge automatically**
+//   (lot 5 step 5bis B; "Permissions required for fine-grained personal access tokens").
 
 /** Mergeability as GitHub reports it: null once after any change of the head or the base. */
 function readMergeable(state: RepositoryState, pull: FakePullRequest): boolean | null {
@@ -354,6 +356,10 @@ export function pullsApi(
     if (!has(account, 'pull_requests', 'read')) return refuse(account, ['pull_requests=read']);
     return pull?.merged ? { status: 204 } : notFound;
   }
+  if (method === 'PUT' && part === '/merge') {
+    if (!has(account, 'contents', 'write')) return refuse(account, ['contents=write']);
+    return pull ? mergeApi(ctx, state, pull, body) : notFound;
+  }
   if (method === 'PUT' && part === '/update-branch') {
     if (!has(account, 'pull_requests', 'write')) return refuse(account, ['pull_requests=write']);
     return pull ? updateBranchApi(ctx, state, pull, body) : notFound;
@@ -373,6 +379,43 @@ export function pullsApi(
     }
   }
   return undefined;
+}
+
+/**
+ * "Merge a pull request" (`PUT .../merge`, 200 "pull-request-merge-result"; lot 5 step 5bis B):
+ * `sha` must be the head (409), and GitHub answers 405 when it cannot merge (closed, merged, a
+ * conflict, or a method the repository does not allow). The texts are GitHub's known answers.
+ */
+function mergeApi(
+  ctx: FakeContext,
+  state: RepositoryState,
+  pull: FakePullRequest,
+  body: Json,
+): FakeReply {
+  const notMergeable: FakeReply = {
+    status: 405,
+    body: { message: 'Pull Request is not mergeable' },
+  };
+  if (pull.state !== 'open') return notMergeable;
+  if (typeof body.sha === 'string' && body.sha !== pull.headSha) {
+    return {
+      status: 409,
+      body: { message: 'Head branch was modified. Review and try the merge again.' },
+    };
+  }
+  const method =
+    body.merge_method === 'squash' || body.merge_method === 'rebase' ? body.merge_method : 'merge';
+  if (
+    (method === 'squash' && state.repo.allowSquashMerge === false) ||
+    (method === 'rebase' && state.repo.allowRebaseMerge === false)
+  ) {
+    const name = method === 'squash' ? 'Squash' : 'Rebase';
+    return { status: 405, body: { message: `${name} merges are not allowed on this repository.` } };
+  }
+  const base = state.store.branch(pull.base);
+  if (base === undefined || state.store.mergeTree(base, pull.headSha) === null) return notMergeable;
+  const sha = mergePull(ctx, state, pull.number, method);
+  return { status: 200, body: { sha, merged: true, message: 'Pull Request successfully merged' } };
 }
 
 /**

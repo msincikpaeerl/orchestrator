@@ -48,6 +48,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'project.updated': 'Project renamed or described',
   'project.reviews_automatic_changed': 'Start reviews by themselves changed',
   'project.required_capabilities_changed': 'Required capabilities changed',
+  'project.merges_automatic_changed': 'Merge automatically changed',
   'project.setup_step': 'Repository setup step done',
   'project.setup_failed': 'Repository setup failed',
   'project.setup_retried': 'Repository setup tried again',
@@ -76,6 +77,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.pull_request_not_reopened': 'Pull request not reopened',
   'ticket.pull_request_conflict': 'Pull request in conflict',
   'ticket.pull_request_conflict_gone': 'Pull request no longer in conflict',
+  'ticket.merged_automatically': 'Pull request merged automatically',
+  'ticket.automatic_merge_failed': 'Pull request not merged automatically',
   'ticket.review_posted': "Quality's review posted on GitHub",
   'ticket.review_not_posted': "Quality's review not known on GitHub",
   'ticket.ci_checked_again': 'CI checked again',
@@ -268,6 +271,12 @@ const describe: { [T in EventType]: Describe<T> } = {
     p.on
       ? ': Start reviews by themselves turned on'
       : ': Start reviews by themselves turned off, reviews wait for Start review',
+  ],
+  'project.merges_automatic_changed': (p, c) => [
+    c.project,
+    p.on
+      ? ': Merge automatically turned on, approved pull requests are merged by the Orchestrator'
+      : ': Merge automatically turned off, you merge pull requests on GitHub',
   ],
   'project.required_capabilities_changed': (p, c) => [
     c.project,
@@ -529,6 +538,14 @@ const describe: { [T in EventType]: Describe<T> } = {
       : p.openPullRequest === null
         ? `: the pull request could not be opened on GitHub — ${shorten(p.message)}`
         : `: pull request #${String(p.openPullRequest)} could not be updated on GitHub — ${shorten(p.message)}`,
+  ],
+  'ticket.merged_automatically': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.pullRequest)} merged automatically with commit ${p.commit.slice(0, 7)}, approved by Quality (squash)`,
+  ],
+  'ticket.automatic_merge_failed': (p, c) => [
+    c.ticket,
+    `: pull request #${String(p.pullRequest)} not merged automatically — ${shorten(p.message)}`,
   ],
   'ticket.review_posted': (p, c) => [
     c.ticket,

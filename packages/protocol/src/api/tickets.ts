@@ -4,6 +4,7 @@ import { DodCheckResult, StoredDodReport } from '../mcp/dod-report.js';
 import { AgentKey, AgentLink } from './agents.js';
 import { TicketHold } from './holds.js';
 import {
+  AutomaticMergeView,
   PullRequestClosedBy,
   PullRequestConflict,
   PullRequestFailure,
@@ -316,6 +317,11 @@ export const TicketPullRequest = z.object({
   conflict: PullRequestConflict.extend({ request: z.string() }).nullable(),
   /** On **Awaiting merge**: the head moved after the approval or the skip (step J3b). */
   headMoved: PullRequestHeadMoved.nullable(),
+  /**
+   * The latest automatic merge (lot 5 step 5bis B): on **Awaiting merge**, and once merged; null
+   * otherwise.
+   */
+  automaticMerge: AutomaticMergeView.nullable(),
 });
 export type TicketPullRequest = z.infer<typeof TicketPullRequest>;
 

@@ -39,7 +39,11 @@ import { BlockedBadge, HeldBadge, StoppedBadge } from '../tickets/board';
 import { pullRequestStateLabel, workflowFlagText } from '../tickets/check-text';
 import { CheckCiAgainAction } from '../tickets/check-ci-again';
 import { CheckList, PullRequestFailureDetails, ReportFiles } from '../tickets/submission';
-import { PullRequestGitHubLines, showsGitHubLines } from '../tickets/pull-request-lines';
+import {
+  AutomaticMergeLine,
+  PullRequestGitHubLines,
+  showsGitHubLines,
+} from '../tickets/pull-request-lines';
 import { useTicketNumber } from '../tickets/params';
 import {
   blockedExplanation,
@@ -432,6 +436,9 @@ function PullRequest({ ticket, canChange }: { ticket: TicketDetail; canChange: b
           </a>{' '}
           · {pullRequestStateLabel[opened.state]}
         </p>
+      )}
+      {ticket.pullRequest.automaticMerge && (
+        <AutomaticMergeLine view={ticket.pullRequest.automaticMerge} />
       )}
       <PullRequestGitHubLines ticket={ticket} canChange={canChange} />
       {wanted && !failure && (

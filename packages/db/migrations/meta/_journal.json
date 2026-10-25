@@ -302,6 +302,13 @@
       "when": 1792949121224,
       "tag": "0042_project_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792954799896,
+      "tag": "0043_automatic_merge",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import type {
+  AutomaticMergeView,
   NeedsYouItem,
   PullRequestHeadMoved,
   PullRequestReopenFailure,
@@ -229,4 +230,44 @@ export function closeWantedText(
     sentence: `${pull} not closed on GitHub yet, though ${cancelled}: at ${formatDateTime(failure.at)}, ${why}. The Orchestrator tries again at each GitHub check.`,
     where,
   };
+}
+
+/**
+ * The automatic merge in the owner's words (02, sections 4 and 6.4; lot 5 step 5bis B): held by
+ * **Stop new runs**, failed (the reason first), wanted, or merged; null when it says nothing.
+ */
+export function automaticMergeText(
+  view: AutomaticMergeView,
+): { text: string; warning: boolean; tokens: boolean } | null {
+  const { merge, heldBy } = view;
+  const commit = short(merge.commit);
+  const waiting = merge.state === 'wanted' || merge.state === 'sent';
+  if (waiting && heldBy.length > 0) {
+    return {
+      text: `Merge held: Stop new runs is on for ${heldBy.join(', ')}, so the Orchestrator does not merge automatically. It merges once you resume, or merge it on GitHub yourself.`,
+      warning: true,
+      tokens: false,
+    };
+  }
+  switch (merge.state) {
+    case 'wanted':
+    case 'sent':
+      return {
+        text: `Merging automatically: the Orchestrator checks CI on commit ${commit} again, then merges.`,
+        warning: false,
+        tokens: false,
+      };
+    case 'merged':
+      return {
+        text: `Merged automatically by the Orchestrator at ${formatDateTime(merge.at)} (commit ${commit}, approved by Quality; Merge automatically is on for this project).`,
+        warning: false,
+        tokens: false,
+      };
+    case 'failed':
+      return {
+        text: `Not merged automatically: ${merge.message}. Merge it on GitHub yourself, as before.`,
+        warning: true,
+        tokens: merge.permission !== null,
+      };
+  }
 }

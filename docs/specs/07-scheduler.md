@@ -153,7 +153,7 @@ This is the owner's main lever to keep quota for personal use.
 
 The owner can pause an account at any time from the UI or the "Needs you" view. Options: **stop new runs** (active ones finish) or **pause now** (active runs are paused like a quota pause). Resume is manual.
 
-Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish; **Run now** refused, and **Resume** of a paused run too, lot 4 step C) and **Resume** (owner's answer 7, lot 4 step A). **Pause now** is kept for later with the window end's pause (section 5.3). To free the quota at once, the owner stops a run with **Stop run**: its ticket is then held from the scheduler (section 1).
+Lot 4 builds **Stop new runs** (the account `paused_manual`; active runs finish; **Run now** refused, and **Resume** of a paused run too, lot 4 step C) and **Resume** (owner's answer 7, lot 4 step A). **Pause now** is kept for later with the window end's pause (section 5.3). From lot 5 step 5bis B (owner's answer 7), **Stop new runs** on any account also holds the automatic merges (04, section 4): none is sent until the last such account is resumed. To free the quota at once, the owner stops a run with **Stop run**: its ticket is then held from the scheduler (section 1).
 
 ## 6. Other rules
 

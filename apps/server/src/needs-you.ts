@@ -39,6 +39,7 @@ import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
 import { runDownload } from './runs/download.js';
 import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
+import { automaticMergeView } from './tickets/automatic-merge.js';
 import { pushFailure, pushPermission } from './tickets/branch.js';
 import { askedMachine, machineFailures } from './tickets/holds.js';
 import { profileLinks, toComment, type TicketRow } from './tickets/model.js';
@@ -368,6 +369,12 @@ async function toMergeItems(db: Database): Promise<Items> {
   for (const { ticket, project } of rows) {
     const { pullRequestNumber: number, pullRequestUrl: url } = ticket;
     if (number === null || url === null) continue;
+    // A merge wanted or sent and not held is the Orchestrator's to do (lot 5 step 5bis B).
+    const automaticMerge = await automaticMergeView(db, ticket);
+    const merging =
+      automaticMerge !== null &&
+      (automaticMerge.merge.state === 'wanted' || automaticMerge.merge.state === 'sent');
+    if (merging && automaticMerge.heldBy.length === 0) continue;
     const { latest } = (await ticketReview(db, ticket)).review;
     const source = await ciSourceRun(db, ticket.id);
     const outcome = source === null ? null : ciOutcome(source);
@@ -413,6 +420,7 @@ async function toMergeItems(db: Database): Promise<Items> {
       conflict: ticketConflict(ticket),
       headMoved: await headMoved(db, ticket),
       watchFailure: ticketWatchFailure(project, ticket),
+      automaticMerge,
       since: (entered?.at ?? ticket.updatedAt).toISOString(),
     });
   }
