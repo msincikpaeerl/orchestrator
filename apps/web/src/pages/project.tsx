@@ -1,5 +1,6 @@
 import {
   Project,
+  MergesAutomaticRequest,
   ReviewsAutomaticRequest,
   SETUP_STEPS,
   UpdateProjectRequest,
@@ -29,6 +30,7 @@ import {
   kindLabel,
   refusalText,
   repositoryUrl,
+  mergesSwitch,
   reviewsSwitch,
   sentence,
   stepLabel,
@@ -408,6 +410,58 @@ function ReviewsSwitch({ project }: { project: ProjectData }) {
   );
 }
 
+/** **Merge automatically** (02, section 6.5; lot 5 step 5bis B), saved at each change. */
+function MergesSwitch({ project }: { project: ProjectData }) {
+  // Shown at once, put back if the server refuses it.
+  const [on, setOn] = useState(project.mergesAutomatic);
+  const save = useMutation({
+    mutationFn: (on: boolean) =>
+      api(
+        'PUT',
+        projectPath(project, 'merges-automatic'),
+        Project,
+        MergesAutomaticRequest.parse({ on }),
+      ),
+    onSuccess: (changed) => projectsChanged(changed),
+    onError: () => {
+      setOn(project.mergesAutomatic);
+    },
+  });
+  const archived = project.status === 'archived';
+  return (
+    <Card className="space-y-3">
+      <h2 className="text-lg font-semibold text-slate-900">{mergesSwitch.heading}</h2>
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={on}
+          disabled={archived || save.isPending}
+          onChange={(event) => {
+            setOn(event.target.checked);
+            save.mutate(event.target.checked);
+          }}
+        />
+        <span>
+          {mergesSwitch.label}
+          <span className="block text-sm text-slate-600">
+            {mergesSwitch.hint(project.repository.defaultBranch ?? 'the default branch')}
+          </span>
+        </span>
+      </label>
+      {save.error && <ErrorMessage>{refusalText(save.error).text}</ErrorMessage>}
+      {save.isSuccess && (
+        <p role="status" className="text-green-800">
+          {on ? mergesSwitch.on : mergesSwitch.off}
+        </p>
+      )}
+      <p className="text-sm text-slate-600">
+        <HelpLink page="projects#merge-automatically">Merge automatically</HelpLink>
+      </p>
+    </Card>
+  );
+}
+
 /**
  * Project settings (02, section 6.5): name and description, Start reviews by themselves, required
  * capabilities, overrides of settings, archive and unarchive.
@@ -428,6 +482,7 @@ export function ProjectSettingsPage() {
             </Card>
             <ReviewsSwitch project={project} />
             <RequiredCapabilitiesCard project={project} />
+            <MergesSwitch project={project} />
             <Card className="space-y-2">
               <h2 className="text-lg font-semibold text-slate-900">Cannot be changed</h2>
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">

@@ -26,6 +26,16 @@ export const reviewsSwitch = {
   off: 'Saved: reviews wait for Start review. A review already running goes on.',
 };
 
+/** **Merge automatically** in Project settings (02, section 6.5; lot 5 step 5bis B). */
+export const mergesSwitch = {
+  heading: 'Merge automatically',
+  label: 'Merge approved pull requests automatically',
+  hint: (branch: string) =>
+    `On: once Quality approves a ticket's work and CI passed on the approved commit, the Orchestrator merges its pull request into ${branch} by itself, without you, so the next tickets can start. Nobody but Quality reads the change before it is merged. Off: you merge each pull request on GitHub.`,
+  on: 'Saved: approved pull requests are merged automatically.',
+  off: 'Saved: you merge pull requests on GitHub. A merge already sent to GitHub goes on.',
+};
+
 /** The Kind field's hint on the new project form, saying what the kind requires (lot 5 step C2). */
 export function kindHint(kind: ProjectKind): string {
   const required = defaultRequiredCapabilities(kind);

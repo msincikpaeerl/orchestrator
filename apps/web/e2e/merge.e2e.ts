@@ -231,3 +231,52 @@ test('a pull request merged into another base: Cancel the ticket or Mark as done
     /^Pull request #1 was merged into release on GitHub at .+, not into the project's default branch\.$/,
   );
 });
+
+test('Merge automatically: turned on in Project settings, then the approved pull request merged without you', async ({
+  page,
+  gitHubCommit,
+}, testInfo) => {
+  const head = await inReview(page, gitHubCommit);
+
+  // The switch, off by default, with what it does and its risk.
+  await page.goto('/projects/WEB/settings');
+  const box = page.getByRole('checkbox', { name: /Merge approved pull requests automatically/ });
+  await expect(box).not.toBeChecked();
+  await expect(
+    page.getByText('Nobody but Quality reads the change before it is merged.', { exact: false }),
+  ).toBeVisible();
+  await box.check();
+  await expect(page.getByRole('status')).toHaveText(
+    'Saved: approved pull requests are merged automatically.',
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'project-settings-merge-automatically');
+
+  // Quality approves: the Orchestrator reads CI on the approved commit again (green on GitHub),
+  // merges, and the ticket is done, without the owner.
+  await control(page, '/github/status', {
+    repository: 'bakery',
+    ref: head,
+    context: 'ci',
+    state: 'success',
+  });
+  await page.goto(TICKET);
+  await approved(page);
+  await page.goto(TICKET);
+  await expect(page.getByLabel('Automatic merge')).toContainText(
+    `Merged automatically by the Orchestrator at`,
+  );
+  await expect(page.getByLabel('Automatic merge')).toContainText(`(commit ${short(head)},`);
+  await expect(page.getByText('Done', { exact: true }).first()).toBeVisible();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'ticket-merged-automatically');
+  await openSection(page, 'Needs you');
+  await expect(item(page, 'Pull request to merge: WEB-1')).toHaveCount(0);
+
+  // Off again, saved.
+  await page.goto('/projects/WEB/settings');
+  await box.uncheck();
+  await expect(page.getByRole('status')).toHaveText(
+    'Saved: you merge pull requests on GitHub. A merge already sent to GitHub goes on.',
+  );
+});

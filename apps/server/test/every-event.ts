@@ -15,6 +15,7 @@ import {
 } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
+import { automaticMergerOf } from '../src/app.js';
 import { markTokenInvalid, markTokenUnreadable } from '../src/github/connection.js';
 import { hashCredential } from '../src/machines/credentials.js';
 import { loadShippedAgents } from '../src/agents/files.js';
@@ -441,7 +442,10 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
 
   // Two more review runs approving, applied at their end: the comment review posted on pull
   // request #1 of online-shop (`ticket.review_posted`), and refused for a pull request GitHub
-  // does not have (`ticket.review_not_posted`; lot 3 step H3).
+  // does not have (`ticket.review_not_posted`; lot 3 step H3). With Merge automatically on
+  // (`project.merges_automatic_changed`, lot 5 step 5bis B), the approval of the pull request
+  // GitHub does not have fails its merge (`ticket.automatic_merge_failed`).
+  await call('PUT', '/api/projects/SHOP/merges-automatic', { on: true });
   for (const [title, pullRequest] of [
     ['Cart', 1],
     ['Checkout', 999],
@@ -461,6 +465,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
         status: 'in_review',
         pullRequestNumber: pullRequest,
         pullRequestUrl: 'https://github.com/x/1',
+        pullRequestState: 'open',
       })
       .where(eq(schema.tickets.id, ticket.id));
     const token = `ort_every_event_review_${String(pullRequest)}`;
@@ -507,7 +512,11 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       },
     });
   }
-  for (const type of ['ticket.review_posted', 'ticket.review_not_posted'] as const) {
+  for (const type of [
+    'ticket.review_posted',
+    'ticket.review_not_posted',
+    'ticket.automatic_merge_failed',
+  ] as const) {
     for (let tries = 0; ; tries++) {
       const written = await t.db.select().from(schema.events).where(eq(schema.events.type, type));
       if (written.length > 0) break;
@@ -515,6 +524,53 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
+
+  // A merge sent before a stop, whose answer was lost, found merged on GitHub with the approved
+  // commit (`ticket.merged_automatically`; lot 5 step 5bis B).
+  const wishlist = TicketDetail.parse(
+    (
+      await call('POST', '/api/projects/SHOP/tickets', {
+        type: 'feature',
+        title: 'Wishlist',
+        assignee: 'web_dev',
+      })
+    ).json(),
+  );
+  const wishlistBranch = `t/${String(wishlist.number)}-wishlist`;
+  const wishlistHead = github.commit(
+    shop,
+    wishlistBranch,
+    { 'src/wishlist.ts': 'export {};\n' },
+    'Add the wishlist',
+    'main',
+  );
+  const opened = await fetch(`${github.url}/repos/octo-owner/online-shop/pulls`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ head: wishlistBranch, base: 'main', title: 'Wishlist', body: '' }),
+  });
+  expect(opened.status).toBe(201);
+  const wishlistPull = ((await opened.json()) as { number: number; html_url: string }).number;
+  await t.db
+    .update(schema.tickets)
+    .set({
+      status: 'awaiting_merge',
+      branchName: wishlistBranch,
+      pullRequestNumber: wishlistPull,
+      pullRequestUrl: `https://github.com/octo-owner/online-shop/pull/${String(wishlistPull)}`,
+      pullRequestState: 'open',
+      automaticMerge: {
+        state: 'sent',
+        pullRequest: wishlistPull,
+        commit: wishlistHead,
+        wantedAt: new Date().toISOString(),
+        sentAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(schema.tickets.id, wishlist.id));
+  github.mergePullRequest(shop, wishlistPull, 'squash');
+  await automaticMergerOf(t.app).check();
+  await call('PUT', '/api/projects/SHOP/merges-automatic', { on: false });
 
   // A third request for changes on a ticket at Most review rounds per ticket (2) stops it
   // (`ticket.stopped`), then the owner's Try again (`ticket.tried_again`; lot 3 step I).
