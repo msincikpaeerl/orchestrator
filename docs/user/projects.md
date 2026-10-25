@@ -13,7 +13,7 @@ Use this to start something new. The Orchestrator creates the repository on GitH
 3. Fill in the form:
    - **Name**: the name of the project, for example "Family recipes".
    - **Key**: 2 to 6 capital letters, suggested from the name (for example `FR`). Every ticket number of the project starts with it (`FR-12`). It cannot be changed later, and two projects can never have the same key, even when one of them is archived.
-   - **Kind**: web app, website or Android app. It has no effect yet: from a later version, it will choose the default tools and agents of the project.
+   - **Kind**: web app, website or Android app. From version 0.6.0, a website or a web app requires the capability `browser-tests`, so its agents can run its tests in a browser: its runs go only to a machine set up for browser tests (see [Browser tests](machines.md#browser-tests) and [Required capabilities](#required-capabilities)). The form says so under **Kind**. An Android app requires nothing yet.
    - **Description**: optional, one or two sentences.
    - **Repository name**: the name of the new repository on GitHub, made from the project name. You can change it. The form tells you if a repository with this name already exists on your account.
    - **Visibility**: **Private** (only you can see it, the default) or **Public** (anyone on the internet can see it).
@@ -102,7 +102,7 @@ What you can do:
 
 ## Change a project's name or description
 
-On the project page, click **Project settings**, change the **Name** or **Description**, then click **Save**. The key, the repository and the kind cannot be changed.
+On the project page, click **Project settings**, change the **Name** or **Description**, then click **Save**. The key, the repository and the kind cannot be changed. The same page has the project's [Required capabilities](#required-capabilities).
 
 ## Reviews by themselves
 
@@ -114,6 +114,21 @@ From version 0.5.0, once a ticket's work is ready for review, the scheduler star
 While it is off, a ticket ready for review waits for you: "Ready for review" in [Needs you](needs-you.md#agents-work) says "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.", and you choose **Start review** or **Skip review**, as in version 0.4.0. A review already running is not stopped. Fixes after a request for changes still start by themselves: the switch is only about reviews.
 
 Check the box again to let the scheduler start reviews: a ticket already waiting for its review is then started in its turn. Every project starts with the box checked, also the projects created before version 0.5.0. Each change is in the [event log](activity.md).
+
+## Required capabilities
+
+A project's **required capabilities** are what every run of the project needs on the machine, as tags such as `browser-tests`. A run of the project goes only to a machine that has all of them (a machine shows its capabilities on its page, see [Capabilities](machines.md#capabilities)), and Quality's reviews too.
+
+From version 0.6.0, a new website or web app, with a new repository or a linked one, requires `browser-tests`. Projects created before require nothing, and nothing changes for them unless you add a capability.
+
+To see or change them:
+
+1. On the project page, click **Project settings**.
+2. Under **Required capabilities**:
+   - click **Remove** next to a capability you no longer want to require, for example `browser-tests` if no machine of yours is set up for browser tests yet and the project's agents can do without them;
+   - or type one in **Add a capability** (lowercase letters and digits, with "-" between words, for example `android-sdk`) and click **Add**.
+
+Each change is saved at once ("Saved. A run already started goes on where it is.") and written in the [event log](activity.md). From then on, a ticket of the project waits in Activity > [Queue](activity.md#queue) while no machine has them all, which says "Laptop: it lacks browser-tests"; **Run now** and **Start review** give the same reason. Add the capability to a machine (Help > [Browser tests](machines.md#browser-tests) for `browser-tests`), or remove it from the project. A paused run resumes on its own machine, even when you added a capability since. An archived project's list cannot be changed.
 
 ## Archive a project
 

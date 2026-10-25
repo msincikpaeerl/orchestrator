@@ -85,7 +85,7 @@ A machine can take a run when it is:
 
 - `online` and not `disabled`;
 - logged into the run's Claude account;
-- holding every capability required by the project and the agent profile;
+- holding every capability required by the project and the agent profile (the project's first, then the profile's others; lot 5 step C2), for a review as for any other run; a paused run's resume continues on its own machine, not checked again (owner's answer 4, lot 5 step C2);
 - running a daemon version compatible with the server (09, section 6): from lot 5, protocol 3; a protocol 2 machine takes no run at all, with the reason "Update the daemon to 0.6.0" in the queue and on the machine page (owner's answer 1 and simplification, lot 5 step A). A planning run needs none of the project's or profile's capabilities: it runs no test (01, section 3.1).
 
 **Failures the machine caused** (owner's answer 3 and its condition, lot 4 step A). A run that fails without counting and without a "Needs you" item of its ticket, because of its machine, leaves that machine out of the choice until something changes:
