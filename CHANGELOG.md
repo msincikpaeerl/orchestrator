@@ -4,6 +4,7 @@ User-facing changes, newest first. One entry per change that users can see.
 
 ## Unreleased
 
+- Tickets: **Import tickets** on a project's board creates several tickets at once from a file, pasted or chosen as a .json file, for example one Claude writes for you on claude.ai. **Preview** creates nothing and lists every problem by ticket and field, the tickets with what each waits for, and warnings (assigned tickets the scheduler can start at once; a ticket waiting for a cancelled one). **Import** then creates them all in To do, numbered in the file's order, or none, and links to each. At most **Most tickets per plan** tickets per file (15 by default), whose description now says it limits imports too. Help: "Import tickets", with a full example and a text to paste into claude.ai.
 - Machines: this version needs the daemon 0.6.0 on every machine. A machine whose daemon is 0.5.0 stays connected but gets no runs at all, by the scheduler or by you, until you update it: "Needs you" shows **Update the daemon on …**, and the machine's page and Activity > **Queue** say "Update the daemon to 0.6.0" with the commands to type. Update it when no agent works on the machine. Help: "Machines" > "Update the daemon".
 - Agents: an agent now names each acceptance criterion by its number from 1 everywhere, also when it hands its work in. Under "What the agent was told" on a ticket, a refused submission now names the criterion number only ("Criterion 1 is not reported"), without an index. Reports handed in before this version show as they did.
 

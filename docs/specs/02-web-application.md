@@ -157,7 +157,7 @@ The project page shows the repository setup while it runs (refreshing on its own
 - On a wide screen the columns sit side by side; on a phone they are stacked one below the other, each with its ticket count, so nothing scrolls sideways (owner's decision, lot 1 step F).
 - Cards show number, title, type, assignee, a "Blocked" badge (only for `proposed` and `todo` tickets, 04 section 1), a "Stopped" badge for a ticket stopped by the retry policy (lot 3 step I2), "created by agent" when an agent created it, active run indicator with the last progress line.
 - Filters: type, assignee, text. Toggle to show the dependency graph *(lot 5, with the plan review graph: the same component, section 5.3)*.
-- Actions: create a ticket manually, open project settings.
+- Actions: create a ticket manually, **Import tickets**, open project settings. **Import tickets** (owner's decisions, lot 5bis step A; not on an archived project or one whose setup is not `ready`) opens a dialog that takes pasted text or a .json file in the ticket file format (06, section 4.6). **Preview** creates nothing and lists the tickets with their dependencies, every problem by ticket and field, and the warnings (assigned tickets; a blocker that is cancelled); **Import** is offered once the preview has no problem, creates every ticket in To do or none, and then lists the new numbers, each a link to its ticket.
 
 ### 6.4 Ticket detail
 
