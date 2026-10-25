@@ -98,6 +98,8 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   ticket_transition_not_allowed: () =>
     'This action is not possible in the ticket’s current state. The page now shows its current state and the actions it allows.',
   dependency_on_itself: () => 'A ticket cannot wait for itself. Choose another ticket.',
+  ticket_import_invalid: () =>
+    'Nothing was imported: the file has problems. They are listed below; correct them and preview again.',
   dependency_cycle: (error) =>
     error.cycle && error.cycle.length > 1
       ? `Refused: this would make a loop in which each ticket waits for the next, so none of them could ever start: ${error.cycle.join(' → ')}.`

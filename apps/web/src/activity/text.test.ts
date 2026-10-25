@@ -63,6 +63,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     pullRequests: [4],
   },
   'project.pull_request_watch_recovered': { key: 'WEB' },
+  'tickets.imported': { key: 'WEB', count: 2, tickets: ['WEB-8', 'WEB-9'] },
   'ticket.created': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -438,9 +439,13 @@ function entry(type: EventType, overrides: Partial<EventLogEntry> = {}): EventLo
       ? 'github_connection'
       : kind === 'account'
         ? 'claude_account'
-        : (kind as EventLogEntry['entityType']);
+        : kind === 'tickets'
+          ? 'project'
+          : (kind as EventLogEntry['entityType']);
   const aboutProject =
-    kind === 'project' || kind === 'ticket' || (kind === 'setting' && type === 'setting.changed');
+    entityType === 'project' ||
+    kind === 'ticket' ||
+    (kind === 'setting' && type === 'setting.changed');
   return {
     id: 1,
     at: '2026-09-24T10:00:00.000Z',
@@ -560,6 +565,15 @@ describe('eventText', () => {
     ).toBe(
       "Run of WEB-12: CI failed on GitHub for the submitted commit ccccccc (failed: CI). The pull request's latest commit is now ddddddd: this result is the submitted commit's",
     );
+  });
+
+  it('lists the tickets of an import, each a link', () => {
+    const pieces = eventText(entry('tickets.imported'));
+    expect(plainText(pieces)).toBe('WEB: 2 tickets imported from a file: WEB-8, WEB-9');
+    expect(links(pieces).slice(-2)).toEqual([
+      { text: 'WEB-8', to: '/projects/WEB/tickets/8' },
+      { text: 'WEB-9', to: '/projects/WEB/tickets/9' },
+    ]);
   });
 
   it('names the assignee of a ticket in words', () => {

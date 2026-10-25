@@ -56,6 +56,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'project.unarchived': 'Project unarchived',
   'project.pull_request_watch_failed': 'Pull requests not checked on GitHub',
   'project.pull_request_watch_recovered': 'Pull requests checked on GitHub again',
+  'tickets.imported': 'Tickets imported',
   'ticket.created': 'Ticket created',
   'ticket.updated': 'Ticket edited',
   'ticket.status_changed': 'Ticket status changed',
@@ -304,6 +305,17 @@ const describe: { [T in EventType]: Describe<T> } = {
     c.project,
     ': its pull requests are checked on GitHub again',
   ],
+  'tickets.imported': (p, c) => {
+    const pieces: Piece[] = [
+      c.project,
+      `: ${String(p.count)} ticket${p.count === 1 ? '' : 's'} imported from a file: `,
+    ];
+    p.tickets.forEach((reference, index) => {
+      if (index > 0) pieces.push(', ');
+      pieces.push(ticketRefLink(reference));
+    });
+    return pieces;
+  },
   'ticket.created': (p, c) => {
     const pieces: Piece[] = [
       c.ticket,
