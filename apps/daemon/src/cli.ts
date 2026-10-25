@@ -2,6 +2,7 @@ import { text } from 'node:stream/consumers';
 import { parseArgs } from 'node:util';
 import { HookEvent, RunId } from '@orchestrator/protocol';
 import { attach } from './attach.js';
+import { installBrowsers } from './browsers.js';
 import { safeJson } from './config.js';
 import { probeControl } from './control.js';
 import { gitCredentialHelper } from './credentials.js';
@@ -30,6 +31,7 @@ Commands:
   start                                    Run the daemon in this terminal
   status                                   Show whether the daemon runs and is connected
   doctor                                   Check this machine
+  browsers                                 Set up Chromium for browser tests (once, after its libraries)
   attach <run-id> [--write]                Watch a run's session live (read-only by default)
   --version                                Show the version and build
 
@@ -100,6 +102,19 @@ async function main(argv: string[]): Promise<number> {
           : `${String(errors)} error(s): the machine gets no runs until they are fixed. Then restart the daemon (systemctl --user restart orchestrator-daemon).`,
       );
       return errors === 0 ? 0 : 1;
+    }
+    case 'browsers': {
+      parse({}, 0);
+      // The PATH the daemon runs with, as `doctor`: the service's when it is installed.
+      const environment = doctorEnvironment(paths, 'command');
+      return installBrowsers(
+        {
+          browsers: paths.browsers,
+          toolPath: environment.toolPath,
+          toolPathLabel: environment.toolPathLabel,
+        },
+        out,
+      );
     }
     case 'install-service':
       parse({}, 0);
