@@ -287,6 +287,33 @@ An urgent side step, in parallel with step C, outside the order of the steps (ow
 
 **Done when** server tests cover a valid import, each refusal, a cycle in the file and a chain through the project's tickets, all or nothing (a refused ticket, a database failure halfway), an unknown field, too many tickets and an archived project; Playwright on both viewports pastes a file, previews a problem, fixes it, imports and follows a link.
 
+### [ ] 5bis B. Merge automatically (branch `lot5bis/b-automatic-merge`)
+
+A small side step asked by the owner on 2026-10-25, done next, before step D (C2 merged; D not started): on a project where the owner turns on **Merge automatically**, a ticket's pull request is merged by the Orchestrator once Quality approved it and CI is green, so the scheduler keeps going without the owner. Quality is never skipped and the ticket lifecycle (04, sections 1 and 2) does not change: the merge is found by the existing merge detection (lot 3 step J), which moves the ticket to `done`, deletes the branch and unblocks its dependents, once. GitHub's own auto-merge is not used: it needs branch protection with required checks, which private repositories on a free account do not have (`not_available` since lot 1). Specs written in this session, with the session's recommendations; the owner's answers below may change them before any code.
+
+- **The option** is a project field, `merges_automatic` (off by default, also for existing projects), like `reviews_automatic` (lot 4 step D3), not a setting: settings are whole-number limits with a global value and per-project overrides (04, section 8; `SettingDefinition`), while this is a per-project choice with no global value. Project settings' card **Merge automatically**, saved at each change with the event `project.merges_automatic_changed`, read-only for an archived project.
+- **The trigger**: Quality's approval applied (`review_approved`, `in_review` → `awaiting_merge`) on a project with the option on marks the merge wanted in the same transaction, with the approved commit (01 section 3.4, `automatic_merge`). A background task, one per ticket at a time (as the pull request's opening, 04 section 3.1), and the server's start for a wanted merge not tried, then makes one try.
+- **The checks before the merge**, in order, each failure ending the try (04, section 4, "Automatic merge"): the ticket, read again under its lock, is still `awaiting_merge` with no request for changes standing, the option still on, the project active; the pull request read by itself is open, into the default branch, from the project's repository, its head the approved commit, and not in conflict; the CI result of that commit read again, as the CI wait reads it (04, section 3.1), is **passed**.
+- **The merge**: `PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge` with `sha` the approved commit and the owner's merge method; GitHub merges only if the head is still that commit (409 otherwise). Once merged, the server reads the pull request and hands it to the merge detection (`PullRequestWatcher.seen`), whose transaction locks the ticket and reads its state again, so the next GitHub check finding the same merge does nothing.
+- **No automatic retry once the merge request was sent**: a refusal (405, 409, 422, 403 with the permission named) or a lost answer is a failure; a lost answer is settled by the next read of the pull request (merged: done as above, marked automatic; still open: failed). The ticket stays `awaiting_merge`; its "Pull request to merge" item in Needs you says why in plain words and that the owner merges it on GitHub as before.
+- **Events**: `ticket.merged_automatically` (the pull request, the commit, the method) and `ticket.automatic_merge_failed` (the reason, masked), then the existing `ticket.pull_request_merged`; the ticket page and Activity say "merged automatically".
+- **Token permissions**: no new one (table below).
+
+Token permissions used by this step, from GitHub's "Permissions required for fine-grained personal access tokens" (read 2026-10-25):
+
+| Operation | Request | Permission |
+|---|---|---|
+| Merge the pull request | `PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge` | Contents (write) |
+| Read the pull request and its head | `GET /repos/{owner}/{repo}/pulls/{pull_number}` | Pull requests (read) |
+| Read CI on the commit again | `GET .../actions/runs?head_sha=`, `GET .../commits/{ref}/status` | Actions (read), Commit statuses (read) |
+| (not used) Whether it is merged; GitHub's async merge | `GET .../pulls/{pull_number}/merge`; `PUT .../merge-async` | Pull requests (read); Contents (write) |
+
+Compared with 02, section 3.1: every permission is already required at that level (Contents: Read and write since lot 1). A pull request that changes `.github/workflows/` needs Workflows (Read and write) to be merged with a token, also already required. No change for the owner's token; only Contents' "why" gains the merge. GitHub's documentation now recommends its newer "Merge a pull request asynchronously" (`merge-async`, an answer to read again later by its id); the plain merge answers at once, which the checks above need (question 2).
+
+**Done when** server tests against the fake GitHub (its merge endpoint with GitHub's documented answers, `operations.ts` and `extract.ts`) cover: a merge done, the ticket `done` once with its events, its branch deleted and its dependents unblocked; the option off (nothing merged); the head changed (409, and moved before the try); CI no longer passed (failed, running again, no CI found); a conflict and a refusal (405, 422, 403 naming the permission) each giving the Needs you reason; a lost answer, merged and not merged; the next GitHub check finding the same merge doing nothing; a skipped review never merged; an archived project; a restart with a merge wanted. Playwright on both viewports turns the option on and off, sees it read-only once archived, and sees "merged automatically" on the ticket page. Help > Projects > "Merge automatically" (what it does, the risk of no human review), Needs you, Tickets; CHANGELOG; every-event.ts and `merges.test.ts`'s guard.
+
+**The owner's questions** (2026-10-25, open): the merge method, the endpoint, a skipped review, "No CI found", when the try happens, tickets already waiting, **Stop new runs**, GitHub unreachable before the request, the Needs you item, a button to try again, the field and this step's place.
+
 ## Open points
 
 - **No Docker or database for agents** until lot 6's isolated agent workspace: agents cannot use Docker (05 section 4.6) or run a database locally, so a `web_app` with PostgreSQL is tested in CI only, and the Project Manager steers simple requests to file storage (answer 6).

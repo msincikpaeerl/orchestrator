@@ -22,7 +22,7 @@ A single technical owner who:
 
 These principles settle design disputes. When two options conflict, the one that better respects these principles wins.
 
-1. **The human decides, the agents execute.** The owner approves plans and merges pull requests. Agents never merge into the main branch in v1.
+1. **The human decides, the agents execute.** The owner approves plans and merges pull requests. Agents never merge into the main branch in v1. From version 0.6.0 the owner can choose, per project, to let the Orchestrator's server merge a pull request Quality approved and CI passed (**Merge automatically**, off by default; lot 5 step 5bis B): the owner's choice, never an agent's.
 2. **The harness is the product.** Every project, including the Orchestrator itself, is built on a harness of documentation, tests, CI and recorded technical decisions. The system enforces it; it is not optional guidance.
 3. **LLMs decide, code schedules.** Agents choose *what* to do (split work, assign, comment). Deterministic server code decides *when and where* work runs.
 4. **Quota is the scarcest resource.** Scheduling, prompts and context size are designed around a limited, shared Claude Pro quota.
@@ -63,7 +63,7 @@ The system has two parts.
 - Request inbox and Project Manager agent producing a plan that the owner approves or rejects.
 - Six default agents: Project Manager, Architect, Web Developer, Android Developer, Quality, Technical Writer. Custom agents can be created from the UI.
 - Tickets with types, dependencies, acceptance criteria, comments and the lifecycle defined in 04.
-- One branch and one pull request per ticket. Merge is done by the owner on GitHub.
+- One branch and one pull request per ticket. Merge is done by the owner on GitHub, or by the server on a project where the owner turned on **Merge automatically** (04, section 4).
 - Definition of Done checks enforced by the system.
 - Agent questions to the owner, pausing the ticket until answered.
 - Live run logs in the UI, streamed from session transcripts.
@@ -77,7 +77,7 @@ The system has two parts.
 - Multiple users, roles and permissions between humans.
 - Deploying generated projects (hosting websites, publishing apps to stores). Deploying projects to a server is a planned evolution after v1 (section 9); updating the Orchestrator itself would then be one case of it (owner's decision, lot 2 step N).
 - Android emulator or on-device tests.
-- Automatic merge by agents.
+- Automatic merge by agents (the server's **Merge automatically**, chosen by the owner per project, is not one: 04, section 4).
 - Non-Claude runners (the abstraction exists, no second implementation).
 - Headless Claude Code (`claude -p`) and API-key billing.
 - Native Windows or macOS daemons (Windows is supported through WSL only).
