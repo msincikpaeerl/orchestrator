@@ -118,7 +118,7 @@ Decisions in one run (lot 2 step K): `ticket.ask`, `ticket.submit` and `ticket.g
 | Tool | Description |
 |---|---|
 | `request.ask` | Asks the owner a clarifying question about the request before planning. The request stays open until answered. |
-| `plan.propose` | Submits a plan: summary, optional new project, and tickets. Tickets reference each other through local keys for dependencies. The server validates the plan (limits, assignees exist, no dependency cycle, each ticket has acceptance criteria) and shows it to the owner. |
+| `plan.propose` | Submits a plan: summary, optional new project, and tickets. Tickets reference each other through local keys for dependencies. The server validates the plan (limits, assignees exist, no dependency cycle, each ticket has acceptance criteria) and shows it to the owner. Its tickets follow the ticket file format of section 4.6. |
 
 **As decided for lot 5** (owner's answers 7, 8, 10 and 11, lot 5 step A):
 
@@ -168,6 +168,32 @@ The decision is applied only when the run ends `submitted` with no head moved on
 - **A refusal (422) is explained** by one read of the pull request: its head moved, "Not posted on GitHub: pull request #12's head is now def5678, and GitHub refused a review of commit abc1234 ("<GitHub's words>"). The decision stands in the Orchestrator."; closed or merged, "Not posted on GitHub: pull request #12 was closed (merged) and GitHub refused the review ("<GitHub's words>"). The decision stands in the Orchestrator."; otherwise GitHub's words. A review of a commit no longer in the pull request, or on a closed one, that GitHub accepts is posted (assumptions A30 and A31). The owner's run of the smoke script on the real GitHub (2026-10-10) found that GitHub accepts both: a comment review whose `commit_id` is an older commit of the pull request or a commit not in it (state `COMMENTED`, `commit_id` as sent), and one on a pull request closed without merging. The notes for a moved head and for a closed or merged pull request therefore remain only for a 422 GitHub gives for another reason.
 - **A lost answer** (a timeout, the connection cut after the request left, a server error) and a server start finding a post started without its result: the server reads the pull request's reviews, following every page until it finds the mark or reaches the end. Found: posted. Not found at a server start: posted now (its first attempt). Not found after a lost answer, never a flat "Not posted", since GitHub may still finish it: "GitHub did not answer the post, and the review was not on pull request #12 when checked at 15:10. The decision stands in the Orchestrator." The reading itself fails: "GitHub did not answer the post, and pull request #12 could not be checked (<reason>). The decision stands in the Orchestrator. If "Quality review" appears on the pull request, it was posted." (after a server start: "The Orchestrator stopped while posting the review, and pull request #12 could not be checked afterwards (<reason>). …"). Both write `ticket.review_not_posted`, saying which case it was.
 - **"Head not checked"** (owner's answer 3): the post is attempted as for any decision; `commit_id` ties it to the reviewed commit. A failed post gives its own note under the "head could not be checked" sentence; a post done does not remove that sentence.
+
+### 4.6 Ticket file format
+
+The format of the owner's **Import tickets** (02, section 6.3; owner's decisions, lot 5bis step A), defined once in `packages/protocol` (`src/api/ticket-import.ts`). Its tickets are written as `plan.propose`'s (section 4.4), so step F of lot 5 and `plan.propose` reuse the ticket schema (`TicketImportEntry`; `plan.propose` adds its own fields such as `bootstrap`). It is placed here, next to `plan.propose`, rather than in 02, for that reason.
+
+```json
+{
+  "format": "orchestrator-tickets/1",
+  "tickets": [
+    { "key": "layout", "type": "chore", "title": "Page layout", "blocked_by": ["WEB-3"] },
+    { "key": "contact", "type": "feature", "title": "Contact form",
+      "description": "A form that sends the message by email.",
+      "acceptance_criteria": ["Sends the message", "Shows a confirmation"],
+      "priority": "high", "assignee": "web_dev", "blocked_by": ["layout"] }
+  ]
+}
+```
+
+- **Strict**, snake_case: an unknown field, in the file or in a ticket, is refused. `format` is `orchestrator-tickets/1`; `tickets` has at least one ticket.
+- `key` (required): 1 to 40 lowercase letters, digits, `-` and `_`, starting with a letter or a digit, unique in the file. Lowercase, so a key is never mistaken for a ticket number (owner's answer 1, lot 5bis step A).
+- `type` and `title` required; `description`, `acceptance_criteria`, `priority` (`normal` by default), `assignee` and `blocked_by` optional, each absent or null meaning the same.
+- `blocked_by`: keys of the same file, or numbers of existing tickets of the same project (`WEB-3`). Each entry is told apart by its form; anything else is refused. A key may name a ticket later in the file.
+- The owner's form rules, the same code: the text limits (**Longest ticket title**, **Longest ticket description**, **Most acceptance criteria**, **Longest acceptance criterion**), at most **Most tickets per plan** tickets for the project (its current value stated), an assignee that is an existing profile that can be assigned (03, section 4), dependencies on tickets of the project, no cycle. The cycle check walks the project's dependencies with the file's: since no existing ticket can wait for a ticket of the file, a cycle is always inside the file, and is named once (`a → c → b → a`).
+- **Preview** (`POST /api/projects/:key/tickets/import/preview`, the file's text): checks everything and writes nothing; returns each ticket with its dependencies resolved (a key of the file with its title, or an existing ticket with its title and state), every problem located by the ticket's position and key and by the field, in plain words, and warnings that do not stop the import: assigned tickets ("Assigned tickets can be started by the scheduler right away. Pause the account first if you do not want that.") and each ticket blocked by an existing cancelled ticket ("<key> is blocked by <NUMBER>, which is cancelled: it will stay blocked until you remove that dependency."; owner's answer 4); none for a `done` blocker.
+- **Import** (`POST /api/projects/:key/tickets/import`): checks again, then creates every ticket in one transaction under the project's lock, or none (`ticket_import_invalid` with the problems). The tickets are the owner's, in `todo`, numbered in the file's order; each has its `ticket.created`, then one `tickets.imported` (01, section 3.10).
+- Both are refused for an archived project and for one whose setup is not `ready`, as the ticket form is.
 
 ## 5. Permissions by role
 

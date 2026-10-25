@@ -6,9 +6,17 @@ import {
 } from '@orchestrator/protocol';
 import { useId, useState } from 'react';
 import { Link } from 'react-router';
-import { buttonLinkClass, ErrorMessage, Loading, SelectField, TextField } from '../components/ui';
+import {
+  Button,
+  buttonLinkClass,
+  ErrorMessage,
+  Loading,
+  SelectField,
+  TextField,
+} from '../components/ui';
 import { useAgents, useTickets } from '../queries';
 import { cardRunText } from '../runs/text';
+import { ImportTicketsDialog } from './import-dialog';
 import { assigneeLabel, showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
 
 /**
@@ -154,6 +162,7 @@ export function Board({ project }: { project: Project }) {
   const [type, setType] = useState<TicketType | ''>('');
   const [assignee, setAssignee] = useState(ALL);
   const [text, setText] = useState('');
+  const [importing, setImporting] = useState(false);
   const canCreate = project.status === 'active' && project.setup.status === 'ready';
 
   if (tickets.isPending) return <Loading />;
@@ -180,9 +189,27 @@ export function Board({ project }: { project: Project }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         {canCreate && (
-          <Link to={`/projects/${project.key}/tickets/new`} className={buttonLinkClass}>
-            New ticket
-          </Link>
+          <>
+            <Link to={`/projects/${project.key}/tickets/new`} className={buttonLinkClass}>
+              New ticket
+            </Link>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setImporting(true);
+              }}
+            >
+              Import tickets
+            </Button>
+          </>
+        )}
+        {importing && (
+          <ImportTicketsDialog
+            project={project}
+            onClose={() => {
+              setImporting(false);
+            }}
+          />
         )}
         {all.length > 0 && (
           <>
@@ -239,7 +266,8 @@ export function Board({ project }: { project: Project }) {
           {canCreate && (
             <>
               {' '}
-              Click <strong>New ticket</strong> to write the first one.
+              Click <strong>New ticket</strong> to write the first one, or{' '}
+              <strong>Import tickets</strong> to add several from a file.
             </>
           )}
         </p>

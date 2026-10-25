@@ -14,6 +14,7 @@ export class HttpError extends Error {
       ApiError['error'],
       | 'limits'
       | 'cycle'
+      | 'importProblems'
       | 'settingOrder'
       | 'settingProduct'
       | 'settingSum'

@@ -11,6 +11,7 @@ import {
   type McpCall,
   type RunStart,
   type RunState,
+  TICKET_IMPORT_FORMAT,
 } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import { expect } from 'vitest';
@@ -142,6 +143,12 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   await call('PUT', '/api/projects/SHOP/settings/ciWaitTimeoutMinutes', { value: 30 });
   await call('DELETE', '/api/projects/SHOP/settings/ciWaitTimeoutMinutes');
 
+  await call('POST', '/api/projects/LEG/tickets/import', {
+    text: JSON.stringify({
+      format: TICKET_IMPORT_FORMAT,
+      tickets: [{ key: 'readme', type: 'docs', title: 'Readme' }],
+    }),
+  });
   await call('POST', '/api/projects/LEG/archive');
   await call('POST', '/api/projects/LEG/unarchive');
 

@@ -15,8 +15,12 @@ import {
   RejectRequest,
   TicketNumber,
   TicketStatus,
+  TicketImportRequest,
   UpdateTicketRequest,
   type AgentLink,
+  type TicketImportPreview,
+  type TicketImportProblem,
+  type TicketImportResponse,
   type LimitExceeded,
   type OwnerTicketAction,
   type ReleaseAction,
@@ -74,7 +78,15 @@ import {
   tryAgainComment,
 } from './changes.js';
 import { holdTicket, releaseHold } from './holds.js';
-import { applyOwnerAction, insertOwnerTicket, refusal } from './transitions.js';
+import { checkImport, importTickets, readImportFile } from './import.js';
+import {
+  assigneeRefusal,
+  createOwnerTicket,
+  exceededLimits,
+  findPath,
+  ticketLimits,
+} from './rules.js';
+import { applyOwnerAction, refusal } from './transitions.js';
 
 /** The owner's actions that release a hold (lot 4 step D2b). */
 const RELEASING = new Set<string>(['request_changes', 'skip_review', 'cancel', 'mark_done']);
@@ -152,9 +164,6 @@ const blockedFlag = sql<boolean>`exists (
   join tickets b on b.id = d.blocked_by_id
   where d.ticket_id = "tickets"."id" and b.status <> 'done'
 )`.mapWith(Boolean);
-
-/** The roles a ticket's assignee may have: those that implement (03, section 4). */
-const ASSIGNABLE_ROLES = new Set(['builder', 'writer']);
 
 /** The assignee of each ticket row, from a left join on the profiles. */
 const assigneeColumns = { key: schema.agentProfiles.key, name: schema.agentProfiles.name };
@@ -253,19 +262,10 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.key, key));
-    if (!row) {
-      throw new HttpError(422, 'agent_not_found', `No agent profile with the key ${key}`);
-    }
-    // Only a builder or a writer implements a ticket; Quality's reviews start by themselves
-    // from the ticket in review (03, section 4; lot 3 step H1).
-    if (!ASSIGNABLE_ROLES.has(row.role)) {
-      throw new HttpError(
-        422,
-        'agent_not_assignable',
-        `${row.name} reviews the work of other agents and cannot be assigned a ticket`,
-      );
-    }
-    return row;
+    const refused = assigneeRefusal(key, row);
+    if (refused) throw new HttpError(422, refused.code, refused.message);
+    // A missing profile is refused above.
+    return row as NonNullable<typeof row>;
   }
 
   async function assigneeOf(executor: Executor, ticket: TicketRow): Promise<AgentLink | null> {
@@ -286,44 +286,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
     description?: string;
     acceptanceCriteria?: string[];
   }) {
-    const settings = await resolveSettings(db, [
-      'ticketTitleMaxLength',
-      'ticketDescriptionMaxLength',
-      'ticketMaxAcceptanceCriteria',
-      'acceptanceCriterionMaxLength',
-    ]);
-    const exceeded: LimitExceeded[] = [];
-    if (fields.title !== undefined && fields.title.length > settings.ticketTitleMaxLength) {
-      exceeded.push({ field: 'title', max: settings.ticketTitleMaxLength, unit: 'characters' });
-    }
-    if (
-      fields.description !== undefined &&
-      fields.description.length > settings.ticketDescriptionMaxLength
-    ) {
-      exceeded.push({
-        field: 'description',
-        max: settings.ticketDescriptionMaxLength,
-        unit: 'characters',
-      });
-    }
-    const criteria = fields.acceptanceCriteria ?? [];
-    if (criteria.length > settings.ticketMaxAcceptanceCriteria) {
-      exceeded.push({
-        field: 'acceptance_criteria',
-        max: settings.ticketMaxAcceptanceCriteria,
-        unit: 'items',
-      });
-    }
-    criteria.forEach((criterion, index) => {
-      if (criterion.length > settings.acceptanceCriterionMaxLength) {
-        exceeded.push({
-          field: 'acceptance_criterion',
-          index,
-          max: settings.acceptanceCriterionMaxLength,
-          unit: 'characters',
-        });
-      }
-    });
+    const exceeded = exceededLimits(await ticketLimits(db), fields);
     if (exceeded.length > 0) throw limitRefusal(exceeded);
   }
 
@@ -512,57 +475,64 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
         );
       }
 
-      // Under the project's lock: numbers follow each other and are never given twice.
-      const [counter] = await tx
-        .update(schema.projects)
-        .set({ lastTicketNumber: sql`${schema.projects.lastTicketNumber} + 1` })
-        .where(eq(schema.projects.id, project.id))
-        .returning({ number: schema.projects.lastTicketNumber });
-      if (!counter) throw new Error('project disappeared');
-
-      const at = now();
-      const ticket = await insertOwnerTicket(tx, {
-        projectId: project.id,
-        number: counter.number,
-        type: input.type,
-        title: input.title,
-        description: input.description,
-        acceptanceCriteria: input.acceptanceCriteria,
-        priority: input.priority,
-        assigneeProfileId: assignee?.id ?? null,
-        now: at,
-      });
-      if (blockers.length > 0) {
-        await tx.insert(schema.ticketDependencies).values(
-          blockers.map((row) => ({
-            projectId: project.id,
-            ticketId: ticket.id,
-            blockedById: row.id,
-            createdAt: at,
-          })),
-        );
-      }
-      await recordEvent(tx, {
-        actor: 'owner',
-        ...ticketEntity(ticket),
-        type: 'ticket.created',
-        payload: {
-          ...about(project, ticket),
-          type: ticket.type,
-          title: ticket.title,
-          priority: ticket.priority,
-          status: ticket.status,
-          blockedBy: blockers.map((row) => ticketReference(project.key, row.number)).sort(),
-          assignee: assignee?.key ?? null,
-          ...(assignee ? { assigneeName: assignee.name } : {}),
+      const ticket = await createOwnerTicket(
+        tx,
+        project,
+        {
+          type: input.type,
+          title: input.title,
+          description: input.description,
+          acceptanceCriteria: input.acceptanceCriteria,
+          priority: input.priority,
+          assignee,
         },
-        at,
-      });
+        blockers,
+        now(),
+      );
       return detail(tx, project, ticket);
     });
     request.log.info({ project: created.projectKey, ticket: created.number }, 'ticket created');
     return reply.code(201).send(created);
   });
+
+  /**
+   * Import of a file of tickets (02, section 6.3; 06, section 4.6; lot 5bis step A): the preview
+   * checks and writes nothing; the import checks again and creates every ticket, or none.
+   */
+  app.post<{ Params: { key: string } }>(
+    '/api/projects/:key/tickets/import/preview',
+    async (request): Promise<TicketImportPreview> => {
+      await requireSession(db, request);
+      const { text } = parseInput(TicketImportRequest, request.body);
+      return change(request.params.key, async (tx, project) => {
+        const read = readImportFile(text);
+        if (read.file === null) return { tickets: [], problems: read.problems, warnings: [] };
+        return (await checkImport(tx, project, read.file)).preview;
+      });
+    },
+  );
+
+  app.post<{ Params: { key: string } }>(
+    '/api/projects/:key/tickets/import',
+    async (request, reply) => {
+      await requireSession(db, request);
+      const { text } = parseInput(TicketImportRequest, request.body);
+      const created = await change(request.params.key, async (tx, project) => {
+        const read = readImportFile(text);
+        if (read.file === null) throw importRefusal(read.problems);
+        const { preview, planned } = await checkImport(tx, project, read.file);
+        if (planned === null) throw importRefusal(preview.problems);
+        return importTickets(tx, project, planned, now());
+      });
+      request.log.info(
+        { project: request.params.key, tickets: created.length },
+        'tickets imported',
+      );
+      return reply.code(201).send({
+        tickets: created.map(toTicketLink),
+      } satisfies TicketImportResponse);
+    },
+  );
 
   app.get<TicketParams>('/api/projects/:key/tickets/:number', async (request) => {
     await requireSession(db, request);
@@ -1100,6 +1070,16 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
   });
 }
 
+/** `ticket_import_invalid` with every problem of the file, as the preview lists them. */
+function importRefusal(problems: TicketImportProblem[]): HttpError {
+  return new HttpError(
+    422,
+    'ticket_import_invalid',
+    `The file has ${String(problems.length)} problem${problems.length === 1 ? '' : 's'}: nothing was imported`,
+    { importProblems: problems },
+  );
+}
+
 /** `invalid_request` naming each field over its limit; the message keeps the API's field names. */
 function limitRefusal(exceeded: LimitExceeded[], commentField = 'comment'): HttpError {
   const apiField: Record<LimitExceeded['field'], string> = {
@@ -1116,37 +1096,4 @@ function limitRefusal(exceeded: LimitExceeded[], commentField = 'comment'): Http
     })
     .join('; ');
   return new HttpError(400, 'invalid_request', message, { limits: exceeded });
-}
-
-/**
- * The tickets `from` waits for, directly or not, up to `to`: `[from, ..., to]`, or null when
- * `from` does not wait for `to`. Adding "`to` waits for `from`" would then close a cycle.
- */
-export function findPath(
-  edges: readonly { ticketId: string; blockedById: string }[],
-  from: string,
-  to: string,
-): string[] | null {
-  const waitsFor = new Map<string, string[]>();
-  for (const edge of edges) {
-    waitsFor.set(edge.ticketId, [...(waitsFor.get(edge.ticketId) ?? []), edge.blockedById]);
-  }
-  const previous = new Map<string, string>();
-  const queue = [from];
-  const seen = new Set([from]);
-  while (queue.length > 0) {
-    const current = queue.shift() as string;
-    if (current === to) {
-      const path = [to];
-      while (path[0] !== from) path.unshift(previous.get(path[0] as string) as string);
-      return path;
-    }
-    for (const next of waitsFor.get(current) ?? []) {
-      if (seen.has(next)) continue;
-      seen.add(next);
-      previous.set(next, current);
-      queue.push(next);
-    }
-  }
-  return null;
 }

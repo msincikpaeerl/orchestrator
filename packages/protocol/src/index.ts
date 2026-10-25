@@ -106,6 +106,18 @@ export {
   UpdateTicketRequest,
 } from './api/tickets.js';
 export {
+  TICKET_IMPORT_FORMAT,
+  TicketImportBlocker,
+  TicketImportEntry,
+  TicketImportFile,
+  TicketImportPreview,
+  TicketImportPreviewTicket,
+  TicketImportProblem,
+  TicketImportRequest,
+  TicketImportResponse,
+  TicketKey,
+} from './api/ticket-import.js';
+export {
   AccountStatus,
   GITHUB_TOKEN_LIST_URL,
   NeedsYouItem,

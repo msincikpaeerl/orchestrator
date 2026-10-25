@@ -30,6 +30,8 @@ On a computer the states sit side by side. On a phone they are one below the oth
    - **Blocked by**: the tickets that must be done before this one can start (see [Dependencies](#dependencies)). Optional.
 3. Click **Create the ticket**. The ticket starts in **To do** and its page opens.
 
+To create several tickets at once from a file, for example one Claude writes for you, see [Import tickets](import-tickets.md).
+
 ## Edit a ticket
 
 Open the ticket and click **Edit**. You can change the type, title, description, acceptance criteria, priority and assignee, then click **Save**.

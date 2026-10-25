@@ -267,6 +267,14 @@ The owner:
 
 **Done when** the owner has run the scenario from the user documentation alone and confirmed it, and lot 5 is closed as version 0.6.0.
 
+## Side steps
+
+### [x] 5bis A. Import tickets from a file (branch `lot5bis/a-ticket-import`, 2026-10-25)
+
+An urgent side step, in parallel with step C, outside the order of the steps (owner's decision, 2026-10-25): **Import tickets** on a project's board, from a file Claude writes for the owner on claude.ai. The file's format (06, section 4.6) is the shape of `plan.propose`'s tickets, defined once in `packages/protocol` (`TicketImportEntry`): steps E1 and F extend it rather than copy it. The ticket form's rules (limits, assignee, the cycle search, the creation and its event) moved to `apps/server/src/tickets/rules.ts`, shared by the form and the import. **Most tickets per plan** is used by the import from now on; its "from version 0.6.0" mark is still right.
+
+**Done when** server tests cover a valid import, each refusal, a cycle in the file and a chain through the project's tickets, all or nothing (a refused ticket, a database failure halfway), an unknown field, too many tickets and an archived project; Playwright on both viewports pastes a file, previews a problem, fixes it, imports and follows a link.
+
 ## Open points
 
 - **No Docker or database for agents** until lot 6's isolated agent workspace: agents cannot use Docker (05 section 4.6) or run a database locally, so a `web_app` with PostgreSQL is tested in CI only, and the Project Manager steers simple requests to file storage (answer 6).

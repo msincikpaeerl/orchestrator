@@ -32,7 +32,7 @@ Some limits can have a different value for one project: the reference below says
 2. Each limit says whether the project uses the global value (the one in **Settings > Limits**) or its own value. Type a value and click **Save**: it applies to this project only.
 3. **Reset to default** removes the project's own value: the project uses the global value again, and follows it when you change it.
 
-The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In version 0.5.0, every limit a project can override already changes something (**Most tickets an agent creates per run**, **Failed attempts before asking you**, **CI wait at submission**, **Wait for CI to start**, **Most CI failures per run** and **Most review rounds per ticket**), except **Most tickets per plan**, which belongs to plans (version 0.6.0).
+The limits of an archived project cannot be changed: unarchive it first (see [Archive a project](projects.md#archive-a-project)). In version 0.5.0, every limit a project can override already changes something (**Most tickets an agent creates per run**, **Failed attempts before asking you**, **CI wait at submission**, **Wait for CI to start**, **Most CI failures per run** and **Most review rounds per ticket**), except **Most tickets per plan**, which limits plans and imports of tickets (version 0.6.0).
 
 ## Settings reference
 
@@ -64,7 +64,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Most acceptance criteria | 20 criteria | 1 to 100 | No | Most acceptance criteria on one ticket. |
 | Longest acceptance criterion | 500 characters | 1 to 5,000 | No | Most characters in one acceptance criterion. |
 | Longest comment | 20,000 characters | 1 to 100,000 | No | Most characters in one comment. |
-| Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan proposing more tickets than this is refused. |
+| Most tickets per plan (from version 0.6.0) | 15 tickets | 1 to 100 | Yes | A plan or an import with more tickets than this is refused. |
 | Most tickets an agent creates per run | 3 tickets | 0 to 20 | Yes | Tickets an agent may create during one run, outside a plan. |
 | Failed attempts before asking you | 2 attempts | 1 to 10 | Yes | After this many failed attempts on a ticket, it waits for you instead of trying again. |
 | Machine failures before asking you | 2 failures | 1 to 10 | No | After this many failures in a row caused by a machine, not by the ticket's work, the scheduler stops starting the ticket on that machine and asks you. See [When a machine keeps failing a ticket](runs.md#when-a-machine-keeps-failing-a-ticket). |

@@ -11,6 +11,7 @@ This version sets up the Orchestrator (your account and the connection to GitHub
 - [Needs you](needs-you.md): the home page, and what to do for each item it shows.
 - [Projects](projects.md): create a project with a new repository or link one of yours, branch protection, missing harness elements, a setup that fails, archive a project.
 - [Tickets](tickets.md): the board, create and edit tickets, the assignee, dependencies and blocked tickets, comments, tickets proposed by agents, cancel, mark as done manually, reopen.
+- [Import tickets](import-tickets.md): create several tickets at once from a file Claude writes for you, the file's format, and what to ask Claude.
 - [Runs](runs.md): start an agent on a ticket, watch it live, answer its questions, stop or resume it, usage limits, and where its work is.
 - [Agents](agents.md): the Architect and the Web Developer, what each one does and may run.
 - [Machines](machines.md): add your Claude account and the computers where agents work, install the daemon, keep WSL running, capabilities, disable and revoke a machine, fix a machine's problems.
