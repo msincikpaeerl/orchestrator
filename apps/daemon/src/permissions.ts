@@ -32,7 +32,7 @@ export const ORCHESTRATOR_MCP = 'mcp__orchestrator';
 
 /** Entries of the daemon's folder closed by settings deny rules; `worktrees/` stays open. */
 const DAEMON_FILES = ['config.json', 'daemon.sock', 'last-stop.json'];
-const DAEMON_FOLDERS = ['claude-config', 'repos', 'runs'];
+const DAEMON_FOLDERS = ['browsers', 'claude-config', 'repos', 'runs'];
 
 /**
  * Container tools an agent never runs (owner's decision, lot 2 step N): they reach every container
@@ -82,6 +82,7 @@ export const REASONS = {
   tmux: `tmux commands are refused: the Orchestrator runs your session in tmux and must be the only one driving it. ${REFUSAL_SUFFIX}`,
   claudeFolder: `Changes to the repository's .claude folder are refused (and Bash commands naming it): it configures Claude Code for the owner. ${REFUSAL_SUFFIX}`,
   daemonFolder: `Access to the Orchestrator's own folder is refused: it holds the machine's key and other runs' work. ${REFUSAL_SUFFIX}`,
+  browsers: `Access to the Orchestrator's browsers folder is refused, and so is naming PLAYWRIGHT_BROWSERS_PATH: Playwright finds its browsers by itself. Run "npx playwright install chromium" and "npx playwright test" as usual, without naming the folder or the variable. ${REFUSAL_SUFFIX}`,
   claudeConfig: `Access to Claude Code's configuration folders is refused: they hold its login. ${REFUSAL_SUFFIX}`,
   outside: `Access outside your worktree is refused. Work with paths inside the worktree (relative paths are best). ${REFUSAL_SUFFIX}`,
   bashPath: `This command names a path outside your worktree, which is refused. Use paths inside the worktree (relative paths are best); /tmp, /dev/null and system folders such as /usr and /etc are allowed. ${REFUSAL_SUFFIX}`,
@@ -126,6 +127,7 @@ function protectedRefusal(scope: PermissionScope, absolute: string): string | nu
     join(scope.userHome, '.claude.json'),
   ].map(realPath);
   if (claudeConfigs.some((folder) => inside(absolute, folder))) return REASONS.claudeConfig;
+  if (inside(absolute, realPath(join(scope.daemonHome, 'browsers')))) return REASONS.browsers;
   if (inside(absolute, realPath(scope.daemonHome))) return REASONS.daemonFolder;
   return null;
 }
@@ -310,6 +312,9 @@ export function checkBash(scope: PermissionScope, command: string): string | nul
     return /(~|\$\{?HOME\}?)\/\.claude/.test(command) ? REASONS.claudeConfig : REASONS.claudeFolder;
   }
   if (/github\.com|githubusercontent\.com/i.test(command)) return REASONS.github;
+  // Playwright reads the variable by itself; a command naming it could move or empty the folder
+  // (05, section 4.6).
+  if (/PLAYWRIGHT_BROWSERS_PATH/.test(command)) return REASONS.browsers;
   for (const segment of command.split(COMMAND_SEPARATORS)) {
     const parts = words(segment);
     const [name, ...args] = program(parts);
