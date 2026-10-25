@@ -98,6 +98,7 @@ export type FakeLogEntry =
         TMUX: string | null;
         TMUX_PANE: string | null;
         GIT_CEILING_DIRECTORIES: string | null;
+        PLAYWRIGHT_BROWSERS_PATH: string | null;
       };
     }
   | { event: 'arguments_refused'; message: string }

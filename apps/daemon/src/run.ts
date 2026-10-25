@@ -475,6 +475,9 @@ export class Run {
           // Git never looks above a run's folder for a repository: a planning run's scratch
           // folder has no Git, even when a parent folder is a repository (05, section 4.3).
           GIT_CEILING_DIRECTORIES: join(this.context.paths.home, 'worktrees'),
+          // Playwright downloads and finds its browsers in the daemon's folder, never in the
+          // home folder's cache (05, section 2).
+          PLAYWRIGHT_BROWSERS_PATH: this.context.paths.browsers,
           // Inherited by every process of the run, found again by the sweep (05, section 4.11).
           [RUN_MARKER]: this.runId,
         },
