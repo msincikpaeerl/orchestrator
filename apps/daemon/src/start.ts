@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:net';
 import { join } from 'node:path';
 import {
+  BROWSER_TESTS_CAPABILITY,
   PROTOCOL_VERSION,
   type ControlStatus,
   type GitCredential,
@@ -162,7 +163,10 @@ export async function startDaemon(options: StartOptions): Promise<number> {
       daemonBuild: DAEMON_BUILD,
       claudeCodeVersion: doctor.claudeCodeVersion,
       os: machineOs(environment.wsl),
-      capabilities: detectCapabilities(environment.toolPath),
+      capabilities: [
+        ...detectCapabilities(environment.toolPath),
+        ...(doctor.browserTests ? [BROWSER_TESTS_CAPABILITY] : []),
+      ],
       doctor: doctor.checks,
       runs: runs.list().map(({ runId, state, claudeSessionId }) => ({
         runId,

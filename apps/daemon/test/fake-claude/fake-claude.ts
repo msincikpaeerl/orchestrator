@@ -474,6 +474,7 @@ async function main(): Promise<void> {
       TMUX: process.env.TMUX ?? null,
       TMUX_PANE: process.env.TMUX_PANE ?? null,
       GIT_CEILING_DIRECTORIES: process.env.GIT_CEILING_DIRECTORIES ?? null,
+      PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? null,
     },
   });
   const launch = parseLaunch(args);

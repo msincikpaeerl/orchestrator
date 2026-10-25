@@ -21,6 +21,10 @@ export interface DaemonPaths {
    * CLAUDE.md of the terminal's folder (05, section 3.1).
    */
   loginFolder: string;
+  /** Playwright's browsers (`PLAYWRIGHT_BROWSERS_PATH`, 05 section 2), closed to agents. */
+  browsers: string;
+  /** The daemon's own Playwright install, owner of those browsers (05 section 8), closed to agents. */
+  playwright: string;
   /** The control socket of the running daemon (05, section 8). */
   controlSocket: string;
   lastStop: string;
@@ -37,6 +41,8 @@ export function daemonPaths(env: NodeJS.ProcessEnv = process.env): DaemonPaths {
     config: join(home, 'config.json'),
     claudeConfig: join(home, 'claude-config'),
     loginFolder: join(home, 'login'),
+    browsers: join(home, 'browsers'),
+    playwright: join(home, 'playwright'),
     controlSocket: join(home, 'daemon.sock'),
     lastStop: join(home, 'last-stop.json'),
     unit: join(configHome, 'systemd', 'user', `${SERVICE_NAME}.service`),

@@ -97,6 +97,8 @@ describe('runner', () => {
           TMUX_PANE: null,
           // Git never looks above a run's folder (05, section 4.3; lot 5 step B2).
           GIT_CEILING_DIRECTORIES: join(home.paths.home, 'worktrees'),
+          // Playwright's browsers in the daemon's folder (05, section 2; lot 5 step C1).
+          PLAYWRIGHT_BROWSERS_PATH: join(home.paths.home, 'browsers'),
         },
         args: [
           '--mcp-config',

@@ -6,6 +6,7 @@ import {
   claudeCodeSupport,
   type DoctorCheck,
 } from '@orchestrator/protocol';
+import { checkBrowsers, describeBrowsers } from './browsers.js';
 import { CERTIFICATE_WARNING_DAYS, checkCertificate } from './certificate.js';
 import { readConfig, type DaemonConfig } from './config.js';
 import { findExecutable, runCommand } from './exec.js';
@@ -40,6 +41,8 @@ export interface DoctorResult {
   checks: DoctorCheck[];
   /** `claude --version`, for `hello`; null when missing or unreadable. */
   claudeCodeVersion: string | null;
+  /** The **Browser tests** check passed: the machine detects `browser-tests` (01, section 3.8). */
+  browserTests: boolean;
 }
 
 const MANAGED_FILES = ['managed-settings.json', 'managed-mcp.json'];
@@ -97,6 +100,8 @@ export async function runDoctor(
   if (config) checks.push(...(await serverChecks(config)));
   const tools = await toolChecks(environment, config);
   checks.push(...tools.checks);
+  const browsers = await browserCheck(environment, config);
+  checks.push(browsers);
   checks.push(loginCheck(environment));
   checks.push(...(await serviceChecks(environment, config)));
   if (processScopes) checks.push(processScopes);
@@ -112,7 +117,22 @@ export async function runDoctor(
       ),
     );
   }
-  return { checks, claudeCodeVersion: tools.claudeCodeVersion };
+  return {
+    checks,
+    claudeCodeVersion: tools.claudeCodeVersion,
+    browserTests: browsers.status === 'ok',
+  };
+}
+
+/** A warning, never an error: a machine without it takes every run that does not need it. */
+async function browserCheck(
+  environment: DoctorEnvironment,
+  config: DaemonConfig | null,
+): Promise<DoctorCheck> {
+  const state = await checkBrowsers(environment.paths.browsers, environment.toolPath);
+  return state.kind === 'ok'
+    ? check('Browser tests', 'ok', describeBrowsers(state))
+    : check('Browser tests', 'warning', describeBrowsers(state), helpLink(config, 'browser-tests'));
 }
 
 async function serverChecks(config: DaemonConfig): Promise<DoctorCheck[]> {

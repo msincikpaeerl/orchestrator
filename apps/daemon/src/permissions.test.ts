@@ -65,7 +65,9 @@ describe('settings rules', () => {
       `/${daemonHome}/config.json`,
       `/${daemonHome}/daemon.sock`,
       `/${daemonHome}/last-stop.json`,
+      `/${daemonHome}/browsers/**`,
       `/${daemonHome}/claude-config/**`,
+      `/${daemonHome}/playwright/**`,
       `/${daemonHome}/repos/**`,
       `/${daemonHome}/runs/**`,
       `/${userHome}/.claude/**`,
@@ -140,6 +142,26 @@ describe('PreToolUse rules for Bash', () => {
     expect(bash('cat ~/.claude/settings.json')).toBe(REASONS.claudeConfig);
     expect(bash('cat $HOME/.claude.json')).toBe(REASONS.claudeConfig);
     expect(bash('cat ../../config.json')).toBe(REASONS.daemonFolder);
+  });
+
+  it("refuses the browsers and Playwright folders and the variable naming the first, but lets Playwright's commands through", () => {
+    expect(bash(`ls ${daemonHome}/browsers`)).toBe(REASONS.browsers);
+    // The daemon's own install, owner of the browsers: removing it lets Playwright remove them.
+    expect(bash(`rm -rf ${daemonHome}/playwright`)).toBe(REASONS.browsers);
+    expect(bash(`${daemonHome}/playwright/node_modules/.bin/playwright uninstall --all`)).toBe(
+      REASONS.browsers,
+    );
+    expect(bash(`rm -rf ${daemonHome}/browsers/chromium_headless_shell-1248`)).toBe(
+      REASONS.browsers,
+    );
+    expect(bash('ls $PLAYWRIGHT_BROWSERS_PATH')).toBe(REASONS.browsers);
+    expect(bash('rm -rf "${PLAYWRIGHT_BROWSERS_PATH}"/*')).toBe(REASONS.browsers);
+    expect(bash('PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium')).toBe(
+      REASONS.browsers,
+    );
+    expect(bash('unset PLAYWRIGHT_BROWSERS_PATH; npx playwright test')).toBe(REASONS.browsers);
+    expect(bash('npx playwright install chromium')).toBeNull();
+    expect(bash('npx playwright test --project=chromium')).toBeNull();
   });
 
   it("refuses commands naming the repository's .claude folder, even to read it", () => {
@@ -266,6 +288,11 @@ describe('PreToolUse rules for file tools', () => {
     );
     expect(tool('Read', { file_path: join(daemonHome, 'config.json') })).toBe(REASONS.daemonFolder);
     expect(tool('Read', { file_path: '../run-2/src/x.ts' })).toBe(REASONS.daemonFolder);
+    expect(tool('Glob', { pattern: join(daemonHome, 'browsers', '**') })).toBe(REASONS.browsers);
+    expect(tool('Write', { file_path: '../../browsers/x' })).toBe(REASONS.browsers);
+    expect(tool('Edit', { file_path: join(daemonHome, 'playwright', 'package.json') })).toBe(
+      REASONS.browsers,
+    );
     // Through a symbolic link in the worktree.
     expect(tool('Read', { file_path: 'src/key.json' })).toBe(REASONS.daemonFolder);
   });
@@ -308,6 +335,7 @@ describe('the end of every refusal reason (lot 3 step L, decision Q29)', () => {
     claudeFolder: () => tool('Write', { file_path: '.claude/settings.json' }),
     daemonFolder: () => tool('Read', { file_path: join(daemonHome, 'config.json') }),
     claudeConfig: () => tool('Read', { file_path: join(userHome, '.claude.json') }),
+    browsers: () => bash('ls $PLAYWRIGHT_BROWSERS_PATH'),
     outside: () => tool('Read', { file_path: '/etc/passwd' }),
     bashPath: () => bash('cat /var/log/syslog'),
     home: () => bash('ls ~'),

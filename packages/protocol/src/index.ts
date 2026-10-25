@@ -401,6 +401,11 @@ export {
   type ClaudeCodeSupport,
 } from './daemon/claude-code.js';
 export {
+  BROWSER_TESTS_CAPABILITY,
+  PLAYWRIGHT_CHROMIUM_REVISION,
+  PLAYWRIGHT_VERSION,
+} from './daemon/browsers.js';
+export {
   DAEMON_SOCKET_PATH,
   DaemonCloseCode,
   ENROLLMENT_CODE_ALPHABET,

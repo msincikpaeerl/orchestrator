@@ -286,3 +286,74 @@ test('a daemon to update, and a daemon of another build than the one provided', 
   await expect(page.getByText('This machine cannot receive runs')).toBeHidden();
   await expectFitsScreen(page);
 });
+
+test('browser tests: the check on the machine page, the detected capability and its Help', async ({
+  page,
+}) => {
+  await completeSetup(page);
+  await page.goto('/');
+  // The daemon links to the Help of the Orchestrator it is enrolled with.
+  const help = new URL('/help/machines#browser-tests', page.url()).toString();
+  const browserCheck = (status: 'ok' | 'warning', message: string) => [
+    { name: 'Git', status: 'ok', message: 'Git 2.53.0', link: null },
+    { name: 'Browser tests', status, message, link: status === 'ok' ? null : help },
+  ];
+  // A machine whose browser is not set up yet (lot 5 step C1)...
+  const desktop = await createMachine(page, { name: 'Desktop', account: 'Personal' });
+  expect(
+    await connectDaemon(page, desktop.code, {
+      doctor: browserCheck(
+        'warning',
+        'Not set up: type "orchestrator-daemon browsers" so agents can run browser tests on this machine.',
+      ),
+    }),
+  ).toBe(204);
+  // ... and one where Chromium starts headless.
+  const laptop = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(
+    await connectDaemon(page, laptop.code, {
+      capabilities: ['git', 'node', 'browser-tests'],
+      doctor: browserCheck(
+        'ok',
+        'Chromium 1248 (Playwright 1.64.1) starts headless: agents can run browser tests (capability browser-tests).',
+      ),
+    }),
+  ).toBe(204);
+
+  await page.goto(`/machines/${desktop.id}`);
+  await expect(page.getByRole('heading', { name: 'Desktop', level: 1 })).toBeVisible();
+  const checks = page.getByRole('list', { name: 'Checks on the machine' });
+  const row = checks.getByRole('listitem').filter({ hasText: 'Browser tests' });
+  await expect(row).toContainText(
+    'Warning · Browser tests: Not set up: type "orchestrator-daemon browsers"',
+  );
+  await expect(row.getByRole('link', { name: 'How to fix' })).toHaveAttribute('href', help);
+  await expect(page.getByRole('list', { name: 'Capabilities' })).not.toContainText('browser-tests');
+  // Only a warning: the machine still receives runs.
+  await expect(page.getByText('This machine cannot receive runs')).toBeHidden();
+  await expectFitsScreen(page);
+
+  await page.goto(`/machines/${laptop.id}`);
+  await expect(page.getByRole('heading', { name: 'Laptop', level: 1 })).toBeVisible();
+  await expect(
+    page
+      .getByRole('list', { name: 'Checks on the machine' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Browser tests' }),
+  ).toContainText('OK · Browser tests: Chromium 1248 (Playwright 1.64.1) starts headless');
+  await expect(page.getByRole('list', { name: 'Capabilities' }).getByRole('listitem')).toHaveText([
+    /browser-tests\s*\(detected\)/,
+    /git\s*\(detected\)/,
+    /node\s*\(detected\)/,
+  ]);
+  await expectFitsScreen(page);
+
+  // Where "How to fix" leads: the owner's two commands.
+  await page.goto('/help/machines#browser-tests');
+  await expect(page.getByRole('heading', { name: 'Browser tests' })).toBeVisible();
+  await expect(
+    page.getByText('sudo env "PATH=$PATH" npx --yes playwright@1.64.1 install-deps chromium'),
+  ).toBeVisible();
+  await expect(page.getByText('orchestrator-daemon browsers', { exact: true })).toBeVisible();
+  await expectFitsScreen(page);
+});
