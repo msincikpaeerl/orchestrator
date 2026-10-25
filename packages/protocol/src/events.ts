@@ -78,6 +78,7 @@ export const EventType = z.enum([
   'project.unarchived',
   'project.pull_request_watch_failed',
   'project.pull_request_watch_recovered',
+  'tickets.imported',
   'ticket.created',
   'ticket.updated',
   'ticket.status_changed',
@@ -234,6 +235,15 @@ export const EventPayloads = {
   }),
   /** The watch read every pull request of the project again, after a failure. */
   'project.pull_request_watch_recovered': z.object(ProjectFacts),
+  /**
+   * The owner imported a file of tickets on the project (lot 5bis step A); each ticket also has
+   * its `ticket.created`. `tickets` are their numbers in the file's order.
+   */
+  'tickets.imported': z.object({
+    ...ProjectFacts,
+    count: z.int().positive(),
+    tickets: z.array(z.string()),
+  }),
   'ticket.created': z.object({
     ...TicketFacts,
     type: TicketType,

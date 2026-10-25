@@ -200,7 +200,7 @@ const definitions = {
   maxTicketsPerPlan: {
     group: 'tickets',
     label: 'Most tickets per plan',
-    description: 'A plan proposing more tickets than this is refused.',
+    description: 'A plan or an import with more tickets than this is refused.',
     unit: 'tickets',
     min: 1,
     max: 100,

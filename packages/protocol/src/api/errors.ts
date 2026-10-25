@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CheckCiAgainRefused } from './ci.js';
 import { RunRefusal } from './runs.js';
 import { SettingName } from './settings.js';
+import { TicketImportProblem } from './ticket-import.js';
 
 /** Machine-readable reason of an API refusal; the UI chooses its message from it. */
 export const ApiErrorCode = z.enum([
@@ -51,6 +52,8 @@ export const ApiErrorCode = z.enum([
   /** The dependency would close a cycle; the message names it (`WEB-1 → WEB-2 → WEB-1`). */
   'dependency_cycle',
   'dependency_not_found',
+  /** The file of an import has problems; `importProblems` lists them (lot 5bis step A). */
+  'ticket_import_invalid',
   /** No setting with this name. */
   'setting_not_found',
   /** This setting has only a global value (04, section 8). */
@@ -135,6 +138,8 @@ export const ApiError = z.object({
     limits: z.array(LimitExceeded).optional(),
     /** `dependency_cycle`: the tickets of the cycle, each waiting for the next (`WEB-1`, ...). */
     cycle: z.array(z.string()).optional(),
+    /** `ticket_import_invalid`: every problem of the file, as the preview gives them. */
+    importProblems: z.array(TicketImportProblem).optional(),
     /** `ci_check_refused`: why **Check CI again** was refused. */
     ciRefusal: CheckCiAgainRefused.optional(),
     /** `setting_order_invalid`: the two settings and the values they would have. */
