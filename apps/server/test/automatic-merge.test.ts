@@ -362,7 +362,10 @@ describe('a failure, never tried again', () => {
     await heldThen(() => {
       h.github.override = (request) =>
         isMerge(request)
-          ? { status: 409, body: { message: 'Head branch was modified. Review and try the merge again.' } }
+          ? {
+              status: 409,
+              body: { message: 'Head branch was modified. Review and try the merge again.' },
+            }
           : undefined;
     });
     await failedWith('head_moved', 'changed just before the merge');
@@ -443,7 +446,11 @@ describe('a failure, never tried again', () => {
     const wanted = await stored();
     if (wanted?.state !== 'wanted') throw new Error('not wanted');
     // The server stopped after "sent", before GitHub's answer; GitHub had merged it.
-    const { waiting: _waiting, ...facts } = wanted;
+    const facts = {
+      pullRequest: wanted.pullRequest,
+      commit: wanted.commit,
+      wantedAt: wanted.wantedAt,
+    };
     await h.t.db
       .update(schema.tickets)
       .set({ automaticMerge: { ...facts, state: 'sent', sentAt: new Date().toISOString() } })

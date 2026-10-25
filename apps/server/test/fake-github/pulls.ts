@@ -392,7 +392,10 @@ function mergeApi(
   pull: FakePullRequest,
   body: Json,
 ): FakeReply {
-  const notMergeable: FakeReply = { status: 405, body: { message: 'Pull Request is not mergeable' } };
+  const notMergeable: FakeReply = {
+    status: 405,
+    body: { message: 'Pull Request is not mergeable' },
+  };
   if (pull.state !== 'open') return notMergeable;
   if (typeof body.sha === 'string' && body.sha !== pull.headSha) {
     return {

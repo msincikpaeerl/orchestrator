@@ -189,7 +189,7 @@ export class AutomaticMerger {
       }
       // An answer that cannot be read, or one saying it did not merge: the pull request tells.
       if (merged.ok || merged.refusal.kind === 'unreadable') {
-        return this.settle(ticketId, client.value, repo, sent, log);
+        return await this.settle(ticketId, client.value, repo, sent, log);
       }
       await this.fail(ticketId, sent, mergeRefusal(merged.refusal, merge.commit));
       log.warn({ status: merged.refusal.status }, 'automatic merge refused');
@@ -224,7 +224,10 @@ export class AutomaticMerger {
       if (client !== null) return { kind: 'ok', value: client };
       return {
         kind: 'fail',
-        failure: { reason: 'token', message: 'no GitHub token is saved: connect GitHub in Settings' },
+        failure: {
+          reason: 'token',
+          message: 'no GitHub token is saved: connect GitHub in Settings',
+        },
       };
     } catch (error) {
       if (!(error instanceof SecretUnreadableError)) throw error;
@@ -384,11 +387,7 @@ export class AutomaticMerger {
   private async locked(
     ticketId: string,
     merge: AutomaticMerge,
-    change: (
-      tx: Executor,
-      ticket: TicketRow,
-      project: ProjectRow,
-    ) => Promise<boolean>,
+    change: (tx: Executor, ticket: TicketRow, project: ProjectRow) => Promise<boolean>,
   ): Promise<boolean> {
     return this.options.db.transaction(async (tx) => {
       const [current] = await tx
@@ -454,7 +453,7 @@ export class AutomaticMerger {
         return false;
       }
       if ((await mergesHeldBy(tx)).length > 0) return false;
-      const { waiting: _waiting, ...facts } = merge;
+      const facts = factsOf(merge);
       await this.store(tx, ticketId, {
         ...facts,
         state: 'sent',
@@ -467,7 +466,7 @@ export class AutomaticMerger {
   /** The request never left: wanted again, for the next check. */
   private async unsent(ticketId: string, merge: Extract<AutomaticMerge, { state: 'sent' }>) {
     await this.locked(ticketId, merge, async (tx) => {
-      const { sentAt: _sentAt, ...facts } = merge;
+      const facts = factsOf(merge);
       await this.store(tx, ticketId, {
         ...facts,
         state: 'wanted',
@@ -484,7 +483,7 @@ export class AutomaticMerger {
   ): Promise<void> {
     await this.locked(ticketId, merge, async (tx, ticket, project) => {
       const at = this.now();
-      const { sentAt: _sentAt, ...facts } = merge;
+      const facts = factsOf(merge);
       await this.store(tx, ticketId, {
         ...facts,
         state: 'merged',
@@ -559,6 +558,11 @@ function stillWanted(ticket: TicketRow, project: ProjectRow, merge: AutomaticMer
   );
 }
 
+/** What every state of the merge keeps: the pull request, the approved commit, when wanted. */
+function factsOf(merge: AutomaticMerge) {
+  return { pullRequest: merge.pullRequest, commit: merge.commit, wantedAt: merge.wantedAt };
+}
+
 function fail(reason: AutomaticMergeFailureReason, message: string): Step<never> {
   return { kind: 'fail', failure: { reason, message } };
 }
@@ -609,4 +613,3 @@ function mergeRefusal(refusal: GitHubRefusal, commit: string): Failure {
       return { reason: 'refused', message: `GitHub refused the merge: ${words}` };
   }
 }
-
