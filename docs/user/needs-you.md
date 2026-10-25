@@ -50,7 +50,7 @@ From version 0.5.0 a paused run resumes by itself (see [Usage limits](runs.md#us
 
 ## Pull requests to merge
 
-From version 0.4.0, each ticket on **Awaiting merge** whose pull request is open on GitHub is an item **Pull request to merge: …**. You merge it on GitHub yourself: the Orchestrator never merges. The item shows:
+From version 0.4.0, each ticket on **Awaiting merge** whose pull request is open on GitHub is an item **Pull request to merge: …**. You merge it on GitHub yourself, unless the project has [Merge automatically](projects.md#merge-automatically) on: then the item appears only when the Orchestrator could not merge it, starting with "Not merged automatically:" and the reason, or while **Stop new runs** holds the merge ("Merge held: …"). The item shows:
 
 - **Pull request #…**, a link to it on GitHub;
 - the review: "Quality approved commit …", with Quality's summary below it, or "Review skipped" when you used **Skip review** (then check the pull request yourself before merging);

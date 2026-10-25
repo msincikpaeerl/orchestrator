@@ -35,7 +35,7 @@ The scheduler, which starts runs by itself (see [What starts by itself](runs.md#
 
 The budget is per calendar day and starts again at midnight. So a window crossing midnight (22:00 to 06:00) can use up to two days' budget in one night: the evening's runs count for the first day, the ones started after midnight for the next. To cap a night with one budget, start the window at 00:00.
 
-**Stop new runs.** Click **Stop new runs** on the account, its page or its line in **Needs you**: the account shows **Paused**. Runs already started go on and finish; **Run now**, and **Resume** of a paused run, are refused until you click **Resume**. To free your usage at once, also stop the running agent with **Stop run** on its ticket or run (see [Stop a run](runs.md#stop-a-run)). If the account reaches its usage limit while paused, **Resume** brings it back as limited until that time.
+**Stop new runs.** Click **Stop new runs** on the account, its page or its line in **Needs you**: the account shows **Paused**. Runs already started go on and finish; **Run now**, and **Resume** of a paused run, are refused until you click **Resume**. To free your usage at once, also stop the running agent with **Stop run** on its ticket or run (see [Stop a run](runs.md#stop-a-run)). If the account reaches its usage limit while paused, **Resume** brings it back as limited until that time. While any account is paused this way, the Orchestrator also merges nothing automatically (see [Merge automatically](projects.md#merge-automatically)).
 
 The account's page also shows today against the budget, the estimated usage and runs of the last 14 days (each run on the day it started), and the usage limits it reached. The ticket page shows the estimated usage of the ticket's runs together.
 
