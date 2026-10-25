@@ -110,7 +110,11 @@ export async function expectFitsScreen(page: Page) {
   expect(overflow, 'horizontal scrolling').toBeLessThanOrEqual(0);
 }
 
-/** Creates a project with a new private repository through the API, and waits until it is ready. */
+/**
+ * Creates a project with a new private repository through the API, and waits until it is ready.
+ * A new web app requires `browser-tests` (lot 5 step C2), which the scripted daemon does not
+ * report: the requirement is removed, so the project's runs start on it.
+ */
 export async function createReadyProject(
   page: Page,
   project: { key: string; name: string; repository: string },
@@ -124,6 +128,10 @@ export async function createReadyProject(
     },
   });
   expect(created.status()).toBe(201);
+  const required = await page.request.put(`/api/projects/${project.key}/required-capabilities`, {
+    data: { capabilities: [] },
+  });
+  expect(required.status()).toBe(200);
   await expect
     .poll(
       async () =>

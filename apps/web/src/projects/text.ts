@@ -1,9 +1,10 @@
-import type {
-  ApiErrorCode,
-  BranchProtection,
-  HarnessElement,
-  ProjectKind,
-  SetupStep,
+import {
+  defaultRequiredCapabilities,
+  type ApiErrorCode,
+  type BranchProtection,
+  type HarnessElement,
+  type ProjectKind,
+  type SetupStep,
 } from '@orchestrator/protocol';
 import { ApiRequestError } from '../api';
 import { refusalText as plainRefusal } from '../refusals';
@@ -23,6 +24,28 @@ export const reviewsSwitch = {
   hint: 'On: once a ticket is ready for review, the scheduler starts its review by Quality by itself, when a machine and its Claude account can take it. Each review uses one Claude Code session. Off: a review starts only when you use Start review.',
   on: 'Saved: reviews start by themselves.',
   off: 'Saved: reviews wait for Start review. A review already running goes on.',
+};
+
+/** The Kind field's hint on the new project form, saying what the kind requires (lot 5 step C2). */
+export function kindHint(kind: ProjectKind): string {
+  const required = defaultRequiredCapabilities(kind);
+  if (required.length === 0) {
+    return 'No effect yet: in a later version, it will choose the default tools and agents of the project.';
+  }
+  return `This project will require the capability ${required.join(', ')}: its runs go only to machines that can run browser tests. You can remove it in Project settings.`;
+}
+
+/** The card **Required capabilities** on Project settings (02, section 6.5; lot 5 step C2). */
+export const requiredCapabilitiesCard = {
+  heading: 'Required capabilities',
+  hint: 'Every run of this project goes only to a machine that has all of these.',
+  none: 'None: any machine can take the runs of this project.',
+  archived: 'Unarchive the project to change them.',
+  addLabel: 'Add a capability',
+  addHint: 'For example android-sdk. A machine shows its capabilities on its page.',
+  invalid: 'Use lowercase letters and digits, with “-” between words: android-sdk.',
+  duplicate: 'The project already requires this capability.',
+  saved: 'Saved. A run already started goes on where it is.',
 };
 
 /** The steps of the repository setup, as the project page lists them. */

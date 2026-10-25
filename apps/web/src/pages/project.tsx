@@ -22,6 +22,7 @@ import {
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
 import { ArchiveAction } from '../projects/archive-action';
+import { RequiredCapabilitiesCard } from '../projects/required-capabilities';
 import {
   branchProtectionLabel,
   harnessElement,
@@ -408,8 +409,8 @@ function ReviewsSwitch({ project }: { project: ProjectData }) {
 }
 
 /**
- * Project settings (02, section 6.5): name and description, Start reviews by themselves, overrides
- * of settings, archive and unarchive.
+ * Project settings (02, section 6.5): name and description, Start reviews by themselves, required
+ * capabilities, overrides of settings, archive and unarchive.
  */
 export function ProjectSettingsPage() {
   return (
@@ -426,6 +427,7 @@ export function ProjectSettingsPage() {
               <SettingsForm project={project} />
             </Card>
             <ReviewsSwitch project={project} />
+            <RequiredCapabilitiesCard project={project} />
             <Card className="space-y-2">
               <h2 className="text-lg font-semibold text-slate-900">Cannot be changed</h2>
               <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
