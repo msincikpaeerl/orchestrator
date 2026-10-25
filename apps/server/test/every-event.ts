@@ -107,6 +107,9 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   // Start reviews by themselves off, then on again (lot 4 step D3).
   await call('PUT', '/api/projects/SHOP/reviews-automatic', { on: false });
   await call('PUT', '/api/projects/SHOP/reviews-automatic', { on: true });
+  // A new web app requires browser-tests (lot 5 step C2), which the scripted machine below lacks:
+  // removed, so its runs start there as before.
+  await call('PUT', '/api/projects/SHOP/required-capabilities', { capabilities: [] });
 
   await call('POST', '/api/projects', {
     name: 'Legacy',

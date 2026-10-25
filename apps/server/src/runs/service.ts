@@ -161,6 +161,7 @@ import {
   resumeLeftOut,
   resumesUsed,
   resumeRefusal,
+  runCapabilities,
   ticketRefusal,
   ticketWork,
   type Fleet,
@@ -1191,7 +1192,7 @@ export class RunService {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, ticket.assigneeProfileId));
       if (!profile) throw new Error(`profile ${ticket.assigneeProfileId} not found`);
-      const required = z.array(Capability).parse(profile.requiredCapabilities);
+      const required = runCapabilities(project, profile);
       // Kept for the whole run: a later change of the setting applies to later runs (04, 8).
       const {
         maxAgentTicketsPerRun,
@@ -1466,7 +1467,7 @@ export class RunService {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.key, 'quality'));
       if (!profile) throw new Error('the quality profile is not seeded');
-      const required = z.array(Capability).parse(profile.requiredCapabilities);
+      const required = runCapabilities(project, profile);
       const earlier = await tx
         .select()
         .from(schema.runs)

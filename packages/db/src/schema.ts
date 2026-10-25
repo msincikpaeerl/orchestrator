@@ -198,6 +198,11 @@ export const projects = pgTable(
      * the scheduler starts a ticket's review once it is ready; while false, only Start review does.
      */
     reviewsAutomatic: boolean('reviews_automatic').notNull().default(true),
+    /**
+     * `Capability[]` every run on the project needs (01, section 3.1; lot 5 step C2): empty for a
+     * project created before 0.6.0, `browser-tests` by default for a new website or web app.
+     */
+    requiredCapabilities: jsonb('required_capabilities').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

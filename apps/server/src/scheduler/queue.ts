@@ -14,7 +14,6 @@ import {
   type QueueResponse,
 } from '@orchestrator/protocol';
 import { count, desc, eq, inArray, max } from 'drizzle-orm';
-import { z } from 'zod';
 import type { Database } from '../database.js';
 import { accountToday, accountUsage, todayKey } from '../machines/account-day.js';
 import { toAccount, type MachineRow } from '../machines/model.js';
@@ -43,6 +42,7 @@ import {
   resumeLeftOut,
   resumeRefusal,
   resumesUsed,
+  runCapabilities,
   ticketRefusal,
   ticketWork,
   type Blocker,
@@ -274,10 +274,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     (await db.select().from(schema.agentProfiles)).map((profile) => [profile.id, profile]),
   );
   const quality = [...profiles.values()].find((profile) => profile.key === 'quality');
-  const capabilities = (profileId: string | null | undefined): Capability[] => {
-    const profile = profileId ? profiles.get(profileId) : undefined;
-    return profile ? z.array(Capability).parse(profile.requiredCapabilities) : [];
-  };
+  const capabilities = (project: ProjectRow, profileId: string | null | undefined) =>
+    runCapabilities(project, profileId ? profiles.get(profileId) : undefined);
 
   const drafts: Draft[] = [];
   for (const ticket of tickets) {
@@ -339,7 +337,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           ticketRefusal(ticket, blockers(ticket.id, project.key)) ??
           (hold ? { reason: 'held', cause: hold.cause } : null) ??
           (item ? { reason: 'needs_you', item: item.item, machine: item.machine } : null),
-        required: capabilities(ticket.assigneeProfileId),
+        required: capabilities(project, ticket.assigneeProfileId),
         holding: holding ? { machineId: holding.machineId, commits: held } : null,
       });
       continue;
@@ -370,7 +368,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
             ? { reason: 'needs_you', item: item.item, machine: item.machine }
             : null) ??
         (project.reviewsAutomatic ? null : { reason: 'reviews_off' }),
-      required: capabilities(quality?.id),
+      required: capabilities(project, quality?.id),
       holding: null,
     });
   }

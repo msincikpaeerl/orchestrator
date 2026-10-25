@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   BranchProtection,
+  Capability,
   HarnessElement,
   ProjectKey,
   ProjectKind,
@@ -47,6 +48,7 @@ export function toProject(row: ProjectRow): Project {
           },
     status: ProjectStatus.parse(row.status),
     reviewsAutomatic: row.reviewsAutomatic,
+    requiredCapabilities: z.array(Capability).parse(row.requiredCapabilities),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
