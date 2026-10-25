@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2 (2026-10-25)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -130,15 +130,37 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 
 *Done 2026-10-24*, with the owner's answers (A to all, no split): `run.start`'s `repository` optional and its `ticketBranch` optional, one refine each for "a planning run, and only one, has a request as subject" and "a planning run has no ticket branch, every other run a repository and a ticket branch"; `commitAuthor` still required. Every session's environment gets `GIT_CEILING_DIRECTORIES=~/.orchestrator/worktrees` (05 section 4.3), so Git finds no repository from a scratch folder even when a parent folder is one. A base branch missing on GitHub fails the preparation ("… there is nothing to plan from."). A run's end removes `worktrees/<run-id>/` even when it was not recorded (a stop during the preparation), Git forgetting it at the next preparation. The scratch folder's trust entry is left. `status` lists a planning run as "planning (request <id>, <owner/name> or new project)" (the control socket's runs gain `request`, `repository` and `branch` nullable). Tests: `planning-run.test.ts` (new, five tests: the scratch folder with the daemon's folder inside a Git repository, its resume, the stop during the preparation; the detached worktree with a commit neither reported nor pushed and the configuration restored; the missing base branch), `messages.test.ts` (each refused combination, both planning shapes accepted), `runner.test.ts` (the variable in the session's environment). No CHANGELOG or Help change: no planning run starts before step E2. Shards (local, `vitest run --shard=N/4`): 195, 104, 93 and 62 s (2026-10-22: 209, 113, 94, 63 s); the new file lands in shard 1 (17 s of file time), `tickets/branch.test.ts` moves from 1 to 2 and `projects.test.ts` (27 s) from 2 to 3; no fifth shard.
 
-### [ ] C. Browser tests on the machine (branch `lot5/c-browsers`, answer 5)
+### Step C, split in two (owner's decision, 2026-10-25)
 
-- `~/.orchestrator/browsers/`, `PLAYWRIGHT_BROWSERS_PATH` in each session's environment (05 section 4.3), deny rules and a hook rule for the folder (05 section 4.6, with tests).
-- `orchestrator-daemon browsers`: downloads the pinned Playwright version's Chromium into the folder (with `npx --yes playwright@<pinned> install chromium` and the variable), then checks it starts headless; its messages name what is missing. The Playwright version is pinned once in `packages/protocol`, checked current (rule 2).
-- `doctor`'s check **Browser tests**: warning (never an error: a machine without it still takes every run of a project that does not require it) with the missing libraries or "run `orchestrator-daemon browsers`"; ok detects the capability `browser-tests`, reported in `hello`.
-- Projects: a `website` or `web_app` project created from 0.6.0 requires `browser-tests` (the project form and, from step G, the plan's approval); existing projects are unchanged. The queue's existing capability reason names it.
-- Help > Machines > "Browser tests": the owner's one-time command for the system libraries (its exact form, with `sudo` and nvm's `npx`, checked in the pinned Ubuntu image, Docker being allowed for images the repository declares), then `orchestrator-daemon browsers`, then the machine page's capability; what agents can do with it, and the known limit (agents on the owner's user, the folder written by Playwright). CHANGELOG.
+Step C was too large for one session (rule 15): projects had no required capabilities yet (only agent profiles had them; 02 section 6.5 lists them in Project settings, never built), so the projects' side needs a migration, the API, a settings card and the starts' checks besides the daemon's side. The owner approved the split below and answered the session's questions (A to all):
 
-**Done when** daemon tests (fake `npx`, fake Chromium) cover the command's success and each failure, the `doctor` row in each grade, the capability in `hello`, the variable in a session's environment, and the hook's and deny rules' refusals of the folder; server tests cover the default required capability and the queue's reason; Playwright on both viewports shows the capability on the machine page.
+- **The Playwright pin: A.** The daemon pins Playwright 1.64.1 (current, 2026-10-14) and the revision of its headless Chromium (1248) in `packages/protocol`; the Orchestrator's own end-to-end tests stay on their version and image (ADR 0021).
+- **The revision kept with the version: A.** A daemon devDependency `playwright-core` at the pinned version, read by one unit test comparing its `browsers.json` with the pinned revision.
+- **What `doctor` checks: A.** The pinned revision's headless shell in `browsers/` (missing: "Run `orchestrator-daemon browsers`"), then `ldd` on it (libraries not found: named, with Help's command), then a start with `--no-sandbox --dump-dom about:blank` within the existing command timeout (Playwright launches without Chromium's sandbox, which Ubuntu 24.04 and later restrict); an output with `<html` is ok and detects `browser-tests`. A warning, never an error, with the link to Help. A project's own revision is not checked.
+- **`orchestrator-daemon browsers`: A.** The PATH `doctor` uses (the service's when it is installed); creates `browsers/`; `npx --yes playwright@<pinned> install chromium` with the variable, Playwright's output shown as it comes; then the check above; each failure named with exit code 1 (npx not found, download failed, libraries missing, no start); success ends with restarting the daemon, since capabilities are reported in `hello` only (no new daemon message).
+- **Refusals: A.** `browsers/` gets Read and Edit deny rules; the hook gives the folder its own reason (Playwright finds its browsers by itself); a command naming `PLAYWRIGHT_BROWSERS_PATH` is refused (05 section 4.6: no command names it).
+- **Help's libraries command: A**, checked by a committed script `tools/smoke/browser-deps-check.sh` in pinned `ubuntu:24.04` and `ubuntu:26.04` images (26.04 is the owner's WSL, 26.04.1 LTS; the dedicated machine's version is not settled), not in CI.
+- **Machine page: A.** No new UI: the `doctor` row with its Help link and the detected capability, shown by Playwright with a scripted daemon.
+- **Which projects require `browser-tests`: A.** Every `website` or `web_app` project created on the Projects screen from 0.6.0, a new repository or a linked one; the form says so; the owner can remove it in Project settings.
+- **The agents' rules: A.** In C2: the builders' and Quality's rules run the end-to-end tests on such a machine and never set `PLAYWRIGHT_BROWSERS_PATH` nor download browsers elsewhere.
+
+### [ ] C1. Browsers on the machine (branch `lot5/c-browsers`, answer 5)
+
+- `~/.orchestrator/browsers/`, `PLAYWRIGHT_BROWSERS_PATH` in each session's environment (05 section 4.3), deny rules and the hook's rules for the folder and the variable (05 section 4.6, with tests).
+- `orchestrator-daemon browsers`: downloads the pinned Playwright version's Chromium into the folder (with `npx --yes playwright@<pinned> install chromium` and the variable), then checks it starts headless; its messages name what is missing. The Playwright version and revision are pinned once in `packages/protocol`, checked current (rule 2).
+- `doctor`'s check **Browser tests**: warning (never an error: a machine without it still takes every run of a project that does not require it) with the missing libraries or "Run `orchestrator-daemon browsers`"; ok detects the capability `browser-tests`, reported in `hello`.
+- Help > Machines > "Browser tests": the owner's one-time command for the system libraries (its exact form, with `sudo` and nvm's `npx`, checked by `tools/smoke/browser-deps-check.sh` in the pinned Ubuntu 24.04 and 26.04 images), then `orchestrator-daemon browsers`, then the machine page's capability; what agents can do with it, and the known limit (agents on the owner's user, the folder written by Playwright). CHANGELOG.
+
+**Done when** daemon tests (fake `npx`, fake Chromium, fake `ldd`) cover the command's success and each failure, the `doctor` row in each grade, the capability in `hello`, the variable in a session's environment, and the hook's and deny rules' refusals of the folder and the variable; the script passes in both images; Playwright on both viewports shows the check and the capability on the machine page; the new test file's shard placement is checked.
+
+### [ ] C2. What projects require (branch `lot5/c2-project-capabilities`, answer 5)
+
+- `projects.required_capabilities` (migration, empty for existing projects); a `website` or `web_app` project created on the Projects screen (new repository or linked) gets `browser-tests`, the form saying so; Project settings' card "Required capabilities" (02 section 6.5), each change an event.
+- A run needs the project's and its profile's capabilities: the queue, **Run now** and **Start review**; the queue's existing capability reason names the missing one. (A planning run needs none, from step E2.)
+- The builders' and Quality's rules for the end-to-end tests (03 sections 2.2 to 2.5).
+- Help > Projects; CHANGELOG.
+
+**Done when** server tests cover the default for both creations, existing projects unchanged, the edit and its event, the queue's reason, **Run now**'s and the review's refusals; `files.test.ts` covers the rules' lines; Playwright on both viewports edits the card.
 
 ### [ ] D. Requests (branch `lot5/d-requests`)
 
@@ -177,7 +199,7 @@ Step B was too large for one session (rule 15): criteria from 1 change about 48 
 
 ### [ ] G. A new project from a plan (branch `lot5/g-new-project`)
 
-- The approval form (answer 9): name, key, repository name checked free, visibility; **Approve** creates the project and its repository with the skeleton (08 section 3.1, the existing setup and its **Try again**), requiring `browser-tests` for a `website` or `web_app` (step C), then the tickets `todo`, waiting for the setup.
+- The approval form (answer 9): name, key, repository name checked free, visibility; **Approve** creates the project and its repository with the skeleton (08 section 3.1, the existing setup and its **Try again**), requiring `browser-tests` for a `website` or `web_app` (step C2), then the tickets `todo`, waiting for the setup.
 - Help > Projects and Requests; CHANGELOG.
 
 **Done when** server tests with the fake GitHub cover an approval creating the project, the repository and the skeleton, the tickets waiting for `ready` then eligible, the bootstrap first by its dependencies, a name taken, a setup failure and **Try again**; Playwright on both viewports approves a new-project plan.
