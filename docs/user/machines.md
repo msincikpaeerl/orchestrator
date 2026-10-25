@@ -219,12 +219,12 @@ From version 0.6.0, agents can test websites and web apps in a real browser on t
    orchestrator-daemon browsers
    ```
 
-   It downloads Chromium into the Orchestrator's own folder, `~/.orchestrator/browsers/` (a few hundred MB), then checks that it starts. When something is missing it says what: the libraries of step 1, or a download that failed (check the internet connection and type it again).
+   It installs the Orchestrator's own copy of Playwright in `~/.orchestrator/playwright/`, downloads Chromium with it into `~/.orchestrator/browsers/` (a few hundred MB), then checks that it starts. When something is missing it says what: the libraries of step 1, or a download that failed (check the internet connection and type it again). Playwright removes a browser once no copy of Playwright on the computer uses it: the Orchestrator's copy stays there, so nothing a project downloads or a cleaned npm cache removes the browser it checks.
 3. **Restart the daemon** so it checks again: `systemctl --user restart orchestrator-daemon`. The machine page's **Checks on the machine** shows **Browser tests** as **OK**, and its capabilities show `browser-tests` (detected).
 
 Until then, **Browser tests** shows a warning saying which step is missing. It is only a warning: the machine still takes every run of a project that does not require `browser-tests`.
 
-What agents can then do: the Web Developer runs the project's end-to-end tests before submitting its work, and Quality runs them when it reviews and has a reason to. Each project may use its own Playwright version: its first test run downloads that version's browser into the same folder, by itself. Agents never reach the folder by name (the Orchestrator refuses it, as the rest of `~/.orchestrator`); only Playwright uses it.
+What agents can then do: the Web Developer runs the project's end-to-end tests before submitting its work, and Quality runs them when it reviews and has a reason to. Each project may use its own Playwright version: its first test run downloads that version's browser into the same folder, by itself. Agents never reach the two folders by name (the Orchestrator refuses them, as the rest of `~/.orchestrator`); only Playwright uses the browsers folder.
 
 Known limit in this version: agents run under your own user (see [Agents on your own user](#agents-on-your-own-user)), so a program an agent runs, Playwright included, can write in that folder, as npm writes its cache in your home folder. A later version runs agents on a computer of their own.
 

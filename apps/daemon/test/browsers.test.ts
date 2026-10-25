@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { headlessShellPath, LIBRARIES_COMMAND } from '../src/browsers.js';
 import { writeConfig } from '../src/config.js';
+import { PLAYWRIGHT_LOCK, PLAYWRIGHT_PACKAGE } from '../src/playwright-install.js';
 import { runDoctor } from '../src/doctor.js';
 import { ScriptedServer } from './scripted-server.js';
 import {
@@ -26,15 +27,16 @@ import {
 } from './testing.js';
 
 // Browser tests on the machine (05, sections 2 and 8; lot 5 step C1): `orchestrator-daemon
-// browsers` and `doctor`'s **Browser tests** check against a fake `npx`, a fake Chromium and a
-// fake `ldd`. No real browser is downloaded or started.
+// browsers` and `doctor`'s **Browser tests** check against a fake `npm`, a fake Playwright CLI,
+// a fake Chromium and a fake `ldd`. No real browser is downloaded or started.
 
 const TIMEOUT = 60_000;
 
 let home: TestHome;
-/** What the fake `npx` copies into `PLAYWRIGHT_BROWSERS_PATH`: the pinned headless shell. */
+/** What the fake Playwright CLI copies into `PLAYWRIGHT_BROWSERS_PATH`: the pinned headless shell. */
 let download: string;
-let npxLog: string;
+let npmLog: string;
+let cliLog: string;
 
 const PAGE = '<html><head></head><body></body></html>';
 const LDD_FOUND = '\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f)';
@@ -43,7 +45,8 @@ const LDD_MISSING = ['\tlibnss3.so => not found', '\tlibasound.so.2 => not found
 beforeEach(async () => {
   home = await createTestHome();
   download = join(home.root, 'download');
-  npxLog = join(home.root, 'npx.txt');
+  npmLog = join(home.root, 'npm.txt');
+  cliLog = join(home.root, 'playwright.txt');
   await linkSystemTool(home.bin, 'cp');
   await fakeChromium(`printf '%s\\n' '${PAGE}'`);
   await printing(home.bin, 'ldd', LDD_FOUND);
@@ -69,51 +72,111 @@ async function fakeChromium(script: string): Promise<void> {
   );
 }
 
-/** A fake `npx` recording its arguments and variable, then copying the download or failing. */
-async function fakeNpx(outcome: 'downloads' | 'refused'): Promise<void> {
+/**
+ * A fake `npm` recording its arguments and folder, then `ci` installing a fake Playwright whose
+ * CLI records its own path, arguments and variable, then copies the download or fails.
+ */
+async function fakeNpm(
+  npm: 'installs' | 'refused',
+  cli: 'downloads' | 'refused' | 'nothing' = 'downloads',
+): Promise<void> {
+  const published = join(home.root, 'published');
+  await mkdir(join(published, 'node_modules', '.bin'), { recursive: true });
+  await fakeExecutable(
+    join(published, 'node_modules', '.bin'),
+    'playwright',
+    [
+      `echo "$0 $* PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> '${cliLog}'`,
+      {
+        downloads: `cp -R '${download}/.' "$PLAYWRIGHT_BROWSERS_PATH/"`,
+        refused: "echo 'Error: getaddrinfo ENOTFOUND cdn.playwright.dev' >&2; exit 1",
+        nothing: 'exit 0',
+      }[cli],
+    ].join('\n'),
+  );
   await fakeExecutable(
     home.bin,
-    'npx',
+    'npm',
     [
-      `echo "$* PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> '${npxLog}'`,
-      outcome === 'downloads'
-        ? `cp -R '${download}/.' "$PLAYWRIGHT_BROWSERS_PATH/"`
-        : "echo 'Error: getaddrinfo ENOTFOUND cdn.playwright.dev' >&2; exit 1",
+      `echo "$* in $PWD" >> '${npmLog}'`,
+      npm === 'installs'
+        ? `cp -R '${published}/.' .`
+        : "echo 'npm error code ECONNREFUSED' >&2; exit 1",
     ].join('\n'),
   );
 }
 
-/** The test home's PATH without Node.js's folder, whose own `npx` would be found otherwise. */
+/** The test home's PATH without Node.js's folder, whose own `npm` would be found otherwise. */
 const withoutNode = () => ({ ...home.env, PATH: home.bin });
 
 describe('orchestrator-daemon browsers', () => {
   it(
-    "downloads the pinned version's Chromium into the daemon's folder and checks it",
+    "installs the pinned Playwright in the daemon's folder, then downloads its Chromium with that install's CLI",
     async () => {
-      await fakeNpx('downloads');
+      await fakeNpm('installs');
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(0);
-      expect(await readFile(npxLog, 'utf8')).toBe(
-        `--yes playwright@${PLAYWRIGHT_VERSION} install chromium PLAYWRIGHT_BROWSERS_PATH=${home.paths.browsers}\n`,
+      // `npm ci` of the pinned lock, in the daemon's own folder, without any package's scripts.
+      expect(await readFile(npmLog, 'utf8')).toBe(
+        `ci --ignore-scripts --no-audit --no-fund in ${home.paths.playwright}\n`,
       );
+      expect(
+        JSON.parse(await readFile(join(home.paths.playwright, 'package.json'), 'utf8')),
+      ).toEqual(PLAYWRIGHT_PACKAGE);
+      expect(
+        JSON.parse(await readFile(join(home.paths.playwright, 'package-lock.json'), 'utf8')),
+      ).toEqual(PLAYWRIGHT_LOCK);
+      // That install's CLI, not npx's cache: the Chromium stays registered to a folder nothing
+      // else cleans.
+      expect(await readFile(cliLog, 'utf8')).toBe(
+        `${join(home.paths.playwright, 'node_modules', '.bin', 'playwright')} install chromium PLAYWRIGHT_BROWSERS_PATH=${home.paths.browsers}\n`,
+      );
+      expect(result.stdout).toContain(`Installing Playwright ${PLAYWRIGHT_VERSION}`);
       expect(result.stdout).toContain(
         `Downloading the Chromium of Playwright ${PLAYWRIGHT_VERSION}`,
       );
       expect(result.stdout).toContain(`capability ${BROWSER_TESTS_CAPABILITY}`);
       expect(result.stdout).toContain('systemctl --user restart orchestrator-daemon');
-      // Only the owner's user reaches the folder.
+      // Only the owner's user reaches the folders.
+      expect((await stat(home.paths.playwright)).mode & 0o777).toBe(0o700);
       expect((await stat(home.paths.browsers)).mode & 0o777).toBe(0o700);
     },
     TIMEOUT,
   );
 
   it(
-    'says when npx is not found, and downloads nothing',
+    'runs again over an earlier install',
+    async () => {
+      await fakeNpm('installs');
+      expect((await runDaemon(['browsers'], withoutNode())).code).toBe(0);
+      expect((await runDaemon(['browsers'], withoutNode())).code).toBe(0);
+      expect((await readFile(npmLog, 'utf8')).split('\n').filter(Boolean)).toHaveLength(2);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'says when npm is not found, and installs nothing',
     async () => {
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(1);
-      expect(result.stdout).toContain("npx not found in this terminal's PATH");
+      expect(result.stdout).toContain("npm not found in this terminal's PATH");
+      await expect(stat(home.paths.playwright)).rejects.toThrow();
       await expect(stat(home.paths.browsers)).rejects.toThrow();
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'says when Playwright cannot be installed, and downloads nothing',
+    async () => {
+      await fakeNpm('refused');
+      const result = await runDaemon(['browsers'], withoutNode());
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('ECONNREFUSED');
+      expect(result.stdout).toContain('Installing Playwright failed (npm ended with exit code 1)');
+      expect(result.stdout).toContain("check this computer's internet connection");
+      await expect(stat(cliLog)).rejects.toThrow();
     },
     TIMEOUT,
   );
@@ -121,12 +184,12 @@ describe('orchestrator-daemon browsers', () => {
   it(
     'says when the download is refused',
     async () => {
-      await fakeNpx('refused');
+      await fakeNpm('installs', 'refused');
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(1);
       // Playwright's own words reach the terminal, then the daemon's.
       expect(result.stderr).toContain('ENOTFOUND cdn.playwright.dev');
-      expect(result.stdout).toContain('The download failed (npx ended with exit code 1)');
+      expect(result.stdout).toContain('The download failed (Playwright ended with exit code 1)');
       expect(result.stdout).toContain("check this computer's internet connection");
     },
     TIMEOUT,
@@ -135,7 +198,7 @@ describe('orchestrator-daemon browsers', () => {
   it(
     'names the missing system libraries with the command installing them',
     async () => {
-      await fakeNpx('downloads');
+      await fakeNpm('installs');
       await printing(home.bin, 'ldd', LDD_MISSING);
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(1);
@@ -152,7 +215,7 @@ describe('orchestrator-daemon browsers', () => {
       await fakeChromium(
         "echo 'chrome-headless-shell: error while loading shared libraries: libgbm.so.1' >&2; exit 127",
       );
-      await fakeNpx('downloads');
+      await fakeNpm('installs');
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(1);
       expect(result.stdout).toContain('Chromium does not start headless');
@@ -165,7 +228,7 @@ describe('orchestrator-daemon browsers', () => {
   it(
     'says when the download ended without the pinned revision',
     async () => {
-      await fakeExecutable(home.bin, 'npx', 'exit 0');
+      await fakeNpm('installs', 'nothing');
       const result = await runDaemon(['browsers'], withoutNode());
       expect(result.code).toBe(1);
       expect(result.stdout).toContain(

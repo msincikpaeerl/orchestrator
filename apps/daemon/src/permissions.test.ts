@@ -67,6 +67,7 @@ describe('settings rules', () => {
       `/${daemonHome}/last-stop.json`,
       `/${daemonHome}/browsers/**`,
       `/${daemonHome}/claude-config/**`,
+      `/${daemonHome}/playwright/**`,
       `/${daemonHome}/repos/**`,
       `/${daemonHome}/runs/**`,
       `/${userHome}/.claude/**`,
@@ -143,8 +144,13 @@ describe('PreToolUse rules for Bash', () => {
     expect(bash('cat ../../config.json')).toBe(REASONS.daemonFolder);
   });
 
-  it("refuses the browsers folder and the variable naming it, but lets Playwright's commands through", () => {
+  it("refuses the browsers and Playwright folders and the variable naming the first, but lets Playwright's commands through", () => {
     expect(bash(`ls ${daemonHome}/browsers`)).toBe(REASONS.browsers);
+    // The daemon's own install, owner of the browsers: removing it lets Playwright remove them.
+    expect(bash(`rm -rf ${daemonHome}/playwright`)).toBe(REASONS.browsers);
+    expect(bash(`${daemonHome}/playwright/node_modules/.bin/playwright uninstall --all`)).toBe(
+      REASONS.browsers,
+    );
     expect(bash(`rm -rf ${daemonHome}/browsers/chromium_headless_shell-1248`)).toBe(
       REASONS.browsers,
     );
@@ -284,6 +290,9 @@ describe('PreToolUse rules for file tools', () => {
     expect(tool('Read', { file_path: '../run-2/src/x.ts' })).toBe(REASONS.daemonFolder);
     expect(tool('Glob', { pattern: join(daemonHome, 'browsers', '**') })).toBe(REASONS.browsers);
     expect(tool('Write', { file_path: '../../browsers/x' })).toBe(REASONS.browsers);
+    expect(tool('Edit', { file_path: join(daemonHome, 'playwright', 'package.json') })).toBe(
+      REASONS.browsers,
+    );
     // Through a symbolic link in the worktree.
     expect(tool('Read', { file_path: 'src/key.json' })).toBe(REASONS.daemonFolder);
   });

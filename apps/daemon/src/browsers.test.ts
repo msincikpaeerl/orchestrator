@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { PLAYWRIGHT_CHROMIUM_REVISION, PLAYWRIGHT_VERSION } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import { headlessShellPath, LIBRARIES_COMMAND, missingLibraries } from './browsers.js';
+import { PLAYWRIGHT_LOCK, PLAYWRIGHT_PACKAGE } from './playwright-install.js';
 
 const require = createRequire(import.meta.url);
 
@@ -17,6 +18,26 @@ describe('the pinned Playwright version', () => {
     const browsers = read('browsers.json') as { browsers: { name: string; revision: string }[] };
     const shell = browsers.browsers.find((browser) => browser.name === 'chromium-headless-shell');
     expect(shell?.revision).toBe(PLAYWRIGHT_CHROMIUM_REVISION);
+  });
+
+  it("is the daemon's install's, whose playwright-core is the devDependency's own package", () => {
+    expect(PLAYWRIGHT_PACKAGE.dependencies.playwright).toBe(PLAYWRIGHT_VERSION);
+    const { packages } = PLAYWRIGHT_LOCK;
+    expect(packages[''].dependencies.playwright).toBe(PLAYWRIGHT_VERSION);
+    expect(packages['node_modules/playwright'].version).toBe(PLAYWRIGHT_VERSION);
+    expect(packages['node_modules/playwright'].dependencies['playwright-core']).toBe(
+      PLAYWRIGHT_VERSION,
+    );
+    const core = packages['node_modules/playwright-core'];
+    expect(core.version).toBe(PLAYWRIGHT_VERSION);
+    // The same published files as the package the pin test above reads.
+    const pnpmLock = readFileSync(
+      join(import.meta.dirname, '..', '..', '..', 'pnpm-lock.yaml'),
+      'utf8',
+    );
+    expect(pnpmLock).toContain(
+      `  playwright-core@${PLAYWRIGHT_VERSION}:\n    resolution: {integrity: ${core.integrity}}`,
+    );
   });
 
   it('is the one Help > Machines gives in the libraries command', () => {

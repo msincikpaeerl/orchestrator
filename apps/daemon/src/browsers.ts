@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   BROWSER_TESTS_CAPABILITY,
@@ -8,10 +8,11 @@ import {
   PLAYWRIGHT_VERSION,
 } from '@orchestrator/protocol';
 import { findExecutable, runCommand } from './exec.js';
+import { PLAYWRIGHT_LOCK, PLAYWRIGHT_PACKAGE } from './playwright-install.js';
 
 // Browser tests on the machine (05, section 2; owner's answer 5, lot 5 step A): the Chromium of
 // the pinned Playwright version in the daemon's `browsers/` folder, checked by `doctor` and
-// downloaded by `orchestrator-daemon browsers`.
+// downloaded by `orchestrator-daemon browsers` through the daemon's own Playwright install.
 
 /** The owner's one-time command for Chromium's system libraries, as Help > Machines gives it. */
 export const LIBRARIES_COMMAND = `sudo env "PATH=$PATH" npx --yes playwright@${PLAYWRIGHT_VERSION} install-deps chromium`;
@@ -106,14 +107,14 @@ export function describeBrowsers(state: BrowserState): string {
   }
 }
 
-/** Runs `npx` with the terminal's output; resolves with its exit code, or null if it cannot start. */
+/** Runs a command with the terminal's output; resolves with its exit code, or null if it cannot start. */
 function runInTerminal(
   file: string,
   args: string[],
-  env: NodeJS.ProcessEnv,
+  options: { env: NodeJS.ProcessEnv; cwd?: string },
 ): Promise<number | null> {
   return new Promise((resolve) => {
-    const child = spawn(file, args, { env, stdio: ['ignore', 'inherit', 'inherit'] });
+    const child = spawn(file, args, { ...options, stdio: ['ignore', 'inherit', 'inherit'] });
     child.on('error', () => {
       resolve(null);
     });
@@ -123,32 +124,62 @@ function runInTerminal(
   });
 }
 
+/** How a command ended, for the owner. */
+function ended(name: string, code: number | null): string {
+  return `${name} ${code === null ? 'did not start' : `ended with exit code ${String(code)}`}`;
+}
+
 /**
- * `orchestrator-daemon browsers` (05, section 8): downloads the pinned Playwright version's
- * Chromium into the daemon's folder with the PATH the daemon runs with, then checks it. Typed
- * by the owner; the daemon never runs it on its own.
+ * `orchestrator-daemon browsers` (05, section 8): installs the pinned Playwright version into the
+ * daemon's `playwright/` folder (`npm ci` of its lock), then runs that install's own CLI to
+ * download its Chromium into the daemon's `browsers/` folder, with the PATH the daemon runs with,
+ * then checks it. The Chromium stays registered to that install, which nothing else cleans, so
+ * no other Playwright install removes it. Typed by the owner; the daemon never runs it on its own.
  */
 export async function installBrowsers(
-  options: { browsers: string; toolPath: string; toolPathLabel: string },
+  options: { browsers: string; playwright: string; toolPath: string; toolPathLabel: string },
   out: (line: string) => void,
 ): Promise<number> {
-  const npx = findExecutable('npx', options.toolPath);
-  if (!npx) {
+  const npm = findExecutable('npm', options.toolPath);
+  if (!npm) {
     out(
-      `npx not found in ${options.toolPathLabel}. Install Node.js 24 with nvm (Help > Machines > "Before you start"), then type "orchestrator-daemon install-service" again from a terminal where "npx --version" works.`,
+      `npm not found in ${options.toolPathLabel}. Install Node.js 24 with nvm (Help > Machines > "Before you start"), then type "orchestrator-daemon install-service" again from a terminal where "npm --version" works.`,
     );
     return 1;
   }
+  const env = { ...process.env, PATH: options.toolPath };
+  await mkdir(options.playwright, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(options.playwright, 'package.json'),
+    `${JSON.stringify(PLAYWRIGHT_PACKAGE, null, 2)}\n`,
+  );
+  await writeFile(
+    join(options.playwright, 'package-lock.json'),
+    `${JSON.stringify(PLAYWRIGHT_LOCK, null, 2)}\n`,
+  );
+  out(`Installing Playwright ${PLAYWRIGHT_VERSION} into ${options.playwright}...`);
+  const installed = await runInTerminal(
+    npm,
+    ['ci', '--ignore-scripts', '--no-audit', '--no-fund'],
+    { env, cwd: options.playwright },
+  );
+  if (installed !== 0) {
+    out(
+      `Installing Playwright failed (${ended('npm', installed)}): check this computer's internet connection, then type "orchestrator-daemon browsers" again.`,
+    );
+    return 1;
+  }
+
   await mkdir(options.browsers, { recursive: true, mode: 0o700 });
   out(`Downloading the Chromium of Playwright ${PLAYWRIGHT_VERSION} into ${options.browsers}...`);
   const code = await runInTerminal(
-    npx,
-    ['--yes', `playwright@${PLAYWRIGHT_VERSION}`, 'install', 'chromium'],
-    { ...process.env, PATH: options.toolPath, PLAYWRIGHT_BROWSERS_PATH: options.browsers },
+    join(options.playwright, 'node_modules', '.bin', 'playwright'),
+    ['install', 'chromium'],
+    { env: { ...env, PLAYWRIGHT_BROWSERS_PATH: options.browsers }, cwd: options.playwright },
   );
   if (code !== 0) {
     out(
-      `The download failed (npx ${code === null ? 'did not start' : `ended with exit code ${String(code)}`}): check this computer's internet connection, then type "orchestrator-daemon browsers" again.`,
+      `The download failed (${ended('Playwright', code)}): check this computer's internet connection, then type "orchestrator-daemon browsers" again.`,
     );
     return 1;
   }

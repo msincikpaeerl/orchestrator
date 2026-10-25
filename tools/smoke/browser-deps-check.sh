@@ -3,7 +3,9 @@
 # the owner would, in a fresh Ubuntu container: Node.js through nvm, the one-time command for
 # Chromium's system libraries (with sudo, as Help gives it), then `orchestrator-daemon browsers`
 # from the daemon package built from this repository. It passes when the command ends with
-# Chromium starting headless.
+# Chromium starting headless, and that Chromium is still there after npm's cache is cleaned and
+# another Playwright version removes the browsers no install uses (`playwright uninstall`, the
+# clean-up a project's own install also runs).
 #
 # Run again when the Playwright version pinned in packages/protocol changes, or Help's command.
 # It needs Docker and the internet (apt, nvm, Node.js, npm and Playwright's download: a few
@@ -23,6 +25,8 @@ declare -A IMAGES=(
   [ubuntu26.04]=ubuntu:resolute-20261006
 )
 NVM_VERSION=v0.40.8
+# Another Playwright version, as a project may pin: its clean-up must keep the daemon's Chromium.
+OTHER_PLAYWRIGHT=1.63.0
 ONLY=""
 
 stop() {
@@ -60,6 +64,8 @@ LIBRARIES="$(grep -o 'sudo env "PATH=$PATH" npx --yes playwright@[0-9.]* install
   "$ROOT/docs/user/machines.md" | head -n 1)"
 [[ -n "$LIBRARIES" ]] || stop "Help > Machines gives no libraries command"
 echo "Help's command: $LIBRARIES"
+REVISION="$(grep -o "PLAYWRIGHT_CHROMIUM_REVISION = '[0-9]*'" "$ROOT/packages/protocol/src/daemon/browsers.ts" | grep -o '[0-9]*')"
+[[ -n "$REVISION" ]] || stop "no pinned Chromium revision in packages/protocol"
 
 # Runs as the image's root: a user like the owner, with sudo, then the owner's steps as that user.
 cat >"$SCRATCH/as-root.sh" <<'EOF'
@@ -83,6 +89,16 @@ echo '--- Help: the system libraries'
 $LIBRARIES
 echo '--- Help: orchestrator-daemon browsers'
 orchestrator-daemon browsers
+echo "--- npm's cache cleaned, then Playwright $OTHER_PLAYWRIGHT's clean-up of unused browsers"
+npm cache clean --force 2>/dev/null
+rm -rf "\$HOME/.npm/_npx"
+PLAYWRIGHT_BROWSERS_PATH="\$HOME/.orchestrator/browsers" npx --yes playwright@$OTHER_PLAYWRIGHT uninstall
+if [[ -f "\$HOME/.orchestrator/browsers/chromium_headless_shell-$REVISION/INSTALLATION_COMPLETE" ]]; then
+  echo "Chromium $REVISION kept"
+else
+  echo "Chromium $REVISION removed"
+  exit 1
+fi
 EOF
 
 failed=0

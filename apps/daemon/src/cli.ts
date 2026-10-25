@@ -110,6 +110,7 @@ async function main(argv: string[]): Promise<number> {
       return installBrowsers(
         {
           browsers: paths.browsers,
+          playwright: paths.playwright,
           toolPath: environment.toolPath,
           toolPathLabel: environment.toolPathLabel,
         },
