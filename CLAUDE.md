@@ -46,6 +46,7 @@ The specs are the source of truth. If the code must differ from a spec, update t
 | Claude Code probe (owner only, real Claude Code, lot 2 step H) | `tools/smoke/claude-code-probe.sh` (`--help`) |
 | Allowlist smoke test (owner only, real Claude Code, lot 2 step N) | `tools/smoke/allowlist-smoke.sh` (`--help`) |
 | GitHub smoke test (owner only, real GitHub, lot 3 steps E and J4c; A27 alone: `--only-a27`, lot 4 step B) | `tools/smoke/github-smoke.sh --repository <owner>/<name> [--restricted-token \| --only-a27]` (`--help`) |
+| Browser tests check (Help's libraries command, then `orchestrator-daemon browsers`, in Ubuntu 24.04 and 26.04 containers; downloads) | `tools/smoke/browser-deps-check.sh` (`--help`) |
 | Usage-limit capture (owner only: `--probe-limit` while limited; `--scan-limit` starts no session) | `tools/spike/claude-code-spike.sh --probe-limit` (`--help`) |
 | Full stack in Docker | `docker compose -f docker/compose.yml up --build` |
 

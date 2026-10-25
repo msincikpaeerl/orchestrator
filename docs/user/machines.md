@@ -202,6 +202,34 @@ Capabilities are the tools a machine has, such as `git`, `node`, `docker` or `an
 
 To add one, type it in **Add a capability** (lowercase letters and digits, with `-` between words, for example `android-sdk`) and click **Add**. Click **Remove** to take one away.
 
+### Browser tests
+
+From version 0.6.0, agents can test websites and web apps in a real browser on the machine (Chromium, through Playwright, without a window), as CI does on GitHub. A machine that can do it shows the capability `browser-tests`, detected by the daemon. Set it up once per machine:
+
+1. **Install the browser's system libraries.** Type this in the machine's Ubuntu terminal; it asks for your password:
+
+   ```sh
+   sudo env "PATH=$PATH" npx --yes playwright@1.64.1 install-deps chromium
+   ```
+
+   `sudo` alone would not find `npx` installed with nvm: `env "PATH=$PATH"` gives it your terminal's folders. The command installs Ubuntu packages (fonts and libraries Chromium needs). Only you type it: neither an agent nor the daemon ever uses `sudo`.
+2. **Download the browser for the Orchestrator**:
+
+   ```sh
+   orchestrator-daemon browsers
+   ```
+
+   It downloads Chromium into the Orchestrator's own folder, `~/.orchestrator/browsers/` (a few hundred MB), then checks that it starts. When something is missing it says what: the libraries of step 1, or a download that failed (check the internet connection and type it again).
+3. **Restart the daemon** so it checks again: `systemctl --user restart orchestrator-daemon`. The machine page's **Checks on the machine** shows **Browser tests** as **OK**, and its capabilities show `browser-tests` (detected).
+
+Until then, **Browser tests** shows a warning saying which step is missing. It is only a warning: the machine still takes every run of a project that does not require `browser-tests`.
+
+What agents can then do: the Web Developer runs the project's end-to-end tests before submitting its work, and Quality runs them when it reviews and has a reason to. Each project may use its own Playwright version: its first test run downloads that version's browser into the same folder, by itself. Agents never reach the folder by name (the Orchestrator refuses it, as the rest of `~/.orchestrator`); only Playwright uses it.
+
+Known limit in this version: agents run under your own user (see [Agents on your own user](#agents-on-your-own-user)), so a program an agent runs, Playwright included, can write in that folder, as npm writes its cache in your home folder. A later version runs agents on a computer of their own.
+
+If the browser check fails after an update of Ubuntu, type the two commands again.
+
 ### Disable, revoke, enroll again
 
 - **Disable**: the machine stays connected but gets no new runs; runs already on it finish. **Enable** gives it runs again.
