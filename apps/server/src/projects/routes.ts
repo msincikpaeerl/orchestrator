@@ -7,6 +7,7 @@ import {
   ProjectListQuery,
   RepositoryName,
   TicketStatus,
+  MergesAutomaticRequest,
   ReviewsAutomaticRequest,
   SetRequiredCapabilitiesRequest,
   UpdateProjectRequest,
@@ -371,6 +372,33 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       return updated;
     });
     request.log.info({ project: row.key, on }, 'Start reviews by themselves changed');
+    return toProject(row);
+  });
+
+  // **Merge automatically** (02, section 6.5; 04, section 4; lot 5 step 5bis B): from the next
+  // approval on, or no more merges wanted; a merge already sent to GitHub is settled either way.
+  app.put<{ Params: { key: string } }>('/api/projects/:key/merges-automatic', async (request) => {
+    await requireSession(db, request);
+    const { on } = parseInput(MergesAutomaticRequest, request.body);
+    const project = await findByKey(request.params.key);
+    requireActive(project);
+    if (project.mergesAutomatic === on) return toProject(project);
+    const row = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(schema.projects)
+        .set({ mergesAutomatic: on, updatedAt: now() })
+        .where(and(eq(schema.projects.id, project.id), eq(schema.projects.status, 'active')))
+        .returning();
+      if (!updated) throw new HttpError(409, 'project_archived', 'This project is archived');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...projectEntity(updated),
+        type: 'project.merges_automatic_changed',
+        payload: { key: updated.key, on },
+      });
+      return updated;
+    });
+    request.log.info({ project: row.key, on }, 'Merge automatically changed');
     return toProject(row);
   });
 

@@ -59,6 +59,30 @@ describe('reviewCommentBody', () => {
     );
   });
 
+  it('an approval on a project with Merge automatically: the Orchestrator merges it', () => {
+    const text = reviewCommentBody(template, {
+      decision: decision(),
+      number: 'BAK-12',
+      link,
+      runId: RUN,
+      mergesAutomatic: true,
+    });
+    expect(text).toContain(
+      `— Posted by the Orchestrator for BAK-12 (${link.url}). The Orchestrator merges this pull request automatically once CI passes on this commit (Merge automatically is on for this project).`,
+    );
+    expect(text).not.toContain('The owner merges');
+    // A request for changes reads the same either way.
+    expect(
+      reviewCommentBody(template, {
+        decision: changes([{ body: 'Add a test.', file: null, line: null }]),
+        number: 'BAK-12',
+        link,
+        runId: RUN,
+        mergesAutomatic: true,
+      }),
+    ).toContain('The agent that implemented it addresses these points in its next run.');
+  });
+
   it('a request for changes: the points numbered, each path in a code span', () => {
     expect(
       body(

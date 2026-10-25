@@ -27,9 +27,10 @@ import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
 import { CiCheckAgain } from './runs/ci-again.js';
-import { CiWatcher } from './runs/ci-wait.js';
+import { CiWatcher, type CiRead } from './runs/ci-wait.js';
 import { RunService } from './runs/service.js';
 import { BranchCleanUp } from './tickets/branch-clean-up.js';
+import { AutomaticMerger } from './tickets/automatic-merge.js';
 import { PullRequestWatcher } from './tickets/merge-watch.js';
 import { PullRequestOpener } from './tickets/pull-request.js';
 import { ReviewPoster } from './runs/review-post.js';
@@ -75,6 +76,7 @@ export interface AppDependencies {
 }
 
 const ciWatchers = new WeakMap<object, CiWatcher>();
+const automaticMergers = new WeakMap<object, AutomaticMerger>();
 const schedulers = new WeakMap<object, Scheduler>();
 
 /** The application's scheduler, for tests that run its loop by hand. */
@@ -89,6 +91,13 @@ export function ciWatcherOf(app: object): CiWatcher {
   const watcher = ciWatchers.get(app);
   if (!watcher) throw new Error('no CI watcher for this application');
   return watcher;
+}
+
+/** The application's automatic merges, for tests that wait for a try to end. */
+export function automaticMergerOf(app: object): AutomaticMerger {
+  const merger = automaticMergers.get(app);
+  if (!merger) throw new Error('no automatic merges for this application');
+  return merger;
 }
 
 /** Builds the HTTP application without listening, so tests can use `inject`. */
@@ -151,6 +160,7 @@ export function buildApp(dependencies: AppDependencies) {
     secondMs: dependencies.daemonSecondMs,
     pullRequestWanted: (ticketId) => void pullRequests.request(ticketId),
     reviewPostWanted: (runId) => void reviewPosts.request(runId),
+    automaticMergeWanted: (ticketId) => void merges.request(ticketId),
     endReported: (ticketId) => void branchCleanUps.runEnded(ticketId),
   });
   runs.attach(gateway);
@@ -164,6 +174,19 @@ export function buildApp(dependencies: AppDependencies) {
     runs,
     now: dependencies.now,
   });
+  // The automatic merges (04, section 4; lot 5 step 5bis B): tried after Quality's approval, at
+  // start, at each GitHub check and when a Claude account is resumed (owner's answer 7).
+  const merges: AutomaticMerger = new AutomaticMerger({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    readCommit: (repo, commit, pullRequest, startWaitOver): Promise<CiRead> =>
+      ci.readCommit(repo, commit, pullRequest, startWaitOver),
+    pullRequestSeen: (ticketId, pull) => watcher.seen(ticketId, pull),
+    now: dependencies.now,
+  });
+  automaticMergers.set(app, merges);
   // The wait for CI of accepted submissions (04, section 3.1; lot 3 step G1a), restored from what
   // the runs keep: the first check at start, then every GitHub check interval.
   const ci = new CiWatcher({
@@ -179,6 +202,7 @@ export function buildApp(dependencies: AppDependencies) {
     },
     retryPullRequest: (ticketId) => pullRequests.request(ticketId),
     pullRequests: watcher,
+    automaticMerges: merges,
     branchCleanUps,
     now: dependencies.now,
     timers: dependencies.ciTimers,
@@ -239,6 +263,13 @@ export function buildApp(dependencies: AppDependencies) {
       logger.error({ err: error }, 'comment reviews still wanted not posted');
     });
   });
+  // Automatic merges wanted or sent when the server stopped: tried, or settled, once (04,
+  // section 4). Not awaited, as above.
+  app.addHook('onReady', () => {
+    void merges.check().catch((error: unknown) => {
+      logger.error({ err: error }, 'automatic merges still wanted not tried');
+    });
+  });
   app.addHook('onClose', async () => {
     await scheduler.close();
     await ci.close();
@@ -246,6 +277,7 @@ export function buildApp(dependencies: AppDependencies) {
     feed.close();
     await pullRequests.idle();
     await reviewPosts.idle();
+    await merges.idle();
   });
 
   // Polled by Docker every few seconds: only failures are logged.
@@ -302,7 +334,11 @@ export function buildApp(dependencies: AppDependencies) {
     });
     registerSettingRoutes(scope, { db });
     registerEventLogRoutes(scope, { db });
-    registerAccountRoutes(scope, { db, now: dependencies.now });
+    registerAccountRoutes(scope, {
+      db,
+      now: dependencies.now,
+      resumed: () => void merges.check().catch(() => undefined),
+    });
     registerTimeZoneRoutes(scope, { db });
     registerQueueRoutes(scope, { db, now: dependencies.now });
     registerMachineRoutes(scope, {

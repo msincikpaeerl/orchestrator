@@ -78,7 +78,16 @@ const UPDATED_FIELDS = ['label', 'plan', 'maxConcurrentRuns', 'schedule', 'daily
  */
 export function registerAccountRoutes(
   app: FastifyInstance,
-  { db, now: clock = () => new Date() }: { db: Database; now?: () => Date },
+  {
+    db,
+    now: clock = () => new Date(),
+    resumed,
+  }: {
+    db: Database;
+    now?: () => Date;
+    /** After **Resume**: the automatic merges it held are tried (lot 5 step 5bis B, answer 7). */
+    resumed?: () => void;
+  },
 ) {
   /** The account locked for the transaction. */
   async function lockedAccount(tx: Executor, id: string): Promise<AccountRow> {
@@ -321,6 +330,7 @@ export function registerAccountRoutes(
       return updated;
     });
     request.log.info({ account: row.id }, 'Claude account resumed');
+    resumed?.();
     return shown(row);
   });
 }

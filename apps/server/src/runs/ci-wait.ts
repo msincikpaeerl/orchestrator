@@ -138,6 +138,11 @@ export interface CiWatcherOptions {
     check(): Promise<Date | null>;
     seen(ticketId: string, pull: PullRequest): Promise<void>;
   };
+  /**
+   * The automatic merges wanted (lot 5 step 5bis B), tried after the watch of the pull requests,
+   * before the CI waits; `check` returns as the watch's does.
+   */
+  automaticMerges?: { check(): Promise<Date | null> };
   /** The clean-up after a merge (lot 3 step J2a), tried after the CI waits. */
   branchCleanUps?: { check(): Promise<Date | null> };
   now?: () => Date;
@@ -328,6 +333,15 @@ export class CiWatcher {
     } catch (error) {
       // An error in the merge check never stops the CI waits (owner's correction, step J1).
       this.options.log.error({ err: error }, 'pull requests not checked');
+    }
+    if (limited !== null) {
+      this.loop.pauseUntil(limited.getTime());
+      return;
+    }
+    try {
+      limited = (await this.options.automaticMerges?.check()) ?? null;
+    } catch (error) {
+      this.options.log.error({ err: error }, 'automatic merges not tried');
     }
     if (limited !== null) {
       this.loop.pauseUntil(limited.getTime());

@@ -49,6 +49,7 @@ export function toProject(row: ProjectRow): Project {
     status: ProjectStatus.parse(row.status),
     reviewsAutomatic: row.reviewsAutomatic,
     requiredCapabilities: z.array(Capability).parse(row.requiredCapabilities),
+    mergesAutomatic: row.mergesAutomatic,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

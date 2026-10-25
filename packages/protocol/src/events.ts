@@ -16,7 +16,12 @@ import {
   RunTicketAction,
 } from './api/runs.js';
 import { PushFailureReason } from './daemon/git.js';
-import { PullRequestClosedBy, PullRequestFailureReason } from './api/pull-requests.js';
+import {
+  AUTOMATIC_MERGE_METHOD,
+  AutomaticMergeFailureReason,
+  PullRequestClosedBy,
+  PullRequestFailureReason,
+} from './api/pull-requests.js';
 import { CheckCiAgainRefusal } from './api/ci.js';
 import { BranchKeptReason } from './api/branch-clean-up.js';
 import { CiCheckFailureReason, CiState } from './mcp/ci.js';
@@ -70,6 +75,7 @@ export const EventType = z.enum([
   'project.updated',
   'project.reviews_automatic_changed',
   'project.required_capabilities_changed',
+  'project.merges_automatic_changed',
   'project.setup_step',
   'project.setup_failed',
   'project.setup_retried',
@@ -98,6 +104,8 @@ export const EventType = z.enum([
   'ticket.pull_request_not_reopened',
   'ticket.pull_request_conflict',
   'ticket.pull_request_conflict_gone',
+  'ticket.merged_automatically',
+  'ticket.automatic_merge_failed',
   'ticket.review_posted',
   'ticket.review_not_posted',
   'ticket.ci_checked_again',
@@ -211,6 +219,8 @@ export const EventPayloads = {
   }),
   /** The switch **Start reviews by themselves** turned on or off (01, section 3.1). */
   'project.reviews_automatic_changed': z.object({ ...ProjectFacts, on: z.boolean() }),
+  /** **Merge automatically** changed (02, section 6.5; lot 5 step 5bis B). */
+  'project.merges_automatic_changed': z.object({ ...ProjectFacts, on: z.boolean() }),
   /** The owner changed the project's required capabilities (02, section 6.5; lot 5 step C2). */
   'project.required_capabilities_changed': z.object({
     ...ProjectFacts,
@@ -426,6 +436,26 @@ export const EventPayloads = {
     ...TicketFacts,
     number: z.int(),
     reason: PullRequestFailureReason,
+    message: z.string(),
+  }),
+  /**
+   * The server merged the pull request Quality approved (04, section 4; lot 5 step 5bis B): its
+   * answer, or a read after a lost answer (`mergeCommit` null). The merge itself is
+   * `ticket.pull_request_merged`, written once by the merge detection.
+   */
+  'ticket.merged_automatically': z.object({
+    ...TicketFacts,
+    pullRequest: z.int().positive(),
+    commit: z.string(),
+    method: z.literal(AUTOMATIC_MERGE_METHOD),
+    mergeCommit: z.string().nullable(),
+  }),
+  /** The automatic merge failed (lot 5 step 5bis B): never tried again for this approval. */
+  'ticket.automatic_merge_failed': z.object({
+    ...TicketFacts,
+    pullRequest: z.int().positive(),
+    commit: z.string(),
+    reason: AutomaticMergeFailureReason,
     message: z.string(),
   }),
   /** Quality's decision posted on the pull request as a comment review (lot 3 step H3). */
