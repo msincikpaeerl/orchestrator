@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { boundedText, requiredText } from '../text-limits.js';
+import { requiredText } from '../text-limits.js';
+import { Capability } from './capability.js';
 import { message } from './envelope.js';
 import { ClaudeSessionId, DaemonRunState, RunId } from './runs.js';
 
@@ -7,12 +8,7 @@ import { ClaudeSessionId, DaemonRunState, RunId } from './runs.js';
 export const MachineOs = z.enum(['linux', 'wsl']);
 export type MachineOs = z.infer<typeof MachineOs>;
 
-/** A capability tag of a machine: `git`, `node`, `docker`, `android-sdk` (01, section 3.8). */
-export const Capability = boundedText().regex(
-  /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  'must be lowercase letters and digits, separated by "-"',
-);
-export type Capability = z.infer<typeof Capability>;
+export { Capability } from './capability.js';
 
 /** One result of `orchestrator-daemon doctor` (05, section 8). */
 export const DoctorCheck = z.object({

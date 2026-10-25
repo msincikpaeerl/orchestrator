@@ -56,6 +56,10 @@ test('creating a private project with a new repository', async ({ page }) => {
   await expect(page.getByText('Use 2 to 6 capital letters, for example WEB.')).toBeVisible();
   await page.getByLabel('Key').fill('FR');
   await page.getByLabel('Kind').selectOption({ label: 'Website' });
+  // A website requires browser-tests (lot 5 step C2).
+  await expect(
+    page.getByText('This project will require the capability browser-tests', { exact: false }),
+  ).toBeVisible();
   await page.getByLabel('Description').fill('Our recipes, for the whole family.');
   await expect(page.getByRole('radio', { name: /Private/ })).toBeChecked();
   await expectFitsScreen(page);
@@ -256,4 +260,74 @@ test('archiving and unarchiving a project, with confirmation', async ({ page }) 
   await expect(item).not.toContainText('Archived');
   await page.getByLabel('Show archived').uncheck();
   await expect(item).toContainText('SHOP · Old shop');
+});
+
+test("a project's required capabilities, edited in Project settings", async ({ page }) => {
+  await completeSetup(page);
+  await page.goto('/');
+  await openNewProjectForm(page);
+  // The form says what the kind requires, with the help on browser tests.
+  await page.getByLabel('Kind').selectOption({ label: 'Android app' });
+  await expect(page.getByText('No effect yet', { exact: false })).toBeVisible();
+  await page.getByLabel('Kind').selectOption({ label: 'Web app' });
+  await expect(
+    page.getByText(
+      'This project will require the capability browser-tests: its runs go only to machines that can run browser tests. You can remove it in Project settings.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Browser tests' })).toHaveAttribute(
+    'href',
+    '/help/machines#browser-tests',
+  );
+
+  const created = await page.request.post('/api/projects', {
+    data: {
+      name: 'Shop',
+      key: 'SHOP',
+      kind: 'web_app',
+      repository: { origin: 'created', name: 'shop', private: true },
+    },
+  });
+  expect(created.status()).toBe(201);
+  await page.goto('/projects/SHOP/settings');
+  const card = page.getByRole('heading', { name: 'Required capabilities' }).locator('..');
+  const list = card.getByRole('list', { name: 'Required capabilities' });
+  await expect(list.getByRole('listitem')).toHaveText([/browser-tests/]);
+  await expectFitsScreen(page);
+
+  // A wrong tag, then one already there, are refused in plain words.
+  const field = card.getByLabel('Add a capability');
+  await field.fill('Android SDK');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(
+    card.getByText('Use lowercase letters and digits, with “-” between words: android-sdk.'),
+  ).toBeVisible();
+  await field.fill('browser-tests');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(card.getByText('The project already requires this capability.')).toBeVisible();
+  await field.fill('android-sdk');
+  await card.getByRole('button', { name: 'Add' }).click();
+  await expect(list.getByRole('listitem')).toHaveText([/browser-tests/, /android-sdk/]);
+  await expect(card.getByRole('status')).toHaveText(
+    'Saved. A run already started goes on where it is.',
+  );
+
+  await card.getByRole('button', { name: 'Remove browser-tests' }).click();
+  await card.getByRole('button', { name: 'Remove android-sdk' }).click();
+  await expect(
+    card.getByText('None: any machine can take the runs of this project.'),
+  ).toBeVisible();
+  await expectFitsScreen(page);
+
+  // Each change in Activity.
+  await page.goto('/activity');
+  await expect(
+    page.getByText('SHOP: required capabilities set to none (before: android-sdk)'),
+  ).toBeVisible();
+
+  // Read-only once archived.
+  expect((await page.request.post('/api/projects/SHOP/archive')).status()).toBe(200);
+  await page.goto('/projects/SHOP/settings');
+  await expect(card.getByText('Unarchive the project to change them.')).toBeVisible();
+  await expect(card.getByLabel('Add a capability')).toHaveCount(0);
 });

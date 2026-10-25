@@ -1,13 +1,14 @@
 import type { schema } from '@orchestrator/db';
 import {
+  Capability,
   ResumeLeftOut,
   TicketStatus,
   type AccountToday,
   type QueueReason,
-  type Capability,
   type MachineUnavailable,
   type RunRefusal,
 } from '@orchestrator/protocol';
+import { z } from 'zod';
 import {
   capabilityLists,
   effectiveCapabilities,
@@ -117,6 +118,21 @@ export function accountUnavailable(
     };
   }
   return null;
+}
+
+type ProfileRow = typeof schema.agentProfiles.$inferSelect;
+
+/**
+ * The capabilities a run needs (07, section 4; lot 5 step C2): the project's, then its profile's
+ * that the project does not already require.
+ */
+export function runCapabilities(
+  project: Pick<ProjectRow, 'requiredCapabilities'>,
+  profile: Pick<ProfileRow, 'requiredCapabilities'> | null | undefined,
+): Capability[] {
+  const own = z.array(Capability).parse(project.requiredCapabilities);
+  const profiles = profile ? z.array(Capability).parse(profile.requiredCapabilities) : [];
+  return [...own, ...profiles.filter((tag) => !own.includes(tag))];
 }
 
 /** Why the machine cannot take a run now (07, section 4), its account's checks last; or null. */

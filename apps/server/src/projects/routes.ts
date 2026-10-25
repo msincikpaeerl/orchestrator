@@ -2,11 +2,13 @@ import { schema } from '@orchestrator/db';
 import {
   AvailabilityQuery,
   CreateProjectRequest,
+  defaultRequiredCapabilities,
   ProjectKey,
   ProjectListQuery,
   RepositoryName,
   TicketStatus,
   ReviewsAutomaticRequest,
+  SetRequiredCapabilitiesRequest,
   UpdateProjectRequest,
   slugify,
   type AvailabilityResponse,
@@ -224,6 +226,8 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       name: input.name,
       description: input.description,
       kind: input.kind,
+      // A new repository or a linked one alike (owner's answer, lot 5 step C).
+      requiredCapabilities: defaultRequiredCapabilities(input.kind),
       setupStatus: 'in_progress',
     } as const;
     if (input.repository.origin === 'created') {
@@ -291,6 +295,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
             origin: inserted.repoOrigin,
             repository: `${inserted.repoOwner}/${inserted.repoName}`,
             private: inserted.repoPrivate,
+            requiredCapabilities: common.requiredCapabilities,
           },
         });
         return inserted;
@@ -368,6 +373,37 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
     request.log.info({ project: row.key, on }, 'Start reviews by themselves changed');
     return toProject(row);
   });
+
+  // Required capabilities (02, section 6.5; lot 5 step C2): each later run of the project needs a
+  // machine with all of them; a run already started goes on where it is.
+  app.put<{ Params: { key: string } }>(
+    '/api/projects/:key/required-capabilities',
+    async (request) => {
+      await requireSession(db, request);
+      const { capabilities } = parseInput(SetRequiredCapabilitiesRequest, request.body);
+      const project = await findByKey(request.params.key);
+      requireActive(project);
+      const previous = toProject(project).requiredCapabilities;
+      if (previous.join() === capabilities.join()) return toProject(project);
+      const row = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(schema.projects)
+          .set({ requiredCapabilities: capabilities, updatedAt: now() })
+          .where(and(eq(schema.projects.id, project.id), eq(schema.projects.status, 'active')))
+          .returning();
+        if (!updated) throw new HttpError(409, 'project_archived', 'This project is archived');
+        await recordEvent(tx, {
+          actor: 'owner',
+          ...projectEntity(updated),
+          type: 'project.required_capabilities_changed',
+          payload: { key: updated.key, previous, capabilities },
+        });
+        return updated;
+      });
+      request.log.info({ project: row.key, capabilities }, 'required capabilities changed');
+      return toProject(row);
+    },
+  );
 
   app.post<{ Params: { key: string } }>(
     '/api/projects/:key/setup/retry',

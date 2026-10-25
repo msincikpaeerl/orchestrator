@@ -1,5 +1,6 @@
 import {
   AvailabilityResponse,
+  defaultRequiredCapabilities,
   LinkableRepositoriesResponse,
   Project,
   ProjectKey,
@@ -24,7 +25,7 @@ import {
   TextArea,
   TextField,
 } from '../components/ui';
-import { kindLabel, refusalText, suggestKey, type ErrorField } from '../projects/text';
+import { kindHint, kindLabel, refusalText, suggestKey, type ErrorField } from '../projects/text';
 import { projectsChanged } from '../queries';
 
 type Way = 'created' | 'linked';
@@ -284,7 +285,17 @@ export function NewProjectPage() {
           />
           <SelectField
             label="Kind"
-            hint="No effect yet: in a later version, it will choose the default tools and agents of the project."
+            hint={
+              <>
+                {kindHint(kind)}
+                {defaultRequiredCapabilities(kind).length > 0 && (
+                  <>
+                    {' '}
+                    <HelpLink page="machines#browser-tests">Browser tests</HelpLink>
+                  </>
+                )}
+              </>
+            }
             value={kind}
             onChange={(event) => {
               setKind(ProjectKind.parse(event.target.value));

@@ -125,11 +125,18 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     const toolsEnd = 'instead of fixing it.\n\n';
     expect(before).toContain(toolsEnd);
     expect(before).not.toContain('numbered from 1');
+    // Lot 5 step C2: the builders' browser tests, after the Git section.
+    const gitEnd = '`git merge origin/<your ticket branch>`.\n\n';
+    expect(before).toContain(gitEnd);
+    expect(before).not.toContain('Browser tests');
+    const browsers = /\n## Browser tests\n\n.*/.exec(rules.builder.main)?.[0];
+    expect(browsers).toBeDefined();
     expect(runRules(rules, 'implement')).toBe(
       `${before
         .replace(reviewParagraph, '')
         .replace(reviewAside, '')
         .replace(toolsEnd, `instead of fixing it.\n\n${CRITERION_NUMBERS}\n\n`)
+        .replace(gitEnd, `${gitEnd.trimEnd()}\n${browsers ?? ''}\n\n`)
         .trim()}${tips}`,
     );
     expect(runRules(rules, 'review')).toContain(tips);
@@ -202,6 +209,32 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(review).not.toMatch(/How to decide|really test/);
     expect(quality).not.toMatch(/CI already ran|run the project's tests/);
     expect(quality).toMatch(/The tests really test the change/);
+  });
+
+  it("tell the builders and Quality how to run browser tests on the machine, and never to touch its browsers (owner's answers, lot 5 steps C and C2)", async () => {
+    const { rules } = await loadShippedAgents();
+    for (const purpose of ['implement', 'fix_review', 'review'] as const) {
+      const text = runRules(rules, purpose);
+      expect(text).toContain('## Browser tests');
+      expect(text).toMatch(
+        /The machine provides the browsers, and Playwright finds them by itself/,
+      );
+      expect(text).toContain(
+        '`npx playwright install chromium` adds its browser in the right place',
+      );
+      expect(text).toContain('Never set `PLAYWRIGHT_BROWSERS_PATH`');
+      expect(text).toContain('never download browsers into another folder');
+      expect(text).toContain('never use `--with-deps` or install system libraries');
+      expect(text).toContain(
+        'never run `playwright uninstall`, and never delete downloaded browsers',
+      );
+    }
+    const builder = runRules(rules, 'implement');
+    expect(builder).toMatch(/end-to-end tests .*run them before you submit/);
+    expect(builder).toMatch(/cannot start on this machine, say so in your report/);
+    const reviewer = runRules(rules, 'review');
+    expect(reviewer).toMatch(/When you run the project's tests .*run them too/);
+    expect(reviewer).toMatch(/cannot start on this machine, say so in your decision/);
   });
 
   it("tell every agent to number criteria from 1, never by an index (protocol 3; owner's answers, lot 5 steps A and B)", async () => {

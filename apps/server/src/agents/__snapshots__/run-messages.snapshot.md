@@ -39,6 +39,10 @@ To bring in the latest changes of the base branch (the project's default branch,
 
 When your first message says that GitHub's copy of your ticket's branch has commits you do not have, bring them in the same way before anything else: `git merge origin/<your ticket branch>`.
 
+## Browser tests
+
+When the project has end-to-end tests that run in a browser (Playwright), run them before you submit, with the command `CLAUDE.md` gives. The machine provides the browsers, and Playwright finds them by itself. If the project uses another Playwright version, `npx playwright install chromium` adds its browser in the right place. Never set `PLAYWRIGHT_BROWSERS_PATH`, never download browsers into another folder, never use `--with-deps` or install system libraries, never run `playwright uninstall`, and never delete downloaded browsers. If the browser cannot start on this machine, say so in your report instead of working around it.
+
 ## Files and commands
 
 - Change files with the `Edit` and `Write` tools, never with the shell: no `>`, `>>`, `tee`, `sed -i` or here-documents.

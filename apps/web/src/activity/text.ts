@@ -47,6 +47,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'project.created': 'Project created',
   'project.updated': 'Project renamed or described',
   'project.reviews_automatic_changed': 'Start reviews by themselves changed',
+  'project.required_capabilities_changed': 'Required capabilities changed',
   'project.setup_step': 'Repository setup step done',
   'project.setup_failed': 'Repository setup failed',
   'project.setup_retried': 'Repository setup tried again',
@@ -250,6 +251,9 @@ const describe: { [T in EventType]: Describe<T> } = {
     ' created: ',
     quote(p.name, c.projectTo),
     `, ${kindLabel[p.kind].toLowerCase()}, ${p.origin === 'created' ? 'new' : 'linked'} ${p.private ? 'private' : 'public'} repository ${p.repository}`,
+    p.requiredCapabilities && p.requiredCapabilities.length > 0
+      ? `, requiring ${list(p.requiredCapabilities)}`
+      : '',
   ],
   'project.updated': (p, c) => {
     const pieces: Piece[] = [c.project];
@@ -264,6 +268,11 @@ const describe: { [T in EventType]: Describe<T> } = {
     p.on
       ? ': Start reviews by themselves turned on'
       : ': Start reviews by themselves turned off, reviews wait for Start review',
+  ],
+  'project.required_capabilities_changed': (p, c) => [
+    c.project,
+    `: required capabilities set to ${p.capabilities.length === 0 ? 'none' : list(p.capabilities)}`,
+    p.previous.length === 0 ? ' (none before)' : ` (before: ${list(p.previous)})`,
   ],
   'project.setup_step': (p, c) => {
     const done: Record<typeof p.step, string> = {

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "required_capabilities" jsonb DEFAULT '[]'::jsonb NOT NULL;

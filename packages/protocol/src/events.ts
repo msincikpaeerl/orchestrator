@@ -69,6 +69,7 @@ export const EventType = z.enum([
   'project.created',
   'project.updated',
   'project.reviews_automatic_changed',
+  'project.required_capabilities_changed',
   'project.setup_step',
   'project.setup_failed',
   'project.setup_retried',
@@ -200,6 +201,8 @@ export const EventPayloads = {
     origin: RepositoryOrigin,
     repository: z.string(),
     private: z.boolean(),
+    /** From lot 5 step C2; absent from earlier events. */
+    requiredCapabilities: z.array(z.string()).optional(),
   }),
   'project.updated': z.object({
     ...ProjectFacts,
@@ -208,6 +211,12 @@ export const EventPayloads = {
   }),
   /** The switch **Start reviews by themselves** turned on or off (01, section 3.1). */
   'project.reviews_automatic_changed': z.object({ ...ProjectFacts, on: z.boolean() }),
+  /** The owner changed the project's required capabilities (02, section 6.5; lot 5 step C2). */
+  'project.required_capabilities_changed': z.object({
+    ...ProjectFacts,
+    previous: z.array(z.string()),
+    capabilities: z.array(z.string()),
+  }),
   'project.setup_step': z.object({
     ...ProjectFacts,
     step: SetupStep,

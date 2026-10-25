@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { BROWSER_TESTS_CAPABILITY } from '../daemon/browsers.js';
+import { Capability } from '../daemon/capability.js';
 import { TicketStatus } from './tickets.js';
 
 /**
@@ -19,6 +21,20 @@ export type ProjectKey = z.infer<typeof ProjectKey>;
 
 export const ProjectKind = z.enum(['web_app', 'website', 'android_app']);
 export type ProjectKind = z.infer<typeof ProjectKind>;
+
+/**
+ * The capabilities a project created from version 0.6.0 requires by default (01, section 3.1;
+ * owner's answer 5, lot 5 step A): its end-to-end tests run in a browser on the machine.
+ */
+export function defaultRequiredCapabilities(kind: ProjectKind): Capability[] {
+  return kind === 'website' || kind === 'web_app' ? [BROWSER_TESTS_CAPABILITY] : [];
+}
+
+/** A project's required capabilities, each once (01, section 3.1). */
+export const RequiredCapabilities = z
+  .array(Capability)
+  .max(50, 'at most 50 capabilities')
+  .refine((tags) => new Set(tags).size === tags.length, 'each capability only once');
 
 export const ProjectStatus = z.enum(['active', 'archived']);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
@@ -91,6 +107,8 @@ export const Project = z.object({
   status: ProjectStatus,
   /** **Start reviews by themselves** (02, section 6.5; 07, section 1; lot 4 step D3). */
   reviewsAutomatic: z.boolean(),
+  /** Every run on the project needs a machine with all of them (01, section 3.1; lot 5 step C2). */
+  requiredCapabilities: z.array(Capability),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -147,6 +165,12 @@ export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequest>;
 /** `PUT /api/projects/<key>/reviews-automatic`: the switch **Start reviews by themselves**. */
 export const ReviewsAutomaticRequest = z.strictObject({ on: z.boolean() });
 export type ReviewsAutomaticRequest = z.infer<typeof ReviewsAutomaticRequest>;
+
+/** `PUT /api/projects/<key>/required-capabilities`: the whole list the project should require. */
+export const SetRequiredCapabilitiesRequest = z.strictObject({
+  capabilities: RequiredCapabilities,
+});
+export type SetRequiredCapabilitiesRequest = z.infer<typeof SetRequiredCapabilitiesRequest>;
 
 /** `GET /api/projects/availability`: each value given is checked. */
 export const AvailabilityQuery = z.object({

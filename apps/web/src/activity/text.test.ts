@@ -45,6 +45,11 @@ const examples: { [T in EventType]: EventPayload<T> } = {
   },
   'project.updated': { key: 'WEB', name: 'Online shop', description: 'Sells things' },
   'project.reviews_automatic_changed': { key: 'WEB', on: false },
+  'project.required_capabilities_changed': {
+    key: 'WEB',
+    previous: ['browser-tests'],
+    capabilities: [],
+  },
   'project.setup_step': {
     key: 'WEB',
     step: 'branch_protection',
@@ -657,6 +662,23 @@ describe('eventText', () => {
       { text: 'WEB', to: '/projects/WEB' },
       { text: '“Web shop”', to: '/projects/WEB' },
     ]);
+  });
+
+  it('says what a project requires when it is created, and each change (lot 5 step C2)', () => {
+    const created = entry('project.created');
+    const payload = { ...created.payload, requiredCapabilities: ['browser-tests'] };
+    expect(plainText(eventText({ ...created, payload }))).toBe(
+      'WEB created: “Web shop”, web app, new private repository octo-owner/web-shop, requiring browser-tests',
+    );
+    expect(plainText(eventText(entry('project.required_capabilities_changed')))).toBe(
+      'WEB: required capabilities set to none (before: browser-tests)',
+    );
+    const added = entry('project.required_capabilities_changed', {
+      payload: { key: 'WEB', previous: [], capabilities: ['browser-tests', 'android-sdk'] },
+    });
+    expect(plainText(eventText(added))).toBe(
+      'WEB: required capabilities set to browser-tests, android-sdk (none before)',
+    );
   });
 
   it('says which way Start reviews by themselves was turned (lot 4 step D3)', () => {

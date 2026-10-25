@@ -152,6 +152,7 @@ describe('creating a project with a new repository', () => {
       repository: { owner: 'octo-owner', name: 'online-shop', origin: 'created', private: true },
       setup: { status: 'in_progress', step: 'repository', failure: null },
       status: 'active',
+      requiredCapabilities: ['browser-tests'],
     });
 
     const ready = await settled('SHOP');
@@ -178,6 +179,7 @@ describe('creating a project with a new repository', () => {
           origin: 'created',
           repository: 'octo-owner/online-shop',
           private: true,
+          requiredCapabilities: ['browser-tests'],
         },
       },
       expect.objectContaining({
