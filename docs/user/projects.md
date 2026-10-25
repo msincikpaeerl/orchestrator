@@ -147,7 +147,7 @@ From then on, each time Quality approves a ticket's work, the Orchestrator merge
 
 The ticket then moves to **Done** as when you merge (see [Merging the pull request](tickets.md#merging-the-pull-request)): its branch is deleted and the tickets waiting for it can start. The ticket page says "Merged automatically by the Orchestrator at …", and the [event log](activity.md) records it.
 
-**The risk: nobody reads the change before it is merged.** Quality's review and CI are the only checks. An agent's mistake that Quality and the tests miss reaches your default branch, and text an agent read (a web page, a file in the repository) could mislead Quality. Turn it on only for projects where that is acceptable, for example a website you can fix later, and look at the merged changes from time to time.
+**The risk: nobody reads the change before it is merged.** Quality's review and CI are the only checks. An agent's mistake that Quality and the tests miss reaches your default branch, and text an agent read (a web page, a file in the repository) could mislead Quality. CI tested each pull request with the default branch as it was when the agent last pushed: if another pull request was merged since, by you or automatically, the two changes reach the default branch without ever being tested together, and GitHub stops nothing unless they change the same lines. So a change merged this way can still break the default branch even when each pull request passed CI. Tickets that wait for another one are not affected: they start after its merge. Turn it on only for projects where that is acceptable, for example a website you can fix later, and look at the merged changes from time to time.
 
 What it never does:
 
