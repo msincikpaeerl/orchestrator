@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   DaemonRunState,
@@ -188,22 +188,29 @@ export function claudeArguments(launch: LaunchInput): string[] {
  * when `$4` is a session id, `--` and the message. The texts never reach tmux's command, which its
  * client caps at about 16 KB, and the shell never interprets them: they are expanded within double
  * quotes only. `printf x` then `${i%x}` keeps their trailing newlines, which a command
- * substitution alone removes.
+ * substitution alone removes. A text that cannot be read, or reads as empty, starts no Claude
+ * Code: the script writes why in `$5` and exits with an error, which the daemon reports as
+ * `launch_failed` (lot 5 step 5bis D). The check comes after `${i%x}`, so a launcher whose `${…}`
+ * something emptied on the way (systemd-run's expansion) fails too.
  */
 export const LAUNCH_SCRIPT = [
-  'c=$1',
-  'i=$("$c" -- "$2" && printf x) || exit 1',
-  'm=$("$c" -- "$3" && printf x) || exit 1',
+  'c=$1 e=$5',
+  'i=$("$c" -- "$2" && printf x) || { printf \'%s could not be read\\n\' "$2" > "$e"; exit 1; }',
+  'm=$("$c" -- "$3" && printf x) || { printf \'%s could not be read\\n\' "$3" > "$e"; exit 1; }',
+  'i=${i%x} m=${m%x}',
+  '[ -n "$i" ] || { printf \'the instructions (%s) read as empty\\n\' "$2" > "$e"; exit 1; }',
+  '[ -n "$m" ] || { printf \'the message (%s) reads as empty\\n\' "$3" > "$e"; exit 1; }',
   'r=$4',
-  'shift 4',
-  'if [ -n "$r" ]; then exec "$@" --append-system-prompt "${i%x}" --resume "$r" -- "${m%x}"; fi',
-  'exec "$@" --append-system-prompt "${i%x}" -- "${m%x}"',
+  'shift 5',
+  'if [ -n "$r" ]; then exec "$@" --append-system-prompt "$i" --resume "$r" -- "$m"; fi',
+  'exec "$@" --append-system-prompt "$i" -- "$m"',
 ].join('\n');
 
-/** The files of one launch's texts, written by `writeRunFiles`. */
+/** The files of one launch's texts, written by `writeRunFiles`, and the launcher's error file. */
 export interface LaunchTexts {
   instructions: string;
   message: string;
+  error: string;
 }
 
 /**
@@ -227,6 +234,7 @@ export function launchCommand(
     launch.texts.instructions,
     launch.texts.message,
     launch.resumeSessionId ?? '',
+    launch.texts.error,
     claude,
     ...fixed,
   ];
@@ -279,7 +287,9 @@ export function writeRunFiles(
   const texts = {
     instructions: join(folder, 'system-prompt.md'),
     message: join(folder, 'message.md'),
+    error: join(folder, 'launch-error'),
   };
+  rmSync(texts.error, { force: true });
   writeTextAtomic(texts.instructions, start.profile.instructions);
   writeTextAtomic(texts.message, message);
   writeJsonAtomic(settings, runSettings(paths, start, selfCommand));

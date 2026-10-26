@@ -102,12 +102,27 @@ describe.runIf(ENABLED)('systemd scopes (ORCHESTRATOR_TEST_SYSTEMD=1)', () => {
           { steps: [...LEFT_BEHIND, { do: 'sleep', ms: 3000 }, { do: 'text', text: 'Done.' }] },
         ],
       });
-      const run = await start(manager, { limits: { maxNudgesPerRun: 0 } });
+      // The launcher's `${…}` pass systemd-run unexpanded (lot 5 step 5bis D).
+      const instructions = 'Rules ${PATH} ${i%x} $$ $HOME.\n';
+      const initialPrompt = 'Review ${m%x} $$.\n';
+      const run = await start(manager, {
+        initialPrompt,
+        profile: {
+          key: 'web_dev',
+          version: 1,
+          instructions,
+          model: 'sonnet',
+          allowedTools: ['Bash(git commit *)'],
+        },
+        limits: { maxNudgesPerRun: 0 },
+      });
       await waitFor(async () => (await leftPids()).length === 4, 30_000, 'the four processes');
 
       const [launch] = (await fake.log()).filter((entry) => entry.event === 'start');
       if (launch?.event !== 'start') throw new Error('no launch');
       expect(cgroup(launch.pid)).toContain(`/${runScopeName(prefix, run.runId)}.scope`);
+      expect(launch.args[launch.args.indexOf('--append-system-prompt') + 1]).toBe(instructions);
+      expect(launch.args.at(-1)).toBe(initialPrompt);
       const server = spawnSync(
         join(home.bin, 'tmux'),
         ['-L', TMUX_SOCKET_NAME, 'display-message', '-p', '#{pid}'],

@@ -1,12 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { claudeArguments, launchCommand } from './run-files.js';
+import { claudeArguments, launchCommand, type LaunchTexts } from './run-files.js';
 
 // The launcher of 05 section 4.3 (lot 5 step 5bis C): the texts go through the run's files and
-// reach Claude Code byte for byte, while the command given to tmux stays small.
+// reach Claude Code byte for byte, while the command given to tmux stays small. A text that reads
+// as empty starts no Claude Code (lot 5 step 5bis D).
 
 const folders: string[] = [];
 afterEach(() => {
@@ -20,6 +21,7 @@ function texts(instructions: string, message: string) {
   const files = {
     instructions: join(folder, 'system-prompt.md'),
     message: join(folder, 'message.md'),
+    error: join(folder, 'launch-error'),
   };
   writeFileSync(files.instructions, instructions);
   writeFileSync(files.message, message);
@@ -89,7 +91,7 @@ describe('the launch command', () => {
   it('is the same whatever the size of the texts, and never holds them', () => {
     const small = texts('Rules.', 'Hello.');
     const large = texts(TRICKY.repeat(2000), TRICKY.repeat(2000));
-    const command = (files: { instructions: string; message: string }) =>
+    const command = (files: LaunchTexts) =>
       launchCommand({ shell: '/bin/sh', cat: CAT }, '/usr/bin/claude', {
         ...launch,
         resumeSessionId: null,
@@ -100,5 +102,41 @@ describe('the launch command', () => {
     // Far below the 16 KB a tmux command can hold.
     expect(sizes[1]).toBeLessThan(2000);
     expect(command(large.files).join('\0')).not.toContain('Ligne');
+  });
+
+  it.each([
+    ['the instructions', 'instructions'],
+    ['the message', 'message'],
+  ] as const)('starts no Claude Code when %s read as empty', (what, empty) => {
+    const { files, claude } = texts('Rules.', 'Hello.');
+    writeFileSync(files[empty], '');
+    for (const shell of SHELLS) {
+      rmSync(files.error, { force: true });
+      const [file = '', ...args] = launchCommand({ shell, cat: CAT }, claude, {
+        ...launch,
+        resumeSessionId: null,
+        texts: files,
+      });
+      const result = spawnSync(file, args, { encoding: 'utf8', env: { PATH: '' } });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(readFileSync(files.error, 'utf8')).toBe(
+        `${what} (${files[empty]}) ${empty === 'message' ? 'reads' : 'read'} as empty\n`,
+      );
+    }
+  });
+
+  it('starts no Claude Code when a text cannot be read', () => {
+    const { files, claude } = texts('Rules.', 'Hello.');
+    rmSync(files.message);
+    const [file = '', ...args] = launchCommand({ shell: '/bin/sh', cat: CAT }, claude, {
+      ...launch,
+      resumeSessionId: null,
+      texts: files,
+    });
+    const result = spawnSync(file, args, { encoding: 'utf8', env: { PATH: '' } });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(readFileSync(files.error, 'utf8')).toBe(`${files.message} could not be read\n`);
   });
 });
