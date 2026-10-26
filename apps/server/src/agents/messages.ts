@@ -71,6 +71,20 @@ export function runInstructions(
   return `${runRulesText.trim()}\n\n${roleInstructions.trim()}\n\n${section.trim()}\n`;
 }
 
+/** The instructions a run of `profile` receives for `purpose`: `runInstructions` of its rules. */
+export function profileRunInstructions(
+  files: { rules: Rules; allowlist: Template },
+  profile: { instructions: string; allowedTools: readonly string[] },
+  purpose: RunPurpose,
+): string {
+  return runInstructions(
+    runRules(files.rules, purpose),
+    profile.instructions,
+    files.allowlist,
+    profile.allowedTools,
+  );
+}
+
 export interface FirstMessageComment {
   author: { kind: 'owner' } | { kind: 'system' } | { kind: 'agent'; name: string };
   kind: CommentKind;

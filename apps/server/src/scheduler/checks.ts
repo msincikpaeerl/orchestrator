@@ -1,6 +1,7 @@
 import type { schema } from '@orchestrator/db';
 import {
   Capability,
+  INSTRUCTIONS_MAX_BYTES,
   ResumeLeftOut,
   TicketStatus,
   type AccountToday,
@@ -34,6 +35,24 @@ export function githubRefusal(connection: ConnectionRow | undefined): RunRefusal
   if (connection.unreadableSince) return { reason: 'github_token_unreadable' };
   if (connection.invalidSince) return { reason: 'github_token_invalid' };
   return null;
+}
+
+/**
+ * Run instructions Claude Code cannot be given (03, section 3; lot 5 step 5bis C): above
+ * `INSTRUCTIONS_MAX_BYTES`, the profile named with their size.
+ */
+export function instructionsRefusal(
+  profile: { key: string; name: string },
+  instructions: string,
+): RunRefusal | null {
+  const bytes = Buffer.byteLength(instructions, 'utf8');
+  if (bytes <= INSTRUCTIONS_MAX_BYTES) return null;
+  return {
+    reason: 'instructions_too_large',
+    profile: { key: profile.key, name: profile.name },
+    bytes,
+    maxBytes: INSTRUCTIONS_MAX_BYTES,
+  };
 }
 
 /** An archived project, or one whose repository setup is not finished. */
@@ -430,6 +449,8 @@ export function refusalMessage(refusal: RunRefusal): string {
       return `The account ${refusal.account.label} is limited until ${refusal.until}`;
     case 'account_busy':
       return `The account ${refusal.account.label} already runs its maximum of ${String(refusal.maxConcurrentRuns)}`;
+    case 'instructions_too_large':
+      return `The instructions of agent profile ${refusal.profile.name} are too long (${String(refusal.bytes)} bytes, the limit is ${String(refusal.maxBytes)})`;
     default:
       throw new Error(`no message for the refusal ${refusal.reason}`);
   }

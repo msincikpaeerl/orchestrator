@@ -104,6 +104,14 @@ export async function loadShippedAgents(directory = agentsDirectory()): Promise<
   return { rules, allowlist: parseTemplate('allowlist', allowlistText), profiles };
 }
 
+let shipped: Promise<ShippedAgents> | undefined;
+
+/** `loadShippedAgents` of the default folder, read once: its files do not change while it runs. */
+export function shippedAgents(): Promise<ShippedAgents> {
+  shipped ??= loadShippedAgents();
+  return shipped;
+}
+
 /** The run message templates of 03, section 3.2, by file name in `agents/templates/`. */
 export const TEMPLATE_NAMES = [
   'implement',

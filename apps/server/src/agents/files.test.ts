@@ -1,7 +1,14 @@
 import { readFile } from 'node:fs/promises';
+import { INSTRUCTIONS_MAX_BYTES, RunPurpose } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { loadShippedAgents, loadTemplates, parseTemplate } from './files.js';
-import { runRules } from './messages.js';
+import {
+  PURPOSE_RULES,
+  ROLE_RULES,
+  loadShippedAgents,
+  loadTemplates,
+  parseTemplate,
+} from './files.js';
+import { profileRunInstructions, runRules } from './messages.js';
 
 /**
  * Criterion numbers from 1 everywhere, `ticket_submit` included (03, section 3.2; protocol 3,
@@ -300,5 +307,21 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'fix-review',
       'mcp-tools',
     ]);
+  });
+});
+
+describe('the shipped profiles (lot 5 step 5bis C)', () => {
+  it('give every run of theirs instructions Claude Code can be given', async () => {
+    const shipped = await loadShippedAgents();
+    for (const profile of shipped.profiles) {
+      const purposes = RunPurpose.options.filter((purpose) => {
+        const kind = PURPOSE_RULES[purpose];
+        return kind !== null && ROLE_RULES[profile.role].includes(kind);
+      });
+      for (const purpose of purposes) {
+        const size = Buffer.byteLength(profileRunInstructions(shipped, profile, purpose));
+        expect(size, `${profile.key} ${purpose}`).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+      }
+    }
   });
 });

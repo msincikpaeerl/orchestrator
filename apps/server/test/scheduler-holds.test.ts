@@ -393,6 +393,57 @@ describe('failures the machine caused (07, section 4)', () => {
     expect(starts(again)).toHaveLength(0);
   });
 
+  it('launch_failed: never counted, the machine left out, two in a row give the item (lot 5 step 5bis C)', async () => {
+    await h.start({ now: clock });
+    await h.createTicket();
+    const laptop = await h.machine();
+
+    async function notLaunched(daemon: ScriptedDaemon) {
+      expect(await tick()).toEqual(['implement WEB-1 on Laptop']);
+      const run = await latestRun();
+      const start = await startOf(daemon, run.id);
+      daemon.send({ type: 'ack', id: start.id, payload: { ok: true } });
+      await h.report(daemon, state(run.id, { state: 'preparing' }));
+      await h.report(
+        daemon,
+        state(run.id, {
+          state: 'ended',
+          reason: 'launch_failed',
+          detail:
+            "Claude Code could not be started on this machine (tmux new-session failed: no server running). Running it again on this machine will not help until that is fixed, and it is not the ticket's fault.",
+        }),
+      );
+      await ended(run.id, 'failed');
+      expect((await h.run(run.id)).failureReason).toBe('machine_problem');
+    }
+
+    await notLaunched(laptop.daemon);
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect(await reasonOf()).toMatchObject({
+      reason: 'machine_unavailable',
+      machine: { name: 'Laptop' },
+      unavailable: { why: 'left_out', cause: 'machine_problem' },
+    });
+    expect(await failuresOf()).toMatchObject([
+      { machineId: laptop.id, failures: [{ cause: 'machine_problem' }], asked: null },
+    ]);
+
+    // Connected again, it takes the ticket; the same failure again gives the item.
+    const again = await reconnect(laptop.daemon, laptop.token, laptop.id);
+    await notLaunched(again);
+    expect(await failuresOf()).toMatchObject([
+      {
+        failures: [{ cause: 'machine_problem' }, { cause: 'machine_problem' }],
+        asked: { limit: 2 },
+      },
+    ]);
+    expect((await needsYou()).find((item) => item.type === 'machine_failures')).toMatchObject({
+      machine: { name: 'Laptop' },
+    });
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect((await ticketRow()).attemptCount).toBe(0);
+  });
+
   it('machine_problem: a start sent before its doctor report is refused and does not loop', async () => {
     await h.start({ now: clock });
     await h.createTicket();
