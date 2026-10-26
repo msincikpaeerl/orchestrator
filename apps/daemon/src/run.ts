@@ -38,8 +38,8 @@ import type { DaemonPaths } from './paths.js';
 import {
   DELIVERED_IDS_KEPT,
   RunStateFile,
-  claudeArguments,
   createRunFolder,
+  launchCommand,
   stateFilePath,
   writeJsonAtomic,
   writeRunFiles,
@@ -450,7 +450,7 @@ export class Run {
       };
     }
     try {
-      const files = writeRunFiles(this.context.paths, start, this.context.selfCommand);
+      const files = writeRunFiles(this.context.paths, start, this.context.selfCommand, message);
       this.socket ??= await serveRunSocket(
         files.socket,
         (request) => this.onSocket(request),
@@ -482,25 +482,25 @@ export class Run {
           [RUN_MARKER]: this.runId,
         },
         envCommand: this.context.envCommand,
-        command: this.scoped([
-          claude,
-          ...claudeArguments({
+        // The texts go through the run's files, never tmux's command (lot 5 step 5bis C).
+        command: this.scoped(
+          launchCommand(this.launchTools, claude, {
             mcpConfig: files.mcpConfig,
             settings: files.settings,
             model: start.profile.model,
-            instructions: start.profile.instructions,
             resumeSessionId,
-            message,
+            texts: files.texts,
           }),
-        ]),
+        ),
       });
     } catch (error) {
       this.log.error({ err: error }, 'session not launched');
       // systemd-run refused the tmux server's scope (05, section 2).
       if (error instanceof ScopeRefused) return this.scopeFailed(error.reason);
+      // The machine's fault, never the agent's: not a failed attempt (lot 5 step 5bis C).
       return {
-        reason: 'crashed',
-        detail: `Claude Code could not be launched: ${(error as Error).message}`,
+        reason: 'launch_failed',
+        detail: `Claude Code could not be started on this machine (${(error as Error).message}). Running it again on this machine will not help until that is fixed, and it is not the ticket's fault.`,
       };
     }
     this.sessionAlive = true;
@@ -511,6 +511,14 @@ export class Run {
     this.startTimer();
     this.log.info({ session: this.name, version }, 'session launched');
     return null;
+  }
+
+  /** The shell and the `cat` of the launcher, by absolute path (05, section 4.3). */
+  private get launchTools(): { shell: string; cat: string } {
+    return {
+      shell: findExecutable('sh', this.context.toolPath) ?? '/bin/sh',
+      cat: findExecutable('cat', this.context.toolPath) ?? '/bin/cat',
+    };
   }
 
   /** The run's systemd scope (05, section 4.11). */
