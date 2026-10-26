@@ -426,6 +426,18 @@ export class Run {
   ): Promise<StartFailure | null> {
     if (this.stopping()) return null;
     const { start } = this.data;
+    // Never an agent without its rules or its task (lot 5 step 5bis D): the server's fault,
+    // never the agent's, so not a failed attempt.
+    const missing = [
+      ...(start.profile.instructions.trim() ? [] : ['instructions']),
+      ...(message.trim() ? [] : ['message']),
+    ];
+    if (missing.length > 0) {
+      return {
+        reason: 'launch_failed',
+        detail: `Claude Code was not started: the run has no ${missing.join(' and no ')}.`,
+      };
+    }
     const claude = findExecutable('claude', this.context.toolPath);
     const version = claude
       ? ((
@@ -519,6 +531,22 @@ export class Run {
       shell: findExecutable('sh', this.context.toolPath) ?? '/bin/sh',
       cat: findExecutable('cat', this.context.toolPath) ?? '/bin/cat',
     };
+  }
+
+  /**
+   * Why the launcher started no Claude Code (`LAUNCH_SCRIPT`): a text it could not read or that
+   * read as empty; null when it started Claude Code.
+   */
+  private launchError(): string | null {
+    try {
+      return (
+        readFileSync(join(runFolder(this.context.paths, this.runId), 'launch-error'), 'utf8')
+          .trim()
+          .replace(/\s+/g, ' ') || null
+      );
+    } catch {
+      return null;
+    }
   }
 
   /** The run's systemd scope (05, section 4.11). */
@@ -1193,6 +1221,14 @@ export class Run {
       if (refused !== null) {
         const failure = this.scopeFailed(refused);
         await this.end(failure.reason, failure.detail);
+        return;
+      }
+      const launchError = this.launchError();
+      if (launchError !== null) {
+        await this.end(
+          'launch_failed',
+          `Claude Code was not started: ${launchError}. Running it again on this machine will not help until that is fixed, and it is not the ticket's fault.`,
+        );
         return;
       }
       await this.end('crashed', 'Claude Code exited before the end of the run.');
