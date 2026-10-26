@@ -36,6 +36,19 @@ export function runScopeName(prefix: string, runId: string): string {
 const REASON_MAX_LENGTH = 300;
 
 /**
+ * The first systemd with `--expand-environment=`: from it on, systemd-run expands `${NAME}` in a
+ * scope's command itself, by default, and so empties every `${…}` of a shell script given as an
+ * argument (lot 5 step 5bis D). Before it, a scope's command was never expanded.
+ */
+export const EXPAND_ENVIRONMENT_SINCE = 254;
+
+/** The version number `systemd-run --version` starts with ("systemd 259 (259.5-…)"), or null. */
+export function systemdVersion(said: string): number | null {
+  const match = /^systemd (\d+)/.exec(said.trim());
+  return match ? Number(match[1]) : null;
+}
+
+/**
  * Inside a scope, before the command: writes the marker file (`$0`) proving systemd-run created
  * the scope and started what it holds, then replaces itself with the command. The second one
  * gives the command the terminal back as its error output, which the run's wrapper had sent to
@@ -72,6 +85,8 @@ export class UserSystemd {
     private readonly systemctl: string,
     private readonly env: NodeJS.ProcessEnv,
     private readonly trueCommand: string,
+    /** Whether systemd-run takes `--expand-environment=no` (`EXPAND_ENVIRONMENT_SINCE`). */
+    private readonly expands: boolean,
   ) {}
 
   /**
@@ -92,11 +107,17 @@ export class UserSystemd {
         problem: `${systemdRun ? 'systemctl' : 'systemd-run'} was not found in the daemon's PATH`,
       };
     }
+    // An unknown version is taken as a recent one: the throw-away scope then shows whether
+    // systemd-run takes the option.
+    const version = systemdVersion(
+      (await runCommand(systemdRun, ['--version'], { env }))?.stdout ?? '',
+    );
     const systemd = new UserSystemd(
       systemdRun,
       systemctl,
       env,
       findExecutable('true', toolPath) ?? '/bin/true',
+      version === null || version >= EXPAND_ENVIRONMENT_SINCE,
     );
     const problem = await systemd.checkScope(prefix);
     return problem === null ? { systemd, problem: null } : { systemd: null, problem };
@@ -140,6 +161,9 @@ export class UserSystemd {
       '--quiet',
       '--collect',
       `--property=TimeoutStopSec=${String(Math.ceil(SWEEP_GRACE_MS / 1000))}s`,
+      // The command is passed as it is: systemd-run would otherwise empty the `${…}` of the
+      // launcher's script, and Claude Code would start without its instructions or its message.
+      ...(this.expands ? ['--expand-environment=no'] : []),
       '--unit',
       unit,
       '--',
