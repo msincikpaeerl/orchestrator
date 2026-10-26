@@ -325,6 +325,7 @@ export {
   AgentProfileSummary,
   AgentRole,
   FIRST_MESSAGE_MAX_BYTES,
+  INSTRUCTIONS_MAX_BYTES,
 } from './api/agents.js';
 export { McpPermission, ROLE_MCP_PERMISSIONS, runMcpTools } from './mcp/permissions.js';
 export { parseAgentProfileFile, type AgentProfileFile } from './api/agent-profile-file.js';

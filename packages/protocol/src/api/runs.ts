@@ -351,6 +351,17 @@ export const RunRefusal = z.discriminatedUnion('reason', [
   /** Even with its description cut (03, section 3.2): shorten the ticket. */
   z.object({ reason: z.literal('first_message_too_large'), maxBytes: z.int().positive() }),
   /**
+   * The run instructions of the profile that would run it are above `INSTRUCTIONS_MAX_BYTES`
+   * (`maxBytes`), at `bytes` (03, section 3; lot 5 step 5bis C): Claude Code could not be given
+   * them, so no run starts until they are shorter.
+   */
+  z.object({
+    reason: z.literal('instructions_too_large'),
+    profile: z.object({ key: z.string(), name: z.string() }),
+    bytes: z.int().positive(),
+    maxBytes: z.int().positive(),
+  }),
+  /**
    * The one machine that can take it cannot now: the machine holding the ticket's commits
    * (`commits`), or a paused run's own machine (`commits` null).
    */

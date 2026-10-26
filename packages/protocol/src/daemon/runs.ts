@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentKey, FIRST_MESSAGE_MAX_BYTES } from '../api/agents.js';
+import { AgentKey, FIRST_MESSAGE_MAX_BYTES, INSTRUCTIONS_MAX_BYTES } from '../api/agents.js';
 import { RepositoryName } from '../api/projects.js';
 import { TicketReference } from '../api/tickets.js';
 import { boundedText, requiredText, settingCeiling } from '../text-limits.js';
@@ -69,6 +69,12 @@ export const RunEndReason = z.enum([
    * failed attempt.
    */
   'process_scope_failed',
+  /**
+   * Claude Code could not be launched for a reason of the machine: tmux could not open the
+   * session, or the run's files could not be written (05, section 4.3; lot 5 step 5bis C). Never
+   * a failed attempt.
+   */
+  'launch_failed',
   /** The workspace could not be prepared, or the session ended unexpectedly. */
   'crashed',
   /** One CI failure more than **Most CI failures per run** (04, section 3.1; protocol 2). */
@@ -144,7 +150,11 @@ export const RunStart = message(
       profile: z.object({
         key: AgentKey,
         version: z.int().positive(),
-        instructions: requiredText(),
+        /** Passed as one command-line argument: within `INSTRUCTIONS_MAX_BYTES` (05, 4.3). */
+        instructions: requiredText().refine(
+          (text) => new TextEncoder().encode(text).length <= INSTRUCTIONS_MAX_BYTES,
+          `at most ${String(INSTRUCTIONS_MAX_BYTES)} bytes`,
+        ),
         model: requiredText(),
         /** Claude Code permission rules, such as `Bash(pnpm test *)`. */
         allowedTools: z.array(requiredText()),

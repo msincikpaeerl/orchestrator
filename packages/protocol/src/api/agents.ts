@@ -38,3 +38,12 @@ export type AgentListResponse = z.infer<typeof AgentListResponse>;
  * and never exceeds the 100,000 characters of the protocol's text ceiling.
  */
 export const FIRST_MESSAGE_MAX_BYTES = 100_000;
+
+/**
+ * Largest run instructions, in UTF-8 bytes (03, section 3; 05, section 4.3): the run's rules, the
+ * profile's role instructions and its Bash rules, passed to Claude Code as the one argument after
+ * `--append-system-prompt`. Linux's 128 KiB cap on one argument applies as to the first message,
+ * so it has the same budget and the same reason to be a constant. The server refuses a start
+ * whose instructions are above it, before any run exists (lot 5 step 5bis C).
+ */
+export const INSTRUCTIONS_MAX_BYTES = 100_000;

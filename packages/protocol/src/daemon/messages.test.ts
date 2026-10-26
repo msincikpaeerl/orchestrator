@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_MESSAGE_MAX_BYTES } from '../api/agents.js';
+import { FIRST_MESSAGE_MAX_BYTES, INSTRUCTIONS_MAX_BYTES } from '../api/agents.js';
 import { TEXT_CEILING } from '../text-limits.js';
 import { DaemonMessage, ServerMessage } from './messages.js';
 
@@ -410,6 +410,16 @@ describe('payload checks', () => {
       serverExamples['run.start'],
       // Fewer characters than the text ceiling, but three bytes each in UTF-8.
       (p) => (p.initialPrompt = '€'.repeat(Math.floor(FIRST_MESSAGE_MAX_BYTES / 3) + 1)),
+    ],
+    [
+      'run.start with instructions over the byte budget of one argument',
+      serverExamples['run.start'],
+      // Lot 5 step 5bis C: the server refuses such a start before any run.
+      (p) => {
+        (p.profile as { instructions: string }).instructions = '€'.repeat(
+          Math.floor(INSTRUCTIONS_MAX_BYTES / 3) + 1,
+        );
+      },
     ],
     ['run.start without its tool list', serverExamples['run.start'], (p) => delete p.mcpTools],
     [
