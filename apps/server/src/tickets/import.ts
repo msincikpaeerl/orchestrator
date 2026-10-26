@@ -273,6 +273,7 @@ const limitSetting: Record<LimitExceeded['field'], SettingName> = {
   acceptance_criteria: 'ticketMaxAcceptanceCriteria',
   acceptance_criterion: 'acceptanceCriterionMaxLength',
   comment: 'commentMaxLength',
+  request: 'ticketDescriptionMaxLength',
 };
 
 function limitMessage(limit: LimitExceeded, entry: TicketImportEntry): string {

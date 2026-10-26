@@ -25,10 +25,18 @@ const HelpPage = lazy(() => import('./pages/help'));
 const TicketPage = lazy(() =>
   import('./pages/ticket').then((module) => ({ default: module.TicketPage })),
 );
+const RequestsPage = lazy(() =>
+  import('./pages/requests').then((module) => ({ default: module.RequestsPage })),
+);
+const NewRequestPage = lazy(() =>
+  import('./pages/requests').then((module) => ({ default: module.NewRequestPage })),
+);
+const RequestPage = lazy(() =>
+  import('./pages/requests').then((module) => ({ default: module.RequestPage })),
+);
 
 /** Sections of later lots, with their purpose from 02, section 2. */
 const later: Record<string, string> = {
-  '/requests': 'Talk to the Project Manager.',
   '/agents': 'Default and custom agent profiles.',
 };
 
@@ -85,6 +93,9 @@ export function App() {
             ))}
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/activity/runs/:id" element={<RunPage />} />
+          <Route path="/requests" element={<RequestsPage />} />
+          <Route path="/requests/new" element={<NewRequestPage />} />
+          <Route path="/requests/:number" element={<RequestPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/projects/:key" element={<ProjectPage />} />

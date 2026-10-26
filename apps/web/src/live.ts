@@ -39,8 +39,18 @@ function reloadAll() {
 function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonly unknown[][] {
   switch (message.entity) {
     case 'ticket':
-    case 'project':
       return [[...keys.projects], [...keys.runs], [...keys.needsYou], [...keys.queue]];
+    case 'project':
+      // A request names its project.
+      return [
+        [...keys.projects],
+        [...keys.runs],
+        [...keys.needsYou],
+        [...keys.queue],
+        [...keys.requests],
+      ];
+    case 'request':
+      return [[...keys.requests], [...keys.needsYou]];
     case 'run':
       return [
         [...keys.runs],

@@ -14,6 +14,8 @@ import {
   ProjectListResponse,
   ProjectSettingsResponse,
   QueueResponse,
+  RequestDetail,
+  RequestListResponse,
   SessionResponse,
   SetupStateResponse,
   TicketDetail,
@@ -63,6 +65,8 @@ export const keys = {
   runHistory: (query: string) => ['runs', 'history', query] as const,
   ticketRuns: (key: string, number: number) => ['runs', 'ticket', key, number] as const,
   queue: ['queue'],
+  requests: ['requests'],
+  request: (number: number) => ['requests', number] as const,
 } as const;
 
 setUnauthenticatedHandler(() => {
@@ -202,6 +206,30 @@ export async function ticketsChanged(ticket?: TicketDetail) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: keys.projects }),
     queryClient.invalidateQueries({ queryKey: keys.runs }),
+    queryClient.invalidateQueries({ queryKey: keys.needsYou }),
+  ]);
+}
+
+/** Every request, newest first (02, section 5.1). */
+export function useRequests() {
+  return useQuery({
+    queryKey: keys.requests,
+    queryFn: () => api('GET', '/api/requests', RequestListResponse),
+  });
+}
+
+export function useRequest(number: number) {
+  return useQuery({
+    queryKey: keys.request(number),
+    queryFn: () => api('GET', `/api/requests/${String(number)}`, RequestDetail),
+  });
+}
+
+/** After an action on a request: the request, the list and Needs you are read again. */
+export async function requestsChanged(request?: RequestDetail) {
+  if (request) queryClient.setQueryData(keys.request(request.number), request);
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: keys.requests }),
     queryClient.invalidateQueries({ queryKey: keys.needsYou }),
   ]);
 }

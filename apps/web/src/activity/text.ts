@@ -22,6 +22,7 @@ import {
   pauseText,
   runStatusLabel,
 } from '../runs/text';
+import { requestPath } from '../requests/text';
 import { keptReasonText } from '../tickets/branch-clean-up-text';
 import { checkLabel, priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
@@ -91,6 +92,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.branch_kept': 'Ticket branch kept on GitHub',
   'ticket.branch_pushed_again': 'Ticket branch on GitHub again',
   'ticket.machine_branch_deleted': 'Ticket branch deleted on a machine',
+  'request.created': 'Request submitted',
+  'request.commented': 'Comment added to a request',
   'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
@@ -140,6 +143,7 @@ export const entityLabel: Record<EventEntityType, string> = {
   github_connection: 'GitHub connection',
   project: 'Projects',
   ticket: 'Tickets',
+  request: 'Requests',
   setting: 'Settings',
   claude_account: 'Claude accounts',
   machine: 'Machines',
@@ -182,6 +186,11 @@ function projectPath(key: string): string {
 function quote(text: string, to: string | null): Piece {
   const quoted = `“${shorten(text)}”`;
   return to === null ? quoted : { text: quoted, to };
+}
+
+/** "Request 7" as a link to the request. */
+function requestLink(number: number): Piece {
+  return { text: `Request ${String(number)}`, to: requestPath(number) };
 }
 
 /** `WEB-12` as a link to the ticket. */
@@ -516,6 +525,19 @@ const describe: { [T in EventType]: Describe<T> } = {
       pullRequest: p.pullRequest,
       mergedHead: p.head,
     })}`,
+  ],
+  'request.created': (p, c) => [
+    requestLink(p.request),
+    ...(p.project === null
+      ? [' submitted for a new project: ']
+      : [' submitted for ', c.project, ': ']),
+    quote(p.line, requestPath(p.request)),
+  ],
+  'request.commented': (p, c) => [
+    requestLink(p.request),
+    c.comment === null ? ': comment added' : ': comment ',
+    ...(c.comment === null ? [] : [quote(c.comment, requestPath(p.request))]),
+    ...(p.agentName === undefined ? [] : [' by agent ', quote(p.agentName, null)]),
   ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,

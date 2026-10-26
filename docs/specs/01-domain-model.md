@@ -75,9 +75,9 @@ Projects are never deleted. Archiving a project hides it from the default lists 
 
 | Field | Description |
 |---|---|
-| id | Identifier. |
-| project_id | Optional. Empty when the request asks for a new project. |
-| body | The owner's text. |
+| id, number | Identifier, and a human number: one sequence for every request from 1, "Request 7" (owner's answer 6, lot 5 step D). |
+| project_id | Optional. Empty when the request asks for a new project. Any project not archived, whatever its setup state (owner's answer 9, lot 5 step D). |
+| body | The owner's text, at most **Longest ticket description** (owner's answer 7, lot 5 step D); screens show its first line, cut at 120 characters, as its title (answer 8). It is not edited once submitted: the owner adds comments. |
 | status | `open`, `planning`, `plan_proposed`, `closed`. |
 | attempt_count, stopped | From lot 5: the request's failed planning runs, and its stop at **Failed attempts before asking you** (below). |
 | created_at | Timestamp. |
@@ -263,6 +263,8 @@ A machine is created by the owner, with its account, and is waiting for enrollme
 Append-only log of everything that happens: status changes, MCP calls, run lifecycle, scheduler decisions. Used for the activity feed, debugging and audit. Fields: id, timestamp, actor, entity type and id, project, event type, payload. The project is the one the event concerns (the project itself, one of its tickets, one of its setting overrides), so the event log can be filtered by project; events about no project (owner, sessions, GitHub connection, global settings) have none (lot 1 step H). A payload holds facts, never a secret.
 
 The automatic merge (04, section 4; lot 5 step 5bis B) writes `ticket.merged_automatically` (the pull request, the approved commit, the method, the merge commit) or `ticket.automatic_merge_failed` (the pull request, the commit, the reason, masked), each once per approval; the merge itself then writes the usual `ticket.pull_request_merged`, once. The option's change writes `project.merges_automatic_changed`.
+
+A request (lot 5 step D1) writes `request.created` (its number, its project's key or none, its first line) and `request.commented` for each comment on it (the comment and its kind), with the entity `request` and its project when it has one.
 
 An import of tickets by the owner (02, section 6.3; lot 5bis step A) writes each ticket's `ticket.created`, then one `tickets.imported` on the project, with the count and the numbers in the file's order.
 

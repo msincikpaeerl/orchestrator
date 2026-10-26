@@ -9,6 +9,7 @@ This version sets up the Orchestrator (your account and the connection to GitHub
 - [Getting started](getting-started.md): install the Orchestrator on Windows (WSL), create your account and connect GitHub.
 - [Connect GitHub](github-token.md): create the GitHub token, what each permission is for, replace the token.
 - [Needs you](needs-you.md): the home page, and what to do for each item it shows.
+- [Requests](requests.md): describe what you want in your own words, for a project or a new one, and add comments.
 - [Projects](projects.md): create a project with a new repository or link one of yours, branch protection, missing harness elements, a setup that fails, archive a project.
 - [Tickets](tickets.md): the board, create and edit tickets, the assignee, dependencies and blocked tickets, comments, tickets proposed by agents, cancel, mark as done manually, reopen.
 - [Import tickets](import-tickets.md): create several tickets at once from a file Claude writes for you, the file's format, and what to ask Claude.

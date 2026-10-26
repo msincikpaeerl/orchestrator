@@ -39,6 +39,8 @@ export function limitText({ field, index, max }: LimitExceeded): string {
       return `Acceptance criterion ${String((index ?? 0) + 1)} can have at most ${count(max)} characters.`;
     case 'comment':
       return `A comment can have at most ${count(max)} characters.`;
+    case 'request':
+      return `A request can have at most ${count(max)} characters.`;
   }
 }
 
@@ -89,6 +91,7 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   project_not_linked: () => 'Harness elements are only checked for linked repositories.',
   project_not_ready: () => 'The repository setup is not finished. Use Try again first.',
   ticket_not_found: () => 'This ticket does not exist in this project. Reload the page.',
+  request_not_found: () => 'This request does not exist. Reload the page.',
   ticket_not_editable: () =>
     'This ticket can be changed only while it is Proposed or To do. The page now shows its current state.',
   agent_not_found: () =>

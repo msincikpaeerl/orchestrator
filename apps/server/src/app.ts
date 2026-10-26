@@ -23,6 +23,7 @@ import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
+import { registerRequestRoutes } from './requests/routes.js';
 import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
 import { registerRunRoutes } from './runs/routes.js';
@@ -323,6 +324,7 @@ export function buildApp(dependencies: AppDependencies) {
       watcher,
       now: dependencies.now,
     });
+    registerRequestRoutes(scope, { db, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

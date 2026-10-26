@@ -160,7 +160,7 @@ const definitions = {
   ticketDescriptionMaxLength: {
     group: 'tickets',
     label: 'Longest ticket description',
-    description: 'Most characters in a ticket description.',
+    description: 'Most characters in a ticket description, and in a request.',
     unit: 'characters',
     min: 1,
     max: 100_000,

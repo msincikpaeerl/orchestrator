@@ -265,6 +265,65 @@ export const agentProfiles = pgTable(
 );
 
 /**
+ * Requests (01, section 3.2; lot 5): the owner's free text, for a project or for a new one (no
+ * project). `number` is one sequence for every request, from 1, shown as "Request 7". `status` is
+ * a `RequestStatus` of `@orchestrator/protocol`.
+ */
+export const requests = pgTable(
+  'requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    number: integer('number').notNull().unique(),
+    /** Empty when the request asks for a new project. */
+    projectId: uuid('project_id').references(() => projects.id),
+    body: text('body').notNull(),
+    status: text('status').notNull().default('open'),
+    /** Failed planning runs, for **Failed attempts before asking you** (written from step E2). */
+    attemptCount: integer('attempt_count').notNull().default(0),
+    /** The stop at **Failed attempts before asking you**: cause and when (written from step E2). */
+    stopped: jsonb('stopped'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('requests_number', sql`${table.number} >= 1`),
+    check(
+      'requests_status',
+      sql`${table.status} IN ('open', 'planning', 'plan_proposed', 'closed')`,
+    ),
+    check('requests_attempt_count', sql`${table.attemptCount} >= 0`),
+    index('requests_project_id').on(table.projectId),
+  ],
+);
+
+/**
+ * Plans (01, section 3.3; lot 5): the Project Manager's answer to a request, written by
+ * `plan.propose` from step E1. `new_project` holds the project it creates, if any.
+ */
+export const plans = pgTable(
+  'plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => requests.id),
+    summary: text('summary').notNull(),
+    newProject: jsonb('new_project'),
+    status: text('status').notNull(),
+    ownerFeedback: text('owner_feedback'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      'plans_status',
+      sql`${table.status} IN ('proposed', 'approved', 'rejected', 'superseded')`,
+    ),
+    index('plans_request_id').on(table.requestId, table.createdAt),
+  ],
+);
+
+/**
  * Tickets (01, section 3.4). Never deleted: cancelled. Allowed values of the text columns are the
  * enums of `@orchestrator/protocol` (`TicketType`, `TicketStatus`, ...). `status` is written only
  * by the server's transition module (04, section 2).
@@ -285,6 +344,8 @@ export const tickets = pgTable(
     acceptanceCriteria: jsonb('acceptance_criteria').notNull().default([]),
     priority: text('priority').notNull(),
     status: text('status').notNull(),
+    /** The plan that proposed it (01, section 3.4; lot 5); null for any other ticket. */
+    planId: uuid('plan_id').references(() => plans.id),
     /** `owner`, or `agent` with the profile and the run that created it (`ticket_create`). */
     createdBy: text('created_by').notNull(),
     createdByProfileId: uuid('created_by_profile_id').references(() => agentProfiles.id),
@@ -422,6 +483,7 @@ export const tickets = pgTable(
   },
   (table) => [
     index('tickets_assignee_profile_id').on(table.assigneeProfileId),
+    index('tickets_plan_id').on(table.planId),
     unique('tickets_project_number').on(table.projectId, table.number),
     // Target of the dependencies' foreign keys, which keep both tickets in one project.
     unique('tickets_project_id').on(table.projectId, table.id),
@@ -478,16 +540,15 @@ export const ticketDependencies = pgTable(
 );
 
 /**
- * Comments on tickets (01, section 3.5); comments on requests come with lot 5. `author` is
- * `owner`, `system` or `agent`, with the agent's profile and run.
+ * Comments on a ticket or, from lot 5, on a request (01, section 3.5): exactly one of the two.
+ * `author` is `owner`, `system` or `agent`, with the agent's profile and run.
  */
 export const comments = pgTable(
   'comments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    ticketId: uuid('ticket_id')
-      .notNull()
-      .references(() => tickets.id),
+    ticketId: uuid('ticket_id').references(() => tickets.id),
+    requestId: uuid('request_id').references(() => requests.id),
     author: text('author').notNull(),
     authorProfileId: uuid('author_profile_id').references(() => agentProfiles.id),
     /** The run of an agent's comment; no foreign key, since runs reference tickets. */
@@ -506,6 +567,8 @@ export const comments = pgTable(
     ),
     check('comments_author', sql`${table.author} IN ('owner', 'system', 'agent')`),
     index('comments_ticket_id').on(table.ticketId, table.createdAt),
+    index('comments_request_id').on(table.requestId, table.createdAt),
+    check('comments_target', sql`(${table.ticketId} IS NULL) <> (${table.requestId} IS NULL)`),
   ],
 );
 

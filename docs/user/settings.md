@@ -60,7 +60,7 @@ The limits of an archived project cannot be changed: unarchive it first (see [Ar
 | Setting | Default | Allowed | Per project | What it does |
 |---|---|---|---|---|
 | Longest ticket title | 200 characters | 1 to 1,000 | No | Most characters in a ticket title. |
-| Longest ticket description | 20,000 characters | 1 to 100,000 | No | Most characters in a ticket description. |
+| Longest ticket description | 20,000 characters | 1 to 100,000 | No | Most characters in a ticket description, and in a request. |
 | Most acceptance criteria | 20 criteria | 1 to 100 | No | Most acceptance criteria on one ticket. |
 | Longest acceptance criterion | 500 characters | 1 to 5,000 | No | Most characters in one acceptance criterion. |
 | Longest comment | 20,000 characters | 1 to 100,000 | No | Most characters in one comment. |
