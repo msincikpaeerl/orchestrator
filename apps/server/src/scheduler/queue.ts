@@ -12,8 +12,10 @@ import {
   type QueueKind,
   type QueueReason,
   type QueueResponse,
+  type RunPurpose,
 } from '@orchestrator/protocol';
 import { count, desc, eq, inArray, max } from 'drizzle-orm';
+import { z } from 'zod';
 import type { Database } from '../database.js';
 import { accountToday, accountUsage, todayKey } from '../machines/account-day.js';
 import { toAccount, type MachineRow } from '../machines/model.js';
@@ -25,6 +27,8 @@ import {
   pushFailedItems,
 } from '../needs-you.js';
 import type { ProjectRow } from '../projects/model.js';
+import { shippedAgents } from '../agents/files.js';
+import { profileRunInstructions } from '../agents/messages.js';
 import { isCounted } from '../runs/model.js';
 import { ticketReview } from '../runs/review-view.js';
 import { resolveSettings } from '../settings/store.js';
@@ -35,6 +39,7 @@ import { ticketReference } from '../tickets/model.js';
 import {
   accountUnavailable,
   githubRefusal,
+  instructionsRefusal,
   machineChoice,
   preferredMachine,
   projectRefusal,
@@ -276,6 +281,21 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
   const quality = [...profiles.values()].find((profile) => profile.key === 'quality');
   const capabilities = (project: ProjectRow, profileId: string | null | undefined) =>
     runCapabilities(project, profileId ? profiles.get(profileId) : undefined);
+  // As Run now and Start review: instructions Claude Code could not be given (lot 5 step 5bis C).
+  const shipped = await shippedAgents();
+  const tooLarge = (profileId: string | null | undefined, purpose: RunPurpose) => {
+    const profile = profileId ? profiles.get(profileId) : undefined;
+    if (!profile) return null;
+    const allowedTools = z.array(z.string()).parse(profile.allowedTools);
+    return instructionsRefusal(
+      profile,
+      profileRunInstructions(
+        shipped,
+        { instructions: profile.instructions, allowedTools },
+        purpose,
+      ),
+    );
+  };
 
   const drafts: Draft[] = [];
   for (const ticket of tickets) {
@@ -336,7 +356,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           projectRefusal(project) ??
           ticketRefusal(ticket, blockers(ticket.id, project.key)) ??
           (hold ? { reason: 'held', cause: hold.cause } : null) ??
-          (item ? { reason: 'needs_you', item: item.item, machine: item.machine } : null),
+          (item ? { reason: 'needs_you', item: item.item, machine: item.machine } : null) ??
+          tooLarge(ticket.assigneeProfileId, request === null ? 'implement' : 'fix_review'),
         required: capabilities(project, ticket.assigneeProfileId),
         holding: holding ? { machineId: holding.machineId, commits: held } : null,
       });
@@ -367,6 +388,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           : item
             ? { reason: 'needs_you', item: item.item, machine: item.machine }
             : null) ??
+        tooLarge(quality?.id, 'review') ??
         (project.reviewsAutomatic ? null : { reason: 'reviews_off' }),
       required: capabilities(project, quality?.id),
       holding: null,

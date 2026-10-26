@@ -52,7 +52,7 @@ export const failureText: Record<FailureReason, string> = {
   machine_offline: 'its machine was offline',
   machine_revoked: 'its machine was revoked',
   claude_code_unsupported: "its machine's Claude Code was missing or too old",
-  machine_problem: 'its machine could not start Claude Code in a process scope',
+  machine_problem: 'its machine could not start Claude Code',
   cancelled: 'it was cancelled',
   ci_failed: 'CI failed more times than the run allows',
   ci_timeout: 'CI wait at submission was reached',
@@ -93,7 +93,7 @@ export const machineFailureText: Record<MachineFailureCause, string> = {
   machine_offline: 'the machine went offline',
   machine_revoked: 'the machine was revoked',
   claude_code_unsupported: "the machine's Claude Code was missing or too old",
-  machine_problem: 'the machine could not start Claude Code in a process scope',
+  machine_problem: 'the machine could not start Claude Code',
   dispatch_timeout: 'the machine did not confirm the start in time',
   dispatch_refused: 'the machine refused the start',
 };
@@ -243,6 +243,9 @@ export function runRefusalText(refusal: RunRefusal): string {
       return 'GitHub could not be reached to read your account, which agents sign their commits with. Check the internet connection and try again.';
     case 'first_message_too_large':
       return "This ticket is too large for an agent's first message, even with its description shortened. Shorten the ticket, for example its dependencies or acceptance criteria.";
+    case 'instructions_too_large':
+      // Refused before any run (lot 5 step 5bis C): starting it again without a change cannot help.
+      return `Claude Code cannot be started: the instructions of agent profile ${refusal.profile.name} are too long (${refusal.bytes.toLocaleString('en-US')} bytes, the limit is ${refusal.maxBytes.toLocaleString('en-US')}). Shorten them, then try again. Running it again without changes will not help.`;
     case 'machine_unavailable':
       // A resume its machine did not take (lot 4 step E): Resume, not Run now, takes it back.
       if (refusal.commits === null && refusal.unavailable.why === 'left_out') {

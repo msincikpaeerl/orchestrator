@@ -236,7 +236,7 @@ A failure of a builder run (`implement`, `fix_review`) returns the ticket to `to
 | `machine_offline` (the machine went offline, an answer could not reach it, or a dispatch was not acknowledged in time) | No | lot 2 steps A and C |
 | `machine_revoked` (its machine was revoked while the run was active) | No | lot 2 step A |
 | `claude_code_unsupported` (its machine's Claude Code was missing or too old at the start, 05 section 4.3) | No | lot 2 step J |
-| `machine_problem` (systemd-run refused its process scope, 05 section 2) | No | lot 2 step M2 |
+| `machine_problem` (systemd-run refused its process scope, 05 section 2; or Claude Code could not be launched for a reason of the machine, the daemon's end reason `launch_failed`, 05 section 4.3) | No | lot 2 step M2, lot 5 step 5bis C |
 | `cancelled` (the owner stopped the run, or cancelled or finished the ticket) | No | lot 2 step A |
 | `ci_timeout`: **CI wait at submission** reached (section 3.1) | No; a blocking "Needs you" item (02, section 4; owner's answer 1, lot 3 step G2c) | lot 3 step A |
 | `ci_cancelled`: CI cancelled on GitHub because the branch changed there (section 3.1) | No; a blocking "Needs you" item (owner's answer 3, lot 4 step A) | lot 3 step G2b, lot 4 step A |

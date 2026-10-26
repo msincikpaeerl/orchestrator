@@ -60,6 +60,12 @@ const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason
   github_token_invalid: { reason: 'github_token_invalid' },
   github_account_unknown: { reason: 'github_account_unknown' },
   first_message_too_large: { reason: 'first_message_too_large', maxBytes: 100_000 },
+  instructions_too_large: {
+    reason: 'instructions_too_large',
+    profile: { key: 'quality', name: 'Quality' },
+    bytes: 123_456,
+    maxBytes: 100_000,
+  },
   machine_unavailable: {
     reason: 'machine_unavailable',
     machine,
@@ -92,6 +98,9 @@ describe('run refusals in plain words (07, section 3)', () => {
   });
 
   it('states the values a refusal depends on', () => {
+    expect(runRefusalText(refusals.instructions_too_large)).toBe(
+      'Claude Code cannot be started: the instructions of agent profile Quality are too long (123,456 bytes, the limit is 100,000). Shorten them, then try again. Running it again without changes will not help.',
+    );
     expect(runRefusalText(refusals.account_busy)).toContain('its maximum of 1 run at a time');
     expect(unavailableText(unavailable.account_busy)).toContain('its maximum of 2 runs at a time');
     expect(runRefusalText(refusals.machine_unavailable)).toBe(

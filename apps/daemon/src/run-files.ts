@@ -180,6 +180,58 @@ export function claudeArguments(launch: LaunchInput): string[] {
   ];
 }
 
+/**
+ * The launcher of 05 section 4.3 (lot 5 step 5bis C): a fixed script that reads the instructions
+ * (`$2`) and the message (`$3`) from the run's files with `cat` (`$1`, an absolute path: the
+ * session's `PATH` is the daemon's), then replaces itself with Claude Code (the rest of its
+ * arguments), giving it `claudeArguments`'s list exactly: `--append-system-prompt`, `--resume`
+ * when `$4` is a session id, `--` and the message. The texts never reach tmux's command, which its
+ * client caps at about 16 KB, and the shell never interprets them: they are expanded within double
+ * quotes only. `printf x` then `${i%x}` keeps their trailing newlines, which a command
+ * substitution alone removes.
+ */
+export const LAUNCH_SCRIPT = [
+  'c=$1',
+  'i=$("$c" -- "$2" && printf x) || exit 1',
+  'm=$("$c" -- "$3" && printf x) || exit 1',
+  'r=$4',
+  'shift 4',
+  'if [ -n "$r" ]; then exec "$@" --append-system-prompt "${i%x}" --resume "$r" -- "${m%x}"; fi',
+  'exec "$@" --append-system-prompt "${i%x}" -- "${m%x}"',
+].join('\n');
+
+/** The files of one launch's texts, written by `writeRunFiles`. */
+export interface LaunchTexts {
+  instructions: string;
+  message: string;
+}
+
+/**
+ * The command starting Claude Code through `LAUNCH_SCRIPT` with `tools.shell` and `tools.cat`: the
+ * same arguments as `claudeArguments`, the instructions and the message read from `texts`. Its
+ * size depends on the paths and the model only, never on the run's texts.
+ */
+export function launchCommand(
+  tools: { shell: string; cat: string },
+  claude: string,
+  launch: Omit<LaunchInput, 'instructions' | 'message'> & { texts: LaunchTexts },
+): string[] {
+  const options = claudeArguments({ ...launch, instructions: '', message: '' });
+  const fixed = options.slice(0, options.indexOf('--append-system-prompt'));
+  return [
+    tools.shell,
+    '-c',
+    LAUNCH_SCRIPT,
+    'orchestrator-launch',
+    tools.cat,
+    launch.texts.instructions,
+    launch.texts.message,
+    launch.resumeSessionId ?? '',
+    claude,
+    ...fixed,
+  ];
+}
+
 /** The MCP relay of the run (06, section 1), with Claude Code's tool timeout (04, section 8). */
 export function runMcpConfig(runId: string, selfCommand: readonly string[], limits: RunLimits) {
   const [command = '', ...args] = selfCommand;
@@ -199,23 +251,39 @@ export interface RunFiles {
   settings: string;
   mcpConfig: string;
   socket: string;
+  texts: LaunchTexts;
+}
+
+/** Writes `text` readable by the owner only, as it is, through a temporary file and a rename. */
+function writeTextAtomic(path: string, text: string): void {
+  const temporary = `${path}.tmp`;
+  writeFileSync(temporary, text, { mode: 0o600 });
+  chmodSync(temporary, 0o600);
+  renameSync(temporary, path);
 }
 
 /**
- * Writes `system-prompt.md`, `settings.json` and `mcp.json` for a launch, and the daemon's keys in
- * the dedicated configuration's user settings.
+ * Writes `system-prompt.md` (the instructions), `message.md` (this launch's message: the first
+ * message, or the one after `--resume`), `settings.json` and `mcp.json` for a launch, and the
+ * daemon's keys in the dedicated configuration's user settings.
  */
 export function writeRunFiles(
   paths: DaemonPaths,
   start: RunStart['payload'],
   selfCommand: readonly string[],
+  message: string,
 ): RunFiles {
   const folder = createRunFolder(paths, start.runId);
   const settings = join(folder, 'settings.json');
   const mcpConfig = join(folder, 'mcp.json');
-  writeFileSync(join(folder, 'system-prompt.md'), start.profile.instructions, { mode: 0o600 });
+  const texts = {
+    instructions: join(folder, 'system-prompt.md'),
+    message: join(folder, 'message.md'),
+  };
+  writeTextAtomic(texts.instructions, start.profile.instructions);
+  writeTextAtomic(texts.message, message);
   writeJsonAtomic(settings, runSettings(paths, start, selfCommand));
   writeJsonAtomic(mcpConfig, runMcpConfig(start.runId, selfCommand, start.limits));
   writeUserSettings(paths.claudeConfig);
-  return { settings, mcpConfig, socket: runSocketPath(paths, start.runId) };
+  return { settings, mcpConfig, socket: runSocketPath(paths, start.runId), texts };
 }

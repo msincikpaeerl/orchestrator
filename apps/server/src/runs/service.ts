@@ -67,7 +67,7 @@ import {
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import {
-  loadShippedAgents,
+  shippedAgents,
   loadTemplates,
   type Rules,
   type Template,
@@ -82,8 +82,7 @@ import {
   fixReviewFirstMessage,
   implementFirstMessage,
   nudgeMessage,
-  runInstructions,
-  runRules,
+  profileRunInstructions,
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -153,6 +152,7 @@ import {
 import { downloadWords, runDownload } from './download.js';
 import {
   githubRefusal,
+  instructionsRefusal,
   machineChoice,
   machineUnavailable,
   preferredMachine,
@@ -340,8 +340,21 @@ export class RunService {
     this.send(machineId, stopMessage(runId, reason));
   }
 
+  /** `INSTRUCTIONS_MAX_BYTES` passed by the instructions a run of `profile` would receive. */
+  private instructionsRefused(
+    profile: typeof schema.agentProfiles.$inferSelect,
+    purpose: RunPurpose,
+    files: { rules: Rules; allowlist: Template },
+  ): RunRefusal | null {
+    const allowedTools = z.array(z.string()).parse(profile.allowedTools);
+    return instructionsRefusal(
+      profile,
+      profileRunInstructions(files, { instructions: profile.instructions, allowedTools }, purpose),
+    );
+  }
+
   private files() {
-    this.agentFiles ??= Promise.all([loadTemplates(), loadShippedAgents()]).then(
+    this.agentFiles ??= Promise.all([loadTemplates(), shippedAgents()]).then(
       ([templates, shipped]) => ({
         templates,
         rules: shipped.rules,
@@ -1221,6 +1234,9 @@ export class RunService {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, ticket.assigneeProfileId));
       if (!profile) throw new Error(`profile ${ticket.assigneeProfileId} not found`);
+      // Instructions Claude Code could not be given: refused before any run (lot 5 step 5bis C).
+      const instructionsRefused = this.instructionsRefused(profile, purpose, { rules, allowlist });
+      if (instructionsRefused !== null) throw refused(instructionsRefused);
       const required = runCapabilities(project, profile);
       // Kept for the whole run: a later change of the setting applies to later runs (04, 8).
       const {
@@ -1496,6 +1512,8 @@ export class RunService {
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.key, 'quality'));
       if (!profile) throw new Error('the quality profile is not seeded');
+      const instructionsRefused = this.instructionsRefused(profile, 'review', files);
+      if (instructionsRefused !== null) throw refused(instructionsRefused);
       const required = runCapabilities(project, profile);
       const earlier = await tx
         .select()
@@ -1852,11 +1870,10 @@ export class RunService {
         profile: {
           key: profile.key,
           version: profile.version,
-          instructions: runInstructions(
-            runRules(files.rules, input.purpose),
-            profile.instructions,
-            files.allowlist,
-            allowedTools,
+          instructions: profileRunInstructions(
+            files,
+            { instructions: profile.instructions, allowedTools },
+            input.purpose,
           ),
           model: profile.model,
           allowedTools,

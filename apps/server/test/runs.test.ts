@@ -10,7 +10,9 @@ import {
   CLAUDE_CODE_VALIDATED_VERSION,
   ClaudeAccount,
   EnrollmentResponse,
+  INSTRUCTIONS_MAX_BYTES,
   NeedsYouResponse,
+  QueueResponse,
   Run,
   RunListResponse,
   RunLogResponse,
@@ -30,6 +32,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, startFakeGitHub, type FakeGitHub } from './fake-github.js';
 import { createOwner, startTestApp, type TestApp } from './helpers.js';
+import { shippedAgents } from '../src/agents/files.js';
+import { profileRunInstructions } from '../src/agents/messages.js';
 
 const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
 const HEAD = 'a'.repeat(40);
@@ -490,6 +494,63 @@ describe('Run now', () => {
     expect(await runs()).toEqual([]);
   });
 
+  it("refuses a ticket whose agent's instructions are above the limit, before any run, and starts it at the limit (lot 5 step 5bis C)", async () => {
+    await start();
+    const { daemon } = await laptop();
+    // The role instructions that bring web_dev's run instructions to `bytes` exactly.
+    const files = await shippedAgents();
+    const [profile] = await t.db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.key, 'web_dev'));
+    if (!profile) throw new Error('no web_dev profile');
+    const allowedTools = profile.allowedTools as string[];
+    const base = Buffer.byteLength(
+      profileRunInstructions(files, { instructions: '', allowedTools }, 'implement'),
+    );
+    const role = (bytes: number) => 'é'.repeat((bytes - base) / 2);
+    const sized = (bytes: number) =>
+      t.db
+        .update(schema.agentProfiles)
+        .set({ instructions: role(bytes) })
+        .where(eq(schema.agentProfiles.id, profile.id));
+    // Odd: a two-byte character more is one byte above the limit.
+    const over = INSTRUCTIONS_MAX_BYTES + ((INSTRUCTIONS_MAX_BYTES - base) % 2 === 0 ? 2 : 1);
+    const under = over - 2;
+    await sized(over);
+    const refused = await refusal();
+    expect(refused).toEqual({
+      reason: 'instructions_too_large',
+      profile: { key: 'web_dev', name: profile.name },
+      bytes: over,
+      maxBytes: INSTRUCTIONS_MAX_BYTES,
+    });
+    const response = await runNow();
+    expect(ApiError.parse(response.json()).error.message).toBe(
+      `The instructions of agent profile ${profile.name} are too long (${String(over)} bytes, the limit is 100000)`,
+    );
+    expect(await runs()).toEqual([]);
+    expect((await ticket()).attemptCount).toBe(0);
+    // The queue says why, and the scheduler leaves the ticket alone: no run, no retry.
+    const queue = QueueResponse.parse((await call('GET', '/api/queue')).json());
+    expect(queue.candidates.map((candidate) => candidate.reason)).toEqual([refused]);
+    expect((await t.schedulerTick()).started).toEqual([]);
+    expect(await runs()).toEqual([]);
+
+    // Shortened to the limit or less: the usual start works again, the text whole.
+    await sized(under);
+    expect(under).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+    const { start: message } = await started(daemon);
+    // Whole: the protocol only trims the closing newline.
+    expect(message.payload.profile.instructions).toBe(
+      profileRunInstructions(
+        files,
+        { instructions: role(under), allowedTools },
+        'implement',
+      ).trim(),
+    );
+  });
+
   it('lists every machine with why it cannot take the run', async () => {
     await start();
     expect(await refusal()).toEqual({ reason: 'no_machine', machines: [] });
@@ -852,7 +913,29 @@ describe('the run reported by the daemon (05, section 4.7)', () => {
     const detail = await ticket();
     expect(detail).toMatchObject({ status: 'todo', attemptCount: 0 });
     expect(comments(detail)).toEqual([
-      "The run on machine Laptop ended: its machine could not start Claude Code in a process scope (Claude Code could not be started in the run's process scope (Access denied)). It does not count as a failed attempt.",
+      "The run on machine Laptop ended: its machine could not start Claude Code (Claude Code could not be started in the run's process scope (Access denied)). It does not count as a failed attempt.",
+    ]);
+  });
+
+  it('fails a run Claude Code could not be launched for with machine_problem, not counted (lot 5 step 5bis C)', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    const detail =
+      "Claude Code could not be started on this machine (tmux new-session failed: no server running). Running it again on this machine will not help until that is fixed, and it is not the ticket's fault.";
+    expect(
+      await report(daemon, state(created.id, { state: 'ended', reason: 'launch_failed', detail })),
+    ).toEqual({ ok: true });
+    expect(await run(created.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'machine_problem',
+      endReason: 'launch_failed',
+      endDetail: detail,
+    });
+    const after = await ticket();
+    expect(after).toMatchObject({ status: 'todo', attemptCount: 0 });
+    expect(comments(after)).toEqual([
+      `The run on machine Laptop ended: its machine could not start Claude Code (${detail}). It does not count as a failed attempt.`,
     ]);
   });
 
