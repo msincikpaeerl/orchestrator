@@ -38,9 +38,7 @@ describe('the blocking items of lot 4 step D2b', () => {
     );
     expect(text.failures).toHaveLength(2);
     expect(text.failures[0]).toMatch(/: the machine did not confirm the start in time$/);
-    expect(text.failures[1]).toMatch(
-      /: the machine could not start Claude Code in a process scope$/,
-    );
+    expect(text.failures[1]).toMatch(/: the machine could not start Claude Code$/);
   });
 
   it('says "its run" when the setting is 1', () => {

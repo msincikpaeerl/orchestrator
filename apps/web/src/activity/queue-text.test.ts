@@ -107,6 +107,14 @@ const refusals: { [Reason in RunRefusal['reason']]: Extract<RunRefusal, { reason
   github_token_invalid: [{ reason: 'github_token_invalid' }],
   github_account_unknown: [{ reason: 'github_account_unknown' }],
   first_message_too_large: [{ reason: 'first_message_too_large', maxBytes: 100_000 }],
+  instructions_too_large: [
+    {
+      reason: 'instructions_too_large',
+      profile: { key: 'quality', name: 'Quality' },
+      bytes: 123_456,
+      maxBytes: 100_000,
+    },
+  ],
   // The machine holding the ticket's commits, or a paused run's own machine (`commits` null).
   machine_unavailable: everyUnavailable.flatMap((entry) =>
     [null, 1, 2].map((commits) => ({
@@ -481,6 +489,7 @@ describe('the start offered on a queue line (review of lot 4 step H)', () => {
     ticket_stopped: false,
     needs_you: false,
     first_message_too_large: false,
+    instructions_too_large: false,
     account_limited: false,
     account_paused: false,
     account_busy: false,
