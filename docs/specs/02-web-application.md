@@ -113,16 +113,16 @@ Items are ordered by the time their reason began: a question when it was asked, 
 
 ### 5.1 Request list
 
-Open and closed requests, with their status and project.
+Open and closed requests, with their status and project: newest first, each named "Request 7" with its first line (lot 5 step D1).
 
 ### 5.2 New request
 
 - Free text, optionally attached to an existing project (otherwise the Project Manager may propose a new project).
-- Submitting creates the request and a planning run is scheduled (07, section 1).
+- Submitting creates the request and a planning run is scheduled (07, section 1). Until step E2 of lot 5 nothing starts: the request stays `open`.
 
 ### 5.3 Request detail
 
-- The conversation with the Project Manager (clarifying questions and answers).
+- The request's text, status, project and date; the conversation with the Project Manager (clarifying questions and answers), and the owner's comments (**Add a comment**, at any status; lot 5 step D1).
 - The proposed plan, when available:
   - summary and new project details, if any;
   - tickets as a list and as a dependency graph, each with type, assignee and acceptance criteria;

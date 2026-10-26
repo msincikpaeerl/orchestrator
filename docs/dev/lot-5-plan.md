@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them (2026-10-26)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -197,7 +197,7 @@ The owner's answers to D's questions (2026-10-26), A to all:
 13. **`request.get`**: the request (number, text, status, project key or none) and its comments oldest first, a page at a time (`cursor`, `next_cursor`) as `ticket.comments`, within `MCP_OUTPUT_MAX_CHARACTERS`, a text above it cut with a marker.
 14. **While the question waits**: the request stays `planning`, the run `waiting_human`; the item "Question on request 7: <first line>"; an answer that cannot reach the machine fails the run `machine_offline` (not counted), stays in the comments, and the request goes back to `open`.
 
-### [ ] D1. Requests and their screens (branch `lot5/d-requests`)
+### [x] D1. Requests and their screens (branch `lot5/d-requests`, 2026-10-26)
 
 - Tables `requests` (01 section 3.2, with `attempt_count` and `stopped`) and `plans` (01 section 3.3; written from E1), comments on a ticket or a request (never both), the tickets' `plan_id`; events for each change.
 - API: create, list, detail, the owner's note; live updates.
@@ -206,6 +206,8 @@ The owner's answers to D's questions (2026-10-26), A to all:
 - Help > Requests (new page); CHANGELOG.
 
 **Done when** server tests cover the creation, list, detail, notes, the refusals (text too long, an archived or unknown project) and the events (every-event guard); Playwright on both viewports submits a request and sees it in the list and on its page.
+
+*Done 2026-10-26*: tables `requests` and `plans`, `comments.request_id` (a comment on a ticket or a request, never both: `comments_target`), `tickets.plan_id` (migration `0044_requests`); `packages/protocol/src/api/requests.ts` (`RequestStatus`, `requestLine`, `REQUEST_LINE_MAX_LENGTH`), the entity `request`, events `request.created` and `request.commented`, the error `request_not_found` and the limited field `request`; `apps/server/src/requests/routes.ts` (`GET`/`POST /api/requests`, `GET /api/requests/:number`, `POST /api/requests/:number/comments`; numbers under the table's lock, so no gap); `apps/web/src/pages/requests.tsx` (loaded on first use) and `apps/web/src/requests/text.ts`. `request.status_changed` (answer 12) comes with the first code that changes a request's status (D2's failed delivery, E2's planning), so the every-event guard can cover it. Tests: `apps/server/test/requests.test.ts` (new, shard 4, 2 s; it moves `credential-leaks.test.ts`, 42 s, from shard 3 to 2, `web.test.ts` to 1 and `projects.test.ts` to 3, both under a second), `every-event.ts` and `event-log.test.ts`, the Activity texts, `apps/web/e2e/requests.e2e.ts` (new) and `login.e2e.ts` (Requests is no longer "Coming in a later version"); e2e shards 4.7 and 5.4 min. Specs 01 (3.2, 3.10) and 02 (5); Help > Requests (new), Settings; CHANGELOG.
 
 ### [ ] D2. Questions on a request (branch `lot5/d2-request-questions`)
 
