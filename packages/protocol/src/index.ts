@@ -110,6 +110,17 @@ export {
   UpdateTicketRequest,
 } from './api/tickets.js';
 export {
+  CreateRequestRequest,
+  REQUEST_LINE_MAX_LENGTH,
+  RequestDetail,
+  RequestListResponse,
+  RequestNumber,
+  RequestProject,
+  RequestStatus,
+  RequestSummary,
+  requestLine,
+} from './api/requests.js';
+export {
   TICKET_IMPORT_FORMAT,
   TicketImportBlocker,
   TicketImportEntry,

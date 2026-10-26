@@ -367,6 +367,17 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     machine: 'laptop',
     reason: { kind: 'local_head_differs', head: 'abc1234abc1234abc1234abc1234abc1234abc12' },
   },
+  'request.created': {
+    request: 7,
+    project: 'WEB',
+    line: 'A contact form on the home page',
+  },
+  'request.commented': {
+    request: 7,
+    project: null,
+    commentId: COMMENT_ID,
+    kind: 'note',
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -467,6 +478,7 @@ function entry(type: EventType, overrides: Partial<EventLogEntry> = {}): EventLo
   const aboutProject =
     entityType === 'project' ||
     kind === 'ticket' ||
+    type === 'request.created' ||
     (kind === 'setting' && type === 'setting.changed');
   return {
     id: 1,
@@ -596,6 +608,27 @@ describe('eventText', () => {
     ).toBe(
       "Run of WEB-12: CI failed on GitHub for the submitted commit ccccccc (failed: CI). The pull request's latest commit is now ddddddd: this result is the submitted commit's",
     );
+  });
+
+  it('names a request and links to it (lot 5 step D1)', () => {
+    const created = eventText(entry('request.created'));
+    expect(plainText(created)).toBe(
+      'Request 7 submitted for WEB: “A contact form on the home page”',
+    );
+    expect(links(created)).toContainEqual({ text: 'Request 7', to: '/requests/7' });
+    expect(
+      plainText(
+        eventText(
+          entry('request.created', {
+            project: null,
+            payload: { request: 8, project: null, line: 'A bakery website' },
+          }),
+        ),
+      ),
+    ).toBe('Request 8 submitted for a new project: “A bakery website”');
+    expect(
+      plainText(eventText(entry('request.commented', { comment: 'Only French, please' }))),
+    ).toBe('Request 7: comment “Only French, please”');
   });
 
   it('lists the tickets of an import, each a link', () => {

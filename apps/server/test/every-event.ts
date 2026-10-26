@@ -153,6 +153,8 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
       tickets: [{ key: 'readme', type: 'docs', title: 'Readme' }],
     }),
   });
+  await call('POST', '/api/requests', { body: 'A contact form', project: 'SHOP' });
+  await call('POST', '/api/requests/1/comments', { body: 'No e-mail.' });
   await call('POST', '/api/projects/LEG/archive');
   await call('POST', '/api/projects/LEG/unarchive');
 

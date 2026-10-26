@@ -40,6 +40,7 @@ export const ApiErrorCode = z.enum([
   'project_not_ready',
   /** No ticket with this number in the project. */
   'ticket_not_found',
+  'request_not_found',
   /** Tickets can be edited only in `proposed` and `todo`. */
   'ticket_not_editable',
   /** No agent profile with this key: the assignee of a ticket (01, section 3.4). */
@@ -116,6 +117,8 @@ export const LimitedField = z.enum([
   /** One acceptance criterion, at `index` (from 0). */
   'acceptance_criterion',
   'comment',
+  /** A request's text (lot 5 step D1), within **Longest ticket description**. */
+  'request',
 ]);
 export type LimitedField = z.infer<typeof LimitedField>;
 

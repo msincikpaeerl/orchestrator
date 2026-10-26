@@ -100,6 +100,7 @@ describe('events of every type', () => {
         event.entityType === 'project' ||
         event.entityType === 'ticket' ||
         event.entityType === 'run' ||
+        (event.entityType === 'request' && event.payload?.project !== null) ||
         (event.entityType === 'setting' && event.payload?.scope === 'project');
       expect(event.project !== null, `${event.type} ${String(event.id)}`).toBe(concernsProject);
       if (event.entityType === 'ticket') expect(event.ticket).not.toBeNull();
@@ -248,9 +249,10 @@ describe('migration of the events written before the project reference', () => {
           [JSON.stringify(rows[0]?.rows)],
         );
       }
-      // Runs came after this migration (lot 2): a database of lot 1 never held their events.
+      // Runs (lot 2) and requests (lot 5) came after this migration: a database of lot 1 never
+      // held their events.
       const { rows } = await t.pool.query<{ rows: unknown }>(
-        `SELECT json_agg(e) AS rows FROM events e WHERE e.entity_type <> 'run'`,
+        `SELECT json_agg(e) AS rows FROM events e WHERE e.entity_type NOT IN ('run', 'request')`,
       );
       await oldPool.query(
         `INSERT INTO events (id, created_at, actor, entity_type, entity_id, type, payload)
@@ -263,7 +265,7 @@ describe('migration of the events written before the project reference', () => {
       await runMigrations(oldPool);
 
       const expected = await t.pool.query<{ id: string; project_id: string | null }>(
-        "SELECT id, project_id FROM events WHERE entity_type <> 'run' ORDER BY id",
+        "SELECT id, project_id FROM events WHERE entity_type NOT IN ('run', 'request') ORDER BY id",
       );
       const migrated = await oldPool.query<{ id: string; project_id: string | null }>(
         'SELECT id, project_id FROM events ORDER BY id',

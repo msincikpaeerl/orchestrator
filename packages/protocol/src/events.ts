@@ -51,6 +51,7 @@ export const EventEntityType = z.enum([
   'github_connection',
   'project',
   'ticket',
+  'request',
   'setting',
   'claude_account',
   'machine',
@@ -119,6 +120,8 @@ export const EventType = z.enum([
   'ticket.branch_pushed_again',
   'ticket.machine_branch_deleted',
   'ticket.machine_branch_kept',
+  'request.created',
+  'request.commented',
   'setting.changed',
   'setting.reset',
   'setting.time_zone_saved',
@@ -306,6 +309,23 @@ export const EventPayloads = {
   'ticket.dependency_removed': z.object({ ...TicketFacts, blockedBy: z.string() }),
   'ticket.commented': z.object({
     ...TicketFacts,
+    commentId: z.uuid(),
+    kind: CommentKind,
+    ...AgentFacts,
+  }),
+  /**
+   * The owner submitted a request (02, section 5.2; lot 5 step D1): its number, its project's key
+   * or null for a new project, and its first line.
+   */
+  'request.created': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    line: z.string(),
+  }),
+  /** A comment on a request: the owner's note, from step D2 a question or its answer. */
+  'request.commented': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
     commentId: z.uuid(),
     kind: CommentKind,
     ...AgentFacts,

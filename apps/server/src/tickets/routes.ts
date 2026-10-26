@@ -1090,6 +1090,7 @@ function limitRefusal(exceeded: LimitExceeded[], commentField = 'comment'): Http
     acceptance_criteria: 'acceptanceCriteria',
     acceptance_criterion: 'acceptanceCriteria',
     comment: commentField,
+    request: 'body',
   };
   const message = exceeded
     .map(({ field, index, max, unit }) => {
