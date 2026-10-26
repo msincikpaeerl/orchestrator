@@ -46,12 +46,15 @@ test('the login page links to the password reset help, in a new tab', async ({ p
 test('every section of the navigation opens, later ones say so', async ({ page }) => {
   await completeSetup(page);
   await page.goto('/');
-  for (const section of ['Requests', 'Agents']) {
-    await openSection(page, section);
-    await expect(page.getByRole('heading', { name: section, level: 1 })).toBeVisible();
-    await expect(page.getByText('Coming in a later version.')).toBeVisible();
-    await expectFitsScreen(page);
-  }
+  // Agents come with lot 7; Requests are here from lot 5 step D1.
+  await openSection(page, 'Agents');
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
+  await expect(page.getByText('Coming in a later version.')).toBeVisible();
+  await expectFitsScreen(page);
+  await openSection(page, 'Requests');
+  await expect(page.getByRole('heading', { name: 'Requests', level: 1 })).toBeVisible();
+  await expect(page.getByText('Coming in a later version.')).toHaveCount(0);
+  await expectFitsScreen(page);
   await openSection(page, 'Activity');
   await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible();
   await expectFitsScreen(page);
