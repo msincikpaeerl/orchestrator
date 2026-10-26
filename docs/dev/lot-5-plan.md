@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them (2026-10-26)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -176,15 +176,46 @@ Step C was too large for one session (rule 15): projects had no required capabil
 
 `projects.required_capabilities` (migration `0042_project_capabilities`, `[]` for existing projects); `defaultRequiredCapabilities(kind)` and `SetRequiredCapabilitiesRequest` in `packages/protocol` (`Capability` moved to its own module, `daemon/capability.ts`, re-exported by `connection.ts`, to avoid an import cycle); `project.created`'s event gains `requiredCapabilities`. A run needs `runCapabilities(project, profile)` (`scheduler/checks.ts`): the project's, then its profile's others, in the queue, **Run now** and **Start review**. Help > Projects > "Required capabilities", CHANGELOG, specs 02 (section 6.5 as built) and 07 (section 4). Tests: `apps/server/test/project-capabilities.test.ts` (new: both creations and Android, a project created before, the edit with its events and refusals, the queue's reason and **Run now**'s with the project's and the profile's capabilities, **Start review**'s), `files.test.ts` (the paragraph in each builder and review run; the 0.3.0 rules test gains it after the Git section), the two snapshots of the run messages, `activity/text.test.ts`, `projects.test.ts` and `every-event.ts` (the new field, its event; the fixture's web app on a machine without `browser-tests` has it removed), `projects.e2e.ts` (the form's hint, the card edited, Activity, read-only once archived).
 
-### [ ] D. Requests (branch `lot5/d-requests`)
+### Step D, split in two (owner's decision, 2026-10-26)
 
-- Tables `requests` and `plans` (01 sections 3.2 and 3.3), comments on requests (01 section 3.5), the plan tickets' `plan_id`; events for each change.
-- Screens (02 section 5): Requests > list, **New request** (text, project or "a new project"), request detail (the conversation, its status, the plan when there is one); Needs you: a question on a request (answer 11), "Planning stopped" (answer 10, used from step E2).
-- MCP: `request.get` and `request.ask` (06 section 4.4), the answer delivered live or by resume as for tickets (04 section 6).
-- Nothing starts yet: submitting creates the request `open`; the `plan` candidate is step E2's.
-- Help > Requests (new page), Needs you; CHANGELOG.
+Step D was too large for one session (rule 15): every run belongs to a ticket today (the run service, the MCP backend, the waiting run lifetime, the answer's delivery), so a question from a planning run changes all of them, on top of the new tables and three new screens. The owner approved the split into D1 and D2, done in this order: **D1, then side step 5bis E, then D2**. Step D's scope as first planned: tables `requests` and `plans`, comments on requests, the plan tickets' `plan_id`, events; Requests > list, **New request**, request detail; Needs you's question on a request and "Planning stopped"; `request.get` and `request.ask`; nothing starts yet; Help > Requests, Needs you, CHANGELOG.
 
-**Done when** server tests cover the request's statuses, a question and its answer (live and by resume, through a scripted daemon), `request.get`'s paging and output size, the events; Playwright on both viewports submits a request, sees the question in Needs you and answers it.
+The owner's answers to D's questions (2026-10-26), A to all:
+
+1. **Order**: D1 now, then 5bis E, then D2.
+2. **The split**: D1 and D2 below.
+3. **D2's planning run**: a test-only helper inserts a `plan` run and a test planner profile in the database, played by a scripted daemon; the real start is E2's.
+4. **`runs.project_id`**: D2 adds `runs.request_id` and keeps `project_id` required (D2's tests use a request on an existing project); E2 makes it optional for a new project's planning run.
+5. **The daemon**: `request_get` and `request_ask` in `MCP_TOOLS` change what the daemon's relay offers; part of protocol 3, unreleased, so no new `PROTOCOL_VERSION`.
+6. **A request's name**: one global sequence from 1, "Request 7" on screens, `/requests/7`.
+7. **Its text's limit**: **Longest ticket description** (`ticketDescriptionMaxLength`); no new setting.
+8. **Its title**: none stored; screens show its first line, cut at 120 characters (a display constant).
+9. **Its project**: any project not archived, whatever its setup state (a planning run waits for `ready`, E2).
+10. **The owner's actions in D**: submit, add a note, answer a question (D2); no edit of the text and no **Close**. When a request is closed or withdrawn is an open point for step F (Open points).
+11. **"Planning stopped"**: D1 adds the fields `attempt_count` and `stopped`; the "Needs you" item and **Try again** move to E2.
+12. **Events**: `request.created`, `request.commented` (notes, questions and answers), `request.status_changed`.
+13. **`request.get`**: the request (number, text, status, project key or none) and its comments oldest first, a page at a time (`cursor`, `next_cursor`) as `ticket.comments`, within `MCP_OUTPUT_MAX_CHARACTERS`, a text above it cut with a marker.
+14. **While the question waits**: the request stays `planning`, the run `waiting_human`; the item "Question on request 7: <first line>"; an answer that cannot reach the machine fails the run `machine_offline` (not counted), stays in the comments, and the request goes back to `open`.
+
+### [ ] D1. Requests and their screens (branch `lot5/d-requests`)
+
+- Tables `requests` (01 section 3.2, with `attempt_count` and `stopped`) and `plans` (01 section 3.3; written from E1), comments on a ticket or a request (never both), the tickets' `plan_id`; events for each change.
+- API: create, list, detail, the owner's note; live updates.
+- Screens (02 section 5): Requests > list, **New request** (text, a project or "a new project"), request detail (the conversation, its status, the plan's place, empty until F).
+- Nothing starts: submitting creates the request `open`.
+- Help > Requests (new page); CHANGELOG.
+
+**Done when** server tests cover the creation, list, detail, notes, the refusals (text too long, an archived or unknown project) and the events (every-event guard); Playwright on both viewports submits a request and sees it in the list and on its page.
+
+### [ ] D2. Questions on a request (branch `lot5/d2-request-questions`)
+
+- `runs.request_id` (a `plan` run's request, no ticket); the MCP backend loads a planning run.
+- MCP: `request.get` and `request.ask` (06 section 4.4), their descriptions and `mcp-tools.md` texts.
+- The answer (`POST /api/requests/<number>/answer`) delivered live or by resume as for tickets (04 section 6), and its failed delivery (answer 14).
+- Needs you: a question on a request, with the same answer box; the request page shows its open question.
+- Help > Requests and Needs you; CHANGELOG.
+
+**Done when** server tests cover a question and its answer (live and by resume, through a scripted daemon), a failed delivery, `request.get`'s paging and output size, the events; Playwright on both viewports sees the question in Needs you and answers it.
 
 ### [ ] E1. The Project Manager (branch `lot5/e1-project-manager`)
 
@@ -198,6 +229,7 @@ Step C was too large for one session (rule 15): projects had no required capabil
 
 - The `plan` candidate (07 sections 1 and 3): at a request's submission and after **Reject with feedback**; category 4; projects in turn (a request for a new project counts as its own); a machine with protocol 3, logged into the account; no capability required.
 - Failures (answer 10): counted on the request, the stop at **Failed attempts before asking you**, "Planning stopped" with **Try again**; a planning run that ends without a plan after its reminders.
+- From step D (answers 4 and 11 of step D): `runs.project_id` optional for a new project's planning run; Needs you's "Planning stopped" and **Try again**, moved from step D.
 - The queue's lines and words for a planning candidate; "Started by the scheduler" in its first message.
 - Help > Runs > "What starts by itself" (one session per request, then one per rejection; at most **Failed attempts before asking you** failed sessions per request).
 
@@ -354,8 +386,13 @@ A bug fix outside the order of the steps (owner's report, 2026-10-26, after 5bis
 
 *Done 2026-10-26*: `EXPAND_ENVIRONMENT_SINCE` and `systemdVersion` (`apps/daemon/src/systemd.ts`); `LAUNCH_SCRIPT`'s checks and `launch-error` (`apps/daemon/src/run-files.ts`); the refusal and `launchError` (`apps/daemon/src/run.ts`). Tests: `apps/daemon/test/scoped-launch.test.ts` (new) with `apps/daemon/test/fake-systemd/` (new), `run-files.test.ts`, `systemd.test.ts`. Spec 05; Help > Runs; CHANGELOG.
 
+### [ ] 5bis E. A first message never taken (branch `lot5bis/e-first-message-check`)
+
+A side step asked by the owner on 2026-10-26 (option A of 5bis D's question 4), done after D1 and before D2: a first message that Claude Code does not take within the session start timeout (seen through its `UserPromptSubmit` hook) ends the run `launch_failed`, not counted, as any failure its machine caused (the machine left out, then "could not start on" at **Machine failures before asking you**); never a block of the whole machine (option B, rejected). The owner checks it against the real Claude Code. Its session writes the details here as its first commit.
+
 ## Open points
 
+- **When a request is closed or withdrawn** (owner's answer 10 of step D, for step F): the specs give the status `closed` but not when it is set (at the plan's approval, by the owner withdrawing a request, or both), nor what a withdrawal does to a planning run or a waiting question.
 - **The launch without command-line texts** (option B of step 5bis C, kept aside for lot 8, owner's answer 1): `--append-system-prompt-file` for the instructions (documented, never validated: ADR 0002) and the first message sent through a tmux buffer once `SessionStart` arrives would remove Linux's 128 KiB cap on one argument; it changes how Claude Code is driven, so it needs the owner's smoke test with the real Claude Code and an ADR.
 
 - **Automatic merge of a branch behind the default branch** (owner's review of step 5bis B, 2026-10-25; a possible later step, not now): CI and Quality checked the pull request against the default branch as it was at its last push, so two pull requests merged automatically one after the other can reach the default branch never tested together (04, section 4, "Known limit"). A later step could refuse to merge a pull request whose branch is behind the default branch and send it back to its agent to bring the default branch in (`git merge origin/<base>`), so that CI and Quality run again before the merge.
