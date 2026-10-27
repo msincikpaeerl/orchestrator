@@ -130,6 +130,8 @@ describe('runner', () => {
       ).toEqual({ theme: 'dark', autoContinueAtUsageLimit: false });
       expect(Object.keys(settings.hooks)).toEqual([
         'SessionStart',
+        // The launch's message taken (lot 5 step 5bis E).
+        'UserPromptSubmit',
         'PreToolUse',
         'PostToolUse',
         'Stop',
