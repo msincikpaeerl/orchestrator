@@ -57,6 +57,8 @@ const ruleRefusal = (command: string) =>
 const dontAskRefusal =
   "Permission to use Bash has been denied because Claude Code is running in don't ask mode.";
 
+const exit = { steps: [{ do: 'exit' as const }] };
+
 let root: string;
 let fake: FakeClaude;
 let home: string;
@@ -71,13 +73,18 @@ beforeEach(async () => {
     `[user]\n\tname = ${GIT_NAME}\n\temail = ${GIT_EMAIL}\n`,
   );
   fake = await installFakeClaude(join(root, 'bin'), join(root, 'fake'));
+  // The resume of the probe's session (checks 7 and 8, lot 5 step 5bis E).
+  await fake.play({ turns: [{ steps: [{ do: 'text', text: 'OK' }] }, exit] }, 'probe.resume');
 });
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-function runProbe(...args: string[]): Promise<{ code: number; output: string }> {
+function runProbe(
+  args: string[] = [],
+  env: Record<string, string> = {},
+): Promise<{ code: number; output: string }> {
   return new Promise((done) => {
     const child = spawn(
       'bash',
@@ -99,6 +106,7 @@ function runProbe(...args: string[]): Promise<{ code: number; output: string }> 
           TMPDIR: root,
           PROBE_SETTLE: '1',
           PROBE_STATUS_LINE_WAIT: '1',
+          ...env,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
@@ -124,8 +132,6 @@ function control(reported: boolean): ScenarioInput {
     turns: [{ steps: [{ do: 'exit' }] }],
   };
 }
-
-const exit = { steps: [{ do: 'exit' as const }] };
 
 /** The probe session: one turn of `steps`, then `/exit`. */
 const probe = (steps: NonNullable<ScenarioInput['turns']>[number]['steps']): ScenarioInput => ({
@@ -167,8 +173,11 @@ describe('Claude Code probe, dry run with the fake claude', () => {
       );
       const { code, output } = await runProbe();
       expect(output).toMatch(/Claude Code 2\.1\.282, model haiku/);
-      for (const check of [1, 2, 3, 4, 6])
+      for (const check of [1, 2, 3, 4, 6, 7, 8])
         expect(output).toMatch(new RegExp(`^${String(check)}\\. PASS `, 'm'));
+      expect(output).toMatch(
+        /^7\. PASS +the first message taken: UserPromptSubmit after SessionStart: UserPromptSubmit has the message exactly$/m,
+      );
       expect(output).toMatch(
         /^6\. PASS +the session runs in dontAsk permission mode, as its transcript records it: dontAsk on \d+ transcript line\(s\), no other mode$/m,
       );
@@ -190,6 +199,7 @@ describe('Claude Code probe, dry run with the fake claude', () => {
         'control-hooks.jsonl',
         'hooks.jsonl',
         'results.txt',
+        'resume-hooks.jsonl',
         'status-line.jsonl',
         'transcript.jsonl',
       ]);
@@ -228,7 +238,46 @@ describe('Claude Code probe, dry run with the fake claude', () => {
         '--model',
         'haiku',
       ]);
+      // The resume: the probe's session, in its worktree, with the short message after --.
+      const resume = (await fake.log()).find(
+        (entry) => entry.event === 'start' && entry.args.includes('--resume'),
+      );
+      const resumeArgs = resume?.event === 'start' ? resume.args : [];
+      expect(resume?.event === 'start' && resume.cwd).toMatch(/\/worktrees\/probe$/);
+      expect(resumeArgs[resumeArgs.indexOf('--resume') + 1]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(resumeArgs.at(-1)).toBe('Reply with the word OK.');
+      expect(resumeArgs[resumeArgs.indexOf('--settings') + 1]).toMatch(
+        /\/runs\/resume\/settings\.json$/,
+      );
       expect((await fake.log()).some((entry) => entry.event === 'arguments_refused')).toBe(false);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "fails check 8 when the resume's message is never taken",
+    async () => {
+      await fake.play(control(true), 'control');
+      await fake.play(
+        probe([
+          {
+            do: 'tool',
+            name: 'Bash',
+            input: { command: './probe-marker.sh' },
+            result: dontAskRefusal,
+          },
+          { do: 'text', text: 'DONE' },
+        ]),
+        'probe',
+      );
+      // Behind a dialog: the message is never taken, only the probe's /exit.
+      await fake.play({ firstMessageNotTaken: true, turns: [exit] }, 'probe.resume');
+      const { code, output } = await runProbe([], { PROBE_TURN_TIMEOUT: '2' });
+      expect(output).toMatch(/^7\. PASS /m);
+      expect(output).toMatch(
+        /^8\. FAIL +the message of a --resume launch taken: UserPromptSubmit after SessionStart: no UserPromptSubmit after SessionStart: the message was not taken$/m,
+      );
+      expect(code).toBe(1);
     },
     TIMEOUT,
   );
@@ -246,7 +295,7 @@ describe('Claude Code probe, dry run with the fake claude', () => {
         ]),
         'probe',
       );
-      const { code, output } = await runProbe('--keep');
+      const { code, output } = await runProbe(['--keep']);
       expect(output).toMatch(/^1\. FAIL .*the marker command ran/m);
       expect(output).toMatch(/^2\. NOT ATTEMPTED .*never called the ping tool/m);
       expect(output).toMatch(/^3\. FAIL .*the denied file was read/m);
@@ -344,6 +393,11 @@ describe('Claude Code probe, dry run with the fake claude', () => {
           permissionMode: 'default',
         },
         'probe',
+      );
+      // The same Claude Code resumes the session: its lines go to the same transcript.
+      await fake.play(
+        { permissionMode: 'default', turns: [{ steps: [{ do: 'text', text: 'OK' }] }, exit] },
+        'probe.resume',
       );
       const { code, output } = await runProbe();
       for (const check of [1, 2, 3, 4])
