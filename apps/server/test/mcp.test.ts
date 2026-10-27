@@ -708,11 +708,13 @@ describe('questions and answers (04, section 6)', () => {
 });
 
 describe('tool descriptions', () => {
-  it('cover every tool of lots 2 and 3', () => {
+  it('cover every tool of lots 2 to 5', () => {
     expect(Object.keys(MCP_TOOLS).sort()).toEqual(
       [
         'agent_list',
         'ci_status',
+        'request_ask',
+        'request_get',
         'review_approve',
         'review_request_changes',
         'project_get',

@@ -12,6 +12,7 @@ import {
   McpPermission,
   SETTINGS,
   ProjectKind,
+  RequestStatus,
   ReviewDecision,
   TicketPriority,
   TicketStatus,
@@ -24,6 +25,7 @@ import {
   type McpComment,
   type McpError,
   type McpErrorDetail,
+  type McpRequest,
   type McpResult,
   type McpTicket,
   type McpTicketSummary,
@@ -42,6 +44,12 @@ import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { hashCredential } from '../machines/credentials.js';
 import type { ProjectRow } from '../projects/model.js';
+import {
+  requestEntity,
+  requestProjectKey,
+  requestQuestion,
+  type RequestRow,
+} from '../requests/model.js';
 import { startCiWait } from '../runs/ci-wait.js';
 import { runBranch, type RunRow } from '../runs/model.js';
 import { resolveSettings } from '../settings/store.js';
@@ -87,6 +95,7 @@ const READING = new Set<McpToolName>([
   'ticket_comments',
   'agent_list',
   'ci_status',
+  'request_get',
 ]);
 
 const ACTIVE = new Set<string>(ACTIVE_RUN_STATUSES);
@@ -156,6 +165,22 @@ interface Call {
   machineName: string;
 }
 
+/**
+ * A planning run's call (06, section 4.4; lot 5 step D2a): its request instead of a ticket. Until
+ * step E2 a planning run always has a project.
+ */
+interface PlanCall {
+  run: RunRow;
+  project: ProjectRow;
+  ticket: null;
+  request: RequestRow;
+  profile: ProfileRow;
+  machineName: string;
+}
+
+/** What the reading tools need: the run's project, and its ticket when it has one. */
+type Scope = Pick<Call, 'project' | 'ticket'> | Pick<PlanCall, 'project' | 'ticket' | 'request'>;
+
 export interface McpBackendOptions {
   db: Database;
   log: FastifyBaseLogger;
@@ -212,11 +237,16 @@ export class McpBackend {
     const started = Date.now();
     let runId: string | undefined;
     let reference: string | undefined;
+    let requestNumber: number | undefined;
     let code: string = 'ok';
     try {
       this.loadedTexts ??= (await this.options.templates())['mcp-tools'];
       const [found] = await this.db
-        .select({ id: schema.runs.id, machineId: schema.runs.machineId })
+        .select({
+          id: schema.runs.id,
+          machineId: schema.runs.machineId,
+          purpose: schema.runs.purpose,
+        })
         .from(schema.runs)
         .where(eq(schema.runs.runTokenHash, hashCredential(message.payload.runToken)));
       if (!found || found.machineId !== machineId) throw ended(this.texts);
@@ -250,11 +280,23 @@ export class McpBackend {
       const known = (call: Call) => {
         reference = ticketReference(call.project.key, call.ticket.number);
       };
-      const output = READING.has(tool)
-        ? await this.read(tool, found.id, machineId, parsed.data, known)
-        : tool === 'review_approve' || tool === 'review_request_changes'
-          ? await this.review(tool, found.id, machineId, parsed.data, known)
-          : await this.write(tool, found.id, machineId, message, parsed.data, known);
+      if (found.purpose !== 'plan' && (tool === 'request_get' || tool === 'request_ask')) {
+        // Every role reads, but only a planning run has a request (owner's answer 5, lot 5 step D2a).
+        throw refuse(
+          'FORBIDDEN',
+          part(this.texts, 'request-only', { tool, purpose: found.purpose }),
+        );
+      }
+      const output =
+        found.purpose === 'plan'
+          ? await this.plan(tool, found.id, machineId, parsed.data, (call) => {
+              requestNumber = call.request.number;
+            })
+          : READING.has(tool)
+            ? await this.read(tool, found.id, machineId, parsed.data, known)
+            : tool === 'review_approve' || tool === 'review_request_changes'
+              ? await this.review(tool, found.id, machineId, parsed.data, known)
+              : await this.write(tool, found.id, machineId, message, parsed.data, known);
       return { ok: true, output: definition.output.parse(output) };
     } catch (error) {
       if (!(error instanceof Refusal)) throw error;
@@ -265,6 +307,7 @@ export class McpBackend {
         {
           run: runId,
           ticket: reference,
+          request: requestNumber,
           machine: machineId,
           tool,
           result: code,
@@ -350,7 +393,7 @@ export class McpBackend {
   }
 
   /** The profile's MCP permissions (06, section 5): refused with the role named. */
-  private permit(call: Call, tool: McpToolName): void {
+  private permit(call: Pick<Call, 'profile'>, tool: McpToolName): void {
     const permissions = z.array(McpPermission).parse(call.profile.mcpPermissions);
     if (!permissions.includes(tool)) {
       throw refuse(
@@ -358,6 +401,272 @@ export class McpBackend {
         part(this.texts, 'role', { role: AgentRole.parse(call.profile.role), tool }),
       );
     }
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // Planning runs (06, section 4.4; lot 5 step D2a, owner's answers 4 and 5): the reading tools on
+  // the project, `request_get` and `request_ask` on the run's request, and the progress line kept
+  // on the run. A tool on a ticket of its own is refused: a planning run has none.
+
+  private async plan(
+    tool: McpToolName,
+    runId: string,
+    machineId: string,
+    input: unknown,
+    known: (call: PlanCall) => void,
+  ): Promise<unknown> {
+    if (READING.has(tool)) {
+      const call = await this.loadPlan(this.db, runId, machineId, false);
+      known(call);
+      this.permit(call, tool);
+      switch (tool) {
+        case 'project_get':
+          return this.projectGet(call);
+        case 'ticket_get':
+          return this.ticketGet(call, input as McpToolInput<'ticket_get'>);
+        case 'ticket_list':
+          return this.ticketList(call, input as McpToolInput<'ticket_list'>);
+        case 'ticket_comments':
+          return this.ticketComments(call, input as McpToolInput<'ticket_comments'>);
+        case 'agent_list':
+          return this.agentList();
+        case 'request_get':
+          return this.requestGet(call, input as McpToolInput<'request_get'>);
+        case 'ci_status':
+          throw refuse(
+            'INVALID_TRANSITION',
+            part(this.texts, 'plan-no-pull-request', { request: String(call.request.number) }),
+          );
+        default:
+          throw new Error(`${tool} is not a reading tool`);
+      }
+    }
+    const { commentMaxLength } = await resolveSettings(this.db, ['commentMaxLength']);
+    return this.db.transaction(async (tx) => {
+      const [projectRow] = await tx
+        .select({ projectId: schema.runs.projectId })
+        .from(schema.runs)
+        .where(eq(schema.runs.id, runId));
+      if (!projectRow) throw ended(this.texts);
+      // The project's row lock first, then the request's, then the run's.
+      await tx
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, projectRow.projectId))
+        .for('no key update');
+      const call = await this.loadPlan(tx, runId, machineId, true);
+      known(call);
+      this.permit(call, tool);
+      if (!ACTIVE.has(call.run.status)) throw ended(this.texts);
+      switch (tool) {
+        case 'ticket_progress':
+          return this.planProgress(tx, call, input as McpToolInput<'ticket_progress'>);
+        case 'request_ask':
+          return this.requestAsk(tx, call, input as McpToolInput<'request_ask'>, commentMaxLength);
+        default:
+          throw refuse(
+            'INVALID_TRANSITION',
+            part(this.texts, 'plan-no-ticket', { request: String(call.request.number), tool }),
+          );
+      }
+    });
+  }
+
+  /** A planning run, its request, project and profile; refused once the run's token is revoked. */
+  private async loadPlan(
+    executor: Executor,
+    runId: string,
+    machineId: string,
+    lock: boolean,
+  ): Promise<PlanCall> {
+    const [first] = await executor.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (!first || first.machineId !== machineId || first.runTokenRevokedAt !== null) {
+      throw ended(this.texts);
+    }
+    if (first.requestId === null) throw new Error(`planning run ${runId} has no request`);
+    const requestQuery = executor
+      .select()
+      .from(schema.requests)
+      .where(eq(schema.requests.id, first.requestId));
+    const [request] = lock ? await requestQuery.for('update') : await requestQuery;
+    let run = first;
+    if (lock) {
+      const [locked] = await executor
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.id, runId))
+        .for('update');
+      if (!locked || locked.runTokenRevokedAt !== null) throw ended(this.texts);
+      run = locked;
+    }
+    const [project] = await executor
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.id, run.projectId));
+    const [profile] = await executor
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, run.profileId));
+    const [machine] = await executor
+      .select({ name: schema.machines.name })
+      .from(schema.machines)
+      .where(eq(schema.machines.id, run.machineId));
+    if (!request || !project || !profile || !machine) throw new Error(`run ${run.id} incomplete`);
+    return { run, project, ticket: null, request, profile, machineName: machine.name };
+  }
+
+  /** The request as a planning run sees it. */
+  private mcpRequest({ request, project }: Pick<PlanCall, 'request' | 'project'>): McpRequest {
+    return {
+      number: request.number,
+      text: request.body,
+      status: RequestStatus.parse(request.status),
+      project: request.projectId === null ? null : project.key,
+    };
+  }
+
+  /**
+   * `request_get` (owner's answer 13, lot 5 step D): the request on the first page only, then its
+   * comments oldest first, a page at a time within `MCP_OUTPUT_MAX_CHARACTERS`. A page holds whole
+   * items while they fit: the first may hold the request alone. A single text above the budget
+   * (raised settings only) is cut with a marker.
+   */
+  private async requestGet(call: PlanCall, input: McpToolInput<'request_get'>) {
+    const offset = input.cursor === undefined ? 0 : cursorNumber(this.texts, input.cursor);
+    const rows = await this.db
+      .select()
+      .from(schema.comments)
+      .where(eq(schema.comments.requestId, call.request.id))
+      .orderBy(asc(schema.comments.createdAt), asc(schema.comments.id))
+      .offset(offset);
+    const keys = await this.profileKeys(this.db);
+    const comments = rows.map((row) => mcpComment(row, keys));
+    const room = MCP_OUTPUT_MAX_CHARACTERS - OUTPUT_OVERHEAD;
+    let request: McpRequest | null = null;
+    if (input.cursor === undefined) {
+      const whole = this.mcpRequest(call);
+      request =
+        jsonLength(whole) <= room
+          ? whole
+          : {
+              ...whole,
+              text: cutToFit(whole.text, room, part(this.texts, 'request-text-cut'), (candidate) =>
+                jsonLength({ ...whole, text: candidate }),
+              ),
+            };
+    }
+    const used = OUTPUT_OVERHEAD + (request === null ? 0 : jsonLength(request));
+    const [next] = comments;
+    const page =
+      request !== null &&
+      next !== undefined &&
+      used + jsonLength(next) + 1 > MCP_OUTPUT_MAX_CHARACTERS
+        ? []
+        : fitPage(comments, used);
+    const [first] = page;
+    // A single comment above the budget (raised settings only) is cut.
+    if (request === null && page.length === 1 && first && jsonLength(first) > room) {
+      page[0] = {
+        ...first,
+        body: cutToFit(first.body, room, part(this.texts, 'request-comment-cut'), (candidate) =>
+          jsonLength({ ...first, body: candidate }),
+        ),
+      };
+    }
+    const after = offset + page.length;
+    return {
+      request,
+      comments: page,
+      next_cursor: after < offset + rows.length ? `after-${String(after)}` : null,
+    };
+  }
+
+  /**
+   * `request_ask` (owner's answer 5, lot 5 step D2a): a `question` on the request, which stays
+   * `planning`; the daemon ends the turn as a question and the run waits for the owner.
+   */
+  private async requestAsk(
+    tx: Transaction,
+    call: PlanCall,
+    input: McpToolInput<'request_ask'>,
+    commentMaxLength: number,
+  ) {
+    const number = String(call.request.number);
+    if (call.run.decision !== null) {
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
+    }
+    const asked = await requestQuestion(tx, call.request.id);
+    if (asked && asked.answer === null) {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'request-waiting-answer', { request: number, tool: 'request_ask' }),
+      );
+    }
+    const status = RequestStatus.parse(call.request.status);
+    if (status !== 'planning') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'request-not-planning', { request: number, status }),
+      );
+    }
+    this.tooLongRefusal([this.checkComment('question', input.question, commentMaxLength)]);
+    const at = this.now();
+    const [row] = await tx
+      .insert(schema.comments)
+      .values({
+        requestId: call.request.id,
+        author: 'agent',
+        authorProfileId: call.profile.id,
+        runId: call.run.id,
+        kind: 'question',
+        body: input.question,
+        createdAt: at,
+      })
+      .returning();
+    if (!row) throw new Error('comment not inserted');
+    const [request] = await tx
+      .update(schema.requests)
+      .set({ updatedAt: at })
+      .where(eq(schema.requests.id, call.request.id))
+      .returning();
+    if (!request) throw new Error('request disappeared');
+    await recordEvent(tx, {
+      actor: 'agent',
+      ...requestEntity(request),
+      type: 'request.commented',
+      payload: {
+        request: request.number,
+        project: await requestProjectKey(tx, request),
+        commentId: row.id,
+        kind: 'question',
+        agent: call.profile.key,
+        agentName: call.profile.name,
+        runId: call.run.id,
+      },
+      at,
+    });
+    const keys = await this.profileKeys(tx);
+    return {
+      comment: mcpComment(row, keys),
+      request: this.mcpRequest({ request, project: call.project }),
+    };
+  }
+
+  /**
+   * `ticket_progress` in a planning run: the line is kept on the run, never refused. No screen
+   * shows a planning run before step E2 (owner's answer 11, lot 5 step D2a), so none is shown.
+   */
+  private async planProgress(
+    tx: Transaction,
+    call: PlanCall,
+    input: McpToolInput<'ticket_progress'>,
+  ) {
+    const at = this.now();
+    await tx
+      .update(schema.runs)
+      .set({ progress: input.text, progressAt: at })
+      .where(eq(schema.runs.id, call.run.id));
+    return { progress: input.text, at: at.toISOString() };
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -391,7 +700,7 @@ export class McpBackend {
     }
   }
 
-  private projectGet({ project }: Call) {
+  private projectGet({ project }: Pick<Call, 'project'>) {
     return {
       key: project.key,
       name: project.name,
@@ -407,9 +716,23 @@ export class McpBackend {
     };
   }
 
-  /** A ticket of the run's project by its reference (`WEB-12`), or the run's own. */
-  private async findTicket(executor: Executor, call: Call, reference?: string): Promise<TicketRow> {
-    if (reference === undefined) return call.ticket;
+  /**
+   * A ticket of the run's project by its reference (`WEB-12`), or the run's own; a planning run
+   * has none, so it names one (lot 5 step D2a).
+   */
+  private async findTicket(
+    executor: Executor,
+    call: Scope,
+    reference?: string,
+  ): Promise<TicketRow> {
+    if (reference === undefined) {
+      if (call.ticket !== null) return call.ticket;
+      throw refuse(
+        'VALIDATION_FAILED',
+        part(this.texts, 'plan-ticket-needed', { request: String(call.request.number) }),
+        [{ field: 'ticket', message: part(this.texts, 'plan-ticket-needed-field') }],
+      );
+    }
     const [key, number] = reference.split('-');
     const [row] =
       key === call.project.key
@@ -488,7 +811,7 @@ export class McpBackend {
     };
   }
 
-  private async ticketGet(call: Call, input: McpToolInput<'ticket_get'>) {
+  private async ticketGet(call: Scope, input: McpToolInput<'ticket_get'>) {
     const ticket = await this.findTicket(this.db, call, input.ticket);
     const full = await this.mcpTicket(this.db, call.project.key, ticket);
     if (jsonLength({ ticket: full }) <= MCP_OUTPUT_MAX_CHARACTERS) return { ticket: full };
@@ -502,7 +825,7 @@ export class McpBackend {
     return { ticket: { ...full, description } };
   }
 
-  private async ticketList(call: Call, input: McpToolInput<'ticket_list'>) {
+  private async ticketList(call: Scope, input: McpToolInput<'ticket_list'>) {
     const after = input.cursor === undefined ? 0 : cursorNumber(this.texts, input.cursor);
     const conditions = [
       eq(schema.tickets.projectId, call.project.id),
@@ -545,7 +868,7 @@ export class McpBackend {
     };
   }
 
-  private async ticketComments(call: Call, input: McpToolInput<'ticket_comments'>) {
+  private async ticketComments(call: Scope, input: McpToolInput<'ticket_comments'>) {
     const ticket = await this.findTicket(this.db, call, input.ticket);
     const offset = input.cursor === undefined ? 0 : cursorNumber(this.texts, input.cursor);
     const rows = await this.db

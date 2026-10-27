@@ -136,6 +136,53 @@ const BEFORE: [string, Record<string, string>, string][] = [
     'No ticket WEB-8, WEB-9 in the project WEB: blocked_by names tickets of the same project.',
   ],
   ['blocked-by-unknown-field', { reference: 'WEB-9' }, 'unknown ticket WEB-9'],
+  // Planning runs (lot 5 step D2a): new words, not moved from backend.ts.
+  [
+    'plan-ticket-needed',
+    { request: '7' },
+    'Your run plans request 7 and has no ticket of its own: name a ticket with `ticket`, or read the request with request_get.',
+  ],
+  ['plan-ticket-needed-field', {}, 'a planning run has no ticket: name one'],
+  [
+    'plan-no-ticket',
+    { request: '7', tool: 'ticket_comment' },
+    'Your run plans request 7 and has no ticket: ticket_comment is not possible in it. Read the request with request_get, and ask the owner with request_ask.',
+  ],
+  [
+    'plan-no-pull-request',
+    { request: '7' },
+    'Your run plans request 7: it has no ticket and no pull request, so ci_status has nothing to report.',
+  ],
+  [
+    'plan-decided',
+    {},
+    'You already ended the work of this planning run with a decision: end your turn now.',
+  ],
+  [
+    'request-only',
+    { tool: 'request_get', purpose: 'implement' },
+    'request_get is only for a planning run, which plans a request; the purpose of this run is implement.',
+  ],
+  [
+    'request-waiting-answer',
+    { request: '7', tool: 'request_ask' },
+    'You asked the owner a question and request 7 waits for the answer: request_ask is not possible now. End your turn; the answer arrives as your next message.',
+  ],
+  [
+    'request-not-planning',
+    { request: '7', status: 'open' },
+    'Request 7 is open: request_ask needs it planning. End your turn.',
+  ],
+  [
+    'request-text-cut',
+    {},
+    'The rest of the request cannot be read through the tools; ask the owner with request_ask if you need it.',
+  ],
+  [
+    'request-comment-cut',
+    {},
+    'The rest of this comment cannot be read through the tools; ask the owner with request_ask if you need it.',
+  ],
 ];
 
 describe("the MCP tools' texts in agents/templates/mcp-tools.md", () => {

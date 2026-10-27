@@ -73,3 +73,23 @@ this profile cannot be assigned a ticket
 No ticket {{references}} in the project {{project}}: blocked_by names tickets of the same project.
 <!-- part: blocked-by-unknown-field -->
 unknown ticket {{reference}}
+<!-- part: plan-ticket-needed -->
+Your run plans request {{request}} and has no ticket of its own: name a ticket with `ticket`, or read the request with request_get.
+<!-- part: plan-ticket-needed-field -->
+a planning run has no ticket: name one
+<!-- part: plan-no-ticket -->
+Your run plans request {{request}} and has no ticket: {{tool}} is not possible in it. Read the request with request_get, and ask the owner with request_ask.
+<!-- part: plan-no-pull-request -->
+Your run plans request {{request}}: it has no ticket and no pull request, so ci_status has nothing to report.
+<!-- part: plan-decided -->
+You already ended the work of this planning run with a decision: end your turn now.
+<!-- part: request-only -->
+{{tool}} is only for a planning run, which plans a request; the purpose of this run is {{purpose}}.
+<!-- part: request-waiting-answer -->
+You asked the owner a question and request {{request}} waits for the answer: {{tool}} is not possible now. End your turn; the answer arrives as your next message.
+<!-- part: request-not-planning -->
+Request {{request}} is {{status}}: request_ask needs it planning. End your turn.
+<!-- part: request-text-cut -->
+The rest of the request cannot be read through the tools; ask the owner with request_ask if you need it.
+<!-- part: request-comment-cut -->
+The rest of this comment cannot be read through the tools; ask the owner with request_ask if you need it.
