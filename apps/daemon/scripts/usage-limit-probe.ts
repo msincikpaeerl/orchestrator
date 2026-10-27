@@ -23,7 +23,6 @@ import {
   writeJsonAtomic,
   writeUserSettings,
 } from '../src/run-files.js';
-import { shellCommand } from '../src/self.js';
 import { TrustRegistry } from '../src/trust.js';
 import {
   API_ERROR_PATTERNS,
@@ -61,9 +60,6 @@ import {
 
 const MESSAGE = 'Reply with the word OK.';
 const SESSION = 'limit';
-
-/** Hooks recorded besides the daemon's own: the message arriving. */
-const EXTRA_HOOKS = ['UserPromptSubmit'];
 
 /** Words of Claude Code's own automatic continue, which `autoContinueAtUsageLimit: false` turns off. */
 const AUTO_CONTINUE =
@@ -148,27 +144,10 @@ function session(layout: Layout, model: string): string[] {
     },
     selfCommand,
   );
-  const hooks = {
-    ...settings.hooks,
-    ...Object.fromEntries(
-      EXTRA_HOOKS.map((event) => [
-        event,
-        [
-          {
-            hooks: [
-              {
-                type: 'command',
-                command: shellCommand([...selfCommand, 'hook', event, '--run', SESSION]),
-              },
-            ],
-          },
-        ],
-      ]),
-    ),
-  };
   const settingsFile = join(folder, 'settings.json');
   const mcpConfig = join(folder, 'mcp.json');
-  writeJsonAtomic(settingsFile, { ...settings, hooks });
+  // The daemon's hooks include the message arriving (`UserPromptSubmit`, lot 5 step 5bis E).
+  writeJsonAtomic(settingsFile, settings);
   writeJsonAtomic(
     mcpConfig,
     runMcpConfig(SESSION, selfCommand, {

@@ -16,9 +16,15 @@ const record = (entry: FakeLogEntry) => {
   appendFileSync(join(folder, 'log.jsonl'), `${JSON.stringify(entry)}\n`);
 };
 
-function readScenario(cwd: string): Scenario {
-  const own = join(folder, 'scenarios', `${basename(cwd)}.json`);
-  const file = existsSync(own) ? own : join(folder, 'scenario.json');
+/**
+ * The scenario of a run's folder, `scenarios/<folder name>.json`; for a `--resume` launch,
+ * `<folder name>.resume.json` first (the probe's resume, lot 5 step 5bis E).
+ */
+function readScenario(cwd: string, resume: boolean): Scenario {
+  const named = (suffix: string) => join(folder, 'scenarios', `${basename(cwd)}${suffix}.json`);
+  const file =
+    [...(resume ? [named('.resume')] : []), named('')].find((path) => existsSync(path)) ??
+    join(folder, 'scenario.json');
   return Scenario.parse(existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {});
 }
 
@@ -368,7 +374,9 @@ class Session {
   /** Plays the turn answering one message; resolves false when the session hangs for good. */
   async answer(message: string): Promise<boolean> {
     record({ event: 'message', text: message });
-    await this.hook('UserPromptSubmit', { prompt: message });
+    await this.hook('UserPromptSubmit', {
+      prompt: this.scenario.promptTrimmed ? message.trimEnd() : message,
+    });
     this.write({
       type: 'user',
       message: { role: 'user', content: message },
@@ -459,7 +467,7 @@ function readTerminal(onMessage: (text: string) => void): void {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const cwd = process.cwd();
-  const scenario = readScenario(cwd);
+  const scenario = readScenario(cwd, args.includes('--resume'));
   if (args.length === 1 && args[0] === '--version') {
     process.stdout.write(`${scenario.version}\n`);
     return;
@@ -505,7 +513,10 @@ async function main(): Promise<void> {
     if (!busy) void next();
   });
   if (!(await session.start())) return;
-  if (launch.message !== null) queue.unshift(launch.message);
+  if (launch.message && !scenario.firstMessageNotTaken) {
+    await sleep(scenario.firstMessageDelayMs);
+    queue.unshift(launch.message);
+  }
   await next();
 }
 
