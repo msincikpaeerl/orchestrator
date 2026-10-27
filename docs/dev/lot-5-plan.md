@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E planned (2026-10-27)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -390,7 +390,27 @@ A bug fix outside the order of the steps (owner's report, 2026-10-26, after 5bis
 
 ### [ ] 5bis E. A first message never taken (branch `lot5bis/e-first-message-check`)
 
-A side step asked by the owner on 2026-10-26 (option A of 5bis D's question 4), done after D1 and before D2: a first message that Claude Code does not take within the session start timeout (seen through its `UserPromptSubmit` hook) ends the run `launch_failed`, not counted, as any failure its machine caused (the machine left out, then "could not start on" at **Machine failures before asking you**); never a block of the whole machine (option B, rejected). The owner checks it against the real Claude Code. Its session writes the details here as its first commit.
+A side step asked by the owner on 2026-10-26 (option A of 5bis D's question 4), done after D1 and before D2: a first message that Claude Code does not take within the session start timeout (seen through its `UserPromptSubmit` hook) ends the run `launch_failed`, not counted, as any failure its machine caused (the machine left out, then "could not start on" at **Machine failures before asking you**); never a block of the whole machine (option B, rejected). The owner checks it against the real Claude Code. In 5bis D, Claude Code started with an empty message sat at its prompt without a word until the idle timeout: a startup dialog shown after `SessionStart`, or a change in how Claude Code takes the message given after `--`, would do the same with nothing to say why.
+
+The owner's answers (2026-10-27, A to all, with one rule for answers 1 and 7):
+
+1. **Which messages**: the first message of every launch, a run's start and every `run.resume` (the owner's answer to a closed session, a CI or conflict round, **Request changes** to a closed session); not the messages sent into an open session (`run.input`, nudges). **Owner's rule**: the message counts as taken at the first `UserPromptSubmit` of the launch whose `prompt` is not empty or white space only, never compared with the message sent: Claude Code may trim or normalise the text, and a healthy run must never end `launch_failed` for that. The exact comparison is only in the probe's checks 7 and 8 (answer 8), where a difference is reported, not a failure of the product.
+2. **How long**: the **Session start timeout** setting (30 seconds by default), counted again from `SessionStart`; no new setting.
+3. **What the server sees**: nothing new. The run goes `starting` → `working` at `SessionStart` as before; "message taken" is the daemon's own fact; the end reason is the existing `launch_failed` (failure `machine_problem`, not counted, the machine left out for the ticket). No server change, no `PROTOCOL_VERSION` change (`UserPromptSubmit` is only between Claude Code and the daemon's own hook command).
+4. **Words** (the run's detail): "Claude Code started but did not take its first message within 30 seconds, the "Session start timeout" setting: a startup dialog or a change in Claude Code is suspected. Running it again on this machine will not help until that is fixed, and it is not the ticket's fault."
+5. **A daemon restart**: "message taken" is saved in the run's `state.json`; a run found again with its message not taken gets a fresh window from the restart. A `state.json` written by an older daemon (no such field) counts as taken, so runs in flight during the update never fail for it.
+6. **The hook never gets in the way**: for `UserPromptSubmit`, Claude Code blocks the prompt when the hook exits 2 and adds what the hook prints to the agent's context; the daemon's hook command always exits 0 and prints nothing for it, also when the daemon cannot be reached.
+7. **The fake `claude`**: a scenario option `firstMessageNotTaken` (it reports `SessionStart` and never takes the launch's message, as Claude Code behind a dialog), and an empty message is never taken, as with the real Claude Code. **Owner's rule**: a test where the hook's prompt differs from the message sent only by trailing white space, and the run goes on.
+8. **The owner's check**: the probe (`tools/smoke/claude-code-probe.sh`) gains check 7 (after `SessionStart`, `UserPromptSubmit` arrives with the first message) and check 8 (a `--resume <session id> -- <message>` launch of the same session does the same; one more short `haiku` prompt). Each is `PASS` when the prompt is exactly the message, `INFO` naming the difference when it was taken with another text, `FAIL` when no `UserPromptSubmit` came.
+9. **Documentation**: spec 05 (sections 4.2.1, 4.3 and 4.5), Help > Runs, `docs/dev/testing.md` (checks 7 and 8), CHANGELOG.
+
+**Done when** with the fake `claude` and the real tmux: a start and a resume whose message is never taken end `launch_failed` with answer 4's words once the session start timeout passed after `SessionStart`, without Claude Code left running; two such failures in a row give "could not start on Laptop" (not counted); a message taken late but within the window, and one whose hook prompt differs only by trailing white space, let the run go on; a daemon restarted before the message was taken gives a fresh window, and an older `state.json` counts it taken; the hook command exits 0 with no output for `UserPromptSubmit`, the daemon reachable or not. The new launch and resume tests fail on `main`'s code.
+
+**Owner's checklist with the real Claude Code** (rule 10: only the owner):
+
+1. Run `tools/smoke/claude-code-probe.sh` and see `PASS` (or `INFO` with the difference named) on checks 7 and 8; a `FAIL` means this step's check would fail every run: tell the session before merging.
+2. Have the probe's new fixtures folder (`apps/daemon/test/fixtures/claude-code-<version>/`) reviewed and committed.
+3. After the merge and **Update the daemon** on Desktop WSL, **Run now** on one small ticket: the run reaches "Running" and its agent answers; no "its machine could not start Claude Code".
 
 ## Open points
 
