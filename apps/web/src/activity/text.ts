@@ -22,7 +22,7 @@ import {
   pauseText,
   runStatusLabel,
 } from '../runs/text';
-import { requestPath } from '../requests/text';
+import { requestPath, requestStatusLabel } from '../requests/text';
 import { keptReasonText } from '../tickets/branch-clean-up-text';
 import { checkLabel, priorityLabel, statusLabel, ticketPath, typeLabel } from '../tickets/text';
 
@@ -94,6 +94,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'ticket.machine_branch_deleted': 'Ticket branch deleted on a machine',
   'request.created': 'Request submitted',
   'request.commented': 'Comment added to a request',
+  'request.status_changed': 'Request status changed',
   'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
@@ -539,6 +540,13 @@ const describe: { [T in EventType]: Describe<T> } = {
     ...(c.comment === null ? [] : [quote(c.comment, requestPath(p.request))]),
     ...(p.agentName === undefined ? [] : [' by agent ', quote(p.agentName, null)]),
   ],
+  'request.status_changed': (p) =>
+    p.cause === 'run_started'
+      ? [requestLink(p.request), ': planning, a planning run started']
+      : [
+          requestLink(p.request),
+          ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (not counted as a failed attempt)`,
+        ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,
     p.by === 'orchestrator'

@@ -399,9 +399,17 @@ function firstMessage(
   return message;
 }
 
+/** A ticket's answer, or a request's for a planning run (lot 5 step D2a). */
+export type AnswerTemplate = 'answer' | 'request-answer';
+
 /** The owner's answer to a question, live (`run.input`) or on resume (`run.resume`). */
-export function answerMessage(templates: Templates, question: string, answer: string): string {
-  const template = templates.answer;
+export function answerMessage(
+  templates: Templates,
+  question: string,
+  answer: string,
+  name: AnswerTemplate = 'answer',
+): string {
+  const template = templates[name];
   return `${fill(template, template.main, { question: question.trim(), answer: answer.trim() })}\n`;
 }
 
@@ -414,9 +422,10 @@ export function answerResumeMessage(
   templates: Templates,
   question: string,
   answer: string,
+  name: AnswerTemplate = 'answer',
   maxBytes = FIRST_MESSAGE_MAX_BYTES,
 ): string {
-  const template = templates.answer;
+  const template = templates[name];
   const render = (q: string, a: string) =>
     `${fill(template, template.main, { question: q, answer: a })}\n`;
   const fits = (text: string) => bytes(text) <= maxBytes;

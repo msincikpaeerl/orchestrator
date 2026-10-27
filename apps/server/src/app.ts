@@ -324,7 +324,7 @@ export function buildApp(dependencies: AppDependencies) {
       watcher,
       now: dependencies.now,
     });
-    registerRequestRoutes(scope, { db, now: dependencies.now });
+    registerRequestRoutes(scope, { db, runs, now: dependencies.now });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

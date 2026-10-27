@@ -78,6 +78,7 @@ import {
   startedBy,
   answerMessage,
   answerResumeMessage,
+  type AnswerTemplate,
   continueMessage,
   fixReviewFirstMessage,
   implementFirstMessage,
@@ -86,6 +87,13 @@ import {
 } from '../agents/messages.js';
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
+import {
+  changeRequestStatus,
+  requestEntity,
+  requestProjectKey,
+  requestQuestion,
+  type RequestRow,
+} from '../requests/model.js';
 import { notifyChange, notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
@@ -213,10 +221,17 @@ interface Locked {
   run: RunRow;
   project: ProjectRow;
   ticket: TicketRow | null;
+  /** A planning run's request, locked before the run (lot 5 step D2a); null for any other run. */
+  request: RequestRow | null;
   machine: MachineRow;
 }
 
 const ACTIVE = new Set<string>(ACTIVE_RUN_STATUSES);
+
+/** The template of the owner's answer to a run: a planning run's is about its request. */
+function answerTemplate(run: Pick<RunRow, 'purpose'>): AnswerTemplate {
+  return run.purpose === 'plan' ? 'request-answer' : 'answer';
+}
 
 /** The ends a turn decides, after the daemon's `idle` (05, section 4.8): no usage limit then. */
 const TURN_DECIDED_ENDS = new Set<RunEndReason>([
@@ -381,12 +396,21 @@ export class RunService {
   ): Promise<T | null> {
     if (!z.uuid().safeParse(runId).success) return null;
     const [found] = await this.db
-      .select({ projectId: schema.runs.projectId })
+      .select({ projectId: schema.runs.projectId, requestId: schema.runs.requestId })
       .from(schema.runs)
       .where(eq(schema.runs.id, runId));
     if (!found) return null;
     return this.db.transaction(async (tx) => {
       const project = await this.lockProject(tx, eq(schema.projects.id, found.projectId));
+      // A planning run's request before the run: the order of the MCP backend's request_ask.
+      const [request] =
+        found.requestId === null
+          ? []
+          : await tx
+              .select()
+              .from(schema.requests)
+              .where(eq(schema.requests.id, found.requestId))
+              .for('update');
       const [run] = await tx
         .select()
         .from(schema.runs)
@@ -402,7 +426,7 @@ export class RunService {
         .from(schema.machines)
         .where(eq(schema.machines.id, run.machineId));
       if (!machine) throw new Error(`machine of run ${run.id} not found`);
-      return work(tx, { run, project, ticket: ticket ?? null, machine });
+      return work(tx, { run, project, ticket: ticket ?? null, request: request ?? null, machine });
     });
   }
 
@@ -499,6 +523,18 @@ export class RunService {
         at: facts.failedAt ?? now,
       });
     }
+    if (terminal && from !== to && locked.request?.status === 'planning') {
+      // Its planning run ended without a plan: the request is open again, not counted until
+      // step E2 (owner's answers 7 and 10, lot 5 step D2a).
+      locked.request = await changeRequestStatus(tx, {
+        request: locked.request,
+        to: 'open',
+        cause: 'run_ended',
+        runId: locked.run.id,
+        failureReason: facts.failureReason,
+        at: now,
+      });
+    }
     if (terminal) this.clearTimer(locked.run.id);
     locked.run = updated;
     const decision = pendingDecision(updated);
@@ -576,7 +612,7 @@ export class RunService {
         : failureReason === 'download_failed'
           ? this.downloadFailedComment(locked)
           : counted
-            ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. ${COUNTED_SENTENCE} ${facts.onGitHub ? `Every commit of the branch ${locked.run.branchName} was on GitHub when the run ended.` : `The branch ${locked.run.branchName} is kept on that machine.`}`
+            ? `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${words}${detail}. ${COUNTED_SENTENCE} ${facts.onGitHub ? `Every commit of the branch ${runBranch(locked.run)} was on GitHub when the run ended.` : `The branch ${runBranch(locked.run)} is kept on that machine.`}`
             : `The run on machine ${locked.machine.name} ended: ${words}${detail}. It does not count as a failed attempt.`);
     // The stop at **Failed attempts before asking you**, read now (04, section 5; lot 3 step K1).
     const stop = counted ? await this.failedAttemptsStop(tx, locked) : null;
@@ -2157,26 +2193,168 @@ export class RunService {
         now,
       });
       if (!updated) throw new Error('ticket left waiting_human during the answer');
-      const locked: Locked = { run, project, ticket: updated, machine };
+      const locked: Locked = { run, project, ticket: updated, request: null, machine };
+      after.push(
+        ...(await this.deliverAnswer(
+          tx,
+          locked,
+          templates,
+          asked.question.body,
+          body,
+          dispatchAckTimeoutSeconds,
+        )),
+      );
+    });
+    for (const action of after) await action();
+  }
 
-      if (run.status === 'paused_quota') {
-        // Its session is closed on a usage limit: Resume sends the "please continue" message,
-        // which points the agent to ticket_comments, where the answer is.
-        this.log.info({ run: run.id, ticket: reference }, 'answer kept for a paused run');
-        return;
+  /**
+   * The owner's **answer** to the question of a request's planning run (owner's answers 9 and 10,
+   * lot 5 step D2a): delivered as a ticket's, live or by resume (04, section 6). The request stays
+   * `planning`; with its machine offline, the run fails `machine_offline` and the request is open
+   * again.
+   */
+  async answerRequest(requestNumber: number, body: string): Promise<void> {
+    const { templates } = await this.files();
+    const { dispatchAckTimeoutSeconds } = await resolveSettings(this.db, [
+      'dispatchAckTimeoutSeconds',
+    ]);
+    const after: (() => Promise<void>)[] = [];
+    await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const [found] = await tx
+        .select({ projectId: schema.requests.projectId })
+        .from(schema.requests)
+        .where(eq(schema.requests.number, requestNumber));
+      if (!found) {
+        throw new HttpError(404, 'request_not_found', 'No request with this number');
       }
-      if (!(this.gateway?.isConnected(machine.id) ?? false)) {
-        await this.answerUndelivered(tx, locked, 'machine_offline');
-        return;
+      // The project's row lock first, then the request's, then the run's.
+      const project =
+        found.projectId === null
+          ? null
+          : await this.lockProject(tx, eq(schema.projects.id, found.projectId));
+      if (project?.status === 'archived') {
+        throw new HttpError(
+          409,
+          'project_archived',
+          'This project is archived and read-only: unarchive it first',
+        );
       }
-      if (run.sessionAlive) {
-        const inputId = randomUUID();
-        await tx
-          .update(schema.runs)
-          .set({ answerInputId: inputId, updatedAt: now })
-          .where(eq(schema.runs.id, run.id));
-        const text = answerMessage(templates, asked.question.body, body);
-        after.push(async () => {
+      const [request] = await tx
+        .select()
+        .from(schema.requests)
+        .where(eq(schema.requests.number, requestNumber))
+        .for('update');
+      if (!request) throw new Error(`request ${String(requestNumber)} disappeared`);
+      const asked = request.status === 'planning' ? await requestQuestion(tx, request.id) : null;
+      if (!asked || asked.answer !== null) {
+        throw new HttpError(
+          409,
+          'no_open_question',
+          `The request has no question waiting for an answer: it is ${request.status}`,
+        );
+      }
+      const [run] = await tx
+        .select()
+        .from(schema.runs)
+        .where(
+          and(
+            eq(schema.runs.requestId, request.id),
+            inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+          ),
+        )
+        .for('update');
+      // Until step E2 every planning run has a project.
+      if (!run || !project) throw new Error(`waiting request ${request.id} has no active run`);
+      const [machine] = await tx
+        .select()
+        .from(schema.machines)
+        .where(eq(schema.machines.id, run.machineId));
+      if (!machine) throw new Error('machine not found');
+
+      const [answer] = await tx
+        .insert(schema.comments)
+        .values({
+          requestId: request.id,
+          author: 'owner',
+          kind: 'answer',
+          body,
+          answersCommentId: asked.question.id,
+          createdAt: now,
+        })
+        .returning();
+      if (!answer) throw new Error('comment not inserted');
+      const [updated] = await tx
+        .update(schema.requests)
+        .set({ updatedAt: now })
+        .where(eq(schema.requests.id, request.id))
+        .returning();
+      if (!updated) throw new Error('request disappeared');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...requestEntity(updated),
+        type: 'request.commented',
+        payload: {
+          request: updated.number,
+          project: project.key,
+          commentId: answer.id,
+          kind: 'answer',
+        },
+        at: now,
+      });
+      const locked: Locked = { run, project, ticket: null, request: updated, machine };
+      after.push(
+        ...(await this.deliverAnswer(
+          tx,
+          locked,
+          templates,
+          asked.question.body,
+          body,
+          dispatchAckTimeoutSeconds,
+        )),
+      );
+    });
+    for (const action of after) await action();
+  }
+
+  /**
+   * The answer to the waiting run (04, section 6): live (`run.input`) while its session is open,
+   * else `run.resume` on its machine at once with the answer cut to the byte budget (03 section
+   * 3.2), whatever the account's state; kept for a run paused on a usage limit; failed with
+   * `machine_offline` when its machine is offline. Returns what to do once committed.
+   */
+  private async deliverAnswer(
+    tx: Executor,
+    locked: Locked,
+    templates: Templates,
+    question: string,
+    body: string,
+    ackTimeoutSeconds: number,
+  ): Promise<(() => Promise<void>)[]> {
+    const { run, machine } = locked;
+    if (run.status === 'paused_quota') {
+      // Its session is closed on a usage limit: Resume sends the "please continue" message,
+      // which points the agent to where the answer is.
+      this.log.info(
+        { run: run.id, ticket: this.reference(locked) },
+        'answer kept for a paused run',
+      );
+      return [];
+    }
+    if (!(this.gateway?.isConnected(machine.id) ?? false)) {
+      await this.answerUndelivered(tx, locked, 'machine_offline');
+      return [];
+    }
+    if (run.sessionAlive) {
+      const inputId = randomUUID();
+      await tx
+        .update(schema.runs)
+        .set({ answerInputId: inputId, updatedAt: this.now() })
+        .where(eq(schema.runs.id, run.id));
+      const text = answerMessage(templates, question, body, answerTemplate(run));
+      return [
+        async () => {
           const sent = this.send(machine.id, {
             type: 'run.input',
             id: inputId,
@@ -2188,20 +2366,18 @@ export class RunService {
               await this.answerUndelivered(inner, again, 'machine_offline');
             });
           }
-        });
-        return;
-      }
-      const prepared = await this.prepareAnswerResume(
-        tx,
-        locked,
-        templates,
-        asked.question.body,
-        body,
-        dispatchAckTimeoutSeconds,
-      );
-      after.push(() => this.deliverResume(prepared));
-    });
-    for (const action of after) await action();
+        },
+      ];
+    }
+    const prepared = await this.prepareAnswerResume(
+      tx,
+      locked,
+      templates,
+      question,
+      body,
+      ackTimeoutSeconds,
+    );
+    return [() => this.deliverResume(prepared)];
   }
 
   /**
@@ -2223,12 +2399,50 @@ export class RunService {
         : cause === 'dispatch_timeout'
           ? `machine ${name} did not confirm it in time`
           : `machine ${name} refused it${detail ? ` (${detail})` : ''}`;
+    if (locked.request) {
+      // A planning run's request is open again (owner's answer 10, lot 5 step D2a).
+      await this.fail(tx, locked, 'machine_offline', cause, { detail });
+      await this.requestSystemComment(
+        tx,
+        locked.request,
+        `Your answer could not reach the planning run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The request is open again, and your answer stays here.`,
+      );
+      return;
+    }
     await this.fail(tx, locked, 'machine_offline', cause, {
       detail,
       comment:
         locked.run.purpose === 'review'
           ? `Your answer could not reach the review run: ${why}. The review run failed as "machine offline" and does not count as a failed attempt; the ticket stays in review, and your answer stays here.`
-          : `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
+          : `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${runBranch(locked.run)} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
+    });
+  }
+
+  /** A `system` comment on a request, with its `request.commented` event. */
+  private async requestSystemComment(tx: Executor, request: RequestRow, body: string) {
+    const at = this.now();
+    const [comment] = await tx
+      .insert(schema.comments)
+      .values({
+        requestId: request.id,
+        author: 'system',
+        kind: 'status_change',
+        body,
+        createdAt: at,
+      })
+      .returning({ id: schema.comments.id });
+    if (!comment) throw new Error('comment not inserted');
+    await recordEvent(tx, {
+      actor: 'system',
+      ...requestEntity(request),
+      type: 'request.commented',
+      payload: {
+        request: request.number,
+        project: await requestProjectKey(tx, request),
+        commentId: comment.id,
+        kind: 'status_change',
+      },
+      at,
     });
   }
 
@@ -2266,7 +2480,7 @@ export class RunService {
         payload: {
           runId: run.id,
           claudeSessionId: run.claudeSessionId,
-          message: answerResumeMessage(templates, question, answer),
+          message: answerResumeMessage(templates, question, answer, answerTemplate(run)),
         },
       },
     };
@@ -2303,8 +2517,12 @@ export class RunService {
         .set({ answerInputId: null, updatedAt: this.now() })
         .where(eq(schema.runs.id, runId));
       locked.run.answerInputId = null;
-      if (ack.payload.ok || !ACTIVE.has(locked.run.status) || !locked.ticket) return null;
-      const asked = await this.lastQuestion(tx, locked.ticket.id);
+      if (ack.payload.ok || !ACTIVE.has(locked.run.status)) return null;
+      const asked = locked.request
+        ? await requestQuestion(tx, locked.request.id)
+        : locked.ticket
+          ? await this.lastQuestion(tx, locked.ticket.id)
+          : null;
       if (!asked?.answer) return null;
       this.log.info({ run: runId, reason: ack.payload.message }, 'answer refused live: resuming');
       return this.prepareAnswerResume(
@@ -2433,7 +2651,7 @@ export class RunService {
         throw new HttpError(409, 'run_not_active', `The run already ended: ${locked.run.status}`);
       }
       const online = this.gateway?.isConnected(locked.machine.id) ?? false;
-      const kept = `The branch ${locked.run.branchName} is kept on machine ${locked.machine.name}.`;
+      const kept = `The branch ${runBranch(locked.run)} is kept on machine ${locked.machine.name}.`;
       const decision = pendingDecision(locked.run);
       await this.setStatus(tx, locked, online ? 'cancelled' : 'failed', 'owner_stopped', {
         failureReason: online ? 'cancelled' : 'machine_offline',
@@ -2523,7 +2741,7 @@ export class RunService {
       .from(schema.machines)
       .where(eq(schema.machines.id, run.machineId));
     if (!machine) throw new Error('machine not found');
-    const locked: Locked = { run, project, ticket, machine };
+    const locked: Locked = { run, project, ticket, request: null, machine };
     await this.setStatus(tx, locked, 'cancelled', cause, { failureReason: 'cancelled' });
     return () =>
       this.sendStop(
@@ -2846,7 +3064,7 @@ export class RunService {
         : `CI failed on GitHub for the submitted commit ${commit.slice(0, 7)} (${names})`;
     await this.fail(tx, locked, 'ci_failed', 'ci_result', {
       detail: `${what.charAt(0).toUpperCase()}${what.slice(1)} ${sent}`,
-      comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${what} ${sent}. ${COUNTED_SENTENCE} The branch ${locked.run.branchName} is on GitHub, with its pull request.`,
+      comment: `Attempt ${String(locked.run.attempt)} failed on machine ${locked.machine.name}: ${what} ${sent}. ${COUNTED_SENTENCE} The branch ${runBranch(locked.run)} is on GitHub, with its pull request.`,
     });
   }
 
@@ -3855,7 +4073,7 @@ export class RunService {
           comment:
             locked.run.purpose === 'review'
               ? undefined
-              : `The run failed as "machine offline": ${offline}. It does not count as a failed attempt. The branch ${locked.run.branchName} is kept on machine ${name}: when its commits are not all on GitHub, the next run waits for that machine.`,
+              : `The run failed as "machine offline": ${offline}. It does not count as a failed attempt. The branch ${runBranch(locked.run)} is kept on machine ${name}: when its commits are not all on GitHub, the next run waits for that machine.`,
         });
         return locked;
       });

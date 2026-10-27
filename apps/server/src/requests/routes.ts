@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   AddCommentRequest,
+  AnswerRequest,
   CreateRequestRequest,
   ProjectKey,
   RequestNumber,
@@ -20,14 +21,15 @@ import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import { resolveSettings } from '../settings/store.js';
 import { profileLinks, toComment } from '../tickets/model.js';
+import type { RunService } from '../runs/service.js';
+import { requestEntity, requestProjectKey, type RequestRow } from './model.js';
 
 export interface RequestRoutesOptions {
   db: Database;
+  /** Delivers the owner's answer to a planning run's question (lot 5 step D2a). */
+  runs: Pick<RunService, 'answerRequest'>;
   now?: () => Date;
 }
-
-type RequestRow = typeof schema.requests.$inferSelect;
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 const requestNotFound = () =>
   new HttpError(404, 'request_not_found', 'No request with this number');
@@ -49,11 +51,6 @@ function limitRefusal(field: 'body', exceeded: LimitExceeded): HttpError {
       limits: [exceeded],
     },
   );
-}
-
-/** Entity and project of the events about a request (01, section 3.10). */
-function requestEntity(row: RequestRow) {
-  return { entityType: 'request', entityId: row.id, projectId: row.projectId } as const;
 }
 
 /**
@@ -104,16 +101,6 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
     const [row] = lock ? await query.for('update') : await query;
     if (!row) throw requestNotFound();
     return row;
-  }
-
-  /** The project's key as events give it, or null for a new project. */
-  async function projectKey(tx: Transaction, row: RequestRow): Promise<string | null> {
-    if (row.projectId === null) return null;
-    const [project] = await tx
-      .select({ key: schema.projects.key })
-      .from(schema.projects)
-      .where(eq(schema.projects.id, row.projectId));
-    return project?.key ?? null;
   }
 
   app.get('/api/requests', async (request) => {
@@ -229,7 +216,7 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
           type: 'request.commented',
           payload: {
             request: updated.number,
-            project: await projectKey(tx, updated),
+            project: await requestProjectKey(tx, updated),
             commentId: comment.id,
             kind: 'note',
           },
@@ -240,4 +227,21 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
       return reply.code(201).send(result);
     },
   );
+
+  // The owner's answer to the open question of the request's planning run (owner's answer 9, lot
+  // 5 step D2a): delivered live or by resume; with its machine offline, the run fails with
+  // `machine_offline` and the request is open again.
+  app.post<{ Params: { number: string } }>('/api/requests/:number/answer', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(AnswerRequest, request.body);
+    const { commentMaxLength: max } = await resolveSettings(db, ['commentMaxLength']);
+    if (input.body.length > max) {
+      throw limitRefusal('body', { field: 'comment', max, unit: 'characters' });
+    }
+    const number = parseNumber(request.params.number);
+    if (number === null) throw requestNotFound();
+    await options.runs.answerRequest(number, input.body);
+    request.log.info({ request: number }, 'request question answered');
+    return detail(db, await findRequest(db, request.params.number));
+  });
 }

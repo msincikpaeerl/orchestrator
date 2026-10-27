@@ -4,6 +4,7 @@ import { loadShippedAgents, loadTemplates, type ShippedAgents, type Templates } 
 import {
   FirstMessageTooLarge,
   answerMessage,
+  answerResumeMessage,
   continueMessage,
   fixReviewFirstMessage,
   implementFirstMessage,
@@ -298,6 +299,13 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
         ?.trimEnd() ?? '',
       '# Owner answer',
       answerMessage(templates, question, answer),
+      "# Owner answer to a planning run's question",
+      answerMessage(
+        templates,
+        'Which pages should the site have?',
+        'Home and contact.',
+        'request-answer',
+      ),
       '# Continue after a usage-limit pause',
       continueMessage(templates),
       '# Nudge',
@@ -362,6 +370,18 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
     const message = answerMessage(templates, question, answer);
     expect(message).toContain(`Your question:\n\n${question}\n`);
     expect(message).toContain(`Their answer:\n\n${answer}\n`);
+  });
+
+  it('points a planning run to request_get when its answer is cut (lot 5 step D2a)', () => {
+    const long = Array.from({ length: 400 }, (_, i) => `Line ${String(i)} of a long text.`).join(
+      '\n',
+    );
+    const message = answerResumeMessage(templates, long, long, 'request-answer', 4_000);
+    expect(bytes(message)).toBeLessThanOrEqual(4_000);
+    expect(message).toContain(templates['request-answer'].parts.get('question-cut'));
+    expect(message).toContain('Read it in full with `request_get`');
+    expect(message).not.toContain('ticket_comments');
+    expect(message).toContain('Continue planning the request with this answer.');
   });
 
   it('keeps a text containing a placeholder as written', () => {
