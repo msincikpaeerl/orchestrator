@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E planned (2026-10-27)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -388,7 +388,7 @@ A bug fix outside the order of the steps (owner's report, 2026-10-26, after 5bis
 
 *Done 2026-10-26*: `EXPAND_ENVIRONMENT_SINCE` and `systemdVersion` (`apps/daemon/src/systemd.ts`); `LAUNCH_SCRIPT`'s checks and `launch-error` (`apps/daemon/src/run-files.ts`); the refusal and `launchError` (`apps/daemon/src/run.ts`). Tests: `apps/daemon/test/scoped-launch.test.ts` (new) with `apps/daemon/test/fake-systemd/` (new), `run-files.test.ts`, `systemd.test.ts`. Spec 05; Help > Runs; CHANGELOG.
 
-### [ ] 5bis E. A first message never taken (branch `lot5bis/e-first-message-check`)
+### [x] 5bis E. A first message never taken (branch `lot5bis/e-first-message-check`, 2026-10-27)
 
 A side step asked by the owner on 2026-10-26 (option A of 5bis D's question 4), done after D1 and before D2: a first message that Claude Code does not take within the session start timeout (seen through its `UserPromptSubmit` hook) ends the run `launch_failed`, not counted, as any failure its machine caused (the machine left out, then "could not start on" at **Machine failures before asking you**); never a block of the whole machine (option B, rejected). The owner checks it against the real Claude Code. In 5bis D, Claude Code started with an empty message sat at its prompt without a word until the idle timeout: a startup dialog shown after `SessionStart`, or a change in how Claude Code takes the message given after `--`, would do the same with nothing to say why.
 
@@ -411,6 +411,8 @@ The owner's answers (2026-10-27, A to all, with one rule for answers 1 and 7):
 1. Run `tools/smoke/claude-code-probe.sh` and see `PASS` (or `INFO` with the difference named) on checks 7 and 8; a `FAIL` means this step's check would fail every run: tell the session before merging.
 2. Have the probe's new fixtures folder (`apps/daemon/test/fixtures/claude-code-<version>/`) reviewed and committed.
 3. After the merge and **Update the daemon** on Desktop WSL, **Run now** on one small ticket: the run reaches "Running" and its agent answers; no "its machine could not start Claude Code".
+
+*Done 2026-10-27*: `UserPromptSubmit` in `HookEvent` and `HookInputs` (`packages/protocol`), so every run's settings declare it; `RunStateFile.messageTaken` (`apps/daemon/src/run-files.ts`, default `true`); in `apps/daemon/src/run.ts`, `messageWaitSince` opened at `SessionStart` (or at a recovery, for a run past `starting`), closed by the first non-empty prompt, checked at each tick while the session is alive. The usage-limit probe's own `UserPromptSubmit` hook is gone (now the daemon's). The fake `claude`: `firstMessageNotTaken`, `firstMessageDelayMs`, `promptTrimmed`, an empty message never taken, and `<folder>.resume.json` for a `--resume` launch. The probe: a third session, `resume`, and checks 7 and 8 (`firstMessageCheck` in `claude-code-probe-fixtures.ts`; the probe's own `/exit` never counts), fixtures gain `resume-hooks.jsonl`. No server change: `launch_failed` was already not counted, left the machine out and led to "could not start on" (`scheduler-holds.test.ts`, step 5bis C). Tests: `apps/daemon/test/launch-message.test.ts` (new, 6 tests, shard 4 by its name; the start, the resume and the restart fail on `main`'s code), `commands.test.ts` (the hook with the daemon unreachable), `runner.test.ts` (the declared hooks), `claude-code-probe.test.ts` (checks 7 and 8 in the dry run, check 8 failing), `claude-code-probe-fixtures.test.ts`. Specs 04 and 05 (sections 4.2.1, 4.5, the run end reasons, section 9's table); Help > Runs; `docs/dev/testing.md`; CHANGELOG.
 
 ## Open points
 
