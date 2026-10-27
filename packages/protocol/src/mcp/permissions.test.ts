@@ -45,7 +45,7 @@ describe('runMcpTools', () => {
   it('keeps only implemented tools the profile has, in the order of MCP_TOOLS', () => {
     expect(runMcpTools(ROLE_MCP_PERMISSIONS.builder, 'implement')).toEqual(
       Object.keys(MCP_TOOLS).filter(
-        (name) => name !== 'review_approve' && name !== 'review_request_changes',
+        (name) => !name.startsWith('review_') && !name.startsWith('request_'),
       ),
     );
     expect(runMcpTools(['ticket_get', 'plan_propose', 'review_approve'], 'review')).toEqual([
@@ -54,6 +54,16 @@ describe('runMcpTools', () => {
     ]);
     // A profile that lost a permission does not see that tool.
     expect(runMcpTools(['ticket_get'], 'implement')).toEqual(['ticket_get']);
+  });
+
+  it('lists the request tools in a planning run only', () => {
+    const plan = runMcpTools(ROLE_MCP_PERMISSIONS.planner, 'plan');
+    expect(plan).toEqual(expect.arrayContaining(['request_get', 'request_ask', 'ticket_list']));
+    for (const purpose of ['implement', 'review', 'fix_review'] as const) {
+      const tools = runMcpTools(all, purpose);
+      expect(tools).not.toContain('request_get');
+      expect(tools).not.toContain('request_ask');
+    }
   });
 
   it('gives a reviewer its tools in a review run and none to decide in an implement run', () => {

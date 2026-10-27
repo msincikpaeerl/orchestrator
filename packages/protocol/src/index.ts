@@ -482,6 +482,7 @@ export {
   MCP_TOOLS,
   McpComment,
   McpCommentAuthor,
+  McpRequest,
   McpTicket,
   McpTicketCreator,
   McpTicketLink,

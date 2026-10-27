@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AgentKey, AgentRole } from '../api/agents.js';
 import { HarnessElement, ProjectKey, ProjectKind } from '../api/projects.js';
+import { RequestNumber, RequestStatus } from '../api/requests.js';
 import {
   CommentKind,
   TicketPriority,
@@ -100,6 +101,18 @@ export const McpComment = z.object({
 });
 export type McpComment = z.infer<typeof McpComment>;
 
+/**
+ * The request a planning run plans (`request_get`, `request_ask`; 06 section 4.4, lot 5 step D2a):
+ * the owner's text, its status, and its project's key, null when it asks for a new project.
+ */
+export const McpRequest = z.object({
+  number: RequestNumber,
+  text: z.string(),
+  status: RequestStatus,
+  project: ProjectKey.nullable(),
+});
+export type McpRequest = z.infer<typeof McpRequest>;
+
 const NoInput = z.strictObject({});
 
 /** One MCP tool: its description for the agent, and its input and output. */
@@ -135,7 +148,7 @@ const ReviewDecisionOutput = z.object({
 });
 
 /**
- * The tools of lots 2 and 3, by wire name (`<object>_<verb>`, 06 section 3). The agent sees them as
+ * The tools of lots 2 to 5, by wire name (`<object>_<verb>`, 06 section 3). The agent sees them as
  * `mcp__orchestrator__<name>`. The descriptions are part of the harness, reviewed like code.
  */
 export const MCP_TOOLS = {
@@ -188,6 +201,17 @@ export const MCP_TOOLS = {
     input: z.strictObject({ ticket: TicketReference.optional(), cursor: Cursor.optional() }),
     output: z.object({ comments: z.array(McpComment), next_cursor: Cursor.nullable() }),
   },
+  request_get: {
+    description:
+      "Returns the request your planning run plans: its number, the owner's text, its status and its project (null when it asks for a new project), and its comments, oldest first: the owner's notes, your questions and the owner's answers. The request comes with the first page only; the comments come a page at a time: when `next_cursor` is not null, call again with it as `cursor` for the next page.",
+    input: z.strictObject({ cursor: Cursor.optional() }),
+    output: z.object({
+      /** On the first page only; null on the pages after it. */
+      request: McpRequest.nullable(),
+      comments: z.array(McpComment),
+      next_cursor: Cursor.nullable(),
+    }),
+  },
   ci_status: {
     description:
       "Returns the CI result of the latest work of your ticket that ticket_submit accepted: every GitHub Actions workflow run and commit status of that commit, pending, passed or failed, and for each failed job its failed steps, each with its part of the job's log. The answer names the commit, says whether your run or an earlier one handed it in, and when the result was read on GitHub; a finished result is not read again. It never covers work you did after that submission. When CI fails after your submission, you receive the same result as a message without asking.",
@@ -221,6 +245,12 @@ export const MCP_TOOLS = {
       "Asks the owner a question about your run's ticket, when you cannot continue without a decision or something only the owner can give, or when a tool or command you need was refused. The ticket moves to waiting_human. End your turn right after calling it: the owner's answer arrives as your next message.",
     input: z.strictObject({ question: requiredText(COMMENT_CEILING) }),
     output: z.object({ comment: McpComment, ticket: McpTicket }),
+  },
+  request_ask: {
+    description:
+      "Asks the owner a clarifying question about the request your planning run plans, when it is ambiguous about scope or expected behaviour. Do not ask about technical choices: they belong to the Architect. One question at a time, with everything you need to know in it. End your turn right after calling it: the owner's answer arrives as your next message.",
+    input: z.strictObject({ question: requiredText(COMMENT_CEILING) }),
+    output: z.object({ comment: McpComment, request: McpRequest }),
   },
   ticket_give_up: {
     description:
