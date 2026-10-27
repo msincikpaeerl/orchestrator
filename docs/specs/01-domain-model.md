@@ -87,6 +87,7 @@ The owner and the Project Manager can exchange messages on a request before a pl
 **As decided for lot 5** (owner's answers 10 and 11, lot 5 step A):
 
 - A question (`request.ask`) works as a ticket's question (04, section 6): a "Needs you" item and the same answer box, the answer delivered live or by resume within **Waiting run lifetime**. The request stays `planning` and shows its open question.
+- **A planning run and its request** (owner's answers, lot 5 step D2a): a run of purpose `plan` has its request (`runs.request_id`), no ticket and no branch (`branch_name` empty), any other run a ticket and a branch, a database check; at most one active planning run per request. The request is `planning` while it runs; every end of it without a plan (a crash, a timeout, **Stop run**, an answer that could not reach it) puts the request back to `open`. Until step E2 that end is not counted: E2 adds `attempt_count`, the stop and "Planning stopped".
 - A planning run that fails (a crash, a timeout, `ticket_give_up`, its reminders used up without a plan) counts as a failed attempt of its request (`attempt_count`); a run stopped by the owner or failed because of its machine does not, as for tickets (section 3.4). At **Failed attempts before asking you** the request is **stopped** (with its cause and when): no planning run starts for it until the owner's **Try again**, which clears it and resets the count ("Planning stopped" in "Needs you").
 
 ### 3.3 Plan
@@ -264,7 +265,7 @@ Append-only log of everything that happens: status changes, MCP calls, run lifec
 
 The automatic merge (04, section 4; lot 5 step 5bis B) writes `ticket.merged_automatically` (the pull request, the approved commit, the method, the merge commit) or `ticket.automatic_merge_failed` (the pull request, the commit, the reason, masked), each once per approval; the merge itself then writes the usual `ticket.pull_request_merged`, once. The option's change writes `project.merges_automatic_changed`.
 
-A request (lot 5 step D1) writes `request.created` (its number, its project's key or none, its first line) and `request.commented` for each comment on it (the comment and its kind), with the entity `request` and its project when it has one.
+A request (lot 5 step D1) writes `request.created` (its number, its project's key or none, its first line) and `request.commented` for each comment on it (the comment and its kind, and for the planning agent's question its profile and run), with the entity `request` and its project when it has one. From step D2a, `request.status_changed` (from, to, the cause `run_started` or `run_ended`, the run, and the failure reason of a run that failed) records each change of status by its planning run.
 
 An import of tickets by the owner (02, section 6.3; lot 5bis step A) writes each ticket's `ticket.created`, then one `tickets.imported` on the project, with the count and the numbers in the file's order.
 

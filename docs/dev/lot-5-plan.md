@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b (2026-10-28)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a done (2026-10-28)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -230,7 +230,7 @@ The owner's answers to D2's questions (2026-10-28), A to all:
 13. **The daemon** (answer 5 of step D, no `PROTOCOL_VERSION` bump): `request_ask: 'asked'` in its decisions now; the permission refusal text naming `request_ask` comes with E1's planner rules.
 14. **Tests**: a new `apps/server/test/request-questions.test.ts`, its shard placement checked (renamed if it lands in shard 1 or 3).
 
-### [ ] D2a. Questions on a request, server and daemon (branch `lot5/d2-request-questions`)
+### [x] D2a. Questions on a request, server and daemon (branch `lot5/d2-request-questions`, 2026-10-28)
 
 - `runs.request_id` and the optional `branch_name` (answers 2 and 3); the test-only planning-run helper (answer 12); the MCP backend loads a planning run (answer 4).
 - MCP: `request.get` (answer 13 of step D) and `request.ask` (answer 5), their descriptions and `mcp-tools.md` texts; the daemon takes `request_ask` as a question (answer 13).
@@ -238,6 +238,8 @@ The owner's answers to D2's questions (2026-10-28), A to all:
 - Specs 01, 04 and 06. Nothing new on screen: no Help page or CHANGELOG entry yet.
 
 **Done when** server tests (scripted daemon) cover a question answered live and by resume, a failed delivery (offline, no confirmation in time, a refusal), `request.get`'s paging and output size, the refusals and the events (the every-event guard with `request.status_changed`); a daemon test covers `request_ask` ending the turn as a question.
+
+*Done 2026-10-28*: migration `0045_planning_runs` (`runs.request_id`, `branch_name` optional, the check `runs_subject`, at most one active planning run per request); `McpRequest`, `request_get` and `request_ask` in `packages/protocol` (`runMcpTools` lists them in planning runs only), the event `request.status_changed` (causes `run_started`, `run_ended`); `apps/server/src/requests/model.ts` (the open question, the status change); the MCP backend's planning path (`PlanCall`; locks: project, request, run, the order `withRun` now follows) and nine new parts of `mcp-tools.md`, with `request-only` (`FORBIDDEN`: every role has the reading tools, so the server refuses the request tools in a ticket run by purpose); `RunService.answerRequest` and `deliverAnswer`, shared with the ticket's answer; the template `agents/templates/request-answer.md`; `setStatus` puts a planning request back to `open` at any end of its run; the Activity text of `request.status_changed` (the event's guard needs one). The planning run's progress line is kept, not shown (no screen shows planning runs before E2). Tests: `apps/server/test/request-questions-and-answers.test.ts` (16 tests, about 6 s; named for shard 4, which moves `apps/daemon/test/real-github-guard.test.ts`, 0.5 s, to shard 3; `request-questions.test.ts` landed in shard 1), `planning-run.ts`, `every-event.ts`, `mcp.test.ts`, `tool-texts.test.ts`, `messages.test.ts` (snapshot), `files.test.ts`, the protocol's tool and permission tests, the daemon's `planning-run.test.ts` and `permissions-relay.test.ts`. Specs 01 (3.2, 3.10), 03 (3.2), 04 (6) and 06 (4.1, 4.4, 5); `docs/dev/testing.md`.
 
 ### [ ] D2b. The question on screen (branch `lot5/d2b-request-question-screens`)
 
