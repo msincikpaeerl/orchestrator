@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   credentialLikeFound,
   encodedPath,
+  firstMessageCheck,
   keptTranscript,
   permissionModeCheck,
   personalDataFound,
@@ -212,6 +213,13 @@ describe("check 6, the session's permission mode (lot 3 step L)", () => {
     }
   });
 
+  it("passes on Claude Code 2.1.311's transcript, with the resume's message line too (lot 5 step 5bis E)", () => {
+    expect(permissionModeCheck(fixture('2.1.311'))).toEqual({
+      verdict: 'PASS',
+      detail: 'dontAsk on 2 transcript line(s), no other mode',
+    });
+  });
+
   it('fails when a line records another mode, or when none records a mode', () => {
     const message = (permissionMode?: string) =>
       line({ type: 'user', message: { role: 'user', content: 'Go.' }, permissionMode });
@@ -230,6 +238,58 @@ describe("check 6, the session's permission mode (lot 3 step L)", () => {
     expect(permissionModeCheck(null)).toEqual({
       verdict: 'FAIL',
       detail: 'no transcript was found',
+    });
+  });
+});
+
+describe('checks 7 and 8, the launch message taken (lot 5 step 5bis E)', () => {
+  const start = { event: 'SessionStart', input: { source: 'startup' } };
+  const submit = (prompt: unknown) => ({ event: 'UserPromptSubmit', input: { prompt } });
+
+  it('passes on the exact message, after SessionStart', () => {
+    expect(firstMessageCheck([start, submit('Do it.\n')], 'Do it.\n')).toEqual({
+      verdict: 'PASS',
+      detail: 'UserPromptSubmit has the message exactly',
+    });
+  });
+
+  it('only reports another text, naming the difference without quoting it', () => {
+    expect(firstMessageCheck([start, submit('Do it.')], 'Do it.\n\n ')).toEqual({
+      verdict: 'INFO',
+      detail: 'taken with another text: white space at its end removed',
+    });
+    expect(firstMessageCheck([start, submit('Do that.')], 'Do it.')).toEqual({
+      verdict: 'INFO',
+      detail:
+        'taken with another text: 6 characters sent, 8 received, first difference at character 4',
+    });
+  });
+
+  it('fails without a UserPromptSubmit after SessionStart', () => {
+    expect(firstMessageCheck([submit('Do it.'), start], 'Do it.')).toMatchObject({
+      verdict: 'FAIL',
+      detail: expect.stringMatching(/the message was not taken/) as unknown,
+    });
+    expect(firstMessageCheck([], 'Do it.')).toMatchObject({ verdict: 'FAIL' });
+    // The probe's own /exit is not the message.
+    expect(firstMessageCheck([start, submit('/exit')], 'Do it.')).toMatchObject({
+      verdict: 'FAIL',
+    });
+    expect(firstMessageCheck([start, submit(3)], 'Do it.')).toMatchObject({ verdict: 'FAIL' });
+  });
+
+  it("passes on the resume the owner's probe run recorded with Claude Code 2.1.311", () => {
+    const hooks = readFileSync(
+      new URL('../test/fixtures/claude-code-2.1.311/resume-hooks.jsonl', import.meta.url),
+      'utf8',
+    )
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { event: string; input: Record<string, unknown> });
+    // The probe's RESUME_MESSAGE.
+    expect(firstMessageCheck(hooks, 'Reply with the word OK.')).toEqual({
+      verdict: 'PASS',
+      detail: 'UserPromptSubmit has the message exactly',
     });
   });
 });

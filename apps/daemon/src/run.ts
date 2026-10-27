@@ -129,6 +129,8 @@ export class Run {
   private releaseStart: (() => void) | null = null;
   private sessionAlive = false;
   private launchedAt = 0;
+  /** From `SessionStart` until the launch's message is taken: the second start window. */
+  private messageWaitSince: number | null = null;
   private lastActivity = 0;
   private lastTick = 0;
   /** Tool calls started (`PreToolUse`) and not finished (`PostToolUse`): the idle clock pauses. */
@@ -189,6 +191,7 @@ export class Run {
       transcriptApiError: null,
       transcriptCostUsd: null,
       deliveredIds: [],
+      messageTaken: false,
     });
     run.save();
     return run;
@@ -450,6 +453,8 @@ export class Run {
       : null;
     if (this.stopping()) return null;
     this.data.state = 'starting';
+    this.data.messageTaken = false;
+    this.messageWaitSince = null;
     this.save();
     this.report('starting', version);
     const support = claudeCodeSupport(version);
@@ -704,8 +709,20 @@ export class Run {
         if (path !== this.data.transcriptPath) this.reader.offset = 0;
         this.data.claudeSessionId = input.session_id;
         this.data.transcriptPath = path;
+        if (!this.data.messageTaken) this.messageWaitSince ??= Date.now();
         if (this.data.state === 'starting') this.setState('working');
         else this.save();
+        return pass;
+      }
+      case 'UserPromptSubmit': {
+        // Any text counts, never compared with the message sent: Claude Code may trim or
+        // normalise it (owner's rule, lot 5 step 5bis E). Nothing printed, exit 0: this hook's
+        // output would reach the agent's context, and exit 2 would block the message.
+        if (!this.data.messageTaken && typeof input.prompt === 'string' && input.prompt.trim()) {
+          this.data.messageTaken = true;
+          this.messageWaitSince = null;
+          this.save();
+        }
         return pass;
       }
       case 'PreToolUse': {
@@ -1171,6 +1188,18 @@ export class Run {
         return;
       }
     }
+    if (
+      this.sessionAlive &&
+      this.messageWaitSince !== null &&
+      now - this.messageWaitSince >= limits.sessionStartTimeoutSeconds * second
+    ) {
+      // The machine's Claude Code, never the agent: not a failed attempt (lot 5 step 5bis E).
+      await this.end(
+        'launch_failed',
+        `Claude Code started but did not take its first message within ${String(limits.sessionStartTimeoutSeconds)} seconds, the "Session start timeout" setting: a startup dialog or a change in Claude Code is suspected. Running it again on this machine will not help until that is fixed, and it is not the ticket's fault.`,
+      );
+      return;
+    }
     if (this.data.workingMs >= limits.maxRunDurationMinutes * 60 * second) {
       await this.end(
         'max_duration',
@@ -1381,6 +1410,10 @@ export class Run {
     }
     this.sessionAlive = true;
     this.launchedAt = this.lastActivity = this.lastTick = Date.now();
+    // A fresh window for a message not taken yet; a `starting` run opens it at `SessionStart`.
+    if (!this.data.messageTaken && this.data.state !== 'starting') {
+      this.messageWaitSince = this.launchedAt;
+    }
     this.socket = await serveRunSocket(
       runSocketPath(this.context.paths, this.runId),
       (request) => this.onSocket(request),

@@ -11,12 +11,16 @@
 #      report unknown keys either, which a control session with a made-up key shows; only the
 #      usage-limit capture proves the key)
 #   6. the session runs in dontAsk permission mode, as its transcript records it (lot 3 step L)
+#   7. the first message is taken: UserPromptSubmit arrives after SessionStart, with the message
+#      (INFO when taken with another text: the daemon accepts any text; lot 5 step 5bis E)
+#   8. the same for a --resume launch of the probe's session, with one more short message
 #
 # Everything lives in a scratch folder under the temporary folder, with a Claude configuration
 # folder of its own: your ~/.claude and ~/.claude.json are never read or changed. The settings,
 # the argument list, the login and the trust entry come from the daemon's own code
 # (apps/daemon/scripts/claude-code-probe.ts). Quota: one session with one short prompt on the
-# smallest model; the control session sends no prompt. It refuses to run in CI or without a
+# smallest model, then its resume with "Reply with the word OK."; the control session sends no
+# prompt. It refuses to run in CI or without a
 # terminal, and asks you to type yes before any session.
 #
 # Usage: tools/smoke/claude-code-probe.sh [--keep] [--model <alias>] [--claude <executable>]
@@ -62,7 +66,7 @@ while (($# > 0)); do
       shift
       ;;
     --fixtures) FIXTURES="${2:?--fixtures needs a value}"; shift ;;
-    -h | --help) sed -n '2,35p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,39p' "$0"; exit 0 ;;
     *) stop "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -74,7 +78,7 @@ source "$REPO/tools/smoke/lib/real-claude-guard.sh"
 if ((DRY_RUN)); then
   guard_dry_run "$CLAUDE_GIVEN"
 else
-  guard_real "a control session with no message (no quota), then one session with one short prompt on $MODEL (about 4 tool calls)."
+  guard_real "a control session with no message (no quota), then one session with one short prompt on $MODEL (about 4 tool calls), then its resume with one short message."
 fi
 TSX="$REPO/apps/daemon/node_modules/.bin/tsx"
 HELPER="$REPO/apps/daemon/scripts/claude-code-probe.ts"
@@ -150,8 +154,8 @@ hook_seen() { # session, event
 }
 
 # Starts a session in the probe's own tmux server and waits for its SessionStart hook.
-launch() { # name
-  local name="$1" worktree="$SCRATCH/home/.orchestrator/worktrees/$1" args=() command waited=0 pane
+launch() { # name [worktree name, default: the session's]
+  local name="$1" worktree="$SCRATCH/home/.orchestrator/worktrees/${2:-$1}" args=() command waited=0 pane
   mapfile -d '' args < <(helper session --name "$name" --model "$MODEL") ||
     stop "the $name session's files could not be written."
   printf -v command '%q ' env -u TMUX -u TMUX_PANE "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG" \
@@ -184,6 +188,16 @@ finish() { # name
   tmux -L "$TMUX_SOCKET" kill-session -t "$1" 2> /dev/null
 }
 
+# Waits for the end of the session's turn.
+wait_turn() { # session
+  local waited=0
+  while ! hook_seen "$1" Stop && ! hook_seen "$1" StopFailure; do
+    ((waited >= TURN_TIMEOUT)) && { echo "No end of turn after ${TURN_TIMEOUT}s: evaluating what was recorded."; break; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
 echo "Control session (a made-up setting, no prompt, no quota)..."
 launch control
 sleep "$SETTLE"
@@ -191,18 +205,19 @@ finish control
 
 echo "Probe session (one prompt on $MODEL)..."
 launch probe
-waited=0
-while ! hook_seen probe Stop && ! hook_seen probe StopFailure; do
-  ((waited >= TURN_TIMEOUT)) && { echo "No end of turn after ${TURN_TIMEOUT}s: evaluating what was recorded."; break; }
-  sleep 1
-  waited=$((waited + 1))
-done
+wait_turn probe
 waited=0
 while ! grep -q rate_limits "$RECORD/status-line-probe.jsonl" 2> /dev/null && ((waited < STATUS_LINE_WAIT)); do
   sleep 1
   waited=$((waited + 1))
 done
 finish probe
+
+# Checks 7 and 8: the message of a --resume launch, in the probe's worktree (lot 5 step 5bis E).
+echo "Resume session (the probe's session, one short message on $MODEL)..."
+launch resume probe
+wait_turn resume
+finish resume
 
 echo
 echo "===== paste from here to Claude ====="

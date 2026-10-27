@@ -26,6 +26,7 @@ import {
 import { shellCommand } from '../src/self.js';
 import { TrustRegistry } from '../src/trust.js';
 import {
+  firstMessageCheck,
   keptTranscript,
   permissionModeCheck,
   personalDataFound,
@@ -47,7 +48,8 @@ import {
 //                                                prints one line per check, writes the fixtures
 //
 // Sessions: `control` starts with no message (no quota) and a made-up setting, to see whether
-// Claude Code reports settings it does not know; `probe` sends the one prompt.
+// Claude Code reports settings it does not know; `probe` sends the one prompt; `resume` resumes
+// the probe's session with one short message (checks 7 and 8, lot 5 step 5bis E).
 
 /** A setting no Claude Code version knows: the control of check 5. */
 const CONTROL_KEY = 'orchestratorProbeUnknownSetting';
@@ -57,6 +59,9 @@ const MARKER_COMMAND = './probe-marker.sh';
 const DENIED_FILE = 'config.json';
 const CONTROL_FILE = 'control.txt';
 const MCP_TOOL = 'mcp__orchestrator__ping';
+
+/** The resume's message (check 8), answered in a few tokens. */
+const RESUME_MESSAGE = 'Reply with the word OK.';
 
 /** Claude Code's refusals (2.1.283): a matching rule, or `dontAsk` mode refusing what no rule allows. */
 const RULE_REFUSAL = /^Permission to use \w+ with command .+ has been denied\.?$/s;
@@ -199,8 +204,23 @@ function prompt(layout: Layout): string {
   ].join('\n');
 }
 
-/** A session's files, from the daemon's generation; returns its arguments. */
-function session(layout: Layout, name: 'probe' | 'control', model: string): string[] {
+type SessionName = 'probe' | 'control' | 'resume';
+
+/** The Claude session id of the probe session, from its `SessionStart`. */
+function probeSessionId(layout: Layout): string {
+  const start = jsonLines(join(layout.record, 'hooks-probe.jsonl')).find(
+    (hook) => hook.event === 'SessionStart',
+  );
+  const id = (start?.input as Record<string, unknown> | undefined)?.session_id;
+  if (typeof id !== 'string' || id === '') throw new Error('the probe session has no session id');
+  return id;
+}
+
+/**
+ * A session's files, from the daemon's generation; returns its arguments. The resume works in the
+ * probe's worktree, where Claude Code finds the session again, and records under its own name.
+ */
+function session(layout: Layout, name: SessionName, model: string): string[] {
   const folder = join(layout.daemonHome, 'runs', name);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
   const selfCommand = recorderCommand(layout);
@@ -245,14 +265,14 @@ function session(layout: Layout, name: 'probe' | 'control', model: string): stri
     settings,
     model,
     instructions: 'You are taking part in an automated check. Follow the numbered steps literally.',
-    resumeSessionId: null,
-    message: name === 'probe' ? prompt(layout) : '',
+    resumeSessionId: name === 'resume' ? probeSessionId(layout) : null,
+    message: name === 'probe' ? prompt(layout) : name === 'resume' ? RESUME_MESSAGE : '',
   });
   const end = args.indexOf('--');
   const debug = ['--debug-file', join(layout.scratch, `debug-${name}.log`)];
-  return name === 'probe'
-    ? [...args.slice(0, end), ...debug, ...args.slice(end)]
-    : [...args.slice(0, end), ...debug];
+  return name === 'control'
+    ? [...args.slice(0, end), ...debug]
+    : [...args.slice(0, end), ...debug, ...args.slice(end)];
 }
 
 // Evaluation.
@@ -362,6 +382,7 @@ interface Check {
 
 function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | null } {
   const hooks = jsonLines(join(layout.record, 'hooks-probe.jsonl')) as unknown as Recorded[];
+  const resumeHooks = jsonLines(join(layout.record, 'hooks-resume.jsonl')) as unknown as Recorded[];
   const start = hooks.find((hook) => hook.event === 'SessionStart');
   const transcriptPath =
     typeof start?.input.transcript_path === 'string' ? start.input.transcript_path : null;
@@ -561,6 +582,17 @@ function evaluate(layout: Layout): { checks: Check[]; transcriptPath: string | n
     title: 'the session runs in dontAsk permission mode, as its transcript records it',
     ...permissionModeCheck(transcriptPath ? transcriptText : null),
   });
+
+  // 7 and 8. The launch's message reaches `UserPromptSubmit` after `SessionStart`, at a start and
+  // at a resume (lot 5 step 5bis E): without it, the daemon ends every run `launch_failed`.
+  checks.push({
+    title: 'the first message taken: UserPromptSubmit after SessionStart',
+    ...firstMessageCheck(hooks, prompt(layout)),
+  });
+  checks.push({
+    title: 'the message of a --resume launch taken: UserPromptSubmit after SessionStart',
+    ...firstMessageCheck(resumeHooks, RESUME_MESSAGE),
+  });
   return { checks, transcriptPath };
 }
 
@@ -595,6 +627,7 @@ function writeFixtures(
     ['hooks.jsonl', join(layout.record, 'hooks-probe.jsonl')],
     ['status-line.jsonl', join(layout.record, 'status-line-probe.jsonl')],
     ['control-hooks.jsonl', join(layout.record, 'hooks-control.jsonl')],
+    ['resume-hooks.jsonl', join(layout.record, 'hooks-resume.jsonl')],
   ];
   const files: Record<string, string> = {};
   for (const [name, source] of sources) {
@@ -641,7 +674,8 @@ async function main(): Promise<void> {
       return;
     }
     case 'session': {
-      const name = values.name === 'control' ? 'control' : 'probe';
+      const name: SessionName =
+        values.name === 'control' || values.name === 'resume' ? values.name : 'probe';
       await new TrustRegistry(join(layout.claudeConfig, '.claude.json')).ensure(layout.bare);
       process.stdout.write(session(layout, name, values.model ?? 'haiku').join('\0'));
       return;

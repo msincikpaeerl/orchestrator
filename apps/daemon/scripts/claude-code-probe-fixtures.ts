@@ -227,3 +227,45 @@ export function permissionModeCheck(text: string | null): {
         detail: `dontAsk on ${String(modes.length)} transcript line(s), no other mode`,
       };
 }
+
+/**
+ * Checks 7 and 8 (lot 5 step 5bis E): after `SessionStart`, Claude Code took the launch's message,
+ * as its `UserPromptSubmit` hook shows. The daemon counts any text as taken; here a text other
+ * than the message sent is only reported (INFO), never a failure. `hooks`: the session's recorded
+ * hooks, in order.
+ */
+export function firstMessageCheck(
+  hooks: readonly { event: string; input: Record<string, unknown> }[],
+  sent: string,
+): { verdict: 'PASS' | 'FAIL' | 'INFO'; detail: string } {
+  const start = hooks.findIndex((hook) => hook.event === 'SessionStart');
+  if (start < 0) return { verdict: 'FAIL', detail: 'no SessionStart was recorded' };
+  // The probe's own `/exit`, typed to close the session, is never the launch's message.
+  const taken = hooks
+    .slice(start + 1)
+    .find((hook) => hook.event === 'UserPromptSubmit' && hook.input.prompt !== '/exit');
+  if (!taken) {
+    return {
+      verdict: 'FAIL',
+      detail: 'no UserPromptSubmit after SessionStart: the message was not taken',
+    };
+  }
+  const prompt = taken.input.prompt;
+  if (typeof prompt !== 'string') {
+    return { verdict: 'FAIL', detail: 'UserPromptSubmit came without a prompt' };
+  }
+  if (prompt === sent)
+    return { verdict: 'PASS', detail: 'UserPromptSubmit has the message exactly' };
+  return { verdict: 'INFO', detail: `taken with another text: ${textDifference(sent, prompt)}` };
+}
+
+/** How `received` differs from `sent`, in words, without quoting either. */
+function textDifference(sent: string, received: string): string {
+  if (received.trim() === '') return 'the prompt is empty';
+  if (received === sent.trimEnd()) return 'white space at its end removed';
+  if (received === sent.trim()) return 'white space at its start or end removed';
+  if (received.replace(/\r\n/g, '\n') === sent.replace(/\r\n/g, '\n')) return 'line ends changed';
+  let at = 0;
+  while (at < sent.length && sent[at] === received[at]) at++;
+  return `${String(sent.length)} characters sent, ${String(received.length)} received, first difference at character ${String(at + 1)}`;
+}

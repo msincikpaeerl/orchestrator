@@ -78,6 +78,15 @@ export const Scenario = z.object({
    */
   permissionMode: z.string().default('dontAsk'),
   /**
+   * Never takes the launch's message (after `--`), as Claude Code behind a dialog shown after
+   * `SessionStart` (lot 5 step 5bis E). An empty message is never taken either, as by Claude Code.
+   */
+  firstMessageNotTaken: z.boolean().default(false),
+  /** Wait between `SessionStart` and taking the launch's message. */
+  firstMessageDelayMs: z.int().min(0).default(0),
+  /** `UserPromptSubmit` gets each message without its trailing white space. */
+  promptTrimmed: z.boolean().default(false),
+  /**
    * Turn `n` answers the `n`-th message: the first message (after `--`) is turn 0, each message
    * typed or pasted in the terminal the next one. Later messages get a turn saying "Done.".
    */

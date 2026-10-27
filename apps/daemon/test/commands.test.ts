@@ -303,6 +303,8 @@ describe('hook and status-line (internal)', () => {
     });
     for (const args of [
       ['hook', 'Stop', '--run', RUN_ID],
+      // Exit 2 would block the message, and its output would reach the agent (lot 5 step 5bis E).
+      ['hook', 'UserPromptSubmit', '--run', RUN_ID],
       ['status-line', '--run', RUN_ID],
     ]) {
       expect(await runDaemon(args, home.env, '{}')).toMatchObject({ code: 0, stdout: '' });

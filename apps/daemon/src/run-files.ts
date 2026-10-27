@@ -84,6 +84,11 @@ export const RunStateFile = z.object({
    * round reaches the agent once (lot 3 step G2b). The newest `DELIVERED_IDS_KEPT`.
    */
   deliveredIds: z.array(z.string()).default([]),
+  /**
+   * Whether Claude Code took the launch's message (`UserPromptSubmit`, 05, section 4.2.1; lot 5
+   * step 5bis E). A state.json written before has none: taken, so a run in flight never fails.
+   */
+  messageTaken: z.boolean().default(true),
 });
 export type RunStateFile = z.infer<typeof RunStateFile>;
 

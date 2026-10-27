@@ -10,6 +10,8 @@ import { boundedText, requiredText } from '../text-limits.js';
 /** Hooks the daemon declares in each run's `settings.json` (05, section 4.5). */
 export const HookEvent = z.enum([
   'SessionStart',
+  // The launch's message taken (05, section 4.2.1; lot 5 step 5bis E).
+  'UserPromptSubmit',
   'PreToolUse',
   'PostToolUse',
   'Stop',
@@ -31,6 +33,7 @@ export const HookInputs = {
     source: z.string().optional(),
     model: z.string().optional(),
   }),
+  UserPromptSubmit: HookBase.extend({ prompt: z.string().optional() }),
   PreToolUse: HookBase.extend({
     tool_name: z.string(),
     tool_input: z.unknown().optional(),
