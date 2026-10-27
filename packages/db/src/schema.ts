@@ -715,6 +715,8 @@ export const runs = pgTable(
       .references(() => projects.id),
     /** Empty for planning runs (lot 5). */
     ticketId: uuid('ticket_id').references(() => tickets.id),
+    /** A planning run's request, and only a planning run's (lot 5 step D2a). */
+    requestId: uuid('request_id').references(() => requests.id),
     profileId: uuid('profile_id')
       .notNull()
       .references(() => agentProfiles.id),
@@ -747,7 +749,8 @@ export const runs = pgTable(
     acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
     claudeSessionId: text('claude_session_id'),
     sessionAlive: boolean('session_alive').notNull().default(false),
-    branchName: text('branch_name').notNull(),
+    /** Empty for planning runs, which have no ticket branch (lot 5 step D2a). */
+    branchName: text('branch_name'),
     baseBranch: text('base_branch').notNull(),
     /** Reported at the end: the branch head and the commits ahead of the base (`CommitSummary[]`). */
     branchHead: text('branch_head'),
@@ -931,6 +934,12 @@ export const runs = pgTable(
     ),
     check('runs_attempt', sql`${table.attempt} >= 1`),
     check('runs_decision', sql`${table.decision} IN ('submitted', 'gave_up')`),
+    // A planning run has a request, no ticket and no branch; any other run a ticket and a branch
+    // (lot 5 step D2a, owner's answers 2 and 3).
+    check(
+      'runs_subject',
+      sql`(${table.purpose} = 'plan') = (${table.requestId} IS NOT NULL) AND (${table.purpose} = 'plan') = (${table.ticketId} IS NULL) AND (${table.purpose} = 'plan') = (${table.branchName} IS NULL)`,
+    ),
     // At most one active run per ticket (01, invariant 2).
     uniqueIndex('runs_one_active_per_ticket')
       .on(table.ticketId)
@@ -938,6 +947,13 @@ export const runs = pgTable(
         sql`${table.status} IN ('queued', 'dispatched', 'starting', 'running', 'waiting_human', 'paused_quota')`,
       ),
     index('runs_ticket_id').on(table.ticketId, table.createdAt),
+    // At most one active planning run per request, as per ticket.
+    uniqueIndex('runs_one_active_per_request')
+      .on(table.requestId)
+      .where(
+        sql`${table.status} IN ('queued', 'dispatched', 'starting', 'running', 'waiting_human', 'paused_quota')`,
+      ),
+    index('runs_request_id').on(table.requestId, table.createdAt),
     index('runs_machine_id').on(table.machineId, table.status),
     index('runs_account_id').on(table.accountId, table.status),
     // History pages ended runs newest first (02, section 7).

@@ -142,6 +142,7 @@ import {
   reportedCommits,
   nextQuotaWait,
   resumeAfter,
+  runBranch,
   statusOfDaemonState,
   statusTimes,
   ticketBranchName,
@@ -1530,7 +1531,7 @@ export class RunService {
       });
       const reference = ticketReference(project.key, ticket.number);
       const baseBranch = source.baseBranch;
-      const branchName = ticket.branchName ?? source.branchName;
+      const branchName = ticket.branchName ?? runBranch(source);
       let initialPrompt: string;
       const lead = startedBy(files.templates.review, starter.by === 'scheduler');
       try {
@@ -3245,7 +3246,7 @@ export class RunService {
           await recordPush(tx, {
             project: locked.project,
             ticket: locked.ticket,
-            run: locked.run,
+            run: { id: locked.run.id, branchName: runBranch(locked.run) },
             machine: locked.machine,
             result: payload.push,
             branch: payload.branch,

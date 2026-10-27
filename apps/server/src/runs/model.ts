@@ -201,6 +201,12 @@ export interface RunViewContext {
   base: string | null;
 }
 
+/** A run's ticket branch: every run has one but a planning run (the `runs_subject` check). */
+export function runBranch(run: Pick<RunRow, 'id' | 'branchName'>): string {
+  if (run.branchName === null) throw new Error(`run ${run.id} has no branch`);
+  return run.branchName;
+}
+
 export function toRun(row: RunRow, context: RunViewContext): Run {
   return {
     id: row.id,
@@ -219,7 +225,7 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     endDetail: row.endDetail,
     attempt: row.attempt,
     sessionAlive: row.sessionAlive,
-    branch: { name: row.branchName, head: row.branchHead, commits: reportedCommits(row) ?? [] },
+    branch: { name: runBranch(row), head: row.branchHead, commits: reportedCommits(row) ?? [] },
     push:
       row.push === null || row.pushAt === null
         ? null

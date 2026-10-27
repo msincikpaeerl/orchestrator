@@ -43,7 +43,7 @@ import { recordEvent } from '../events.js';
 import { hashCredential } from '../machines/credentials.js';
 import type { ProjectRow } from '../projects/model.js';
 import { startCiWait } from '../runs/ci-wait.js';
-import type { RunRow } from '../runs/model.js';
+import { runBranch, type RunRow } from '../runs/model.js';
 import { resolveSettings } from '../settings/store.js';
 import {
   acceptanceCriteria,
@@ -339,7 +339,7 @@ export class McpBackend {
       await recordPush(tx, {
         project: row.project,
         ticket,
-        run: row.run,
+        run: { id: row.run.id, branchName: runBranch(row.run) },
         machine: { id: row.run.machineId, name: row.machineName },
         result,
         branch: workspace.branch,
