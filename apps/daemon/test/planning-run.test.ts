@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { McpPermission, runMcpTools, type RunStart } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
+import { REASONS, reasonFor } from '../src/permissions.js';
 import { stateFilePath } from '../src/run-files.js';
 import type { RunManager } from '../src/runs.js';
 import { sessionName } from '../src/tmux.js';
@@ -313,6 +314,45 @@ describe('a planning run of an existing project', () => {
         branch: null,
       });
       expect(existsSync(worktreePath(home.paths, run.runId))).toBe(false);
+    },
+    TIMEOUT,
+  );
+});
+
+describe("a planning run's refusals", () => {
+  it(
+    "end with the planning run's sentence, naming request_ask (owner's answer 7, lot 5 step E1)",
+    async () => {
+      const manager = daemon();
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'bash', command: 'git push origin HEAD' },
+              { do: 'tool', name: 'Read', input: { file_path: '/etc/hostname' } },
+              {
+                do: 'mcp',
+                tool: 'ticket_give_up',
+                arguments: { reason: 'Stop.', tried: 'This.' },
+              },
+            ],
+          },
+        ],
+      });
+      const run = await startPlanning(manager, 'existing');
+      await ended(run.runId);
+      const denials = (await fake.log()).flatMap((entry) =>
+        entry.event === 'denied' ? [{ tool: entry.tool, reason: entry.reason }] : [],
+      );
+      expect(denials).toEqual([
+        { tool: 'Bash', reason: reasonFor('plan', REASONS.remote) },
+        { tool: 'Read', reason: reasonFor('plan', REASONS.outside) },
+      ]);
+      for (const { reason } of denials) {
+        expect(reason).toMatch(
+          / Do not ask the owner to allow it\. If the request cannot be planned without it, say so in plain words with request_ask or ticket_give_up\.$/,
+        );
+      }
     },
     TIMEOUT,
   );

@@ -44,7 +44,7 @@ import {
   writeJsonAtomic,
   writeRunFiles,
 } from './run-files.js';
-import { checkToolCall, type PermissionScope } from './permissions.js';
+import { checkToolCall, reasonFor, type PermissionScope } from './permissions.js';
 import { RUN_MARKER, sweepRun } from './processes.js';
 import {
   denyAnswer,
@@ -728,8 +728,9 @@ export class Run {
       case 'PreToolUse': {
         this.data.turnToolUsed = true;
         const tool = String(input.tool_name);
-        const reason = checkToolCall(this.scope, tool, input.tool_input);
-        if (reason !== null) {
+        const found = checkToolCall(this.scope, tool, input.tool_input);
+        if (found !== null) {
+          const reason = reasonFor(this.data.start.purpose, found);
           this.log.info({ tool, reason }, 'tool call refused');
           return denyAnswer(reason);
         }

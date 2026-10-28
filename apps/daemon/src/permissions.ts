@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { RunPurpose } from '@orchestrator/protocol';
 
 // Permission enforcement for a run (05, section 4.6), in two layers: the allowlist and deny rules
 // of the run's `settings.json`, and the `PreToolUse` rules below, which the hook applies to every
@@ -74,6 +75,18 @@ export function settingsPermissions(
 /** The end of every refusal reason: never ask the owner to allow a tool or a command. */
 export const REFUSAL_SUFFIX =
   'Do not ask the owner to allow it. If your ticket cannot be done without it, say so in plain words with ticket_ask or ticket_give_up.';
+
+/**
+ * The same sentence for a planning run, which has no ticket and asks with `request_ask` (owner's
+ * answer 7, lot 5 step E1).
+ */
+export const PLAN_REFUSAL_SUFFIX =
+  'Do not ask the owner to allow it. If the request cannot be planned without it, say so in plain words with request_ask or ticket_give_up.';
+
+/** A refusal reason in the words of a run of this purpose: a planning run's names its tools. */
+export function reasonFor(purpose: RunPurpose, reason: string): string {
+  return purpose === 'plan' ? reason.replace(REFUSAL_SUFFIX, PLAN_REFUSAL_SUFFIX) : reason;
+}
 
 export const REASONS = {
   remote: `Git commands that reach a remote, and gh or hub, are refused: the Orchestrator fetches and pushes the branch itself. Commit your work locally. ${REFUSAL_SUFFIX}`,
