@@ -11,6 +11,7 @@ import { formatDateTime, problemText } from '../github/text';
 import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
 import { sentence, stepLabel } from '../projects/text';
+import { requestPath, requestQuestionHeading } from '../requests/text';
 import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { PauseButton } from '../machines/account-parts';
 import { compactDayText } from '../machines/schedule-text';
@@ -65,6 +66,8 @@ function itemKey(item: NeedsYouItem): string {
     case 'pull_request_closed':
     case 'pull_request_to_merge':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
+    case 'request_question':
+      return `${item.type}-${String(item.request.number)}`;
     case 'run_paused':
     case 'run_resumes_used':
       return `${item.type}-${item.run.id}`;
@@ -110,6 +113,25 @@ function TicketTitle({
   );
 }
 
+/** A planning run's question (owner's answer 5, lot 5 step D2b), answered as on the request page. */
+function RequestQuestionCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'request_question' }>;
+}) {
+  return (
+    <Card className="space-y-2">
+      <Link
+        to={requestPath(item.request.number)}
+        className="block font-semibold break-words text-blue-700 underline"
+      >
+        {requestQuestionHeading(item.request)}
+      </Link>
+      <QuestionAnswer target={{ request: item.request.number }} question={item.question} />
+    </Card>
+  );
+}
+
 /** A ticket's **Mark as done manually**, which needs the ticket's dependencies for its warning. */
 function MarkDone({ ticket }: { ticket: TicketAddress }) {
   const detail = useTicket(ticket.projectKey, ticket.number);
@@ -132,7 +154,7 @@ function WorkItemCard({
       return (
         <Card className="space-y-2">
           <TicketTitle ticket={item.ticket} />
-          <QuestionAnswer ticket={item.ticket} question={item.question} />
+          <QuestionAnswer target={{ ticket: item.ticket }} question={item.question} />
         </Card>
       );
     case 'ticket_proposed':
@@ -843,6 +865,8 @@ export function NeedsYouPage() {
                     setOffer({ ticket, after: 'request_changes' });
                   }}
                 />
+              ) : item.type === 'request_question' ? (
+                <RequestQuestionCard item={item} />
               ) : item.type === 'ready_for_review' ? (
                 <ReadyForReviewCard item={item} />
               ) : item.type === 'review_not_finished' ? (

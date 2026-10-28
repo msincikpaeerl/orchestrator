@@ -432,11 +432,13 @@ describe('the end of a planning run (owner answer 7)', () => {
 });
 
 describe('Needs you (lot 5 step D2b, owner answers 1 and 2)', () => {
-  async function items(): Promise<NeedsYouItem[]> {
+  type RequestQuestionItem = Extract<NeedsYouItem, { type: 'request_question' }>;
+
+  async function items(): Promise<RequestQuestionItem[]> {
     const response = await h.call('GET', '/api/needs-you');
     expect(response.statusCode, response.body).toBe(200);
     return NeedsYouResponse.parse(response.json()).items.filter(
-      (item) => item.type === 'request_question',
+      (item): item is RequestQuestionItem => item.type === 'request_question',
     );
   }
 

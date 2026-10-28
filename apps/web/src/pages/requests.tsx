@@ -24,7 +24,14 @@ import {
 import { formatDateTime } from '../github/text';
 import { requestsChanged, useProjects, useRequest, useRequests } from '../queries';
 import { refusalText } from '../refusals';
-import { requestName, requestPath, requestStatusLabel } from '../requests/text';
+import {
+  requestCommentAuthor,
+  requestName,
+  requestOpenQuestion,
+  requestPath,
+  requestStatusLabel,
+} from '../requests/text';
+import { QuestionAnswer } from '../runs/components';
 
 const MARKDOWN_HINT = 'Markdown is allowed. Links open in a new tab; images are shown as links.';
 
@@ -191,12 +198,7 @@ function CommentItem({ comment }: { comment: Comment }) {
   return (
     <li className="space-y-1 border-l-4 border-blue-200 pl-3">
       <p className="text-sm text-slate-600">
-        {comment.author === 'owner'
-          ? 'You'
-          : comment.agent
-            ? `Agent ${comment.agent.profile.name}`
-            : 'The Orchestrator'}{' '}
-        · {formatDateTime(comment.createdAt)}
+        {requestCommentAuthor(comment)} · {formatDateTime(comment.createdAt)}
       </p>
       <UntrustedMarkdown>{comment.body}</UntrustedMarkdown>
     </li>
@@ -284,6 +286,7 @@ function RequestContent({ number }: { number: number }) {
     );
   }
   const data = request.data;
+  const question = requestOpenQuestion(data);
   return (
     <>
       <PageHeader title={`${requestName(data.number)} · ${data.line}`} help="requests" />
@@ -313,7 +316,17 @@ function RequestContent({ number }: { number: number }) {
               Open: the request waits for the Project Manager. Planning comes with a later version.
             </p>
           )}
+          {data.status === 'planning' && (
+            <p className="text-slate-700">
+              {question
+                ? 'Planning: the Project Manager waits for your answer.'
+                : 'Planning: the Project Manager is working on it.'}
+            </p>
+          )}
         </Card>
+        {question && (
+          <QuestionAnswer key={question.id} target={{ request: data.number }} question={question} />
+        )}
         <Card className="space-y-2">
           <SectionTitle>Plan</SectionTitle>
           <p className="text-slate-700">No plan yet.</p>
