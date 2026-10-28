@@ -1457,6 +1457,8 @@ const DECISIONS: Partial<Record<McpToolName, 'submitted' | 'gave_up' | 'asked'>>
   ticket_submit: 'submitted',
   ticket_give_up: 'gave_up',
   ticket_ask: 'asked',
+  // A planning run's question waits as a ticket's does (lot 5 step D2a).
+  request_ask: 'asked',
   review_approve: 'submitted',
   review_request_changes: 'submitted',
 };

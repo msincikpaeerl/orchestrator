@@ -152,17 +152,17 @@ describe('a planning run of a new project', () => {
   );
 
   it(
-    'keeps its scratch folder while it waits, and a resume starts there again',
+    'waits after request_ask, keeps its scratch folder, and a resume starts there again',
     async () => {
       // One minute lasts 1.2 s.
       const manager = daemon({ secondMs: 20 });
-      // `ticket_ask` stands for `request_ask` (step D): the daemon treats both as a question.
+      // `request_ask` waits as `ticket_ask` does (lot 5 step D2a).
       await fake.play({
         turns: [
           {
             steps: [
               { do: 'bash', command: 'echo notes > notes.txt' },
-              { do: 'mcp', tool: 'ticket_ask', arguments: { question: 'Which pages?' } },
+              { do: 'mcp', tool: 'request_ask', arguments: { question: 'Which pages?' } },
             ],
           },
         ],

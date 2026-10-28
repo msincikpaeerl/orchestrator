@@ -81,6 +81,14 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
     },
   },
   ticket_comments: { input: {}, output: { comments: [comment], next_cursor: null } },
+  request_get: {
+    input: {},
+    output: {
+      request: { number: 7, text: 'A bakery website.', status: 'planning', project: null },
+      comments: [comment],
+      next_cursor: 'after-1',
+    },
+  },
   agent_list: {
     input: {},
     output: {
@@ -97,6 +105,13 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
   ticket_ask: {
     input: { question: 'Which colour?' },
     output: { comment, ticket: { ...ticket, status: 'waiting_human' } },
+  },
+  request_ask: {
+    input: { question: 'Which pages?' },
+    output: {
+      comment,
+      request: { number: 7, text: 'A bakery website.', status: 'planning', project: 'WEB' },
+    },
   },
   ticket_give_up: {
     input: { reason: 'The payment API does not exist.', tried: 'Searched the docs and the code.' },
@@ -204,6 +219,7 @@ const inputFields: Partial<Record<McpToolName, { required?: string; text?: [stri
   ticket_progress: { required: 'text', text: ['text', TEXT_CEILING] },
   ticket_comment: { required: 'body', text: ['body', settingCeiling('commentMaxLength')] },
   ticket_ask: { required: 'question', text: ['question', settingCeiling('commentMaxLength')] },
+  request_ask: { required: 'question', text: ['question', settingCeiling('commentMaxLength')] },
   ticket_give_up: { required: 'tried', text: ['reason', settingCeiling('commentMaxLength')] },
   ticket_create: { required: 'title', text: ['title', settingCeiling('ticketTitleMaxLength')] },
   ticket_submit: { required: 'summary', text: ['summary', TEXT_CEILING] },
@@ -212,7 +228,7 @@ const inputFields: Partial<Record<McpToolName, { required?: string; text?: [stri
 };
 
 describe('MCP_TOOLS', () => {
-  it('holds the tools of lots 2 and 3, named <object>_<verb>', () => {
+  it('holds the tools of lots 2 to 5, named <object>_<verb>', () => {
     expect([...McpToolName.options].sort()).toEqual(Object.keys(examples).sort());
     for (const name of McpToolName.options) expect(name).toMatch(/^[a-z]+_[a-z_]+$/);
   });
@@ -243,6 +259,9 @@ describe('MCP_TOOLS', () => {
       ['review_approve', 'One decision per review'],
       ['review_request_changes', 'One decision per review'],
       ['ci_status', 'you receive the same result as a message without asking'],
+      ['request_get', 'with the first page only'],
+      ['request_ask', 'Do not ask about technical choices'],
+      ['request_ask', 'End your turn right after calling it'],
     ];
     for (const [name, text] of guidance) expect(MCP_TOOLS[name].description).toContain(text);
     expect(MCP_TOOLS.ticket_progress.description).not.toContain('LIMIT_REACHED');

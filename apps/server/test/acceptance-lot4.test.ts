@@ -368,8 +368,8 @@ describe('lot 4 step E: usage limits resumed by the scheduler, real server and d
       await h.createTicket({ title: 'Opening hours', priority: 'high' });
       expect(await tick()).toEqual(['implement WEB-2', 'implement WEB-1']);
       const rows = await h.t.db.select().from(schema.runs);
-      const second = rows.find((row) => row.branchName.startsWith('t/2-'));
-      const first = rows.find((row) => row.branchName.startsWith('t/1-'));
+      const second = rows.find((row) => row.branchName?.startsWith('t/2-'));
+      const first = rows.find((row) => row.branchName?.startsWith('t/1-'));
       if (!first || !second) throw new Error('two runs expected');
       await pausedOn(first.id, 'usage_limit');
       await pausedOn(second.id, 'usage_limit');

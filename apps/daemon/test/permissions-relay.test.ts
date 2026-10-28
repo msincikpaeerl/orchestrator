@@ -166,12 +166,15 @@ describe('tool calls through the relay', () => {
 
       const log = await fake.log();
       const listed = log.find((entry) => entry.event === 'mcp_tools');
-      // Only the run's tools (owner's answer 1, lot 3 step H): an implement run has no review tool.
+      // Only the run's tools (owner's answer 1, lot 3 step H): an implement run has no review
+      // tool, and no request tool (lot 5 step D2a).
       expect(listed?.event === 'mcp_tools' && listed.tools.map((tool) => tool.name)).toEqual(
         run.mcpTools,
       );
       expect(run.mcpTools).toEqual(
-        McpToolName.options.filter((name) => !name.startsWith('review_')),
+        McpToolName.options.filter(
+          (name) => !name.startsWith('review_') && !name.startsWith('request_'),
+        ),
       );
       const create =
         listed?.event === 'mcp_tools' ? listed.tools.find((t) => t.name === 'ticket_create') : null;

@@ -378,6 +378,15 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     commentId: COMMENT_ID,
     kind: 'note',
   },
+  'request.status_changed': {
+    request: 7,
+    project: 'WEB',
+    from: 'planning',
+    to: 'open',
+    cause: 'run_ended',
+    runId: '00000000-0000-4000-8000-000000000001',
+    failureReason: 'machine_offline',
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -629,6 +638,25 @@ describe('eventText', () => {
     expect(
       plainText(eventText(entry('request.commented', { comment: 'Only French, please' }))),
     ).toBe('Request 7: comment “Only French, please”');
+    expect(plainText(eventText(entry('request.status_changed')))).toBe(
+      'Request 7 back to open: its planning run ended, its machine was offline (not counted as a failed attempt)',
+    );
+    expect(
+      plainText(
+        eventText(
+          entry('request.status_changed', {
+            payload: {
+              request: 7,
+              project: 'WEB',
+              from: 'open',
+              to: 'planning',
+              cause: 'run_started',
+              runId: '00000000-0000-4000-8000-000000000001',
+            },
+          }),
+        ),
+      ),
+    ).toBe('Request 7: planning, a planning run started');
   });
 
   it('lists the tickets of an import, each a link', () => {

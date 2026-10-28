@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RequestStatus } from './api/requests.js';
 import {
   BranchProtection,
   HarnessElement,
@@ -122,6 +123,7 @@ export const EventType = z.enum([
   'ticket.machine_branch_kept',
   'request.created',
   'request.commented',
+  'request.status_changed',
   'setting.changed',
   'setting.reset',
   'setting.time_zone_saved',
@@ -329,6 +331,20 @@ export const EventPayloads = {
     commentId: z.uuid(),
     kind: CommentKind,
     ...AgentFacts,
+  }),
+  /**
+   * A request's status changed (01, section 3.2; lot 5 step D2a): `planning` when its planning run
+   * started, back to `open` when that run ended without a plan, with its failure reason (the
+   * owner's answer that could not reach it ends it `machine_offline`).
+   */
+  'request.status_changed': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    from: RequestStatus,
+    to: RequestStatus,
+    cause: z.enum(['run_started', 'run_ended']),
+    runId: z.uuid(),
+    failureReason: FailureReason.optional(),
   }),
   /** An agent's submission was accepted and its report stored (04, section 3.1). */
   'ticket.submitted': z.object({

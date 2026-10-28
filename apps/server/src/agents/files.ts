@@ -118,6 +118,7 @@ export const TEMPLATE_NAMES = [
   'review',
   'continue',
   'answer',
+  'request-answer',
   'nudge',
   'submit-checks',
   'pull-request',

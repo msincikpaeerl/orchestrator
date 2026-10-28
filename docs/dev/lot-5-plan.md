@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a done (2026-10-28)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -209,15 +209,45 @@ The owner's answers to D's questions (2026-10-26), A to all:
 
 *Done 2026-10-26*: tables `requests` and `plans`, `comments.request_id` (a comment on a ticket or a request, never both: `comments_target`), `tickets.plan_id` (migration `0044_requests`); `packages/protocol/src/api/requests.ts` (`RequestStatus`, `requestLine`, `REQUEST_LINE_MAX_LENGTH`), the entity `request`, events `request.created` and `request.commented`, the error `request_not_found` and the limited field `request`; `apps/server/src/requests/routes.ts` (`GET`/`POST /api/requests`, `GET /api/requests/:number`, `POST /api/requests/:number/comments`; numbers under the table's lock, so no gap); `apps/web/src/pages/requests.tsx` (loaded on first use) and `apps/web/src/requests/text.ts`. `request.status_changed` (answer 12) comes with the first code that changes a request's status (D2's failed delivery, E2's planning), so the every-event guard can cover it. Tests: `apps/server/test/requests.test.ts` (new, shard 4, 2 s; it moves `credential-leaks.test.ts`, 42 s, from shard 3 to 2, `web.test.ts` to 1 and `projects.test.ts` to 3, both under a second), `every-event.ts` and `event-log.test.ts`, the Activity texts, `apps/web/e2e/requests.e2e.ts` (new) and `login.e2e.ts` (Requests is no longer "Coming in a later version"); e2e shards 4.7 and 5.4 min. Specs 01 (3.2, 3.10) and 02 (5); Help > Requests (new), Settings; CHANGELOG.
 
-### [ ] D2. Questions on a request (branch `lot5/d2-request-questions`)
+### Step D2, split in two (owner's decision, 2026-10-28)
 
-- `runs.request_id` (a `plan` run's request, no ticket); the MCP backend loads a planning run.
-- MCP: `request.get` and `request.ask` (06 section 4.4), their descriptions and `mcp-tools.md` texts.
-- The answer (`POST /api/requests/<number>/answer`) delivered live or by resume as for tickets (04 section 6), and its failed delivery (answer 14).
-- Needs you: a question on a request, with the same answer box; the request page shows its open question.
+Step D2 was too large for one session (rule 15): the MCP backend, the answer's delivery (live, by resume, failed) and the end of a run all assume a run has a ticket, on top of a migration, two tools, a daemon change, a Needs you item, two screens and a Playwright scenario. The owner approved the split into D2a, then D2b.
+
+The owner's answers to D2's questions (2026-10-28), A to all:
+
+1. **The split**: D2a, then D2b, below.
+2. **`runs.request_id`**: with checks: a `plan` run has a request and no ticket, any other run a ticket and no request.
+3. **`runs.branch_name`**: optional, empty only for a `plan` run (a check).
+4. **The tools in a planning run** (D2): the reading tools work; `ticket_get` and `ticket_comments` without `ticket` are refused (`VALIDATION_FAILED`, "your run plans request 7 and has no ticket: name one"); `ci_status` is refused (no pull request); `ticket_progress` is kept on the run; `ticket_comment`, `ticket_ask`, `ticket_give_up`, `ticket_create` and `ticket_update` are refused (`INVALID_TRANSITION`, pointing to `request_ask`). E1 opens `ticket_update` and `plan_propose`, E2 `ticket_give_up`.
+5. **`request_ask`'s refusals**: outside a `plan` run or without the permission, `FORBIDDEN`; the request not `planning`, a question already waiting or a decision already made, `INVALID_TRANSITION` (end your turn); above **Longest comment**, `VALIDATION_FAILED`. Accepted: a `question` comment on the request, `request.commented` (kind `question`), and the daemon ends the turn as a question.
+6. **The answer message**: a new template, `agents/templates/request-answer.md`, built as `answer.md`, its "cut here" parts pointing to `request_get`.
+7. **Any other end of a planning run** (crash, Stop, timeout): its request goes back to `open` with `request.status_changed`, not counted; E2 adds the count, the stop and "Planning stopped".
+8. **An answer to a planning run paused on a usage limit**: kept, as for tickets; the "please continue" text pointing to `request_get` comes with E2.
+9. **`POST /api/requests/:number/answer`**: within **Longest comment**; refused with `request_not_found`, `no_open_question`, and `project_archived` for a request of an archived project; the owner's `answer` linked to the question, `request.commented` (kind `answer`).
+10. **The failed delivery** (answer 14 of step D): the run fails `machine_offline`, not counted; a `system` comment on the request: "Your answer could not reach the planning run: machine X is offline. The run failed as "machine offline" and does not count as a failed attempt. The request is open again, and your answer stays here."; the request back to `open` with `request.status_changed`.
+11. **Planning runs in the run lists and Stop run**: left to E2 (written there): until then only tests create planning runs.
+12. **The test helper**: `apps/server/test/planning-run.ts` inserts a test planner profile and a `plan` run in `starting`, sets the request `planning` with its `request.status_changed`, and returns the run token for the scripted daemon; D2b's e2e control server calls it. Test code only.
+13. **The daemon** (answer 5 of step D, no `PROTOCOL_VERSION` bump): `request_ask: 'asked'` in its decisions now; the permission refusal text naming `request_ask` comes with E1's planner rules.
+14. **Tests**: a new `apps/server/test/request-questions.test.ts`, its shard placement checked (renamed if it lands in shard 1 or 3).
+
+### [x] D2a. Questions on a request, server and daemon (branch `lot5/d2-request-questions`, 2026-10-28)
+
+- `runs.request_id` and the optional `branch_name` (answers 2 and 3); the test-only planning-run helper (answer 12); the MCP backend loads a planning run (answer 4).
+- MCP: `request.get` (answer 13 of step D) and `request.ask` (answer 5), their descriptions and `mcp-tools.md` texts; the daemon takes `request_ask` as a question (answer 13).
+- The answer (`POST /api/requests/<number>/answer`, answer 9) delivered live or by resume as for tickets (04 section 6), with `request-answer.md` (answer 6); its failed delivery (answer 10); any other end of a planning run (answer 7); a paused run (answer 8).
+- Specs 01, 04 and 06. Nothing new on screen: no Help page or CHANGELOG entry yet.
+
+**Done when** server tests (scripted daemon) cover a question answered live and by resume, a failed delivery (offline, no confirmation in time, a refusal), `request.get`'s paging and output size, the refusals and the events (the every-event guard with `request.status_changed`); a daemon test covers `request_ask` ending the turn as a question.
+
+*Done 2026-10-28*: migration `0045_planning_runs` (`runs.request_id`, `branch_name` optional, the check `runs_subject`, at most one active planning run per request); `McpRequest`, `request_get` and `request_ask` in `packages/protocol` (`runMcpTools` lists them in planning runs only), the event `request.status_changed` (causes `run_started`, `run_ended`); `apps/server/src/requests/model.ts` (the open question, the status change); the MCP backend's planning path (`PlanCall`; locks: project, request, run, the order `withRun` now follows) and nine new parts of `mcp-tools.md`, with `request-only` (`FORBIDDEN`: every role has the reading tools, so the server refuses the request tools in a ticket run by purpose); `RunService.answerRequest` and `deliverAnswer`, shared with the ticket's answer; the template `agents/templates/request-answer.md`; `setStatus` puts a planning request back to `open` at any end of its run; the Activity text of `request.status_changed` (the event's guard needs one). The planning run's progress line is kept, not shown (no screen shows planning runs before E2). Tests: `apps/server/test/request-questions-and-answers.test.ts` (16 tests, about 6 s; named for shard 4, which moves `apps/daemon/test/real-github-guard.test.ts`, 0.5 s, to shard 3; `request-questions.test.ts` landed in shard 1), `planning-run.ts`, `every-event.ts`, `mcp.test.ts`, `tool-texts.test.ts`, `messages.test.ts` (snapshot), `files.test.ts`, the protocol's tool and permission tests, the daemon's `planning-run.test.ts` and `permissions-relay.test.ts`. Specs 01 (3.2, 3.10), 03 (3.2), 04 (6) and 06 (4.1, 4.4, 5); `docs/dev/testing.md`.
+
+### [ ] D2b. The question on screen (branch `lot5/d2b-request-question-screens`)
+
+- Needs you: "Question on request 7: <first line>", with the same answer box; the request page shows its open question with the answer box.
+- The e2e control server starts a planning run with D2a's helper.
 - Help > Requests and Needs you; CHANGELOG.
 
-**Done when** server tests cover a question and its answer (live and by resume, through a scripted daemon), a failed delivery, `request.get`'s paging and output size, the events; Playwright on both viewports sees the question in Needs you and answers it.
+**Done when** Playwright on both viewports sees the question in Needs you, answers it, and sees the request page change.
 
 ### [ ] E1. The Project Manager (branch `lot5/e1-project-manager`)
 
@@ -232,6 +262,7 @@ The owner's answers to D's questions (2026-10-26), A to all:
 - The `plan` candidate (07 sections 1 and 3): at a request's submission and after **Reject with feedback**; category 4; projects in turn (a request for a new project counts as its own); a machine with protocol 3, logged into the account; no capability required.
 - Failures (answer 10): counted on the request, the stop at **Failed attempts before asking you**, "Planning stopped" with **Try again**; a planning run that ends without a plan after its reminders.
 - From step D (answers 4 and 11 of step D): `runs.project_id` optional for a new project's planning run; Needs you's "Planning stopped" and **Try again**, moved from step D.
+- Planning runs on screen before the scheduler starts any (owner's answer 11 of step D2): Activity > Runs and the machine page list them (the `Run` type with no ticket and its request), and **Stop run** works on a planning run.
 - The queue's lines and words for a planning candidate; "Started by the scheduler" in its first message.
 - Help > Runs > "What starts by itself" (one session per request, then one per rejection; at most **Failed attempts before asking you** failed sessions per request).
 

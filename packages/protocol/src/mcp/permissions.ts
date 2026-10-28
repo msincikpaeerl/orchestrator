@@ -58,11 +58,14 @@ export const ROLE_MCP_PERMISSIONS: Readonly<Record<AgentRole, readonly McpPermis
 /** The tools only a review run decides with (06, section 4.5). */
 const REVIEW_TOOLS: readonly McpToolName[] = ['review_approve', 'review_request_changes'];
 
+/** The tools only a planning run uses: they work on its request (06, section 4.4). */
+const REQUEST_TOOLS: readonly McpToolName[] = ['request_get', 'request_ask'];
+
 /**
  * The tools a run may call, carried by `run.start` and the only ones the relay lists (06, section
  * 5; owner's answer 1, lot 3 step H): the implemented tools among the profile's permissions,
  * without those its purpose cannot use: `ticket_submit` in a review run, the review tools in any
- * other. The server still refuses each call by role and purpose.
+ * other, the request tools outside a planning run (lot 5 step D2a). The server still refuses each call by role and purpose.
  */
 export function runMcpTools(
   permissions: readonly McpPermission[],
@@ -70,6 +73,7 @@ export function runMcpTools(
 ): McpToolName[] {
   return (Object.keys(MCP_TOOLS) as McpToolName[]).filter((name) => {
     if (!permissions.includes(name)) return false;
+    if (purpose !== 'plan' && REQUEST_TOOLS.includes(name)) return false;
     if (purpose === 'review') return name !== 'ticket_submit';
     return !REVIEW_TOOLS.includes(name);
   });

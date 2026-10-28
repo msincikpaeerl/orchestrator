@@ -25,6 +25,7 @@ import { branchPushedAgain } from '../src/tickets/branch-clean-up.js';
 import { enroll, enrollToken, ScriptedDaemon } from './daemon-client.js';
 import { fullAccount, type FakeGitHub } from './fake-github.js';
 import { createOwner, OWNER, startTestApp, type TestApp } from './helpers.js';
+import { startPlanningRun } from './planning-run.js';
 
 const TOKEN = 'github_pat_11AAAAAAA0secretTokenValue1234567890';
 const SESSION = '0f7a3c52-9d7e-4e8f-a4b1-222222222222';
@@ -825,6 +826,40 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     if (tries === 100) throw new Error('the answer to branch.delete was not stored');
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
+
+  // Request 1's planning run asks its question, then crashes: the request is open again
+  // (`request.status_changed`; lot 5 step D2a).
+  const planning = await startPlanningRun(t.db, { request: 1, machineId: machine.id });
+  const planningState = (payload: object) =>
+    daemon.request({
+      type: 'run.state',
+      id: randomUUID(),
+      payload: {
+        runId: planning.runId,
+        at: new Date().toISOString(),
+        claudeSessionId: SESSION,
+        sessionAlive: true,
+        ...payload,
+      },
+    } as RunState);
+  await planningState({ state: 'working' });
+  await tool({
+    tool: 'request_ask',
+    runToken: planning.runToken,
+    input: { question: 'Which pages?' },
+  });
+  await planningState({
+    state: 'ended',
+    reason: 'crashed',
+    detail: null,
+    branch: null,
+    push: null,
+    headMoved: null,
+    movedHead: null,
+    gitConfigRestored: null,
+    download: null,
+    sessionAlive: false,
+  });
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({
