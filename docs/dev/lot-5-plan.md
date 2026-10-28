@@ -249,6 +249,19 @@ The owner's answers to D2's questions (2026-10-28), A to all:
 
 **Done when** Playwright on both viewports sees the question in Needs you, answers it, and sees the request page change.
 
+The owner's answers to D2b's questions (2026-10-28), A to all, with a change to answer 5:
+
+1. **The item**: a new Needs you type, `request_question` (the request's number, first line and project, the question, when it was asked); the ticket's `question` is unchanged.
+2. **When it shows**: the request `planning`, its latest question unanswered, its project not archived (a request with no project counts as not archived).
+3. **The open question on the request page**: worked out by the page as the ticket's (`planning`, its latest question with no answer); the request detail API is unchanged.
+4. **The answer box**: one box for tickets and requests (same title, **Your answer**, **Send answer**); a request's answer goes to `POST /api/requests/<number>/answer`, its link to Help > Requests > "Questions".
+5. **The card**: the heading "Question on request 7 (TESTB): <first line>", or "(new project)" for a request with none, linked to the request page, then the answer box (owner's change: the heading names the project). The request page's question box keeps the ticket's heading ("Question from agent …"), so it carries none of these words.
+6. **The request page**: the question box between the request's card and **Plan**; a `planning` request's line "Planning: the Project Manager is working on it." or "Planning: the Project Manager waits for your answer."; the conversation marks the Project Manager's questions and the owner's answers.
+7. **Help and CHANGELOG**: Help > Requests > "Questions" (live, after the session closed, the machine offline) and Help > Needs you's row; the sentences saying nothing starts yet stay until E2; the CHANGELOG says the questions show once the Project Manager plans requests.
+8. **The e2e control**: `POST /daemon/planning-run` on the e2e server calls D2a's helper on the latest scripted daemon's machine and returns the run's id and token.
+9. **The e2e tests**, in `requests.e2e.ts`: a question answered from Needs you, then seen on the request page; a question answered on the request page, the Needs you item gone; a screenshot of each.
+10. No `PROTOCOL_VERSION` bump (no daemon change); spec 02 (sections 4 and 5.3) as built; `docs/dev/testing.md` names the control; planning runs still absent from Activity > Runs until E2.
+
 ### [ ] E1. The Project Manager (branch `lot5/e1-project-manager`)
 
 - `agents/pm.md` (03 section 2.1 with answers 6 to 8), the planner rules in `agents/rules/` (03 section 3), the template `plan` (first message: the request, its comments, the project's tickets in summary, the earlier plan and the owner's feedback after a rejection; within `FIRST_MESSAGE_MAX_BYTES`), `ticket.update` for the planner.
