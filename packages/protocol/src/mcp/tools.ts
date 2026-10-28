@@ -277,6 +277,30 @@ export const MCP_TOOLS = {
     }),
     output: z.object({ ticket: McpTicket }),
   },
+  ticket_update: {
+    description:
+      "Changes an existing ticket of the project that is still proposed or todo, when your plan changes what it must do: its title, description, acceptance criteria, type, priority, assignee (null removes it) or the tickets it waits for (blocked_by replaces the whole list). Give only the fields you change. A ticket in progress or later cannot be changed. Do not use it for the tickets of your plan: they go in plan_propose. Say in your plan's summary which tickets you changed and why.",
+    input: z
+      .strictObject({
+        ticket: TicketReference,
+        type: TicketType.optional(),
+        title: requiredText(TITLE_CEILING).optional(),
+        description: boundedText(DESCRIPTION_CEILING).trim().optional(),
+        acceptance_criteria: z
+          .array(requiredText(CRITERION_CEILING))
+          .max(CRITERIA_CEILING)
+          .optional(),
+        priority: TicketPriority.optional(),
+        /** Key of an agent profile, from agent_list; null removes the assignee. */
+        assignee: AgentKey.nullable().optional(),
+        /** Tickets of the same project that must be done first: the whole new list. */
+        blocked_by: z.array(TicketReference).optional(),
+      })
+      .refine((input) => Object.keys(input).length > 1, {
+        message: 'give at least one field to change besides ticket',
+      }),
+    output: z.object({ ticket: McpTicket }),
+  },
   ticket_submit: {
     description:
       "Submits your run's ticket as finished, with the Definition of Done report: every acceptance criterion, by its number from 1 as the ticket lists it (the first criterion is number 1), reported met with a one-line justification, the tests and documentation files changed (or why none were needed), any ADRs added, and a short summary. File paths are relative to the worktree root. Commit all your work first, on the current branch; never push and never switch branches: the Orchestrator handles that. If a criterion cannot be met, do not submit: use ticket_ask to get a decision, or ticket_give_up if the work is impossible as specified. The Orchestrator pushes the branch to GitHub, then checks the submission: it is refused with DOD_FAILED, listing each failed check, when a criterion is not met, the worktree has uncommitted changes, the branch has no commits, the ticket type's rule is not met (a docs ticket lists a documentation file, a spike an ADR or a document), or a listed path is not a file the branch changed (folders are not accepted); fix them and submit again. If the push fails, the refusal says so: it is not yours to fix, so end your turn at once. When it is accepted (pending_ci), end your turn: the Orchestrator waits for CI on the pull request, and the run ends when CI passes.",

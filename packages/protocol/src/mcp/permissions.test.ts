@@ -45,7 +45,8 @@ describe('runMcpTools', () => {
   it('keeps only implemented tools the profile has, in the order of MCP_TOOLS', () => {
     expect(runMcpTools(ROLE_MCP_PERMISSIONS.builder, 'implement')).toEqual(
       Object.keys(MCP_TOOLS).filter(
-        (name) => !name.startsWith('review_') && !name.startsWith('request_'),
+        (name) =>
+          !name.startsWith('review_') && !name.startsWith('request_') && name !== 'ticket_update',
       ),
     );
     expect(runMcpTools(['ticket_get', 'plan_propose', 'review_approve'], 'review')).toEqual([
@@ -64,6 +65,22 @@ describe('runMcpTools', () => {
       expect(tools).not.toContain('request_get');
       expect(tools).not.toContain('request_ask');
     }
+  });
+
+  it("lists to a planning run the reading tools and its rules' tools only (owner's answer 6, lot 5 step E1)", () => {
+    expect(runMcpTools(ROLE_MCP_PERMISSIONS.planner, 'plan')).toEqual([
+      'project_get',
+      'ticket_get',
+      'ticket_list',
+      'ticket_comments',
+      'request_get',
+      'ci_status',
+      'agent_list',
+      'ticket_progress',
+      'request_ask',
+      'ticket_give_up',
+      'ticket_update',
+    ]);
   });
 
   it('gives a reviewer its tools in a review run and none to decide in an implement run', () => {

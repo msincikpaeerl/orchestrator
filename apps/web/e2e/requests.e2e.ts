@@ -127,7 +127,7 @@ test("the Project Manager's question is answered from Needs you", async ({ page 
   await expect(heading).toBeVisible();
   const question = page.getByRole('region', { name: 'Question from the agent' });
   await expect(question).toContainText('Should the form also ask for a phone number?');
-  await expect(question.getByRole('heading')).toHaveText('Question from agent Test Planner');
+  await expect(question.getByRole('heading')).toHaveText('Question from agent Project Manager');
   await expectFitsScreen(page);
   await screenshot(page, testInfo, 'request-question-needs-you');
 
@@ -143,7 +143,7 @@ test("the Project Manager's question is answered from Needs you", async ({ page 
   await expect(page.getByRole('region', { name: 'Question from the agent' })).toBeHidden();
   const conversation = page.getByRole('list', { name: 'Conversation' }).getByRole('listitem');
   await expect(conversation).toHaveCount(2);
-  await expect(conversation.nth(0)).toContainText('Question from agent Test Planner ·');
+  await expect(conversation.nth(0)).toContainText('Question from agent Project Manager ·');
   await expect(conversation.nth(0)).toContainText('phone number');
   await expect(conversation.nth(1)).toContainText('Your answer ·');
   await expect(conversation.nth(1)).toContainText('No, the e-mail address is enough.');

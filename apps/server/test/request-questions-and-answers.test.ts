@@ -204,7 +204,7 @@ describe('request_ask (owner answer 5)', () => {
     const { daemon, runToken, runId } = await planning();
     const output = await h.ok(daemon, runToken, 'request_ask', { question: 'Which pages?' });
     expect(output).toMatchObject({
-      comment: { author: { agent: 'test_planner' }, kind: 'question', body: 'Which pages?' },
+      comment: { author: { agent: 'pm' }, kind: 'question', body: 'Which pages?' },
       request: { number: 1, status: 'planning', project: 'WEB' },
     });
     const detail = await request();
@@ -219,7 +219,7 @@ describe('request_ask (owner answer 5)', () => {
     expect(events.at(-1)).toMatchObject({
       actor: 'agent',
       entityType: 'request',
-      payload: { request: 1, project: 'WEB', kind: 'question', agent: 'test_planner', runId },
+      payload: { request: 1, project: 'WEB', kind: 'question', agent: 'pm', runId },
     });
     const again = refusal(await h.tool(daemon, runToken, 'request_ask', { question: 'And?' }));
     expect(again).toEqual({

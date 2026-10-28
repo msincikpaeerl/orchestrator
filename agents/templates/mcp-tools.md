@@ -65,6 +65,18 @@ The repository setup of the project is not finished: no ticket can be created ye
 Limit of {{limit}} tickets per run reached (setting "{{setting}}": {{limit}}). Record what you found with ticket_comment instead.
 <!-- part: ticket-limit-field -->
 at most {{limit}} tickets per run
+<!-- part: project-archived-update -->
+The project is archived: its tickets cannot be changed.
+<!-- part: ticket-not-editable -->
+{{ticket}} is {{status}}: ticket_update changes only a ticket that is proposed or todo. Leave it as it is, and say in your plan's summary what should change.
+<!-- part: dependency-itself -->
+{{ticket}} cannot wait for itself: remove it from blocked_by.
+<!-- part: dependency-itself-field -->
+a ticket cannot wait for itself
+<!-- part: dependency-cycle -->
+These dependencies would make {{ticket}} wait for itself: {{cycle}} (each waits for the next). Remove one of them from blocked_by.
+<!-- part: dependency-cycle-field -->
+closes the cycle {{cycle}}
 <!-- part: assignee-reviewer -->
 {{name}} reviews the work of other agents and cannot be assigned a ticket: choose a builder or a writer from agent_list, or leave the assignee out.
 <!-- part: assignee-reviewer-field -->

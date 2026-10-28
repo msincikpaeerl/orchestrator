@@ -202,6 +202,7 @@ describe('reading tools (06, section 4.1)', () => {
     expect(agents).toMatchObject({
       agents: [
         { key: 'architect', role: 'builder' },
+        { key: 'pm', role: 'planner' },
         { key: 'quality', role: 'reviewer' },
         { key: 'web_dev', role: 'builder' },
       ],
@@ -727,6 +728,7 @@ describe('tool descriptions', () => {
         'ticket_list',
         'ticket_progress',
         'ticket_submit',
+        'ticket_update',
       ].sort(),
     );
   });
