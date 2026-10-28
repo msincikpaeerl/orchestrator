@@ -38,14 +38,16 @@ export function part(
 
 /**
  * Layer 1 of 03, section 3, for a run of this purpose: the shared rules, with their slots filled
- * in by the builder or the reviewer rules (owner's answers 1 and 3, lot 3 step H5).
+ * in by the builder, reviewer or planner rules (owner's answers 1 and 3, lot 3 step H5; answer 2,
+ * lot 5 step E1).
  */
 export function runRules(rules: Rules, purpose: RunPurpose): string {
-  const kind = PURPOSE_RULES[purpose];
-  if (kind === null) throw new Error(`no rules for ${purpose} runs before lot 5`);
-  const own = rules[kind];
+  const own = rules[PURPOSE_RULES[purpose]];
   return fill(rules.shared, rules.shared.main, {
     work: own.main,
+    assignment: part(own, 'assignment'),
+    start: part(own, 'start'),
+    tools: part(own, 'tools'),
     files: part(own, 'files'),
     needs: part(own, 'needs'),
     task: part(own, 'task'),
@@ -466,10 +468,13 @@ export function continueMessage(templates: Templates): string {
 
 /**
  * Sent by the daemon when a turn ends without a decision (05, section 4.8); a review run's names
- * the review tools (lot 3 step H).
+ * the review tools (lot 3 step H), a planning run's the planning ones (lot 5 step E1a).
  */
 export function nudgeMessage(templates: Templates, purpose: RunPurpose = 'implement'): string {
-  const text = purpose === 'review' ? part(templates.nudge, 'review') : templates.nudge.main;
+  const text =
+    purpose === 'review' || purpose === 'plan'
+      ? part(templates.nudge, purpose)
+      : templates.nudge.main;
   return `${fill(templates.nudge, text, {})}\n`;
 }
 

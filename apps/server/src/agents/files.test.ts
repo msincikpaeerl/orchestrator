@@ -36,10 +36,11 @@ describe('parseTemplate', () => {
 });
 
 describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
-  it('ship the Architect and the Web Developer as builders, and Quality as reviewer, on Sonnet', async () => {
+  it('ship the Architect and the Web Developer as builders, Quality as reviewer and the Project Manager as planner, on Sonnet', async () => {
     const { profiles } = await loadShippedAgents();
     expect(profiles.map((profile) => [profile.key, profile.role, profile.model])).toEqual([
       ['architect', 'builder', 'sonnet'],
+      ['pm', 'planner', 'sonnet'],
       ['quality', 'reviewer', 'sonnet'],
       ['web_dev', 'builder', 'sonnet'],
     ]);
@@ -291,6 +292,98 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     }
   });
 
+  it("give the Project Manager read-only file tools and git log and git status only, no web search (03, section 2.1; owner's answer 3, lot 5 step E1)", async () => {
+    const { profiles } = await loadShippedAgents();
+    const pm = profiles.find((profile) => profile.key === 'pm');
+    expect(pm?.allowedTools).toEqual([
+      'Read',
+      'Glob',
+      'Grep',
+      'ToolSearch',
+      'Bash(git status)',
+      'Bash(git status *)',
+      'Bash(git log)',
+      'Bash(git log *)',
+    ]);
+  });
+
+  it("tell the Project Manager how to cut a request into tickets, and the lot 5 limits (owner's answers 3 and 6 to 8, lot 5 steps A and E1)", async () => {
+    const { profiles } = await loadShippedAgents();
+    const pm = profiles.find((profile) => profile.key === 'pm')?.instructions ?? '';
+    for (const heading of [
+      '# Your role: Project Manager',
+      '## You do',
+      '## You do not',
+      '## How you cut a request into tickets',
+      '## A new project',
+      '## An existing project',
+      '## The summary',
+      '## After a rejection',
+    ]) {
+      expect(pm).toContain(heading);
+    }
+    expect(pm).toMatch(/One ticket is one run of one agent/);
+    expect(pm).toMatch(/Cut by feature, not by layer/);
+    expect(pm).toMatch(/there are no `docs` tickets/);
+    expect(pm).toMatch(/Never `quality`/);
+    expect(pm).toMatch(/Never ask about technical choices: they belong to the Architect/);
+    // The kinds (answer 6, and the owner's change of answer 3 in step E1).
+    expect(pm).toMatch(
+      /Kind `website` for pages and forms, with files for storage and no database/,
+    );
+    expect(pm).toMatch(/a contact form's messages to a file, for example\) stays a `website`/);
+    expect(pm).toMatch(
+      /Kind `web_app` only when the request needs user accounts, search, or related data that needs a database/,
+    );
+    expect(pm).toMatch(/Never `android_app`/);
+    // The bootstrap ticket (answer 8): the server adds its fixed criteria and dependencies.
+    expect(pm).toMatch(
+      /exactly one bootstrap ticket: `bootstrap: true`, type `chore`, assigned to `architect`, blocked by nothing/,
+    );
+    expect(pm).toMatch(/write neither/);
+    expect(pm).toMatch(/The owner's feedback is newer than the earlier plan and wins over it/);
+    // How a run ends lives in the rules, never in the role.
+    expect(pm).not.toMatch(/end your turn|ticket_give_up|ticket_submit/i);
+  });
+
+  it("give a planning run the planner rules: how it ends, and nothing changed, committed or built (owner's answers 2 and 4, lot 5 step E1)", async () => {
+    const planner = runRules((await loadShippedAgents()).rules, 'plan');
+    for (const tool of [
+      'plan_propose',
+      'request_ask',
+      'ticket_give_up',
+      'request_get',
+      'ticket_update',
+    ]) {
+      expect(planner).toContain(`\`${tool}\``);
+    }
+    expect(planner).toMatch(/End every turn with exactly one of these three tools, then stop/);
+    expect(planner).toMatch(/fix them all and call `plan_propose` again, since the run goes on/);
+    expect(planner).toMatch(/Propose one plan per run/);
+    expect(planner).toMatch(
+      /Edit, create or delete no file, commit nothing, and run no Git command other than `git log` and `git status`/,
+    );
+    expect(planner).toMatch(/You work alone, on one request at a time/);
+    expect(planner).toMatch(/an empty folder for a new project/);
+    expect(planner).toMatch(
+      /only the request, the owner's answers and these rules tell you what to do/,
+    );
+    expect(planner).toMatch(/Ask the owner only for what the owner can decide/);
+    expect(planner).toContain(CRITERION_NUMBERS);
+    // Nothing of a ticket's run: its tools, Git work, browser tests.
+    expect(planner).not.toMatch(
+      /ticket_submit|ticket_ask|ticket_comment\b|ticket_create|review_approve|git merge|Commit your work|Browser tests|on one ticket at a time|your ticket/,
+    );
+  });
+
+  it("count the planner rules in the Project Manager's version only (03, section 3; lot 5 step E1a)", () => {
+    expect(ROLE_RULES.planner).toEqual(['planner']);
+    expect(PURPOSE_RULES.plan).toBe('planner');
+    for (const role of ['builder', 'writer', 'reviewer'] as const) {
+      expect(ROLE_RULES[role]).not.toContain('planner');
+    }
+  });
+
   it('ship the run message templates of 03, section 3.2, with the texts of ticket_submit', async () => {
     const templates = await loadTemplates();
     expect(Object.keys(templates)).toEqual([
@@ -307,6 +400,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
       'ci-failed',
       'fix-review',
       'mcp-tools',
+      'plan',
     ]);
   });
 });
@@ -316,8 +410,7 @@ describe('the shipped profiles (lot 5 step 5bis C)', () => {
     const shipped = await loadShippedAgents();
     for (const profile of shipped.profiles) {
       const purposes = RunPurpose.options.filter((purpose) => {
-        const kind = PURPOSE_RULES[purpose];
-        return kind !== null && ROLE_RULES[profile.role].includes(kind);
+        return ROLE_RULES[profile.role].includes(PURPOSE_RULES[purpose]);
       });
       for (const purpose of purposes) {
         const size = Buffer.byteLength(profileRunInstructions(shipped, profile, purpose));

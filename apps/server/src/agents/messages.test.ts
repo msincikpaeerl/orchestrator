@@ -214,15 +214,16 @@ describe('run instructions', () => {
 });
 
 describe('the rules each run purpose receives (03, section 3; lot 3 step H5)', () => {
-  it('gives shared and builder rules to implement, fix_review and document runs, shared and reviewer rules to review runs, and none yet to plan runs', () => {
-    const { shared, builder, reviewer } = shipped.rules;
+  it('gives shared and builder rules to implement, fix_review and document runs, shared and reviewer rules to review runs, shared and planner rules to plan runs', () => {
+    const { shared, builder, reviewer, planner } = shipped.rules;
     const builderRules = runRules(shipped.rules, 'implement');
     const reviewerRules = runRules(shipped.rules, 'review');
     expect(runRules(shipped.rules, 'fix_review')).toBe(builderRules);
     expect(runRules(shipped.rules, 'document')).toBe(builderRules);
+    const plannerRules = runRules(shipped.rules, 'plan');
     expect(reviewerRules).not.toBe(builderRules);
     // Each one holds the shared rules' own text and its kind's, never the other kind's.
-    for (const rules of [builderRules, reviewerRules]) {
+    for (const rules of [builderRules, reviewerRules, plannerRules]) {
       expect(rules).toContain('# How you work in the Orchestrator');
       expect(rules).toContain('## Staying on task');
     }
@@ -230,13 +231,16 @@ describe('the rules each run purpose receives (03, section 3; lot 3 step H5)', (
     expect(builderRules).not.toContain(reviewer.main);
     expect(reviewerRules).toContain(reviewer.main);
     expect(reviewerRules).not.toContain(builder.main);
-    for (const name of ['files', 'needs', 'task']) {
+    expect(plannerRules).toContain(planner.main);
+    expect(plannerRules).not.toContain(builder.main);
+    expect(plannerRules).not.toContain(reviewer.main);
+    for (const name of ['assignment', 'start', 'tools', 'files', 'needs', 'task']) {
       expect(builderRules).toContain(builder.parts.get(name));
       expect(reviewerRules).toContain(reviewer.parts.get(name));
+      expect(plannerRules).toContain(planner.parts.get(name));
+      expect(shared.main).toContain(`{{${name}}}`);
     }
     expect(shared.main).toMatch(/\{\{work\}\}/);
-    // Planning runs get their own rules in lot 5 (owner's answer 3, lot 3 step H5).
-    expect(() => runRules(shipped.rules, 'plan')).toThrow('lot 5');
   });
 });
 
