@@ -49,8 +49,11 @@ export async function installFakeClaude(bin: string, folder: string): Promise<Fa
       } catch {
         return [];
       }
+      // Each entry is one line ending with '\n'; a long one may be read half written, so the
+      // part after the last '\n' is left for the next read.
       return text
         .split('\n')
+        .slice(0, -1)
         .filter(Boolean)
         .map((line) => JSON.parse(line) as FakeLogEntry);
     },

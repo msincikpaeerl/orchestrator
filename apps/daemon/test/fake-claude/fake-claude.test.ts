@@ -255,3 +255,14 @@ describe('fake claude', () => {
     expect(await readdir(join(config, 'projects'))).toHaveLength(1);
   });
 });
+
+describe('the fake log read while the fake writes it', () => {
+  it('leaves out a last line not fully written yet', async () => {
+    const entry = { event: 'message', text: 'Go on.' };
+    const line = JSON.stringify(entry);
+    await writeFile(join(fake.folder, 'log.jsonl'), `${line}\n${line.slice(0, 20)}`);
+    expect(await fake.log()).toEqual([entry]);
+    await writeFile(join(fake.folder, 'log.jsonl'), `${line}\n${line}\n`);
+    expect(await fake.log()).toEqual([entry, entry]);
+  });
+});
