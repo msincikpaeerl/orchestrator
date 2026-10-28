@@ -1,10 +1,16 @@
+import type { Page } from '@playwright/test';
 import {
+  callTool,
   completeSetup,
+  connectDaemon,
+  createMachine,
   createReadyProject,
   expect,
   expectFitsScreen,
   openSection,
+  reportState,
   screenshot,
+  startPlanningRun,
   test,
 } from './fixtures';
 
@@ -88,4 +94,90 @@ test('an unknown request says so', async ({ page }) => {
   await expect(page.getByText('This request does not exist.')).toBeVisible();
   await page.getByRole('link', { name: 'Back to the requests' }).click();
   await expect(page.getByRole('heading', { name: 'Requests' })).toBeVisible();
+});
+
+// Questions on a request (lot 5 step D2b; 02, sections 4 and 5.3): the planning run is D2a's test
+// helper, through the test server's control, until step E2's scheduler starts them.
+
+/** Request 1 for TESTB, its planning run on Laptop asking its question; the run's id. */
+async function asked(page: Page): Promise<string> {
+  await completeSetup(page);
+  await createReadyProject(page, { key: 'TESTB', name: 'Test B', repository: 'test-b' });
+  const { id, code } = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(await connectDaemon(page, code)).toBe(204);
+  const created = await page.request.post('/api/requests', {
+    data: { body: 'A contact form\n\nOn the home page.', project: 'TESTB' },
+  });
+  expect(created.status()).toBe(201);
+  const { runId, runToken } = await startPlanningRun(page, 1, id);
+  await reportState(page, runId, 'working');
+  await callTool(page, runToken, 'request_ask', {
+    question: 'Should the form also ask for a **phone number**?',
+  });
+  await reportState(page, runId, 'waiting_human');
+  return runId;
+}
+
+test("the Project Manager's question is answered from Needs you", async ({ page }, testInfo) => {
+  await asked(page);
+  await page.goto('/');
+  const heading = page.getByRole('link', {
+    name: 'Question on request 1 (TESTB): A contact form',
+  });
+  await expect(heading).toBeVisible();
+  const question = page.getByRole('region', { name: 'Question from the agent' });
+  await expect(question).toContainText('Should the form also ask for a phone number?');
+  await expect(question.getByRole('heading')).toHaveText('Question from agent Test Planner');
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'request-question-needs-you');
+
+  await question.getByLabel('Your answer').fill('No, the e-mail address is enough.');
+  await question.getByRole('button', { name: 'Send answer' }).click();
+  await expect(question).toBeHidden();
+  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+
+  // The request page: the question and the answer in the conversation, no answer box.
+  await openSection(page, 'Requests');
+  await page.getByRole('link', { name: /Request 1 · A contact form/ }).click();
+  await expect(page.getByText('Planning: the Project Manager is working on it.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Question from the agent' })).toBeHidden();
+  const conversation = page.getByRole('list', { name: 'Conversation' }).getByRole('listitem');
+  await expect(conversation).toHaveCount(2);
+  await expect(conversation.nth(0)).toContainText('Question from agent Test Planner ·');
+  await expect(conversation.nth(0)).toContainText('phone number');
+  await expect(conversation.nth(1)).toContainText('Your answer ·');
+  await expect(conversation.nth(1)).toContainText('No, the e-mail address is enough.');
+  await expectFitsScreen(page);
+});
+
+test("the Project Manager's question is answered on the request page", async ({
+  page,
+}, testInfo) => {
+  await asked(page);
+  await page.goto('/requests/1');
+  await expect(
+    page.getByText('Planning: the Project Manager waits for your answer.'),
+  ).toBeVisible();
+  await expect(page.getByText('Planning', { exact: true })).toBeVisible();
+  const question = page.getByRole('region', { name: 'Question from the agent' });
+  await expect(question).toContainText('Should the form also ask for a phone number?');
+  await expect(question.getByRole('link', { name: 'About questions' })).toHaveAttribute(
+    'href',
+    /requests#questions$/,
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'request-question');
+
+  await question.getByRole('button', { name: 'Send answer' }).click();
+  await expect(question.getByText('Write your answer first.')).toBeVisible();
+  await question.getByLabel('Your answer').fill('Yes, but make it optional.');
+  await question.getByRole('button', { name: 'Send answer' }).click();
+  await expect(question).toBeHidden();
+  await expect(page.getByText('Planning: the Project Manager is working on it.')).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Conversation' }).getByRole('listitem').nth(1),
+  ).toContainText('Yes, but make it optional.');
+
+  await page.goto('/');
+  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
 });

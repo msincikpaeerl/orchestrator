@@ -216,6 +216,22 @@ export async function runSent(
   return (await response.json()) as { type: 'run.start' | 'run.resume'; runToken: string };
 }
 
+/**
+ * A planning run of the request on the machine, `starting` (lot 5 step D2b): D2a's test helper
+ * through the test server's control, until step E2's scheduler starts them.
+ */
+export async function startPlanningRun(
+  page: Page,
+  request: number,
+  machineId: string,
+): Promise<{ runId: string; runToken: string }> {
+  const response = await page.request.post(`${controlUrl}/daemon/planning-run`, {
+    data: { request, machineId },
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as { runId: string; runToken: string };
+}
+
 /** Sends a message of the scripted daemon; returns the server's answer. */
 export async function daemonRequest(
   page: Page,
