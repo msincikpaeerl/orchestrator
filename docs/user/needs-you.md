@@ -4,7 +4,7 @@
 
 In this version, it shows:
 
-- what agents' work leaves for you: questions, tickets they propose, work ready for review, reviews that did not finish, tickets stopped after too many review rounds or after repeated failures, finished work to check, work that could not reach GitHub (a push refused, a project that could not be downloaded, a pull request not opened or not updated) and runs paused by a usage limit (see [Agents' work](#agents-work));
+- what agents' work leaves for you: questions (on tickets, and on requests from the Project Manager), tickets they propose, work ready for review, reviews that did not finish, tickets stopped after too many review rounds or after repeated failures, finished work to check, work that could not reach GitHub (a push refused, a project that could not be downloaded, a pull request not opened or not updated) and runs paused by a usage limit (see [Agents' work](#agents-work));
 - pull requests to merge, and pull requests closed on GitHub without merging (see [Pull requests to merge](#pull-requests-to-merge) and [Closed pull requests](#closed-pull-requests));
 - runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
@@ -27,11 +27,12 @@ A limited account is not an item of its own: the runs it paused are listed below
 
 ## Agents' work
 
-Each item links to its ticket; its buttons are the same as on the ticket page.
+Each item links to its ticket (a request's question, to its request); its buttons are the same as on the ticket page.
 
 | Item | Why it appears | What to do |
 |---|---|---|
 | Question from agent … | An agent needs a decision only you can make; the ticket is **Waiting for you**. | Write your answer in **Your answer** and click **Send answer**, as on the ticket page (see [Questions](runs.md#questions)). |
+| Question on request 7 (WEB): … | The Project Manager, planning the request, needs a decision only you can make; "(new project)" names a request with no project. It links to the request. | Write your answer in **Your answer** and click **Send answer**, as on the request's page (see [Questions](requests.md#questions)). |
 | Ticket proposed by agent … | While working, an agent found more work and proposed a ticket. | **Accept** it (it moves to **To do**) or **Reject** it (see [Tickets proposed by agents](tickets.md#tickets-proposed-by-agents)). |
 | Ready for review: … | An agent's work was accepted and CI passed, or found nothing to run: the ticket is **In review**. The item shows the pull request, the CI line ("CI passed on GitHub for commit …", "(checked again by you at …)" after **Check CI again**, or "No CI found for commit …"), a line when the work changed workflow files, what each choice costs, and whether the review starts by itself. | **Start review** (Quality reviews it, one Claude Code session) or **Skip review** (none; you check the pull request yourself). From version 0.5.0 the scheduler starts the review by itself if you do neither, unless **Start reviews by themselves** is off for the project (see [Reviews by themselves](projects.md#reviews-by-themselves)). See [Review by Quality](tickets.md#review-by-quality). |
 | Review did not finish for … | Quality's review run ended without a decision, or with a decision that was not applied: the item says why, or which decision and why. It never counts as a failed attempt. | **Start review** again, or **Skip review**. See [When the review did not finish](tickets.md#when-the-review-did-not-finish). |

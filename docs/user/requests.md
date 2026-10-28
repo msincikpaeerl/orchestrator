@@ -33,3 +33,22 @@ The [Activity](activity.md) log shows each request submitted and each comment ad
 ## Add a comment
 
 On the request's page, write in **Add a comment** and click **Add comment**: something you forgot, a detail, a change of mind. The Project Manager will read every comment when it plans the request. A comment can be as long as **Longest comment** allows.
+
+## Questions
+
+While it plans a request (later version), the Project Manager may need a decision only you can make. It asks a question, and the request stays **Planning**:
+
+- **Needs you** shows **Question on request 7 (WEB): <its first line>**, or **(new project)** for a request with no project, with the question and an answer box;
+- the request's page says "Planning: the Project Manager waits for your answer." and shows the same yellow box between the request and its plan.
+
+1. Read the question.
+2. Write your answer in **Your answer**, on either screen. Markdown is allowed; the answer can be as long as **Longest comment** allows.
+3. Click **Send answer**.
+
+The question and your answer stay in the request's conversation, marked **Question from agent …** and **Your answer**, and the item leaves **Needs you**. The Project Manager goes on:
+
+- within the **Waiting run lifetime** (30 minutes by default), it receives your answer at once, in the same session;
+- after it, its session was closed to free the machine; your answer starts it again on the same machine, where it finds the request and your answer;
+- if that machine is offline, the planning run fails because of it (this does not count as a failed attempt), the request goes back to **Open**, and your answer stays in the conversation, with a note from the Orchestrator saying so: the next planning run reads it.
+
+If the planning run ends before you answer (it crashed or was stopped), the request goes back to **Open** and the question leaves **Needs you**; it stays in the conversation. A request of an archived project cannot be answered.
