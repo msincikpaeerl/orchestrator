@@ -14,6 +14,7 @@ import {
   PullRequestWatchFailure,
 } from './pull-requests.js';
 import { ReviewDecision, ReviewEnd, ReviewStart, StopCause } from './reviews.js';
+import { RequestNumber, RequestProject } from './requests.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
@@ -117,6 +118,18 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('question'),
     ticket: TicketRef,
+    question: Comment,
+    /** When it was asked. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * The open question of a request's planning run (owner's answers 1, 2 and 5, lot 5 step D2b):
+   * the request `planning`, its latest question unanswered, its project not archived; answered
+   * with the same answer box as the request page.
+   */
+  z.object({
+    type: z.literal('request_question'),
+    request: z.object({ number: RequestNumber, line: z.string(), project: RequestProject }),
     question: Comment,
     /** When it was asked. */
     since: z.iso.datetime(),

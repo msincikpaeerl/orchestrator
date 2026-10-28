@@ -2,8 +2,10 @@ import { schema } from '@orchestrator/db';
 import {
   ApiError,
   MCP_OUTPUT_MAX_CHARACTERS,
+  NeedsYouResponse,
   RequestDetail,
   type McpError,
+  type NeedsYouItem,
   type McpResult,
   type RunInput,
   type RunResume,
@@ -426,5 +428,42 @@ describe('the end of a planning run (owner answer 7)', () => {
       runId,
       failureReason: 'crash',
     });
+  });
+});
+
+describe('Needs you (lot 5 step D2b, owner answers 1 and 2)', () => {
+  async function items(): Promise<NeedsYouItem[]> {
+    const response = await h.call('GET', '/api/needs-you');
+    expect(response.statusCode, response.body).toBe(200);
+    return NeedsYouResponse.parse(response.json()).items.filter(
+      (item) => item.type === 'request_question',
+    );
+  }
+
+  it('shows the open question with its request, until the owner answers it', async () => {
+    await asked({ body: 'A contact form\non the home page.' }, true, 'Which **pages**?');
+    const [item, ...others] = await items();
+    expect(others).toEqual([]);
+    expect(item).toMatchObject({
+      type: 'request_question',
+      request: { number: 1, line: 'A contact form', project: { key: 'WEB' } },
+      question: { kind: 'question', body: 'Which **pages**?', author: 'agent' },
+    });
+    expect(item?.since).toBe(item?.question.createdAt);
+    const answered = await h.call('POST', '/api/requests/1/answer', { body: 'The home page.' });
+    expect(answered.statusCode, answered.body).toBe(200);
+    expect(await items()).toEqual([]);
+  });
+
+  it('goes when the planning run ends unanswered, or the project is archived', async () => {
+    const { daemon, runId } = await asked();
+    expect(await items()).toHaveLength(1);
+    await h.t.db.update(schema.projects).set({ status: 'archived' });
+    expect(await items()).toEqual([]);
+    await h.t.db.update(schema.projects).set({ status: 'active' });
+    expect(await items()).toHaveLength(1);
+    await h.report(daemon, { ...state(runId, { state: 'ended', reason: 'crashed' }) });
+    expect(await request()).toMatchObject({ status: 'open' });
+    expect(await items()).toEqual([]);
   });
 });

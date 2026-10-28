@@ -10,6 +10,7 @@ import {
   TicketStatus,
   TicketStop,
   WorkflowReason,
+  requestLine,
   type NeedsYouResponse,
 } from '@orchestrator/protocol';
 import {
@@ -37,6 +38,7 @@ import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
 import { runDownload } from './runs/download.js';
+import { requestQuestion } from './requests/model.js';
 import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { automaticMergeView } from './tickets/automatic-merge.js';
@@ -202,6 +204,41 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
       ticket: ticketRef,
       since: run.statusSince,
       resume: candidate?.reason ?? null,
+    });
+  }
+  return items;
+}
+
+/**
+ * The open questions of planning runs (owner's answer 2, lot 5 step D2b): a `planning` request
+ * whose latest question has no answer, on a project not archived or for a new project.
+ */
+export async function requestQuestionItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ request: schema.requests, project: schema.projects })
+    .from(schema.requests)
+    .leftJoin(schema.projects, eq(schema.projects.id, schema.requests.projectId))
+    .where(
+      and(
+        eq(schema.requests.status, 'planning'),
+        or(isNull(schema.requests.projectId), eq(schema.projects.status, 'active')),
+      ),
+    );
+  if (rows.length === 0) return [];
+  const items: Items = [];
+  const profiles = await profileLinks(db);
+  for (const { request, project } of rows) {
+    const open = await requestQuestion(db, request.id);
+    if (!open || open.answer) continue;
+    items.push({
+      type: 'request_question',
+      request: {
+        number: request.number,
+        line: requestLine(request.body),
+        project: project ? { key: project.key, name: project.name } : null,
+      },
+      question: toComment(open.question, profiles),
+      since: open.question.createdAt.toISOString(),
     });
   }
   return items;
@@ -759,6 +796,7 @@ export function registerNeedsYouRoutes(
       }
     }
     items.push(...(await ticketItems(db, runs, now())));
+    items.push(...(await requestQuestionItems(db)));
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));
 
     // Setup still to do (02, section 3), before the rest.
