@@ -98,11 +98,12 @@ The owner and the Project Manager can exchange messages on a request before a pl
 | request_id | The request it answers. |
 | summary | What the Project Manager proposes, in prose. |
 | new_project | Optional project definition when the plan creates a project. |
+| tickets | From lot 5: the plan's tickets as `plan.propose` gave them once checked (06, section 4.4), each with its local key, until approval creates them (below). |
 | status | `proposed`, `approved`, `rejected`, `superseded`. |
 | owner_feedback | Text given by the owner when rejecting. |
 | decided_at | Timestamp of approval or rejection. |
 
-Tickets proposed by a plan exist in the `proposed` state. Tickets an agent creates with `ticket.create` outside a plan are also `proposed`, with no plan: the owner accepts or rejects each one (04, section 2; owner's decision, lot 2 step A). Approving the plan creates the project (if any) and moves its tickets to `todo`. Rejecting it with feedback sends the request back to the Project Manager, who produces a new plan; the old one becomes `superseded`.
+A plan's tickets are kept on the plan, not as tickets of the project, until the owner approves it (owner's answer 9, lot 5 step E1). Tickets an agent creates with `ticket.create` outside a plan are also `proposed`, with no plan: the owner accepts or rejects each one (04, section 2; owner's decision, lot 2 step A). Approving the plan creates the project (if any) and then its tickets, in `todo`. Rejecting it with feedback sends the request back to the Project Manager, who produces a new plan; the old one becomes `superseded`.
 
 Limit: a plan contains at most 15 tickets by default (configurable, see 04 section 8). Larger work is split into several plans.
 
@@ -110,8 +111,8 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 
 - **new_project** holds the Project Manager's name, kind and description. At approval the owner confirms or changes the name, the key (suggested from the name), the repository name (the name's slug, checked free on the owner's account) and the visibility (private by default); **Approve** then creates the project with a new repository and the skeleton (08, section 3.1). Linking an existing repository stays on the Projects screen. The kind `android_app` is refused until lot 7 (Agent management, with the Android Developer).
 - A plan for a new project has exactly one **bootstrap ticket** (`chore`, assigned to the Architect, blocked by nothing), to which the server adds the fixed criteria of 08 section 3.2 it lacks; every other ticket of the plan is blocked by it.
-- Before approving, the owner can edit a plan ticket's title, description, acceptance criteria, type, priority, assignee and dependencies, and remove a ticket (it is `cancelled`); a ticket cannot be added. Each edit writes an event. **Approve** checks the plan again as `plan.propose` does (06, section 4.4).
-- The plan's tickets become `todo` at approval; for a new project they wait for its setup to be `ready`, as any ticket of a project not ready.
+- Before approving, the owner can edit a plan ticket's title, description, acceptance criteria, type, priority, assignee and dependencies, and remove a ticket (it leaves the plan); a ticket cannot be added. Each edit writes an event. **Approve** checks the plan again as `plan.propose` does (06, section 4.4).
+- The plan's tickets become tickets of the project at approval, in `todo`, numbered then in the plan's order, each with `plan_id`; for a new project they wait for its setup to be `ready`, as any ticket of a project not ready. Before approval they are not tickets: they take no number, never show on the board, and a rejected or superseded plan leaves nothing in the project (owner's answer 9, lot 5 step E1: one form for every plan, new project or existing one, so step F edits them in one way, and no cancelled tickets or numbers used up by each rejection).
 
 ### 3.4 Ticket
 
@@ -119,7 +120,7 @@ Limit: a plan contains at most 15 tickets by default (configurable, see 04 secti
 |---|---|
 | id, number | Identifier and human number per project: the project key and a sequence starting at 1 (`WEB-12`). Numbers are never reused. |
 | project_id | Owning project. |
-| plan_id | Plan that created it, if any. Empty for a ticket created by the owner or by an agent with `ticket.create`. |
+| plan_id | Plan whose approval created it, if any. Empty for a ticket created by the owner or by an agent with `ticket.create`. |
 | parent_id | Optional parent ticket, used to group work (epic). A parent ticket has no run of its own. Not built yet: left out of lot 5, for later, in no lot (owner's answer 13, lot 5 step A). |
 | type | `feature`, `bug`, `chore`, `docs`, `spike`. See 04 for DoD per type. |
 | title | Short title. |

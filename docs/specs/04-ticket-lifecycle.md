@@ -9,7 +9,7 @@ This document defines the ticket states, who may move a ticket between them, and
 
 | State | Meaning |
 |---|---|
-| `proposed` | Part of a plan not yet approved, or created by an agent with `ticket.create` and not yet accepted by the owner. Plan tickets are not visible on the board by default; tickets proposed by agents are (02, section 6.3). |
+| `proposed` | Created by an agent with `ticket.create` and not yet accepted by the owner; shown on the board (02, section 6.3). A plan's tickets are not tickets until the plan is approved, which creates them in `todo` (01, section 3.3; owner's answer 9, lot 5 step E1). |
 | `todo` | Approved and waiting for work. May be blocked or not assigned yet. |
 | `in_progress` | A run is working on it. |
 | `waiting_human` | An agent asked the owner a question. Work is paused until it is answered. |
@@ -22,10 +22,10 @@ Blocked and eligible are derived conditions of `todo` (see 01, section 3.4). The
 
 ```mermaid
 stateDiagram-v2
-    [*] --> proposed: PM creates in a plan, or agent creates with ticket.create
-    [*] --> todo: owner creates
-    proposed --> todo: owner approves plan, or accepts an agent's ticket
-    proposed --> cancelled: plan rejected or superseded, or owner rejects an agent's ticket
+    [*] --> proposed: agent creates with ticket.create
+    [*] --> todo: owner creates, or approves a plan
+    proposed --> todo: owner accepts an agent's ticket
+    proposed --> cancelled: owner rejects an agent's ticket
     todo --> in_progress: scheduler or Run now starts a run
     in_progress --> waiting_human: agent asks a question
     waiting_human --> in_progress: owner answers
@@ -63,12 +63,10 @@ stateDiagram-v2
 
 | From → To | Performed by | Guard |
 |---|---|---|
-| (new) → `proposed` | Project Manager | Created inside a plan. |
 | (new) → `proposed` | Any agent with `ticket.create` permission | Outside a plan. Limited per run (see section 8), flagged "created by agent", listed in "Needs you". The project is `ready` and not archived. |
 | (new) → `todo` | Owner | — |
-| `proposed` → `todo` | System, when the owner approves the plan | — |
+| (new) → `todo` | System, when the owner approves a plan | The plan's tickets, kept on the plan until then (01, section 3.3; owner's answer 9, lot 5 step E1). |
 | `proposed` → `todo` | Owner, with **Accept** | The ticket was created by an agent (no plan). |
-| `proposed` → `cancelled` | System, when the plan is rejected or superseded | — |
 | `proposed` → `cancelled` | Owner, with **Reject** | The ticket was created by an agent (no plan). An optional comment is posted as a `status_change` comment. |
 | `todo` → `in_progress` | Scheduler, or the owner with **Run now** | Ticket is eligible (01, section 3.4) and its account can start a run (07, section 2, step 1; Run now without the schedule windows and the daily budget, 07 section 3); a run is created. Until the scheduler exists (lot 4), Run now is the only way a run starts (owner's decision, lot 2 step A). The scheduler never takes a ticket that is stopped, held, or has a blocking "Needs you" item (07, section 1). |
 | `in_progress` → `waiting_human` | Assigned agent, by posting a `question` | Question body is not empty. |
