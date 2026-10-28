@@ -39,18 +39,26 @@ async function changeFile(file: string, change: (text: string) => string) {
 }
 
 describe('seeding the default profiles (03, section 3)', () => {
-  it('seeds the Architect, Quality and the Web Developer at start, with their events', async () => {
+  it('seeds the Architect, the Project Manager, Quality and the Web Developer at start, with their events', async () => {
     const rows = await profiles();
-    expect(rows.map((row) => row.key)).toEqual(['architect', 'quality', 'web_dev']);
-    // Quality is the reviewer (03, section 2.5; lot 3 step H1).
+    expect(rows.map((row) => row.key)).toEqual(['architect', 'pm', 'quality', 'web_dev']);
+    // The Project Manager plans (03, section 2.1; lot 5 step E1a).
     expect(rows[1]).toMatchObject({
+      role: 'planner',
+      model: 'sonnet',
+      isDefault: true,
+      version: 1,
+      mcpPermissions: ROLE_MCP_PERMISSIONS.planner,
+    });
+    // Quality is the reviewer (03, section 2.5; lot 3 step H1).
+    expect(rows[2]).toMatchObject({
       role: 'reviewer',
       model: 'sonnet',
       isDefault: true,
       version: 1,
       mcpPermissions: ROLE_MCP_PERMISSIONS.reviewer,
     });
-    for (const row of rows.filter((each) => each.key !== 'quality')) {
+    for (const row of rows.filter((each) => each.key !== 'quality' && each.key !== 'pm')) {
       expect(row).toMatchObject({
         role: 'builder',
         model: 'sonnet',
@@ -66,6 +74,7 @@ describe('seeding the default profiles (03, section 3)', () => {
       (await profileEvents()).map((event) => [event.type, event.actor, event.payload]),
     ).toEqual([
       ['agent_profile.created', 'system', { key: 'architect', name: 'Architect', version: 1 }],
+      ['agent_profile.created', 'system', { key: 'pm', name: 'Project Manager', version: 1 }],
       ['agent_profile.created', 'system', { key: 'quality', name: 'Quality', version: 1 }],
       ['agent_profile.created', 'system', { key: 'web_dev', name: 'Web Developer', version: 1 }],
     ]);
@@ -78,7 +87,7 @@ describe('seeding the default profiles (03, section 3)', () => {
       updated: [],
     });
     expect(await profiles()).toEqual(before);
-    expect(await profileEvents()).toHaveLength(3);
+    expect(await profileEvents()).toHaveLength(4);
   });
 
   it("raises a profile's version when its file changed, with its event", async () => {
@@ -87,8 +96,9 @@ describe('seeding the default profiles (03, section 3)', () => {
     );
     const result = await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
     expect(result).toEqual({ created: [], updated: ['web_dev'] });
-    const [architect, quality, webDev] = await profiles();
+    const [architect, pm, quality, webDev] = await profiles();
     expect(architect?.version).toBe(1);
+    expect(pm?.version).toBe(1);
     expect(quality?.version).toBe(1);
     expect(webDev?.version).toBe(2);
     expect(webDev?.allowedTools).toContain('Bash(uniq *)');
@@ -101,17 +111,17 @@ describe('seeding the default profiles (03, section 3)', () => {
 
     // The next start with the same files changes nothing more.
     await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
-    expect((await profiles()).map((row) => row.version)).toEqual([1, 1, 2]);
+    expect((await profiles()).map((row) => row.version)).toEqual([1, 1, 1, 2]);
   });
 
   it('raises every default profile when the shared rules changed', async () => {
     await changeFile('rules/shared.md', (text) => `${text}\nOne more rule.\n`);
     const result = await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
-    expect(result.updated).toEqual(['architect', 'quality', 'web_dev']);
-    expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2]);
+    expect(result.updated).toEqual(['architect', 'pm', 'quality', 'web_dev']);
+    expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2, 2]);
   });
 
-  it('raises only the profiles whose runs receive the builder or the reviewer rules when they changed (lot 3 step H5)', async () => {
+  it('raises only the profiles whose runs receive the builder, the reviewer or the planner rules when they changed (lot 3 step H5; lot 5 step E1a)', async () => {
     await changeFile('rules/builder.md', (text) =>
       text.replace('Never rebase', 'Never, ever rebase'),
     );
@@ -123,13 +133,17 @@ describe('seeding the default profiles (03, section 3)', () => {
     expect((await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy))).updated).toEqual([
       'quality',
     ]);
-    expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2]);
+    await changeFile('rules/planner.md', (text) => text.replace('Never push', 'Never, ever push'));
+    expect((await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy))).updated).toEqual([
+      'pm',
+    ]);
+    expect((await profiles()).map((row) => row.version)).toEqual([2, 2, 2, 2]);
   });
 
   it('raises every default profile when the allowlist template changed', async () => {
     await changeFile('templates/allowlist.md', (text) => text.replace('Any other', 'Every other'));
     const result = await seedAgentProfiles(t.db, await loadShippedAgents(shippedCopy));
-    expect(result.updated).toEqual(['architect', 'quality', 'web_dev']);
+    expect(result.updated).toEqual(['architect', 'pm', 'quality', 'web_dev']);
   });
 
   it('keeps the profile row, so tickets assigned to it stay assigned', async () => {
@@ -151,9 +165,9 @@ describe('seeding the default profiles (03, section 3)', () => {
     await changeFile('architect.md', (text) => `${text}\nOne more line.\n`);
     const changed = await loadShippedAgents(shippedCopy);
     await Promise.all([seedAgentProfiles(t.db, changed), seedAgentProfiles(t.db, changed)]);
-    expect((await profiles()).map((row) => row.version)).toEqual([2, 1, 1]);
+    expect((await profiles()).map((row) => row.version)).toEqual([2, 1, 1, 1]);
     expect(shipped.profiles[0]?.shippedHash).not.toBe(changed.profiles[0]?.shippedHash);
-    expect(await profileEvents()).toHaveLength(4);
+    expect(await profileEvents()).toHaveLength(5);
   });
 });
 
@@ -164,6 +178,7 @@ describe('GET /api/agents', () => {
     expect(response.statusCode, response.body).toBe(200);
     expect(AgentListResponse.parse(response.json()).agents).toEqual([
       expect.objectContaining({ key: 'architect', name: 'Architect', role: 'builder', version: 1 }),
+      expect.objectContaining({ key: 'pm', name: 'Project Manager', role: 'planner' }),
       expect.objectContaining({ key: 'quality', name: 'Quality', role: 'reviewer' }),
       expect.objectContaining({ key: 'web_dev', name: 'Web Developer', model: 'sonnet' }),
     ]);
