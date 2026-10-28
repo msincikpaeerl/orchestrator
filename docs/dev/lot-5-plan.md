@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a done (2026-10-28)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a and D2b done (2026-10-28)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -241,13 +241,28 @@ The owner's answers to D2's questions (2026-10-28), A to all:
 
 *Done 2026-10-28*: migration `0045_planning_runs` (`runs.request_id`, `branch_name` optional, the check `runs_subject`, at most one active planning run per request); `McpRequest`, `request_get` and `request_ask` in `packages/protocol` (`runMcpTools` lists them in planning runs only), the event `request.status_changed` (causes `run_started`, `run_ended`); `apps/server/src/requests/model.ts` (the open question, the status change); the MCP backend's planning path (`PlanCall`; locks: project, request, run, the order `withRun` now follows) and nine new parts of `mcp-tools.md`, with `request-only` (`FORBIDDEN`: every role has the reading tools, so the server refuses the request tools in a ticket run by purpose); `RunService.answerRequest` and `deliverAnswer`, shared with the ticket's answer; the template `agents/templates/request-answer.md`; `setStatus` puts a planning request back to `open` at any end of its run; the Activity text of `request.status_changed` (the event's guard needs one). The planning run's progress line is kept, not shown (no screen shows planning runs before E2). Tests: `apps/server/test/request-questions-and-answers.test.ts` (16 tests, about 6 s; named for shard 4, which moves `apps/daemon/test/real-github-guard.test.ts`, 0.5 s, to shard 3; `request-questions.test.ts` landed in shard 1), `planning-run.ts`, `every-event.ts`, `mcp.test.ts`, `tool-texts.test.ts`, `messages.test.ts` (snapshot), `files.test.ts`, the protocol's tool and permission tests, the daemon's `planning-run.test.ts` and `permissions-relay.test.ts`. Specs 01 (3.2, 3.10), 03 (3.2), 04 (6) and 06 (4.1, 4.4, 5); `docs/dev/testing.md`.
 
-### [ ] D2b. The question on screen (branch `lot5/d2b-request-question-screens`)
+### [x] D2b. The question on screen (branch `lot5/d2b-request-question-screens`)
 
 - Needs you: "Question on request 7: <first line>", with the same answer box; the request page shows its open question with the answer box.
 - The e2e control server starts a planning run with D2a's helper.
 - Help > Requests and Needs you; CHANGELOG.
 
 **Done when** Playwright on both viewports sees the question in Needs you, answers it, and sees the request page change.
+
+The owner's answers to D2b's questions (2026-10-28), A to all, with a change to answer 5:
+
+1. **The item**: a new Needs you type, `request_question` (the request's number, first line and project, the question, when it was asked); the ticket's `question` is unchanged.
+2. **When it shows**: the request `planning`, its latest question unanswered, its project not archived (a request with no project counts as not archived).
+3. **The open question on the request page**: worked out by the page as the ticket's (`planning`, its latest question with no answer); the request detail API is unchanged.
+4. **The answer box**: one box for tickets and requests (same title, **Your answer**, **Send answer**); a request's answer goes to `POST /api/requests/<number>/answer`, its link to Help > Requests > "Questions".
+5. **The card**: the heading "Question on request 7 (TESTB): <first line>", or "(new project)" for a request with none, linked to the request page, then the answer box (owner's change: the heading names the project). The request page's question box keeps the ticket's heading ("Question from agent …"), so it carries none of these words.
+6. **The request page**: the question box between the request's card and **Plan**; a `planning` request's line "Planning: the Project Manager is working on it." or "Planning: the Project Manager waits for your answer."; the conversation marks the Project Manager's questions and the owner's answers.
+7. **Help and CHANGELOG**: Help > Requests > "Questions" (live, after the session closed, the machine offline) and Help > Needs you's row; the sentences saying nothing starts yet stay until E2; the CHANGELOG says the questions show once the Project Manager plans requests.
+8. **The e2e control**: `POST /daemon/planning-run` on the e2e server calls D2a's helper on the latest scripted daemon's machine and returns the run's id and token.
+9. **The e2e tests**, in `requests.e2e.ts`: a question answered from Needs you, then seen on the request page; a question answered on the request page, the Needs you item gone; a screenshot of each.
+10. No `PROTOCOL_VERSION` bump (no daemon change); spec 02 (sections 4 and 5.3) as built; `docs/dev/testing.md` names the control; planning runs still absent from Activity > Runs until E2.
+
+*Done 2026-10-28*: the Needs you item `request_question` in `packages/protocol` (`api/needs-you.ts`) and `requestQuestionItems` in `apps/server/src/needs-you.ts` (D2a's `requestQuestion`); `QuestionAnswer` (`apps/web/src/runs/components.tsx`) takes a `QuestionTarget`, a ticket or a request; `RequestQuestionCard` on Needs you; on the request page the open question (`requestOpenQuestion`), the planning line and the conversation's labels (`requestCommentAuthor`), with `requestQuestionHeading`, in `apps/web/src/requests/text.ts`. The e2e server's control `POST /daemon/planning-run` and the fixture `startPlanningRun`. Help > Requests > "Questions" and Help > Needs you's row; CHANGELOG; specs 02 (sections 4 and 5.3); `docs/dev/testing.md`. Tests: `request-questions-and-answers.test.ts` (2 new: the item until the answer; gone at the run's end and while the project is archived), `apps/web/src/requests/text.test.ts` (new), `requests.e2e.ts` (2 new, both viewports, screenshots `request-question-needs-you` and `request-question`).
 
 ### [ ] E1. The Project Manager (branch `lot5/e1-project-manager`)
 

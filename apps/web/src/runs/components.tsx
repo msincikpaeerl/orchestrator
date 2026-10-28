@@ -1,4 +1,5 @@
 import {
+  RequestDetail,
   Run,
   TicketDetail,
   type AccountStatus,
@@ -13,7 +14,7 @@ import { api } from '../api';
 import { UntrustedMarkdown } from '../components/markdown';
 import { Button, ConfirmDialog, ErrorMessage, HelpLink, TextArea } from '../components/ui';
 import { formatDateTime } from '../github/text';
-import { ticketsChanged } from '../queries';
+import { requestsChanged, ticketsChanged } from '../queries';
 import { refusalText } from '../refusals';
 import {
   accountStatusText,
@@ -187,29 +188,47 @@ export function RunActions({ run }: { run: Run }) {
 export function AnswerBox({ ticket }: { ticket: TicketDetail }) {
   const question = openQuestion(ticket);
   if (!question) return null;
-  return <QuestionAnswer ticket={ticket} question={question} />;
+  return <QuestionAnswer target={{ ticket }} question={question} />;
 }
 
-/** The answer box for one open question of a ticket. */
+/**
+ * Where an answer goes: a ticket's run, or a request's planning run (owner's answer 4, lot 5 step
+ * D2b), with its Help section.
+ */
+export type QuestionTarget =
+  { ticket: { projectKey: string; number: number } } | { request: number };
+
+async function sendAnswer(target: QuestionTarget, input: AnswerRequest): Promise<void> {
+  if ('request' in target) {
+    await requestsChanged(
+      await api('POST', `/api/requests/${String(target.request)}/answer`, RequestDetail, input),
+    );
+    return;
+  }
+  const { projectKey, number } = target.ticket;
+  await ticketsChanged(
+    await api(
+      'POST',
+      `/api/projects/${encodeURIComponent(projectKey)}/tickets/${String(number)}/answer`,
+      TicketDetail,
+      input,
+    ),
+  );
+}
+
+/** The answer box for one open question of a ticket or a request. */
 export function QuestionAnswer({
-  ticket,
+  target,
   question,
 }: {
-  ticket: { projectKey: string; number: number };
+  target: QuestionTarget;
   question: Comment;
 }) {
   const [body, setBody] = useState('');
   const [missing, setMissing] = useState(false);
   const answer = useMutation({
-    mutationFn: (input: AnswerRequest) =>
-      api(
-        'POST',
-        `/api/projects/${encodeURIComponent(ticket.projectKey)}/tickets/${String(ticket.number)}/answer`,
-        TicketDetail,
-        input,
-      ),
-    onSuccess: (changed) => ticketsChanged(changed),
-    onError: () => ticketsChanged(),
+    mutationFn: (input: AnswerRequest) => sendAnswer(target, input),
+    onError: () => ('request' in target ? requestsChanged() : ticketsChanged()),
   });
 
   function submit(event: SubmitEvent) {
@@ -256,7 +275,9 @@ export function QuestionAnswer({
           <Button type="submit" disabled={answer.isPending}>
             Send answer
           </Button>
-          <HelpLink page="runs#questions">About questions</HelpLink>
+          <HelpLink page={'request' in target ? 'requests#questions' : 'runs#questions'}>
+            About questions
+          </HelpLink>
         </div>
       </form>
     </section>

@@ -14,6 +14,7 @@ import {
 import { createPool, endPool } from '@orchestrator/db';
 import { z } from 'zod';
 import { daemonPackageFile } from '../src/downloads.js';
+import { createDatabase } from '../src/database.js';
 import { createLogger } from '../src/logger.js';
 import { ciWatcherOf } from '../src/app.js';
 import { startServer } from '../src/server.js';
@@ -24,6 +25,7 @@ import { installRealGitHubGuard } from '@orchestrator/daemon/testing/real-github
 import { GITHUB_CONTROLS, githubControl } from './fake-github-controls.js';
 import { fullAccount, startFakeGitHub } from './fake-github.js';
 import { TEST_SECRET_KEY } from './helpers.js';
+import { startPlanningRun } from './planning-run.js';
 
 // The server for the end-to-end tests (apps/web/e2e, docs/dev/testing.md): the built UI, a new
 // database and the fake GitHub. Started by Playwright; stopped with SIGTERM.
@@ -141,6 +143,7 @@ const server = await startServer(
 // "deleted"}}` waits for the latest daemon's `branch.delete` not answered yet and answers it
 // (`branch.delete_result`, the same id); the daemon answers nothing by itself.
 const pool = createPool({ connectionString: database.url });
+const db = createDatabase(pool);
 
 const daemons: { daemon: ScriptedDaemon; heartbeat: NodeJS.Timeout }[] = [];
 /** The answers held while POST /daemon/hold-input holds them; null when they go at once. */
@@ -176,6 +179,8 @@ function latestDaemon(): ScriptedDaemon {
 }
 
 const RunControl = z.object({ runId: z.uuid() });
+/** A planning run of a request on a machine, before step E2 starts one (lot 5 step D2b). */
+const PlanningRunControl = z.object({ request: z.int().positive(), machineId: z.uuid() });
 /** One CI check of a run's made-up commit, with GitHub's answers for it (lot 3 step G1b). */
 const CiCheckControl = z.object({
   runId: z.uuid(),
@@ -311,6 +316,10 @@ async function handle(
     }, 5000);
     daemons.push({ daemon, heartbeat });
     return welcome.accepted ? 204 : 409;
+  }
+  if (request.method === 'POST' && request.url === '/daemon/planning-run') {
+    const input = PlanningRunControl.parse(await readJson(request));
+    return { status: 200, body: await startPlanningRun(db, input) };
   }
   if (request.method === 'POST' && request.url === '/daemon/run') {
     const { runId } = RunControl.parse(await readJson(request));
