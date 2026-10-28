@@ -1,4 +1,4 @@
-<!-- Rendered by apps/server/src/agents/plan-message.test.ts: review it with the templates. -->
+<!-- Rendered by apps/server/src/agents/planning-run-message.test.ts: review it with the templates. -->
 
 # Appended to the system prompt (Project Manager)
 

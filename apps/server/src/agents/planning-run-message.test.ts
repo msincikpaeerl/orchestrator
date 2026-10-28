@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadShippedAgents, loadTemplates } from './files.js';
 import { FirstMessageTooLarge, nudgeMessage, profileRunInstructions } from './messages.js';
-import { planFirstMessage, type PlanRequest } from './plan-message.js';
+import { planFirstMessage, type PlanRequest } from './planning-run-message.js';
 
 // The first message of a `plan` run (owner's answer 5, lot 5 step E1): what it holds for an
 // existing project, a new project and after a rejection, and each cut in its order.
@@ -232,7 +232,7 @@ describe('the Project Manager and its messages (snapshot)', () => {
     const pm = shipped.profiles.find((profile) => profile.key === 'pm');
     if (!pm) throw new Error('no pm profile');
     const sections = [
-      '<!-- Rendered by apps/server/src/agents/plan-message.test.ts: review it with the templates. -->',
+      '<!-- Rendered by apps/server/src/agents/planning-run-message.test.ts: review it with the templates. -->',
       '# Appended to the system prompt (Project Manager)',
       profileRunInstructions(shipped, pm, 'plan'),
       '# First message (plan), an existing project',
@@ -245,7 +245,7 @@ describe('the Project Manager and its messages (snapshot)', () => {
       nudgeMessage(await loadTemplates(), 'plan'),
     ];
     await expect(sections.join('\n\n')).toMatchFileSnapshot(
-      './__snapshots__/plan-messages.snapshot.md',
+      './__snapshots__/planning-run-messages.snapshot.md',
     );
   });
 });
