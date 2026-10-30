@@ -387,6 +387,16 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     runId: '00000000-0000-4000-8000-000000000001',
     failureReason: 'machine_offline',
   },
+  'plan.proposed': {
+    request: 7,
+    project: null,
+    planId: '00000000-0000-4000-8000-000000000002',
+    tickets: 6,
+    newProject: 'Bakery website',
+    agent: 'pm',
+    agentName: 'Project Manager',
+    runId: '00000000-0000-4000-8000-000000000001',
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -657,6 +667,40 @@ describe('eventText', () => {
         ),
       ),
     ).toBe('Request 7: planning, a planning run started');
+  });
+
+  it('says what a proposed plan holds, and that the request has a plan to review (lot 5 step E1b)', () => {
+    const pieces = eventText(entry('plan.proposed', { entityType: 'request' }));
+    expect(plainText(pieces)).toBe(
+      'Agent “Project Manager” proposed a plan for Request 7: 6 tickets, new project “Bakery website”',
+    );
+    expect(links(pieces)).toEqual([{ text: 'Request 7', to: '/requests/7' }]);
+    expect(
+      plainText(
+        eventText(
+          entry('plan.proposed', {
+            entityType: 'request',
+            payload: { ...examples['plan.proposed'], tickets: 1, newProject: null },
+          }),
+        ),
+      ),
+    ).toBe('Agent “Project Manager” proposed a plan for Request 7: 1 ticket');
+    expect(
+      plainText(
+        eventText(
+          entry('request.status_changed', {
+            payload: {
+              request: 7,
+              project: null,
+              from: 'planning',
+              to: 'plan_proposed',
+              cause: 'plan_proposed',
+              runId: '00000000-0000-4000-8000-000000000001',
+            },
+          }),
+        ),
+      ),
+    ).toBe('Request 7: a plan to review');
   });
 
   it('lists the tickets of an import, each a link', () => {

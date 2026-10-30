@@ -130,6 +130,7 @@ export const TEMPLATE_NAMES = [
   'fix-review',
   'mcp-tools',
   'plan',
+  'bootstrap',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 

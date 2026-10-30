@@ -63,7 +63,7 @@ export async function changeRequestStatus(
   input: {
     request: RequestRow;
     to: RequestStatus;
-    cause: 'run_started' | 'run_ended';
+    cause: 'run_started' | 'run_ended' | 'plan_proposed';
     runId: string;
     failureReason?: FailureReason;
     at: Date;

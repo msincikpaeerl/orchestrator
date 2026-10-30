@@ -860,6 +860,29 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     download: null,
     sessionAlive: false,
   });
+  // Request 2's planning run proposes a plan (`plan.proposed`; lot 5 step E1b); request 1's
+  // question still waits for its answer.
+  await call('POST', '/api/requests', { body: 'A home page', project: 'SHOP' });
+  const proposing = await startPlanningRun(t.db, { request: 2, machineId: machine.id });
+  await daemon.request({
+    type: 'run.state',
+    id: randomUUID(),
+    payload: {
+      runId: proposing.runId,
+      at: new Date().toISOString(),
+      claudeSessionId: SESSION,
+      sessionAlive: true,
+      state: 'working',
+    },
+  });
+  await tool({
+    tool: 'plan_propose',
+    runToken: proposing.runToken,
+    input: {
+      summary: 'A contact form.',
+      tickets: [{ key: 'contact', type: 'feature', title: 'Contact form' }],
+    },
+  });
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

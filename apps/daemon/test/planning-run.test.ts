@@ -13,6 +13,7 @@ import { gitIn } from './remote.js';
 import { runStartPayload } from './run-start.js';
 import {
   TIMEOUT,
+  answerTools,
   cloneUrl,
   daemon,
   ended,
@@ -314,6 +315,58 @@ describe('a planning run of an existing project', () => {
         branch: null,
       });
       expect(existsSync(worktreePath(home.paths, run.runId))).toBe(false);
+    },
+    TIMEOUT,
+  );
+});
+
+describe('plan_propose (lot 5 step E1b)', () => {
+  const plan = {
+    summary: 'A one-page website.',
+    tickets: [{ key: 'home', type: 'feature', title: 'Home page' }],
+  };
+
+  it(
+    'ends the run as a submission at the end of the turn once the server accepted the plan',
+    async () => {
+      const manager = daemon();
+      await fake.play({
+        turns: [
+          {
+            steps: [
+              { do: 'mcp', tool: 'plan_propose', arguments: plan },
+              { do: 'text', text: 'The plan is proposed.' },
+            ],
+          },
+        ],
+      });
+      const run = await startPlanning(manager, 'new');
+      expect(await ended(run.runId)).toMatchObject({
+        reason: 'submitted',
+        branch: null,
+        push: null,
+      });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'keeps the run going after a refused plan: the turn ends with no decision',
+    async () => {
+      answerTools(() => ({
+        ok: false,
+        error: { code: 'VALIDATION_FAILED', message: 'Your plan is not recorded.' },
+      }));
+      const manager = daemon();
+      await fake.play({
+        turns: [{ steps: [{ do: 'mcp', tool: 'plan_propose', arguments: plan }] }],
+      });
+      const payload = planningPayload('new');
+      const run = { ...payload, limits: { ...payload.limits, maxNudgesPerRun: 0 } };
+      expect(await manager.handle({ type: 'run.start', id: randomUUID(), payload: run })).toEqual({
+        ok: true,
+      });
+      expect((await ended(run.runId)).reason).toBe('nudges_exhausted');
     },
     TIMEOUT,
   );

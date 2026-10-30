@@ -100,8 +100,75 @@ You already ended the work of this planning run with a decision: end your turn n
 <!-- part: request-waiting-answer -->
 You asked the owner a question and request {{request}} waits for the answer: {{tool}} is not possible now. End your turn; the answer arrives as your next message.
 <!-- part: request-not-planning -->
-Request {{request}} is {{status}}: request_ask needs it planning. End your turn.
+Request {{request}} is {{status}}: {{tool}} needs it planning. End your turn.
 <!-- part: request-text-cut -->
 The rest of the request cannot be read through the tools; ask the owner with request_ask if you need it.
 <!-- part: request-comment-cut -->
 The rest of this comment cannot be read through the tools; ask the owner with request_ask if you need it.
+<!-- part: plan-no-project -->
+Request {{request}} asks for a new project: there is no project yet, so {{tool}} has nothing to work on. Plan it with plan_propose and new_project.
+<!-- part: plan-project-archived -->
+The project {{project}} is archived: no plan can be proposed for it. End your run with ticket_give_up, saying so.
+<!-- part: plan-refused -->
+Your plan is not recorded. Fix every problem below, then call plan_propose again with the whole plan:
+{{problems}}
+<!-- part: plan-problem -->
+- {{place}}: {{message}}
+<!-- part: plan-place-ticket -->
+Ticket {{position}} ({{key}}), {{field}}
+<!-- part: plan-place-whole -->
+The plan
+<!-- part: plan-too-many -->
+{{count}} tickets: at most {{max}} per plan (setting "Most tickets per plan"). Plan the first part of the work now, and say in the summary what a later request should add
+<!-- part: plan-duplicate-key -->
+the key "{{key}}" is already the key of ticket {{earlier}}: give each ticket its own key
+<!-- part: plan-too-long -->
+too long: {{length}} characters, at most {{max}} (setting "{{setting}}")
+<!-- part: plan-too-many-criteria -->
+{{count}} criteria: at most {{max}} (setting "Most acceptance criteria")
+<!-- part: plan-criterion-too-long -->
+criterion {{number}} is too long: {{length}} characters, at most {{max}} (setting "Longest acceptance criterion")
+<!-- part: plan-assignee -->
+{{refusal}}. Choose one of {{assignable}}, or leave the assignee out
+<!-- part: plan-blocks-itself -->
+"{{item}}" is this ticket's own key: a ticket cannot wait for itself
+<!-- part: plan-unknown-key -->
+no ticket of your plan has the key "{{item}}"
+<!-- part: plan-other-project -->
+{{item}} belongs to another project: name keys of your plan, or tickets of {{project}}
+<!-- part: plan-unknown-ticket -->
+there is no ticket {{item}} in the project: use ticket_list to find its tickets
+<!-- part: plan-no-project-ticket -->
+{{item}} is a ticket number, but the request asks for a new project, which has no tickets yet: name keys of your plan
+<!-- part: plan-not-a-reference -->
+"{{item}}" is neither a key of your plan nor a ticket number such as {{project}}-3
+<!-- part: plan-not-a-key -->
+"{{item}}" is not a key of your plan: keys are 1 to 40 lowercase letters, digits, "-" or "_"
+<!-- part: plan-cycle -->
+these tickets wait for each other, so none of them could ever start: {{cycle}}. Remove one of these dependencies
+<!-- part: plan-new-project-unwanted -->
+request {{request}} is for the project {{project}}: leave new_project out
+<!-- part: plan-new-project-missing -->
+request {{request}} asks for a new project: give new_project, with its name, kind and description
+<!-- part: plan-android -->
+Android projects come with version 0.8.0: choose website or web_app. If the request needs an Android app, end your run with ticket_give_up, saying so
+<!-- part: plan-bootstrap-unwanted -->
+the project {{project}} already exists: only a plan for a new project has a bootstrap ticket. Remove bootstrap
+<!-- part: plan-bootstrap-missing -->
+a plan for a new project needs exactly one ticket with bootstrap true: a chore assigned to architect and blocked by nothing, which sets the project up
+<!-- part: plan-bootstrap-several -->
+{{count}} tickets have bootstrap true ({{keys}}): exactly one may have it
+<!-- part: plan-bootstrap-type -->
+the bootstrap ticket must be a chore, not a {{type}}
+<!-- part: plan-bootstrap-assignee -->
+the bootstrap ticket must be assigned to architect
+<!-- part: plan-bootstrap-blocked -->
+the bootstrap ticket waits for nothing: remove its blocked_by (every other ticket waits for it)
+<!-- part: plan-bootstrap-criteria -->
+{{count}} criteria once the {{added}} fixed ones the Orchestrator adds are counted: at most {{max}} (setting "Most acceptance criteria"). Keep at most {{own}} criteria of your own besides the fixed ones
+<!-- part: plan-bootstrap-settings -->
+the setting "{{setting}}" ({{value}}) is too low for the fixed criteria of the bootstrap ticket, which need {{needed}}. Only the owner can raise it: end your run with ticket_give_up, saying so
+<!-- part: plan-accepted -->
+Your plan for request {{request}} is recorded, with {{count}} tickets, and waits for the owner's review. End your turn now, without another tool call.
+<!-- part: plan-accepted-bootstrap -->
+The bootstrap ticket {{key}} is first: it received {{added}} fixed criteria, and every other ticket waits for it.

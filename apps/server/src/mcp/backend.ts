@@ -11,6 +11,7 @@ import {
   MCP_TICKET_LIST_PAGE_SIZE,
   MCP_TOOLS,
   McpPermission,
+  PlanStatus,
   SETTINGS,
   ProjectKind,
   RequestStatus,
@@ -67,6 +68,7 @@ import { recordPush } from '../tickets/branch.js';
 import { applyRunAction } from '../tickets/transitions.js';
 import type { Template, Templates } from '../agents/files.js';
 import { part } from '../agents/messages.js';
+import { checkPlan, recordPlan } from '../requests/plan-propose.js';
 import { cutToFit, fitPage, jsonLength } from './output.js';
 import { checkSubmission, criteriaOutOfRange, refusal } from './submission-checks.js';
 
@@ -168,20 +170,24 @@ interface Call {
 }
 
 /**
- * A planning run's call (06, section 4.4; lot 5 step D2a): its request instead of a ticket. Until
- * step E2 a planning run always has a project.
+ * A planning run's call (06, section 4.4; lot 5 step D2a): its request instead of a ticket, and no
+ * project when the request asks for a new one (lot 5 step E1b).
  */
 interface PlanCall {
   run: RunRow;
-  project: ProjectRow;
+  project: ProjectRow | null;
   ticket: null;
   request: RequestRow;
   profile: ProfileRow;
   machineName: string;
 }
 
+/** A planning run's call on a project: any tool that works on the project's tickets. */
+type ProjectPlanCall = PlanCall & { project: ProjectRow };
+
 /** What the reading tools need: the run's project, and its ticket when it has one. */
-type Scope = Pick<Call, 'project' | 'ticket'> | Pick<PlanCall, 'project' | 'ticket' | 'request'>;
+type Scope =
+  Pick<Call, 'project' | 'ticket'> | Pick<ProjectPlanCall, 'project' | 'ticket' | 'request'>;
 
 export interface McpBackendOptions {
   db: Database;
@@ -282,7 +288,10 @@ export class McpBackend {
       const known = (call: Call) => {
         reference = ticketReference(call.project.key, call.ticket.number);
       };
-      if (found.purpose !== 'plan' && (tool === 'request_get' || tool === 'request_ask')) {
+      if (
+        found.purpose !== 'plan' &&
+        (tool === 'request_get' || tool === 'request_ask' || tool === 'plan_propose')
+      ) {
         // Every role reads, but only a planning run has a request (owner's answer 5, lot 5 step D2a).
         throw refuse(
           'FORBIDDEN',
@@ -332,7 +341,9 @@ export class McpBackend {
     if (!run || run.machineId !== machineId || run.runTokenRevokedAt !== null) {
       throw ended(this.texts);
     }
-    if (run.ticketId === null) throw new Error(`run ${run.id} has no ticket`);
+    if (run.ticketId === null || run.projectId === null) {
+      throw new Error(`run ${run.id} has no ticket`);
+    }
     const [project] = await executor
       .select()
       .from(schema.projects)
@@ -423,13 +434,16 @@ export class McpBackend {
       this.permit(call, tool);
       switch (tool) {
         case 'project_get':
-          return this.projectGet(call);
+          return this.projectGet(this.onProject(call, tool));
         case 'ticket_get':
-          return this.ticketGet(call, input as McpToolInput<'ticket_get'>);
+          return this.ticketGet(this.onProject(call, tool), input as McpToolInput<'ticket_get'>);
         case 'ticket_list':
-          return this.ticketList(call, input as McpToolInput<'ticket_list'>);
+          return this.ticketList(this.onProject(call, tool), input as McpToolInput<'ticket_list'>);
         case 'ticket_comments':
-          return this.ticketComments(call, input as McpToolInput<'ticket_comments'>);
+          return this.ticketComments(
+            this.onProject(call, tool),
+            input as McpToolInput<'ticket_comments'>,
+          );
         case 'agent_list':
           return this.agentList();
         case 'request_get':
@@ -451,11 +465,13 @@ export class McpBackend {
         .where(eq(schema.runs.id, runId));
       if (!projectRow) throw ended(this.texts);
       // The project's row lock first, then the request's, then the run's.
-      await tx
-        .select({ id: schema.projects.id })
-        .from(schema.projects)
-        .where(eq(schema.projects.id, projectRow.projectId))
-        .for('no key update');
+      if (projectRow.projectId !== null) {
+        await tx
+          .select({ id: schema.projects.id })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, projectRow.projectId))
+          .for('no key update');
+      }
       const call = await this.loadPlan(tx, runId, machineId, true);
       known(call);
       this.permit(call, tool);
@@ -466,7 +482,13 @@ export class McpBackend {
         case 'request_ask':
           return this.requestAsk(tx, call, input as McpToolInput<'request_ask'>, commentMaxLength);
         case 'ticket_update':
-          return this.planUpdate(tx, call, input as McpToolInput<'ticket_update'>);
+          return this.planUpdate(
+            tx,
+            this.onProject(call, tool),
+            input as McpToolInput<'ticket_update'>,
+          );
+        case 'plan_propose':
+          return this.planPropose(tx, call, input as McpToolInput<'plan_propose'>);
         default:
           throw refuse(
             'INVALID_TRANSITION',
@@ -503,10 +525,11 @@ export class McpBackend {
       if (!locked || locked.runTokenRevokedAt !== null) throw ended(this.texts);
       run = locked;
     }
-    const [project] = await executor
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, run.projectId));
+    const project = (
+      run.projectId === null
+        ? [null]
+        : await executor.select().from(schema.projects).where(eq(schema.projects.id, run.projectId))
+    ).at(0);
     const [profile] = await executor
       .select()
       .from(schema.agentProfiles)
@@ -515,8 +538,25 @@ export class McpBackend {
       .select({ name: schema.machines.name })
       .from(schema.machines)
       .where(eq(schema.machines.id, run.machineId));
-    if (!request || !project || !profile || !machine) throw new Error(`run ${run.id} incomplete`);
+    if (!request || project === undefined || !profile || !machine) {
+      throw new Error(`run ${run.id} incomplete`);
+    }
     return { run, project, ticket: null, request, profile, machineName: machine.name };
+  }
+
+  /**
+   * The call of a planning run on its project; refused for a request that asks for a new project,
+   * which has no project and no tickets yet (owner's answer 10, lot 5 step E1).
+   */
+  private onProject(call: PlanCall, tool: McpToolName): ProjectPlanCall {
+    const { project } = call;
+    if (project === null) {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'plan-no-project', { request: String(call.request.number), tool }),
+      );
+    }
+    return { ...call, project };
   }
 
   /** The request as a planning run sees it. */
@@ -525,7 +565,7 @@ export class McpBackend {
       number: request.number,
       text: request.body,
       status: RequestStatus.parse(request.status),
-      project: request.projectId === null ? null : project.key,
+      project: request.projectId === null || project === null ? null : project.key,
     };
   }
 
@@ -610,7 +650,7 @@ export class McpBackend {
     if (status !== 'planning') {
       throw refuse(
         'INVALID_TRANSITION',
-        part(this.texts, 'request-not-planning', { request: number, status }),
+        part(this.texts, 'request-not-planning', { request: number, status, tool: 'request_ask' }),
       );
     }
     this.tooLongRefusal([this.checkComment('question', input.question, commentMaxLength)]);
@@ -940,11 +980,13 @@ export class McpBackend {
       .select({ projectId: schema.runs.projectId })
       .from(schema.runs)
       .where(eq(schema.runs.id, runId));
-    if (!projectRow) throw ended(this.texts);
+    // A ticket's run always has a project: only a planning run may have none.
+    if (!projectRow?.projectId) throw ended(this.texts);
+    const { projectId } = projectRow;
     const agentTicketsSetting = await resolveSettings(
       this.db,
       ['maxAgentTicketsPerRun'],
-      projectRow.projectId,
+      projectId,
     );
     const result = await this.db
       .transaction(async (tx): Promise<Handled> => {
@@ -952,7 +994,7 @@ export class McpBackend {
         await tx
           .select({ id: schema.projects.id })
           .from(schema.projects)
-          .where(eq(schema.projects.id, projectRow.projectId))
+          .where(eq(schema.projects.id, projectId))
           .for('no key update');
         const call = await this.load(tx, runId, machineId, true);
         known(call);
@@ -1321,7 +1363,7 @@ export class McpBackend {
   private async progressDue(runId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       const [run] = await tx.select().from(schema.runs).where(eq(schema.runs.id, runId));
-      if (!run) return;
+      if (!run?.projectId) return;
       await tx
         .select({ id: schema.projects.id })
         .from(schema.projects)
@@ -1456,7 +1498,105 @@ export class McpBackend {
    * ticket of the planning run's project, within the owner's form limits, with the owner's edit's
    * events naming the agent and its run. `blocked_by` replaces the ticket's whole list.
    */
-  private async planUpdate(tx: Transaction, call: PlanCall, input: McpToolInput<'ticket_update'>) {
+  /**
+   * `plan_propose` (06, section 4.4; lot 5 step E1b): the state refusals first and alone, then
+   * every problem of the plan at once (`VALIDATION_FAILED`); accepted, the plan is kept with its
+   * tickets, the request is `plan_proposed`, and the run's decision is taken.
+   */
+  private async planPropose(tx: Transaction, call: PlanCall, input: McpToolInput<'plan_propose'>) {
+    const number = String(call.request.number);
+    if (call.run.decision !== null) {
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
+    }
+    const asked = await requestQuestion(tx, call.request.id);
+    if (asked && asked.answer === null) {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'request-waiting-answer', { request: number, tool: 'plan_propose' }),
+      );
+    }
+    const status = RequestStatus.parse(call.request.status);
+    if (status !== 'planning') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'request-not-planning', { request: number, status, tool: 'plan_propose' }),
+      );
+    }
+    if (call.project?.status === 'archived') {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'plan-project-archived', { project: call.project.key }),
+      );
+    }
+    const checked = await checkPlan(tx, {
+      request: call.request,
+      project: call.project,
+      plan: input,
+      texts: this.texts,
+      bootstrap: (await this.options.templates()).bootstrap,
+    });
+    if (!checked.accepted) {
+      throw refuse(
+        'VALIDATION_FAILED',
+        part(this.texts, 'plan-refused', {
+          problems: checked.problems
+            .map((each) =>
+              part(this.texts, 'plan-problem', { place: each.place, message: each.message }),
+            )
+            .join('\n'),
+        }),
+        checked.problems.map((each) => ({ field: each.field, message: each.message })),
+      );
+    }
+    const at = this.now();
+    const { plan, request } = await recordPlan(tx, {
+      request: call.request,
+      project: call.project,
+      summary: input.summary,
+      accepted: checked,
+      agent: { key: call.profile.key, name: call.profile.name },
+      runId: call.run.id,
+      at,
+    });
+    await tx
+      .update(schema.runs)
+      .set({ decision: 'submitted', updatedAt: at })
+      .where(eq(schema.runs.id, call.run.id));
+    const added = new Map(
+      checked.bootstrap === null ? [] : [[checked.bootstrap.key, checked.bootstrap.added]],
+    );
+    return {
+      plan: { id: plan.id, status: PlanStatus.parse(plan.status) },
+      request: this.mcpRequest({ request, project: call.project }),
+      tickets: checked.tickets.map((ticket) => ({
+        key: ticket.key,
+        title: ticket.title,
+        blocked_by: ticket.blocked_by,
+        bootstrap: ticket.bootstrap,
+        added_criteria: added.get(ticket.key) ?? [],
+      })),
+      note: [
+        part(this.texts, 'plan-accepted', {
+          request: number,
+          count: String(checked.tickets.length),
+        }),
+        ...(checked.bootstrap === null
+          ? []
+          : [
+              part(this.texts, 'plan-accepted-bootstrap', {
+                key: checked.bootstrap.key,
+                added: String(checked.bootstrap.added.length),
+              }),
+            ]),
+      ].join(' '),
+    };
+  }
+
+  private async planUpdate(
+    tx: Transaction,
+    call: ProjectPlanCall,
+    input: McpToolInput<'ticket_update'>,
+  ) {
     const { project } = call;
     if (call.run.decision !== null) {
       throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));

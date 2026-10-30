@@ -98,7 +98,7 @@ The owner and the Project Manager can exchange messages on a request before a pl
 | request_id | The request it answers. |
 | summary | What the Project Manager proposes, in prose. |
 | new_project | Optional project definition when the plan creates a project. |
-| tickets | From lot 5: the plan's tickets as `plan.propose` gave them once checked (06, section 4.4), each with its local key, until approval creates them (below). |
+| tickets | From lot 5: the plan's tickets as `plan.propose` gave them once checked (06, section 4.4), each with its local key, until approval creates them (below). Each ticket is complete (`PlanTicket` of `packages/protocol`, lot 5 step E1b): key, type, title, description (empty when none), acceptance criteria (the bootstrap's fixed ones added), priority (`normal` when none), assignee (a profile key or none), `blocked_by` (keys of the plan and numbers of existing tickets of the project, such as `WEB-3`, as given, without duplicates, the bootstrap's key added) and whether it is the bootstrap ticket. At most one plan of a request is `proposed` (a database index). |
 | status | `proposed`, `approved`, `rejected`, `superseded`. |
 | owner_feedback | Text given by the owner when rejecting. |
 | decided_at | Timestamp of approval or rejection. |
@@ -194,6 +194,7 @@ A `question` from an agent puts the ticket in `waiting_human` until the owner po
 | id | Identifier. |
 | ticket_id | Ticket being worked on. Empty for planning runs. |
 | request_id | Request being planned (planning runs only). |
+| project_id | The project it works on. Empty only for the planning run of a request for a new project (a database check; lot 5 step E1b, owner's answer 10 of step E1). |
 | profile_id, profile_version | Agent used and its version. |
 | purpose | `implement`, `review`, `plan`, `document`, `fix_review`. |
 | machine_id | Machine executing it. |

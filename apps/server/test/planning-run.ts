@@ -34,20 +34,22 @@ export async function startPlanningRun(
       .from(schema.requests)
       .where(eq(schema.requests.number, input.request))
       .for('update');
-    if (!request?.projectId) throw new Error('a planning run needs a request for a project');
-    const [project] = await tx
-      .select()
-      .from(schema.projects)
-      .where(eq(schema.projects.id, request.projectId));
+    if (!request) throw new Error(`no request ${String(input.request)}`);
+    // A request for a new project has no project: its run has none (lot 5 step E1b).
+    const project = (
+      request.projectId === null
+        ? [null]
+        : await tx.select().from(schema.projects).where(eq(schema.projects.id, request.projectId))
+    ).at(0);
     const [machine] = await tx
       .select()
       .from(schema.machines)
       .where(eq(schema.machines.id, input.machineId));
-    if (!project || !machine?.accountId) throw new Error('no project or no account');
+    if (project === undefined || !machine?.accountId) throw new Error('no project or no account');
     const [run] = await tx
       .insert(schema.runs)
       .values({
-        projectId: project.id,
+        projectId: project?.id ?? null,
         requestId: request.id,
         profileId: profile.id,
         profileVersion: profile.version,
@@ -58,7 +60,7 @@ export async function startPlanningRun(
         attempt: 1,
         runTokenHash: hashCredential(runToken),
         acknowledgedAt: at,
-        baseBranch: project.defaultBranch ?? 'main',
+        baseBranch: project?.defaultBranch ?? 'main',
         statusSince: at,
         createdAt: at,
         startedAt: at,

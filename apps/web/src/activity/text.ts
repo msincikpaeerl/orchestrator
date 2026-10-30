@@ -95,6 +95,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'request.created': 'Request submitted',
   'request.commented': 'Comment added to a request',
   'request.status_changed': 'Request status changed',
+  'plan.proposed': 'Plan proposed',
   'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
@@ -543,10 +544,20 @@ const describe: { [T in EventType]: Describe<T> } = {
   'request.status_changed': (p) =>
     p.cause === 'run_started'
       ? [requestLink(p.request), ': planning, a planning run started']
-      : [
-          requestLink(p.request),
-          ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (not counted as a failed attempt)`,
-        ],
+      : p.cause === 'plan_proposed'
+        ? [requestLink(p.request), ': a plan to review']
+        : [
+            requestLink(p.request),
+            ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (not counted as a failed attempt)`,
+          ],
+  'plan.proposed': (p) => [
+    'Agent ',
+    quote(p.agentName ?? p.agent ?? 'Project Manager', null),
+    ' proposed a plan for ',
+    requestLink(p.request),
+    `: ${String(p.tickets)} ${p.tickets === 1 ? 'ticket' : 'tickets'}`,
+    ...(p.newProject === null ? [] : [', new project ', quote(p.newProject, null)]),
+  ],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,
     p.by === 'orchestrator'

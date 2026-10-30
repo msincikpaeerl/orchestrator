@@ -59,7 +59,7 @@ export const ROLE_MCP_PERMISSIONS: Readonly<Record<AgentRole, readonly McpPermis
 const REVIEW_TOOLS: readonly McpToolName[] = ['review_approve', 'review_request_changes'];
 
 /** The tools only a planning run uses: they work on its request (06, section 4.4). */
-const REQUEST_TOOLS: readonly McpToolName[] = ['request_get', 'request_ask'];
+const REQUEST_TOOLS: readonly McpToolName[] = ['request_get', 'request_ask', 'plan_propose'];
 
 /**
  * What a planning run may use beyond the reading tools (owner's answer 6, lot 5 step E1): the
