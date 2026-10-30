@@ -90,11 +90,7 @@ export async function checkTickets(
     field,
   });
 
-  const { maxTicketsPerPlan } = await resolveSettings(
-    executor,
-    ['maxTicketsPerPlan'],
-    project?.id,
-  );
+  const { maxTicketsPerPlan } = await resolveSettings(executor, ['maxTicketsPerPlan'], project?.id);
   if (entries.length > maxTicketsPerPlan) {
     problems.push({
       position: null,

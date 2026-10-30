@@ -289,7 +289,10 @@ function ownerProblem(found: TicketProblem, file: TicketImportFile): TicketImpor
       if (!entry) throw new Error('a limit problem without its ticket');
       return problem(at, limitMessage(found.limit, entry));
     case 'assignee':
-      return problem(at, `${found.refusal}. The agents you can assign are ${found.assignable || 'none'}`);
+      return problem(
+        at,
+        `${found.refusal}. The agents you can assign are ${found.assignable || 'none'}`,
+      );
     case 'blocks_itself':
       return problem(
         at,
