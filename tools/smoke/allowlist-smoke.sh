@@ -5,6 +5,8 @@
 # folder). Quality (lot 3 step H) is checked for reading and testing, and for refusing every
 # command that writes a file or moves HEAD (an edit, a commit, checkout, reset, stash, merge, and
 # the writing options of find, sort and sed, which Claude Code otherwise runs as read-only).
+# The Project Manager (lot 5 step E1) is checked for reading files, git status and git log, and
+# for refusing every command that writes a file, commits, installs or runs a program.
 # For the owner only (working rule 10): sessions never run it; CI runs its dry run.
 #
 # One session per default profile, in a scratch Node.js project whose scripts only print a line.

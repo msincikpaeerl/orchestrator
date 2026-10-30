@@ -278,12 +278,47 @@ function reviewerChecks(layout: Layout): Check[] {
 }
 
 /**
+ * What the Project Manager needs (read the files, `git status` and `git log`: 03, section 2.1),
+ * then what it must not do: write a file, commit, install, build or run a program (owner's answer
+ * 16, lot 5 step E1), and what no profile may do. `ls`, `cat` and `find` are in Claude Code's
+ * built-in read-only set, which runs whatever the allowlist (05, section 4.6): they are expected
+ * to run.
+ */
+function plannerChecks(layout: Layout): Check[] {
+  return [
+    {
+      action: 'Read the file README.md with the Read tool',
+      expect: 'allowed',
+      matches: (call) =>
+        call.name === 'Read' &&
+        typeof call.input.file_path === 'string' &&
+        call.input.file_path.endsWith('README.md'),
+    },
+    bash('git status', 'allowed'),
+    bash('git log --oneline -1', 'allowed'),
+    bash('ls', 'allowed'),
+    bash('cat README.md', 'allowed'),
+    bash('find . -name README.md', 'allowed'),
+    { ...write, expect: 'refused' },
+    bash('mkdir -p src', 'refused'),
+    bash('rm README.md', 'refused'),
+    bash('git add README.md', 'refused'),
+    bash('git commit --allow-empty -m "Smoke"', 'refused'),
+    bash('pnpm install', 'refused'),
+    bash('npm test', 'refused'),
+    bash('node --version', 'refused'),
+    ...forbidden(layout),
+  ];
+}
+
+/**
  * What a builder needs (install, build, test, lint, an edit, a commit: 03, section 6), then what
  * no profile may do: reach the network outside package managers, gain rights, run containers, and
- * read the daemon's folder. A reviewer has its own list.
+ * read the daemon's folder. A reviewer and a planner have their own lists.
  */
 function checks(layout: Layout, profile: Pick<AgentProfileFile, 'role'>): Check[] {
   if (profile.role === 'reviewer') return reviewerChecks(layout);
+  if (profile.role === 'planner') return plannerChecks(layout);
   return [
     bash('pnpm install', 'allowed'),
     bash('pnpm test', 'allowed'),

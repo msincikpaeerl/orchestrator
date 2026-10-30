@@ -1,6 +1,7 @@
 import { schema } from '@orchestrator/db';
 import {
   CiRound,
+  EDITABLE_STATUSES,
   ACTIVE_RUN_STATUSES,
   AgentRole,
   CommentKind,
@@ -53,6 +54,7 @@ import {
 import { startCiWait } from '../runs/ci-wait.js';
 import { runBranch, type RunRow } from '../runs/model.js';
 import { resolveSettings } from '../settings/store.js';
+import { findPath, ticketLimits } from '../tickets/rules.js';
 import {
   acceptanceCriteria,
   ticketEntity,
@@ -463,6 +465,8 @@ export class McpBackend {
           return this.planProgress(tx, call, input as McpToolInput<'ticket_progress'>);
         case 'request_ask':
           return this.requestAsk(tx, call, input as McpToolInput<'request_ask'>, commentMaxLength);
+        case 'ticket_update':
+          return this.planUpdate(tx, call, input as McpToolInput<'ticket_update'>);
         default:
           throw refuse(
             'INVALID_TRANSITION',
@@ -1448,6 +1452,284 @@ export class McpBackend {
   }
 
   /**
+   * `ticket_update` (06, section 4.3; owner's answer 8, lot 5 step E1): a `proposed` or `todo`
+   * ticket of the planning run's project, within the owner's form limits, with the owner's edit's
+   * events naming the agent and its run. `blocked_by` replaces the ticket's whole list.
+   */
+  private async planUpdate(tx: Transaction, call: PlanCall, input: McpToolInput<'ticket_update'>) {
+    const { project } = call;
+    if (call.run.decision !== null) {
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
+    }
+    if (project.status === 'archived') {
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'project-archived-update'));
+    }
+    const ticket = await this.findTicket(tx, call, input.ticket);
+    const reference = ticketReference(project.key, ticket.number);
+    if (!EDITABLE_STATUSES.includes(TicketStatus.parse(ticket.status))) {
+      throw refuse(
+        'INVALID_TRANSITION',
+        part(this.texts, 'ticket-not-editable', { ticket: reference, status: ticket.status }),
+      );
+    }
+    const limits = await ticketLimits(tx);
+    const criteria = input.acceptance_criteria ?? [];
+    this.tooLongRefusal([
+      input.title !== undefined && input.title.length > limits.ticketTitleMaxLength
+        ? tooLong(this.texts, 'title', 'ticketTitleMaxLength', limits.ticketTitleMaxLength)
+        : null,
+      input.description !== undefined &&
+      input.description.length > limits.ticketDescriptionMaxLength
+        ? tooLong(
+            this.texts,
+            'description',
+            'ticketDescriptionMaxLength',
+            limits.ticketDescriptionMaxLength,
+          )
+        : null,
+      criteria.length > limits.ticketMaxAcceptanceCriteria
+        ? tooLong(
+            this.texts,
+            'acceptance_criteria',
+            'ticketMaxAcceptanceCriteria',
+            limits.ticketMaxAcceptanceCriteria,
+            'criteria',
+          )
+        : null,
+      ...criteria.map((criterion, index) =>
+        criterion.length > limits.acceptanceCriterionMaxLength
+          ? tooLong(
+              this.texts,
+              `acceptance_criteria.${String(index)}`,
+              'acceptanceCriterionMaxLength',
+              limits.acceptanceCriterionMaxLength,
+            )
+          : null,
+      ),
+    ]);
+    const assignee =
+      input.assignee === undefined || input.assignee === null
+        ? null
+        : await this.assigneeProfile(tx, input.assignee);
+
+    // Dependencies: the new list, refused when it names the ticket or closes a cycle.
+    const edges = await tx
+      .select({
+        ticketId: schema.ticketDependencies.ticketId,
+        blockedById: schema.ticketDependencies.blockedById,
+      })
+      .from(schema.ticketDependencies)
+      .where(eq(schema.ticketDependencies.projectId, project.id));
+    const current = edges.filter((edge) => edge.ticketId === ticket.id);
+    let added: TicketRow[] = [];
+    let removed: string[] = [];
+    if (input.blocked_by !== undefined) {
+      const blockers = await this.blockerTickets(tx, project, input.blocked_by);
+      if (blockers.some((row) => row.id === ticket.id)) {
+        throw refuse(
+          'VALIDATION_FAILED',
+          part(this.texts, 'dependency-itself', { ticket: reference }),
+          [{ field: 'blocked_by', message: part(this.texts, 'dependency-itself-field') }],
+        );
+      }
+      const others = edges.filter((edge) => edge.ticketId !== ticket.id);
+      for (const blocker of blockers) {
+        const path = findPath(others, blocker.id, ticket.id);
+        if (path === null) continue;
+        const numbers = await tx
+          .select({ id: schema.tickets.id, number: schema.tickets.number })
+          .from(schema.tickets)
+          .where(inArray(schema.tickets.id, path));
+        const name = (id: string) =>
+          ticketReference(project.key, numbers.find((row) => row.id === id)?.number ?? 0);
+        const cycle = [ticket.id, ...path].map(name).join(' → ');
+        throw refuse(
+          'VALIDATION_FAILED',
+          part(this.texts, 'dependency-cycle', { ticket: reference, cycle }),
+          [{ field: 'blocked_by', message: part(this.texts, 'dependency-cycle-field', { cycle }) }],
+        );
+      }
+      added = blockers.filter((row) => !current.some((edge) => edge.blockedById === row.id));
+      removed = current
+        .map((edge) => edge.blockedById)
+        .filter((id) => !blockers.some((row) => row.id === id));
+    }
+
+    const was = {
+      type: ticket.type,
+      title: ticket.title,
+      description: ticket.description,
+      acceptanceCriteria: acceptanceCriteria(ticket),
+      priority: ticket.priority,
+    };
+    const asked = {
+      type: input.type,
+      title: input.title,
+      description: input.description,
+      acceptanceCriteria: input.acceptance_criteria,
+      priority: input.priority,
+    };
+    const changes: Record<string, unknown> = Object.fromEntries(
+      Object.entries(asked).filter(
+        ([field, value]) =>
+          value !== undefined &&
+          JSON.stringify(value) !== JSON.stringify(was[field as keyof typeof was]),
+      ),
+    );
+    const assigneeChanged =
+      input.assignee !== undefined && (assignee?.id ?? null) !== ticket.assigneeProfileId;
+    const dependenciesChanged = added.length > 0 || removed.length > 0;
+    if (Object.keys(changes).length === 0 && !assigneeChanged && !dependenciesChanged) {
+      return { ticket: await this.mcpTicket(tx, project.key, ticket) };
+    }
+
+    const at = this.now();
+    const [updated] = await tx
+      .update(schema.tickets)
+      .set({
+        ...changes,
+        ...(assigneeChanged ? { assigneeProfileId: assignee?.id ?? null } : {}),
+        updatedAt: at,
+      })
+      .where(eq(schema.tickets.id, ticket.id))
+      .returning();
+    if (!updated) throw new Error('ticket disappeared');
+    const facts = {
+      project: project.key,
+      ticket: reference,
+      agent: call.profile.key,
+      agentName: call.profile.name,
+      runId: call.run.id,
+    };
+    if (Object.keys(changes).length > 0 || assigneeChanged) {
+      // Long texts are not copied into the event log: the fields changed are named.
+      const { type, title, priority } = changes;
+      await recordEvent(tx, {
+        actor: 'agent',
+        ...ticketEntity(updated),
+        type: 'ticket.updated',
+        payload: {
+          ...facts,
+          fields: [...Object.keys(changes), ...(assigneeChanged ? ['assignee'] : [])],
+          type,
+          title,
+          priority,
+          ...(assigneeChanged ? { assignee: assignee?.key ?? null } : {}),
+          ...(assigneeChanged && assignee ? { assigneeName: assignee.name } : {}),
+        },
+        at,
+      });
+    }
+    if (removed.length > 0) {
+      const gone = await tx
+        .select({ id: schema.tickets.id, number: schema.tickets.number })
+        .from(schema.tickets)
+        .where(inArray(schema.tickets.id, removed));
+      await tx
+        .delete(schema.ticketDependencies)
+        .where(
+          and(
+            eq(schema.ticketDependencies.ticketId, ticket.id),
+            inArray(schema.ticketDependencies.blockedById, removed),
+          ),
+        );
+      for (const row of gone.sort((a, b) => a.number - b.number)) {
+        await recordEvent(tx, {
+          actor: 'agent',
+          ...ticketEntity(updated),
+          type: 'ticket.dependency_removed',
+          payload: { ...facts, blockedBy: ticketReference(project.key, row.number) },
+          at,
+        });
+      }
+    }
+    if (added.length > 0) {
+      await tx.insert(schema.ticketDependencies).values(
+        added.map((row) => ({
+          projectId: project.id,
+          ticketId: ticket.id,
+          blockedById: row.id,
+          createdAt: at,
+        })),
+      );
+      for (const row of added) {
+        await recordEvent(tx, {
+          actor: 'agent',
+          ...ticketEntity(updated),
+          type: 'ticket.dependency_added',
+          payload: { ...facts, blockedBy: ticketReference(project.key, row.number) },
+          at,
+        });
+      }
+    }
+    return { ticket: await this.mcpTicket(tx, project.key, updated) };
+  }
+
+  /** The profile `key` names as a ticket's assignee, refused when none or one that reviews. */
+  private async assigneeProfile(executor: Executor, key: string): Promise<ProfileRow> {
+    const [assignee] = await executor
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.key, key));
+    if (!assignee) {
+      throw refuse('NOT_FOUND', part(this.texts, 'profile-unknown', { key }), [
+        { field: 'assignee', message: part(this.texts, 'profile-unknown-field') },
+      ]);
+    }
+    // Only a builder or a writer implements a ticket (03, section 4; lot 3 step H1).
+    if (assignee.role !== 'builder' && assignee.role !== 'writer') {
+      throw refuse(
+        'VALIDATION_FAILED',
+        part(this.texts, 'assignee-reviewer', { name: assignee.name }),
+        [{ field: 'assignee', message: part(this.texts, 'assignee-reviewer-field') }],
+      );
+    }
+    return assignee;
+  }
+
+  /** The tickets of the project `blocked_by` names, refused when one is not in the project. */
+  private async blockerTickets(
+    executor: Executor,
+    project: ProjectRow,
+    blockedBy: readonly string[],
+  ): Promise<TicketRow[]> {
+    const references = [...new Set(blockedBy)];
+    const blockers: TicketRow[] = [];
+    const missing: string[] = [];
+    for (const reference of references) {
+      const [key, number] = reference.split('-');
+      const [row] =
+        key === project.key
+          ? await executor
+              .select()
+              .from(schema.tickets)
+              .where(
+                and(
+                  eq(schema.tickets.projectId, project.id),
+                  eq(schema.tickets.number, Number(number)),
+                ),
+              )
+          : [];
+      if (row) blockers.push(row);
+      else missing.push(reference);
+    }
+    if (missing.length > 0) {
+      throw refuse(
+        'NOT_FOUND',
+        part(this.texts, 'blocked-by-unknown', {
+          references: missing.join(', '),
+          project: project.key,
+        }),
+        missing.map((reference) => ({
+          field: 'blocked_by',
+          message: part(this.texts, 'blocked-by-unknown-field', { reference }),
+        })),
+      );
+    }
+    return blockers;
+  }
+
+  /**
    * `ticket_create` (06, section 4.3): a `proposed` ticket, created by the agent, within the
    * run's limit and the owner's form limits.
    */
@@ -1523,59 +1805,9 @@ export class McpBackend {
       ),
     ]);
 
-    let assignee: ProfileRow | undefined;
-    if (input.assignee !== undefined) {
-      [assignee] = await tx
-        .select()
-        .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.key, input.assignee));
-      if (!assignee) {
-        throw refuse('NOT_FOUND', part(this.texts, 'profile-unknown', { key: input.assignee }), [
-          { field: 'assignee', message: part(this.texts, 'profile-unknown-field') },
-        ]);
-      }
-      // Only a builder or a writer implements a ticket (03, section 4; lot 3 step H1).
-      if (assignee.role !== 'builder' && assignee.role !== 'writer') {
-        throw refuse(
-          'VALIDATION_FAILED',
-          part(this.texts, 'assignee-reviewer', { name: assignee.name }),
-          [{ field: 'assignee', message: part(this.texts, 'assignee-reviewer-field') }],
-        );
-      }
-    }
-    const references = [...new Set(input.blocked_by ?? [])];
-    const blockers: TicketRow[] = [];
-    const missing: string[] = [];
-    for (const reference of references) {
-      const [key, number] = reference.split('-');
-      const [row] =
-        key === project.key
-          ? await tx
-              .select()
-              .from(schema.tickets)
-              .where(
-                and(
-                  eq(schema.tickets.projectId, project.id),
-                  eq(schema.tickets.number, Number(number)),
-                ),
-              )
-          : [];
-      if (row) blockers.push(row);
-      else missing.push(reference);
-    }
-    if (missing.length > 0) {
-      throw refuse(
-        'NOT_FOUND',
-        part(this.texts, 'blocked-by-unknown', {
-          references: missing.join(', '),
-          project: project.key,
-        }),
-        missing.map((reference) => ({
-          field: 'blocked_by',
-          message: part(this.texts, 'blocked-by-unknown-field', { reference }),
-        })),
-      );
-    }
+    const assignee =
+      input.assignee === undefined ? undefined : await this.assigneeProfile(tx, input.assignee);
+    const blockers = await this.blockerTickets(tx, project, input.blocked_by ?? []);
 
     const [counter] = await tx
       .update(schema.projects)

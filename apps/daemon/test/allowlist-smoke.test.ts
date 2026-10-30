@@ -149,6 +149,68 @@ const REVIEWER_REFUSED = [
   'sudo true',
   'docker ps',
 ];
+/**
+ * The Project Manager's commands (owner's answer 16, lot 5 step E1): reading allowed, then what
+ * writes, commits, installs or runs a program, refused.
+ */
+const PLANNER_ALLOWED = [
+  'READ',
+  'git status',
+  'git log --oneline -1',
+  'ls',
+  'cat README.md',
+  'find . -name README.md',
+];
+const PLANNER_REFUSED = [
+  'WRITE',
+  'mkdir -p src',
+  'rm README.md',
+  'git add README.md',
+  'git commit --allow-empty -m "Smoke"',
+  'pnpm install',
+  'npm test',
+  'node --version',
+  'cat ../../config.json',
+  'curl -sI https://example.com',
+  'sudo true',
+  'docker ps',
+];
+
+/** The Project Manager's steps, each answered as expected unless `ran` names it. */
+function plannerAnswers(ran: readonly string[] = []): Steps {
+  return [...PLANNER_ALLOWED, ...PLANNER_REFUSED].map((command) => {
+    const allowed = PLANNER_ALLOWED.includes(command) || ran.includes(command);
+    if (command === 'READ') {
+      return {
+        do: 'tool',
+        name: 'Read',
+        input: { file_path: 'README.md' },
+        result: '# Allowlist smoke test',
+      };
+    }
+    if (command === 'WRITE') {
+      return {
+        do: 'tool',
+        name: 'Write',
+        input: { file_path: 'smoke-note.txt', content: 'smoke' },
+        result: allowed
+          ? 'File created successfully at: smoke-note.txt'
+          : "Permission to use Write has been denied because Claude Code is running in don't ask mode.",
+      };
+    }
+    return {
+      do: 'tool',
+      name: 'Bash',
+      input: { command },
+      result: allowed
+        ? 'done'
+        : command.startsWith('cat ../')
+          ? ruleRefusal(command)
+          : dontAskRefusal,
+    };
+  });
+}
+
 // Claude Code 2.1.296's words (the owner's quality run, lot 3 step H2; 06, section 5).
 const UNLISTED_ANSWER =
   '<tool_use_error>Error: No such tool available: mcp__orchestrator__ticket_submit</tool_use_error>';
@@ -251,11 +313,12 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
     async () => {
       await fake.play(session(answers()), 'architect');
       await fake.play(session(answers()), 'web_dev');
+      await fake.play(session(plannerAnswers()), 'pm');
       await fake.play(session(reviewerAnswers()), 'quality');
       const { code, output } = await runSmoke();
       // The builders share one allowlist and the same deny rules (03, section 2.2); Quality's
-      // differ (03, section 2.5).
-      expect(output).toMatch(/Profiles: +architect quality$/m);
+      // and the Project Manager's differ (03, sections 2.5 and 2.1).
+      expect(output).toMatch(/Profiles: +architect pm quality$/m);
       expect(output).toMatch(
         /^Not run again: +web_dev \(same allowlist and deny rules as architect\)$/m,
       );
@@ -265,6 +328,9 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       expect(
         resultLines(output, 'PASS').filter((line) => line.startsWith('quality:')),
       ).toHaveLength(REVIEWER_ALLOWED.length + REVIEWER_REFUSED.length);
+      expect(resultLines(output, 'PASS').filter((line) => line.startsWith('pm:'))).toHaveLength(
+        PLANNER_ALLOWED.length + PLANNER_REFUSED.length,
+      );
       expect(output).toMatch(
         /^architect: PASS +git commit -m "Allowlist smoke test": allowed, expected allowed$/m,
       );
@@ -299,6 +365,7 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       const launches = (await fake.log()).filter((entry) => entry.event === 'start');
       expect(launches.map((entry) => entry.cwd.split('/').at(-1))).toEqual([
         'architect',
+        'pm',
         'quality',
       ]);
       for (const launch of launches) {
@@ -398,6 +465,31 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
   );
 
   it(
+    "checks the Project Manager's reading, and its refusals of everything that writes, installs or runs a program (owner's answer 16, lot 5 step E1)",
+    async () => {
+      await fake.play(session(plannerAnswers(['node --version'])), 'pm');
+      const { code, output } = await runSmoke('--profile', 'pm');
+      expect(output).toMatch(/Profiles: +pm$/m);
+      expect(output).toMatch(
+        /^pm: PASS +Read the file README\.md with the Read tool: allowed, expected allowed$/m,
+      );
+      expect(output).toMatch(/^pm: PASS +git log --oneline -1: allowed, expected allowed$/m);
+      expect(output).toMatch(
+        /^pm: PASS +git commit --allow-empty -m "Smoke": refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(
+        /^pm: PASS +pnpm install: refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(
+        /^pm: PASS +Create the file smoke-note\.txt with the Write tool, containing the word smoke: refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(/^pm: FAIL +node --version: allowed, expected refused$/m);
+      expect(code).toBe(1);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'prints FAIL for a needed command refused or a forbidden one run, NOT ATTEMPTED for one never tried',
     async () => {
       await fake.play(
@@ -478,7 +570,7 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
   it('refuses an unknown profile', async () => {
     const { code, output } = await runSmoke('--profile', 'designer');
     expect(output).toMatch(
-      /STOPPED: no default profile designer \(profiles: architect quality web_dev\)/,
+      /STOPPED: no default profile designer \(profiles: architect pm quality web_dev\)/,
     );
     expect(code).toBe(3);
   });

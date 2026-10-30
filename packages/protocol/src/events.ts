@@ -284,6 +284,8 @@ export const EventPayloads = {
   /** `fields` names the fields changed; type, title and priority are copied when changed. */
   'ticket.updated': z.object({
     ...TicketFacts,
+    /** For an edit by the Project Manager with `ticket_update` (lot 5 step E1a). */
+    ...AgentFacts,
     fields: z.array(z.string()),
     type: TicketType.optional(),
     title: z.string().optional(),
@@ -307,8 +309,8 @@ export const EventPayloads = {
     agent: z.string().optional(),
     agentName: z.string().optional(),
   }),
-  'ticket.dependency_added': z.object({ ...TicketFacts, blockedBy: z.string() }),
-  'ticket.dependency_removed': z.object({ ...TicketFacts, blockedBy: z.string() }),
+  'ticket.dependency_added': z.object({ ...TicketFacts, ...AgentFacts, blockedBy: z.string() }),
+  'ticket.dependency_removed': z.object({ ...TicketFacts, ...AgentFacts, blockedBy: z.string() }),
   'ticket.commented': z.object({
     ...TicketFacts,
     commentId: z.uuid(),

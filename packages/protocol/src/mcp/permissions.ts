@@ -62,10 +62,24 @@ const REVIEW_TOOLS: readonly McpToolName[] = ['review_approve', 'review_request_
 const REQUEST_TOOLS: readonly McpToolName[] = ['request_get', 'request_ask'];
 
 /**
+ * What a planning run may use beyond the reading tools (owner's answer 6, lot 5 step E1): the
+ * tools its rules name. `ticket_comment`, `ticket_ask` and `ticket_create` work on a ticket of the
+ * run, which a planning run has not, so they are not listed to it, though planners have them.
+ */
+const PLAN_TOOLS: readonly McpToolName[] = [
+  ...REQUEST_TOOLS,
+  'ticket_progress',
+  'ticket_update',
+  'ticket_give_up',
+];
+
+/**
  * The tools a run may call, carried by `run.start` and the only ones the relay lists (06, section
  * 5; owner's answer 1, lot 3 step H): the implemented tools among the profile's permissions,
  * without those its purpose cannot use: `ticket_submit` in a review run, the review tools in any
- * other, the request tools outside a planning run (lot 5 step D2a). The server still refuses each call by role and purpose.
+ * other, the request tools outside a planning run (lot 5 step D2a), and in a planning run only the
+ * reading tools and those of its rules (lot 5 step E1a). The server still refuses each call by
+ * role and purpose.
  */
 export function runMcpTools(
   permissions: readonly McpPermission[],
@@ -73,7 +87,8 @@ export function runMcpTools(
 ): McpToolName[] {
   return (Object.keys(MCP_TOOLS) as McpToolName[]).filter((name) => {
     if (!permissions.includes(name)) return false;
-    if (purpose !== 'plan' && REQUEST_TOOLS.includes(name)) return false;
+    if (purpose === 'plan') return READING.includes(name) || PLAN_TOOLS.includes(name);
+    if (REQUEST_TOOLS.includes(name)) return false;
     if (purpose === 'review') return name !== 'ticket_submit';
     return !REVIEW_TOOLS.includes(name);
   });

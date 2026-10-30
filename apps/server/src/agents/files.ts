@@ -19,27 +19,29 @@ export function agentsDirectory(): string {
 }
 
 /**
- * Layer 1 of 03, section 3: the shared rules, with the slots `{{work}}`, `{{files}}`, `{{needs}}`
- * and `{{task}}` that the rules of the run's kind fill in (main text: `work`; parts: the others).
+ * Layer 1 of 03, section 3: the shared rules, with the slots `{{work}}`, `{{assignment}}`,
+ * `{{start}}`, `{{tools}}`, `{{files}}`, `{{needs}}` and `{{task}}` that the rules of the run's kind
+ * fill in (main text: `work`; parts: the others; the planner's three, lot 5 step E1a).
  */
 export const RULES_FILES = {
   shared: 'rules/shared.md',
   builder: 'rules/builder.md',
   reviewer: 'rules/reviewer.md',
+  planner: 'rules/planner.md',
 } as const;
 export type RulesKind = Exclude<keyof typeof RULES_FILES, 'shared'>;
 
 /**
  * The rules each run purpose receives (03, section 3; owner's answers 1 and 3, lot 3 step H5):
- * those who build get the builder rules, a review the reviewer rules. Planning runs get rules of
- * their own in lot 5.
+ * those who build get the builder rules, a review the reviewer rules, a planning run the planner
+ * rules (lot 5 step E1a).
  */
-export const PURPOSE_RULES: Readonly<Record<RunPurpose, RulesKind | null>> = {
+export const PURPOSE_RULES: Readonly<Record<RunPurpose, RulesKind>> = {
   implement: 'builder',
   fix_review: 'builder',
   document: 'builder',
   review: 'reviewer',
-  plan: null,
+  plan: 'planner',
 };
 
 /** The rules the runs of a role can receive, which count in its profiles' version. */
@@ -47,7 +49,7 @@ export const ROLE_RULES: Readonly<Record<AgentRole, readonly RulesKind[]>> = {
   builder: ['builder'],
   writer: ['builder'],
   reviewer: ['reviewer'],
-  planner: [],
+  planner: ['planner'],
 };
 
 export type Rules = Readonly<Record<keyof typeof RULES_FILES, Template>>;
@@ -127,6 +129,7 @@ export const TEMPLATE_NAMES = [
   'ci-failed',
   'fix-review',
   'mcp-tools',
+  'plan',
 ] as const;
 export type TemplateName = (typeof TEMPLATE_NAMES)[number];
 

@@ -183,6 +183,29 @@ const BEFORE: [string, Record<string, string>, string][] = [
     {},
     'The rest of this comment cannot be read through the tools; ask the owner with request_ask if you need it.',
   ],
+  // `ticket_update` (lot 5 step E1a).
+  ['project-archived-update', {}, 'The project is archived: its tickets cannot be changed.'],
+  [
+    'ticket-not-editable',
+    { ticket: 'WEB-3', status: 'in_progress' },
+    "WEB-3 is in_progress: ticket_update changes only a ticket that is proposed or todo. Leave it as it is, and say in your plan's summary what should change.",
+  ],
+  [
+    'dependency-itself',
+    { ticket: 'WEB-3' },
+    'WEB-3 cannot wait for itself: remove it from blocked_by.',
+  ],
+  ['dependency-itself-field', {}, 'a ticket cannot wait for itself'],
+  [
+    'dependency-cycle',
+    { ticket: 'WEB-3', cycle: 'WEB-3 → WEB-4 → WEB-3' },
+    'These dependencies would make WEB-3 wait for itself: WEB-3 → WEB-4 → WEB-3 (each waits for the next). Remove one of them from blocked_by.',
+  ],
+  [
+    'dependency-cycle-field',
+    { cycle: 'WEB-3 → WEB-4 → WEB-3' },
+    'closes the cycle WEB-3 → WEB-4 → WEB-3',
+  ],
 ];
 
 describe("the MCP tools' texts in agents/templates/mcp-tools.md", () => {

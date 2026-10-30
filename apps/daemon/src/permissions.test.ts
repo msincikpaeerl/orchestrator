@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  PLAN_REFUSAL_SUFFIX,
   REASONS,
   REFUSAL_SUFFIX,
   checkBash,
   checkToolCall,
+  reasonFor,
   settingsPermissions,
   type PermissionScope,
 } from './permissions.js';
@@ -355,4 +357,19 @@ describe('the end of every refusal reason (lot 3 step L, decision Q29)', () => {
       expect(reason).not.toContain('explain why with ticket_ask');
     });
   }
+
+  it("names the planning tools in a planning run, and nothing else changes (owner's answer 7, lot 5 step E1)", () => {
+    expect(PLAN_REFUSAL_SUFFIX).toBe(
+      'Do not ask the owner to allow it. If the request cannot be planned without it, say so in plain words with request_ask or ticket_give_up.',
+    );
+    for (const call of Object.values(refused)) {
+      const reason = call() ?? '';
+      const planned = reasonFor('plan', reason);
+      expect(planned).toBe(`${reason.slice(0, -SUFFIX.length)}${PLAN_REFUSAL_SUFFIX}`);
+      expect(planned).not.toContain('ticket_ask');
+      for (const purpose of ['implement', 'fix_review', 'review', 'document'] as const) {
+        expect(reasonFor(purpose, reason)).toBe(reason);
+      }
+    }
+  });
 });

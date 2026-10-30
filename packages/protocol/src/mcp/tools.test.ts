@@ -136,6 +136,10 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
       },
     },
   },
+  ticket_update: {
+    input: { ticket: 'WEB-12', blocked_by: ['WEB-13'], assignee: null },
+    output: { ticket: { ...ticket, status: 'todo' } },
+  },
   ticket_submit: {
     input: report,
     output: { result: 'accepted', ticket: { ...ticket, status: 'in_review', dod_report: report } },
@@ -222,6 +226,7 @@ const inputFields: Partial<Record<McpToolName, { required?: string; text?: [stri
   request_ask: { required: 'question', text: ['question', settingCeiling('commentMaxLength')] },
   ticket_give_up: { required: 'tried', text: ['reason', settingCeiling('commentMaxLength')] },
   ticket_create: { required: 'title', text: ['title', settingCeiling('ticketTitleMaxLength')] },
+  ticket_update: { required: 'ticket', text: ['title', settingCeiling('ticketTitleMaxLength')] },
   ticket_submit: { required: 'summary', text: ['summary', TEXT_CEILING] },
   review_approve: { required: 'summary', text: ['summary', settingCeiling('commentMaxLength')] },
   review_request_changes: { required: 'points' },
@@ -260,6 +265,8 @@ describe('MCP_TOOLS', () => {
       ['review_request_changes', 'One decision per review'],
       ['ci_status', 'you receive the same result as a message without asking'],
       ['request_get', 'with the first page only'],
+      ['ticket_update', 'Give only the fields you change'],
+      ['ticket_update', 'they go in plan_propose'],
       ['request_ask', 'Do not ask about technical choices'],
       ['request_ask', 'End your turn right after calling it'],
     ];
@@ -327,6 +334,9 @@ describe('wrong types and inconsistent inputs', () => {
       'ticket_create',
       { ...examples.ticket_create.input, assignee: 'Web Dev' },
     ],
+    ['nothing to change', 'ticket_update', { ticket: 'WEB-12' }],
+    ['an empty title', 'ticket_update', { ticket: 'WEB-12', title: ' ' }],
+    ['a ticket not given', 'ticket_update', { priority: 'high' }],
     [
       'a criterion status other than met or not_met',
       'ticket_submit',
