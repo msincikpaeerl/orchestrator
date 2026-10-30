@@ -336,8 +336,10 @@ The owner's answers to E1b's questions (2026-10-30), A to all:
 - Planning runs on screen before the scheduler starts any (owner's answer 11 of step D2): Activity > Runs and the machine page list them (the `Run` type with no ticket and its request), and **Stop run** works on a planning run.
 - The queue's lines and words for a planning candidate; "Started by the scheduler" in its first message.
 - Help > Runs > "What starts by itself" (one session per request, then one per rejection; at most **Failed attempts before asking you** failed sessions per request).
+- An earlier run's open question (owner, at E1b's review): when a planning run ends, its unanswered question no longer waits, so it never blocks a later run's `request_ask` or `plan_propose`. An answer the owner gives later is kept as an ordinary comment on the request, and the next planning run reads it in its first message.
+- Daemon tests to watch (owner, at E1b's review), each seen timing out under a full local `pnpm test`'s load and passing alone: `processes.test.ts` > "processes left by a session" > "are stopped when a waiting run's session is closed after its lifetime" (E1b, shard 1: "the waiting session closed not reached within 20000 ms"), `ci-rounds.test.ts` and `run-end.test.ts` (D2a). If one fails in CI, it is handled then as a flaky test (its cause found and fixed, as lot 4 step G did for `runner.test.ts`), not re-run blindly.
 
-**Done when** server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request and **Try again**, the order against reviews and `implement` candidates; Playwright on both viewports shows a planning candidate in Activity > Queue.
+**Done when** server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request and **Try again**, the order against reviews and `implement` candidates, a question left unanswered by a run that ended neither blocking the next run's `request_ask` and `plan_propose` nor waiting any more, the owner's later answer kept as a comment and given in the next run's first message; Playwright on both viewports shows a planning candidate in Activity > Queue.
 
 ### [ ] F. Plan review (branch `lot5/f-plan-review`)
 
