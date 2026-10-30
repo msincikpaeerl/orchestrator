@@ -105,6 +105,8 @@ export const ApiErrorCode = z.enum([
   'review_active',
   /** **Try again** on a ticket the retry policy has not stopped (lot 3 step I). */
   'ticket_not_stopped',
+  /** **Try again** on a request that is not stopped (lot 5 step E2). */
+  'request_not_stopped',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 

@@ -116,6 +116,7 @@ export {
   RequestListResponse,
   RequestNumber,
   RequestProject,
+  RequestStop,
   RequestStatus,
   RequestSummary,
   requestLine,

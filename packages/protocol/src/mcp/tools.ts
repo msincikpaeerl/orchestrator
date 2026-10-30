@@ -256,12 +256,13 @@ export const MCP_TOOLS = {
   },
   ticket_give_up: {
     description:
-      "Declares that your run's ticket cannot be completed, with the reason and what you tried. The run ends as failed and the ticket may be tried again later. Use it only when the work is impossible as specified. Never give up because a command was refused or a question is unanswered; use ticket_ask. End your turn after calling it.",
+      "Declares that your run's ticket cannot be completed, with the reason and what you tried. The run ends as failed and the ticket may be tried again later. Use it only when the work is impossible as specified. Never give up because a command was refused or a question is unanswered; use ticket_ask. In a planning run, it declares that the request cannot be planned (use request_ask instead when the owner's answer would let you plan it): the run ends as failed and counts as a failed attempt of the request. End your turn after calling it.",
     input: z.strictObject({
       reason: requiredText(COMMENT_CEILING),
       tried: requiredText(COMMENT_CEILING),
     }),
-    output: z.object({ ticket: McpTicket }),
+    /** The ticket; in a planning run, its request (lot 5 step E2). */
+    output: z.union([z.object({ ticket: McpTicket }), z.object({ request: McpRequest })]),
   },
   ticket_create: {
     description:

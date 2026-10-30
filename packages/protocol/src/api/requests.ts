@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { RunStatus } from './run-status.js';
 import { ProjectKey } from './projects.js';
 import { Comment } from './tickets.js';
 
 // Requests (01, section 3.2; 02, section 5; lot 5 step D1): the owner's free text, for a project
 // or for a new one, which the Project Manager turns into a plan.
 
-/** A request's states (01, section 3.2). Nothing changes them before step E2's planning runs. */
+/** A request's states (01, section 3.2), changed by its planning runs (lot 5 steps D2a to E2). */
 export const RequestStatus = z.enum(['open', 'planning', 'plan_proposed', 'closed']);
 export type RequestStatus = z.infer<typeof RequestStatus>;
 
@@ -29,6 +30,23 @@ export function requestLine(body: string): string {
     ? `${line.slice(0, REQUEST_LINE_MAX_LENGTH - 1).trimEnd()}…`
     : line;
 }
+
+/**
+ * Why a request is stopped (01, section 3.2; owner's answers 3, 6 and 7, lot 5 step E2): its
+ * counted failed planning runs reached **Failed attempts before asking you** (`count`, `limit`,
+ * the setting's value then), or the owner's **Stop run** of its planning run (`runId`). No
+ * planning run starts for it until the owner's **Try again**.
+ */
+export const RequestStop = z.discriminatedUnion('cause', [
+  z.object({
+    cause: z.literal('failed_attempts'),
+    count: z.int().positive(),
+    limit: z.int().positive(),
+    at: z.iso.datetime(),
+  }),
+  z.object({ cause: z.literal('stop_run'), runId: z.uuid(), at: z.iso.datetime() }),
+]);
+export type RequestStop = z.infer<typeof RequestStop>;
 
 /** The project a request is for; null when it asks for a new project. */
 export const RequestProject = z.object({ key: ProjectKey, name: z.string() }).nullable();
@@ -54,6 +72,12 @@ export const RequestDetail = RequestSummary.extend({
   /** Markdown, rendered sanitized (01, section 3.5). */
   body: z.string(),
   comments: z.array(Comment),
+  /** Its planning run while one is active, linked from the page (owner's answer 2, step E2). */
+  run: z.object({ id: z.uuid(), status: RunStatus }).nullable(),
+  /** Counted failed planning runs since its creation or the owner's latest **Try again**. */
+  attemptCount: z.int().min(0),
+  /** Why no planning run starts for it until **Try again**; null when it is not stopped. */
+  stopped: RequestStop.nullable(),
 });
 export type RequestDetail = z.infer<typeof RequestDetail>;
 

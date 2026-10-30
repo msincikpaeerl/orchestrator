@@ -330,6 +330,13 @@
       "when": 1793380493866,
       "tag": "0046_plan_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793401262879,
+      "tag": "0047_request_machine_failures",
+      "breakpoints": true
     }
   ]
 }
