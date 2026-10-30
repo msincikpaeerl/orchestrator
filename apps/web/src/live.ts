@@ -52,6 +52,7 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
     case 'request':
       return [[...keys.requests], [...keys.needsYou]];
     case 'run':
+      // A planning run's request links to it (lot 5 step E2).
       return [
         [...keys.runs],
         [...keys.projects],
@@ -59,6 +60,7 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
         [...keys.machines],
         [...keys.accounts],
         [...keys.queue],
+        [...keys.requests],
       ];
     case 'machine':
     case 'claude_account':

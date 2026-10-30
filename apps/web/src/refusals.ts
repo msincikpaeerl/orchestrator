@@ -179,6 +179,7 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   review_active: () =>
     'Quality is reviewing this ticket now: wait for the review to end, or stop its run first.',
   ticket_not_stopped: () => 'This ticket is not stopped any more. Reload the page.',
+  request_not_stopped: () => 'This request is not stopped any more. Reload the page.',
 };
 
 /** Why **Check CI again** was refused, in the words of the owner's table (lot 3 step G2c). */

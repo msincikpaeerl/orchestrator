@@ -11,7 +11,13 @@ import { formatDateTime, problemText } from '../github/text';
 import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
 import { sentence, stepLabel } from '../projects/text';
-import { requestPath, requestQuestionHeading } from '../requests/text';
+import {
+  planningStoppedHeading,
+  planningStoppedText,
+  requestPath,
+  requestQuestionHeading,
+} from '../requests/text';
+import { RequestTryAgain } from '../requests/try-again';
 import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { PauseButton } from '../machines/account-parts';
 import { compactDayText } from '../machines/schedule-text';
@@ -67,6 +73,7 @@ function itemKey(item: NeedsYouItem): string {
     case 'pull_request_to_merge':
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'request_question':
+    case 'planning_stopped':
       return `${item.type}-${String(item.request.number)}`;
     case 'run_paused':
     case 'run_resumes_used':
@@ -128,6 +135,27 @@ function RequestQuestionCard({
         {requestQuestionHeading(item.request)}
       </Link>
       <QuestionAnswer target={{ request: item.request.number }} question={item.question} />
+    </Card>
+  );
+}
+
+/** "Planning stopped" (owner's answer 7, lot 5 step E2): why, and **Try again**. */
+function PlanningStoppedCard({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'planning_stopped' }>;
+}) {
+  return (
+    <Card className="space-y-2">
+      <Link
+        to={requestPath(item.request.number)}
+        className="block font-semibold break-words text-blue-700 underline"
+      >
+        {planningStoppedHeading(item.request)}
+      </Link>
+      <p className="break-words text-slate-700">{planningStoppedText(item.stop)}</p>
+      <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
+      <RequestTryAgain number={item.request.number} />
     </Card>
   );
 }
@@ -867,6 +895,8 @@ export function NeedsYouPage() {
                 />
               ) : item.type === 'request_question' ? (
                 <RequestQuestionCard item={item} />
+              ) : item.type === 'planning_stopped' ? (
+                <PlanningStoppedCard item={item} />
               ) : item.type === 'ready_for_review' ? (
                 <ReadyForReviewCard item={item} />
               ) : item.type === 'review_not_finished' ? (

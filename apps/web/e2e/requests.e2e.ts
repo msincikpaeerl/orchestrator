@@ -181,3 +181,70 @@ test("the Project Manager's question is answered on the request page", async ({
   await page.goto('/');
   await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
 });
+
+// A planning run on screen, stopped, and the request's Try again (lot 5 step E2a; 02, sections
+// 4, 5.3, 7 and 9.2): the run is D2a's test helper's until step E2b's scheduler starts them.
+test('a planning run in Activity and on its machine, stopped, then Try again', async ({
+  page,
+}, testInfo) => {
+  await completeSetup(page);
+  await createReadyProject(page, { key: 'TESTB', name: 'Test B', repository: 'test-b' });
+  const { id, code } = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(await connectDaemon(page, code)).toBe(204);
+  const created = await page.request.post('/api/requests', {
+    data: { body: 'A contact form\n\nOn the home page.', project: 'TESTB' },
+  });
+  expect(created.status()).toBe(201);
+  const { runId } = await startPlanningRun(page, 1, id);
+  await reportState(page, runId, 'working');
+
+  await page.goto('/');
+  await openSection(page, 'Activity');
+  const live = page.getByRole('list', { name: 'Live runs' });
+  await expect(live).toContainText('Request 1: A contact form · Project Manager on Laptop');
+  await expect(live.getByRole('link', { name: 'Request 1: A contact form' })).toHaveAttribute(
+    'href',
+    '/requests/1',
+  );
+  await expectFitsScreen(page);
+
+  await page.goto(`/machines/${id}`);
+  const active = page.getByRole('list', { name: 'Active runs' });
+  await expect(active).toContainText('Request 1: A contact form · Project Manager on Laptop');
+
+  await active.getByRole('link', { name: 'Open the run and its full log' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Planning run for request 1 · attempt 1' }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Back to request 1' })).toHaveAttribute(
+    'href',
+    '/requests/1',
+  );
+  await expect(page.getByRole('heading', { name: 'Branch' })).toBeHidden();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'planning-run');
+
+  await page.getByRole('button', { name: 'Stop run' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Stop this run?' });
+  await expect(dialog).toContainText('The Project Manager stops now and the request is stopped');
+  await dialog.getByRole('button', { name: 'Stop run' }).click();
+  await expect(page.getByLabel('Run status')).toHaveText('Cancelled: it was cancelled');
+
+  await page.goto('/');
+  const stopped = page.getByRole('link', {
+    name: 'Planning stopped for request 1 (TESTB): A contact form',
+  });
+  await expect(stopped).toBeVisible();
+  await expect(page.getByText(/^You stopped its planning run at .+\. Use Try again/)).toBeVisible();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'planning-stopped');
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(stopped).toBeHidden();
+  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+
+  await page.goto('/requests/1');
+  await expect(page.getByRole('region', { name: 'Planning stopped' })).toBeHidden();
+  await expect(page.getByRole('list', { name: 'Conversation' })).toContainText(
+    'The owner used Try again',
+  );
+});

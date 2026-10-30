@@ -6,14 +6,8 @@ import { Command } from '../machines/command';
 import { useAgents, useLiveRuns, useProjects, useRunHistory } from '../queries';
 import { refusalText } from '../refusals';
 import { LogEntry, RunActions, RunTimes } from '../runs/components';
-import { runPath, runStateText, usageText } from '../runs/text';
-import { ticketPath } from '../tickets/text';
+import { runPath, runStateText, runSubject, usageText } from '../runs/text';
 import { dayStart } from './days';
-
-/** The ticket's number in `WEB-12`. */
-function ticketNumber(run: Run): number {
-  return Number(run.ticket.slice(run.projectKey.length + 1));
-}
 
 /** The command attaching a terminal to the run's session, read-only (05, section 8). */
 export function attachCommand(run: Pick<Run, 'id'>): string {
@@ -29,11 +23,8 @@ export function LiveRunCard({ run }: { run: LiveRun }) {
     <Card className="space-y-3">
       <div className="space-y-1">
         <h3 className="font-semibold break-words text-slate-900">
-          <Link
-            to={ticketPath(run.projectKey, ticketNumber(run))}
-            className="text-blue-700 underline"
-          >
-            {run.ticket}
+          <Link to={runSubject(run).path} className="text-blue-700 underline">
+            {runSubject(run).label}
           </Link>{' '}
           · {run.profile.name} on {run.machine.name}
         </h3>
@@ -135,7 +126,7 @@ function HistoryItem({ run }: { run: Run }) {
     <li className="space-y-1 border-b border-slate-200 py-3 last:border-b-0">
       <p className="break-words text-slate-900">
         <Link to={runPath(run.id)} className="text-blue-700 underline">
-          {run.ticket} · attempt {run.attempt}
+          {runSubject(run).label} · attempt {run.attempt}
         </Link>{' '}
         · {run.profile.name} on {run.machine.name}
       </p>

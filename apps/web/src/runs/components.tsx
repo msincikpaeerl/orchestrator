@@ -164,11 +164,18 @@ export function RunActions({ run }: { run: Run }) {
             setAsking(false);
           }}
         >
-          <p>
-            The agent stops now and the ticket goes back to To do. The branch and its commits stay
-            on machine {run.machine.name}, and the next run continues from them. A stopped run does
-            not count as a failed attempt.
-          </p>
+          {run.purpose === 'plan' ? (
+            <p>
+              The Project Manager stops now and the request is stopped: no planning run starts for
+              it until you use Try again. A stopped run does not count as a failed attempt.
+            </p>
+          ) : (
+            <p>
+              The agent stops now and the ticket goes back to To do. The branch and its commits stay
+              on machine {run.machine.name}, and the next run continues from them. A stopped run
+              does not count as a failed attempt.
+            </p>
+          )}
           {!run.machine.online && (
             <p>
               Machine {run.machine.name} is offline: the run is marked as failed because of that,
