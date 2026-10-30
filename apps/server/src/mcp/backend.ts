@@ -49,7 +49,7 @@ import type { ProjectRow } from '../projects/model.js';
 import {
   requestEntity,
   requestProjectKey,
-  requestQuestion,
+  waitingQuestion,
   type RequestRow,
 } from '../requests/model.js';
 import { startCiWait } from '../runs/ci-wait.js';
@@ -489,6 +489,13 @@ export class McpBackend {
           );
         case 'plan_propose':
           return this.planPropose(tx, call, input as McpToolInput<'plan_propose'>);
+        case 'ticket_give_up':
+          return this.planGiveUp(
+            tx,
+            call,
+            input as McpToolInput<'ticket_give_up'>,
+            commentMaxLength,
+          );
         default:
           throw refuse(
             'INVALID_TRANSITION',
@@ -639,8 +646,8 @@ export class McpBackend {
     if (call.run.decision !== null) {
       throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
     }
-    const asked = await requestQuestion(tx, call.request.id);
-    if (asked && asked.answer === null) {
+    // Only a question of a run still active waits: one left by an ended run never blocks.
+    if ((await waitingQuestion(tx, call.request.id)) !== null) {
       throw refuse(
         'INVALID_TRANSITION',
         part(this.texts, 'request-waiting-answer', { request: number, tool: 'request_ask' }),
@@ -694,6 +701,66 @@ export class McpBackend {
       comment: mcpComment(row, keys),
       request: this.mcpRequest({ request, project: call.project }),
     };
+  }
+
+  /**
+   * `ticket_give_up` in a planning run (owner's answer 5, lot 5 step E2): the request cannot be
+   * planned. The reason and what was tried become the agent's note on the request, and the run's
+   * outcome; the run ends as failed when the turn ends and counts on the request.
+   */
+  private async planGiveUp(
+    tx: Transaction,
+    call: PlanCall,
+    input: McpToolInput<'ticket_give_up'>,
+    commentMaxLength: number,
+  ) {
+    if (call.run.decision !== null) {
+      throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
+    }
+    this.tooLongRefusal([
+      this.checkComment('reason', input.reason, commentMaxLength),
+      this.checkComment('tried', input.tried, commentMaxLength),
+    ]);
+    const at = this.now();
+    const [row] = await tx
+      .insert(schema.comments)
+      .values({
+        requestId: call.request.id,
+        author: 'agent',
+        authorProfileId: call.profile.id,
+        runId: call.run.id,
+        kind: 'note',
+        body: `I cannot plan this request.\n\nWhy:\n\n${input.reason}\n\nWhat I tried:\n\n${input.tried}`,
+        createdAt: at,
+      })
+      .returning({ id: schema.comments.id });
+    if (!row) throw new Error('comment not inserted');
+    const [request] = await tx
+      .update(schema.requests)
+      .set({ updatedAt: at })
+      .where(eq(schema.requests.id, call.request.id))
+      .returning();
+    if (!request) throw new Error('request disappeared');
+    await recordEvent(tx, {
+      actor: 'agent',
+      ...requestEntity(request),
+      type: 'request.commented',
+      payload: {
+        request: request.number,
+        project: await requestProjectKey(tx, request),
+        commentId: row.id,
+        kind: 'note',
+        agent: call.profile.key,
+        agentName: call.profile.name,
+        runId: call.run.id,
+      },
+      at,
+    });
+    await tx
+      .update(schema.runs)
+      .set({ decision: 'gave_up', outcome: input.reason, updatedAt: at })
+      .where(eq(schema.runs.id, call.run.id));
+    return { request: this.mcpRequest({ request, project: call.project }) };
   }
 
   /**
@@ -1508,8 +1575,8 @@ export class McpBackend {
     if (call.run.decision !== null) {
       throw refuse('INVALID_TRANSITION', part(this.texts, 'plan-decided'));
     }
-    const asked = await requestQuestion(tx, call.request.id);
-    if (asked && asked.answer === null) {
+    // Only a question of a run still active waits: one left by an ended run never blocks.
+    if ((await waitingQuestion(tx, call.request.id)) !== null) {
       throw refuse(
         'INVALID_TRANSITION',
         part(this.texts, 'request-waiting-answer', { request: number, tool: 'plan_propose' }),

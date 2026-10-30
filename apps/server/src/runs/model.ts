@@ -189,8 +189,11 @@ export function failureWords(reason: FailureReason): string {
 }
 
 export interface RunViewContext {
-  projectKey: string;
-  ticketNumber: number;
+  /** Null for a new project's planning run (lot 5 step E1b). */
+  projectKey: string | null;
+  /** Null for a planning run, which has its request instead (lot 5 step E2). */
+  ticketNumber: number | null;
+  request: { number: number; line: string } | null;
   profile: { key: string; name: string };
   machine: { id: string; name: string; online: boolean };
   account: { id: string; label: string };
@@ -211,7 +214,11 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
   return {
     id: row.id,
     projectKey: context.projectKey,
-    ticket: `${context.projectKey}-${String(context.ticketNumber)}`,
+    ticket:
+      context.ticketNumber === null || context.projectKey === null
+        ? null
+        : `${context.projectKey}-${String(context.ticketNumber)}`,
+    request: context.request,
     purpose: RunPurpose.parse(row.purpose),
     profile: { ...context.profile, version: row.profileVersion },
     machine: context.machine,
@@ -225,7 +232,10 @@ export function toRun(row: RunRow, context: RunViewContext): Run {
     endDetail: row.endDetail,
     attempt: row.attempt,
     sessionAlive: row.sessionAlive,
-    branch: { name: runBranch(row), head: row.branchHead, commits: reportedCommits(row) ?? [] },
+    branch:
+      row.branchName === null
+        ? null
+        : { name: row.branchName, head: row.branchHead, commits: reportedCommits(row) ?? [] },
     push:
       row.push === null || row.pushAt === null
         ? null

@@ -21,6 +21,7 @@ import {
   SESSION_CLOSED_REFUSAL,
   TEXT_CEILING,
   cutText,
+  requestLine,
   RunStatus,
   SubmissionRecord,
   TicketStatus,
@@ -88,12 +89,13 @@ import {
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import {
-  changeRequestStatus,
   requestEntity,
-  requestProjectKey,
   requestQuestion,
+  requestSystemComment,
+  waitingQuestion,
   type RequestRow,
 } from '../requests/model.js';
+import { planningRunEnded } from '../requests/planning-end.js';
 import { notifyChange, notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
@@ -466,6 +468,8 @@ export class RunService {
       /** When its machine lost it, if earlier than now: a run found lost at `hello` (step G). */
       failedAt?: Date;
       set?: Partial<typeof schema.runs.$inferInsert>;
+      /** False when the caller writes the request's comment itself (lot 5 step E2). */
+      requestComment?: boolean;
     } = {},
   ): Promise<RunRow> {
     const now = this.now();
@@ -539,15 +543,18 @@ export class RunService {
         at: facts.failedAt ?? now,
       });
     }
-    if (terminal && from !== to && locked.request?.status === 'planning') {
-      // Its planning run ended without a plan: the request is open again, not counted until
-      // step E2 (owner's answers 7 and 10, lot 5 step D2a).
-      locked.request = await changeRequestStatus(tx, {
+    if (terminal && from !== to && locked.request) {
+      // Its planning run ended: without a plan, the request is open again, the failure counted
+      // or not, and stopped at the limit or by the owner (owner's answers 3 to 9, lot 5 step E2).
+      locked.request = await planningRunEnded(tx, {
         request: locked.request,
-        to: 'open',
-        cause: 'run_ended',
-        runId: locked.run.id,
+        run: locked.run,
+        machine: locked.machine,
+        to,
+        cause,
         failureReason: facts.failureReason,
+        detail: facts.detail,
+        comment: facts.requestComment ?? true,
         at: now,
       });
     }
@@ -581,6 +588,8 @@ export class RunService {
       reviewMoved?: { where: ReviewMoved; head: string | null };
       /** When its machine lost it, for the machine's failures (lot 4 step G). */
       failedAt?: Date;
+      /** False when the caller writes the request's comment itself (lot 5 step E2). */
+      requestComment?: boolean;
     } = {},
   ): Promise<void> {
     const status = failureReason === 'cancelled' ? 'cancelled' : 'failed';
@@ -597,6 +606,7 @@ export class RunService {
       endReason: facts.endReason,
       detail: facts.detail,
       failedAt: facts.failedAt,
+      requestComment: facts.requestComment,
     });
     if (!locked.ticket) return;
     if (locked.run.purpose === 'review') {
@@ -2223,7 +2233,8 @@ export class RunService {
    * The owner's **answer** to the question of a request's planning run (owner's answers 9 and 10,
    * lot 5 step D2a): delivered as a ticket's, live or by resume (04, section 6). The request stays
    * `planning`; with its machine offline, the run fails `machine_offline` and the request is open
-   * again.
+   * again. A question left by a run that ended takes its answer as a comment, delivered to no run:
+   * the next planning run reads it in its first message (owner's answer 8, lot 5 step E2).
    */
   async answerRequest(requestNumber: number, body: string): Promise<void> {
     const { templates } = await this.files();
@@ -2258,30 +2269,35 @@ export class RunService {
         .where(eq(schema.requests.number, requestNumber))
         .for('update');
       if (!request) throw new Error(`request ${String(requestNumber)} disappeared`);
-      const asked = request.status === 'planning' ? await requestQuestion(tx, request.id) : null;
-      if (!asked || asked.answer !== null) {
+      // The latest question, unanswered: its run waits for the answer, or it ended and the
+      // answer is kept for the next planning run (owner's answer 8, lot 5 step E2).
+      const asked = await requestQuestion(tx, request.id);
+      if (!asked || asked.answer !== null || request.status === 'closed') {
         throw new HttpError(
           409,
           'no_open_question',
           `The request has no question waiting for an answer: it is ${request.status}`,
         );
       }
-      const [run] = await tx
-        .select()
-        .from(schema.runs)
-        .where(
-          and(
-            eq(schema.runs.requestId, request.id),
-            inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
-          ),
-        )
-        .for('update');
-      if (!run) throw new Error(`waiting request ${request.id} has no active run`);
-      const [machine] = await tx
-        .select()
-        .from(schema.machines)
-        .where(eq(schema.machines.id, run.machineId));
-      if (!machine) throw new Error('machine not found');
+      const waiting =
+        request.status === 'planning' && (await waitingQuestion(tx, request.id)) !== null;
+      const [run] = waiting
+        ? await tx
+            .select()
+            .from(schema.runs)
+            .where(
+              and(
+                eq(schema.runs.requestId, request.id),
+                inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+              ),
+            )
+            .for('update')
+        : [];
+      if (waiting && !run) throw new Error(`waiting request ${request.id} has no active run`);
+      const [machine] = run
+        ? await tx.select().from(schema.machines).where(eq(schema.machines.id, run.machineId))
+        : [];
+      if (run && !machine) throw new Error('machine not found');
 
       const [answer] = await tx
         .insert(schema.comments)
@@ -2313,6 +2329,8 @@ export class RunService {
         },
         at: now,
       });
+      // A question left by a run that ended: the answer reaches no run, the next one reads it.
+      if (!run || !machine) return;
       const locked: Locked = { run, project, ticket: null, request: updated, machine };
       after.push(
         ...(await this.deliverAnswer(
@@ -2411,11 +2429,12 @@ export class RunService {
           : `machine ${name} refused it${detail ? ` (${detail})` : ''}`;
     if (locked.request) {
       // A planning run's request is open again (owner's answer 10, lot 5 step D2a).
-      await this.fail(tx, locked, 'machine_offline', cause, { detail });
-      await this.requestSystemComment(
+      await this.fail(tx, locked, 'machine_offline', cause, { detail, requestComment: false });
+      await requestSystemComment(
         tx,
         locked.request,
         `Your answer could not reach the planning run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The request is open again, and your answer stays here.`,
+        this.now(),
       );
       return;
     }
@@ -2425,34 +2444,6 @@ export class RunService {
         locked.run.purpose === 'review'
           ? `Your answer could not reach the review run: ${why}. The review run failed as "machine offline" and does not count as a failed attempt; the ticket stays in review, and your answer stays here.`
           : `Your answer could not reach the run: ${why}. The run failed as "machine offline" and does not count as a failed attempt. The branch ${runBranch(locked.run)} is kept on machine ${name}, and your answer stays here: the next run reads it in its first message.`,
-    });
-  }
-
-  /** A `system` comment on a request, with its `request.commented` event. */
-  private async requestSystemComment(tx: Executor, request: RequestRow, body: string) {
-    const at = this.now();
-    const [comment] = await tx
-      .insert(schema.comments)
-      .values({
-        requestId: request.id,
-        author: 'system',
-        kind: 'status_change',
-        body,
-        createdAt: at,
-      })
-      .returning({ id: schema.comments.id });
-    if (!comment) throw new Error('comment not inserted');
-    await recordEvent(tx, {
-      actor: 'system',
-      ...requestEntity(request),
-      type: 'request.commented',
-      payload: {
-        request: request.number,
-        project: await requestProjectKey(tx, request),
-        commentId: comment.id,
-        kind: 'status_change',
-      },
-      at,
     });
   }
 
@@ -2661,7 +2652,11 @@ export class RunService {
         throw new HttpError(409, 'run_not_active', `The run already ended: ${locked.run.status}`);
       }
       const online = this.gateway?.isConnected(locked.machine.id) ?? false;
-      const kept = `The branch ${runBranch(locked.run)} is kept on machine ${locked.machine.name}.`;
+      // A planning run has no branch (lot 5 step D2a): its request's comment is the end's own.
+      const kept =
+        locked.run.branchName === null
+          ? ''
+          : `The branch ${locked.run.branchName} is kept on machine ${locked.machine.name}.`;
       const decision = pendingDecision(locked.run);
       await this.setStatus(tx, locked, online ? 'cancelled' : 'failed', 'owner_stopped', {
         failureReason: online ? 'cancelled' : 'machine_offline',
@@ -3328,6 +3323,8 @@ export class RunService {
         projectKey: schema.projects.key,
         base: schema.projects.defaultBranch,
         ticketNumber: schema.tickets.number,
+        requestNumber: schema.requests.number,
+        requestBody: schema.requests.body,
         pullRequestNumber: schema.tickets.pullRequestNumber,
         pullRequestUrl: schema.tickets.pullRequestUrl,
         pullRequestState: schema.tickets.pullRequestState,
@@ -3340,8 +3337,10 @@ export class RunService {
         account: schema.claudeAccounts,
       })
       .from(schema.runs)
-      .innerJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
-      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+      // A planning run has no ticket, and no project when it plans a new one (lot 5 step E2).
+      .leftJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
+      .leftJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+      .leftJoin(schema.requests, eq(schema.requests.id, schema.runs.requestId))
       .innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.runs.profileId))
       .innerJoin(schema.machines, eq(schema.machines.id, schema.runs.machineId))
       .innerJoin(schema.claudeAccounts, eq(schema.claudeAccounts.id, schema.runs.accountId))
@@ -3353,6 +3352,10 @@ export class RunService {
       toRun(row.run, {
         projectKey: row.projectKey,
         ticketNumber: row.ticketNumber,
+        request:
+          row.requestNumber === null || row.requestBody === null
+            ? null
+            : { number: row.requestNumber, line: requestLine(row.requestBody) },
         profile: row.profile,
         machine: {
           id: row.machine.id,
