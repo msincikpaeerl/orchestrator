@@ -167,13 +167,14 @@ describe('tool calls through the relay', () => {
       const log = await fake.log();
       const listed = log.find((entry) => entry.event === 'mcp_tools');
       // Only the run's tools (owner's answer 1, lot 3 step H): an implement run has no review
-      // tool, and no request tool (lot 5 step D2a).
+      // tool, and no request tool (lot 5 step D2a) nor plan_propose (step E1b).
       expect(listed?.event === 'mcp_tools' && listed.tools.map((tool) => tool.name)).toEqual(
         run.mcpTools,
       );
       expect(run.mcpTools).toEqual(
         McpToolName.options.filter(
-          (name) => !name.startsWith('review_') && !name.startsWith('request_'),
+          (name) =>
+            !name.startsWith('review_') && !name.startsWith('request_') && name !== 'plan_propose',
         ),
       );
       const create =
