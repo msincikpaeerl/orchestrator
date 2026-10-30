@@ -1,10 +1,7 @@
-import { schema } from '@orchestrator/db';
 import {
   SETTINGS,
   TicketImportEntry,
   TicketImportFile,
-  TicketKey,
-  TicketReference,
   TicketStatus,
   type LimitExceeded,
   type SettingName,
@@ -12,23 +9,13 @@ import {
   type TicketImportPreview,
   type TicketImportProblem,
 } from '@orchestrator/protocol';
-import { and, eq, inArray } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import type { ProjectRow } from '../projects/model.js';
-import { resolveSettings } from '../settings/store.js';
 import { ticketReference, type TicketRow } from './model.js';
-import {
-  assigneeRefusal,
-  canBeAssigned,
-  completeOwnerTicket,
-  exceededLimits,
-  findPath,
-  insertNumberedTicket,
-  ticketLimits,
-  type NewTicket,
-} from './rules.js';
+import { completeOwnerTicket, insertNumberedTicket } from './rules.js';
+import { checkTickets, type PlannedTicket, type TicketProblem } from './ticket-checks.js';
 
 /*
  * Import of a file of tickets on a project's board (02, section 6.3; 06, section 4.6; lot 5bis
@@ -258,15 +245,6 @@ export function readImportFile(
   return { file: parsed.data, problems: [] };
 }
 
-/** A ticket of the file, ready to create. */
-interface PlannedTicket {
-  key: string;
-  ticket: NewTicket;
-  /** Keys of the file it waits for, and existing tickets. */
-  fileBlockers: string[];
-  existingBlockers: TicketRow[];
-}
-
 const limitSetting: Record<LimitExceeded['field'], SettingName> = {
   title: 'ticketTitleMaxLength',
   description: 'ticketDescriptionMaxLength',
@@ -292,6 +270,56 @@ function limitMessage(limit: LimitExceeded, entry: TicketImportEntry): string {
   }
 }
 
+/** A problem of the shared checks in the owner's words. */
+function ownerProblem(found: TicketProblem, file: TicketImportFile): TicketImportProblem {
+  const at: Located = { position: found.position, key: found.key, field: found.field };
+  const entry = found.position === null ? undefined : file.tickets[found.position - 1];
+  switch (found.code) {
+    case 'too_many':
+      return problem(
+        at,
+        `the file has ${String(found.count)} tickets: at most ${String(found.max)} can be imported at once, ${settingWords('maxTicketsPerPlan')}. Split the file in two`,
+      );
+    case 'duplicate_key':
+      return problem(
+        at,
+        `the key “${found.key ?? ''}” is already the key of ticket ${String(found.earlier)}: each key must be used once in the file`,
+      );
+    case 'limit':
+      if (!entry) throw new Error('a limit problem without its ticket');
+      return problem(at, limitMessage(found.limit, entry));
+    case 'assignee':
+      return problem(at, `${found.refusal}. The agents you can assign are ${found.assignable || 'none'}`);
+    case 'blocks_itself':
+      return problem(
+        at,
+        `“${found.item}” is this ticket's own key: a ticket cannot wait for itself`,
+      );
+    case 'unknown_key':
+      return problem(at, `no ticket of the file has the key “${found.item}”`);
+    case 'other_project':
+      return problem(
+        at,
+        `${found.item} belongs to another project: a ticket can only wait for tickets of ${found.project}`,
+      );
+    case 'unknown_ticket':
+      return problem(at, `there is no ticket ${found.item} in this project`);
+    case 'no_project':
+      // An import always has its project.
+      throw new Error('an import without its project');
+    case 'not_a_reference':
+      return problem(
+        at,
+        `“${found.item}” is neither a key of this file nor a ticket number such as ${found.project ?? 'WEB'}-3`,
+      );
+    case 'cycle':
+      return problem(
+        at,
+        `these tickets wait for each other, so none of them could ever start: ${found.label}. Remove one of these dependencies`,
+      );
+  }
+}
+
 /**
  * Checks the file against the project and the current settings, writing nothing: the preview,
  * and the tickets to create when there is no problem. `executor` is the caller's transaction,
@@ -302,214 +330,22 @@ export async function checkImport(
   project: ProjectRow,
   file: TicketImportFile,
 ): Promise<{ preview: TicketImportPreview; planned: PlannedTicket[] | null }> {
-  const problems: TicketImportProblem[] = [];
+  const checked = await checkTickets(executor, project, file.tickets);
+  const problems = checked.problems.map((found) => ownerProblem(found, file));
+  const { planned } = checked;
+
+  // The owner's warnings (lot 5bis step A, decision 4): assigned tickets, cancelled blockers.
   const warnings: string[] = [];
-  const at = (index: number, field: string | null): Located => ({
-    position: index + 1,
-    key: file.tickets[index]?.key ?? null,
-    field,
-  });
-
-  const { maxTicketsPerPlan } = await resolveSettings(executor, ['maxTicketsPerPlan'], project.id);
-  if (file.tickets.length > maxTicketsPerPlan) {
-    problems.push(
-      problem(
-        { ...WHOLE_FILE, field: 'tickets' },
-        `the file has ${String(file.tickets.length)} tickets: at most ${String(maxTicketsPerPlan)} can be imported at once, ${settingWords('maxTicketsPerPlan')}. Split the file in two`,
-      ),
-    );
-  }
-
-  // Keys: unique in the file.
-  const positionOf = new Map<string, number>();
-  file.tickets.forEach((entry, index) => {
-    const earlier = positionOf.get(entry.key);
-    if (earlier === undefined) positionOf.set(entry.key, index);
-    else {
-      problems.push(
-        problem(
-          at(index, 'key'),
-          `the key “${entry.key}” is already the key of ticket ${String(earlier + 1)}: each key must be used once in the file`,
-        ),
-      );
-    }
-  });
-
-  // The owner's form limits.
-  const limits = await ticketLimits(executor);
-  file.tickets.forEach((entry, index) => {
-    for (const limit of exceededLimits(limits, {
-      title: entry.title,
-      description: entry.description ?? '',
-      acceptanceCriteria: entry.acceptance_criteria ?? [],
-    })) {
-      const field = limit.field === 'acceptance_criterion' ? 'acceptance_criteria' : limit.field;
-      problems.push(problem(at(index, field), limitMessage(limit, entry)));
-    }
-  });
-
-  // Assignees: existing profiles that can be assigned.
-  const assigneeKeys = [
-    ...new Set(file.tickets.flatMap((entry) => (entry.assignee ? [entry.assignee] : []))),
-  ];
-  const profiles = await executor.select().from(schema.agentProfiles);
-  const profileByKey = new Map(profiles.map((row) => [row.key, row]));
-  const assignable = profiles
-    .filter(canBeAssigned)
-    .map((row) => `${row.key} (${row.name})`)
-    .join(', ');
-  file.tickets.forEach((entry, index) => {
-    if (!entry.assignee) return;
-    const refused = assigneeRefusal(entry.assignee, profileByKey.get(entry.assignee));
-    if (refused) {
-      problems.push(
-        problem(
-          at(index, 'assignee'),
-          `${refused.message}. The agents you can assign are ${assignable || 'none'}`,
-        ),
-      );
-    }
-  });
-  if (assigneeKeys.length > 0) warnings.push(ASSIGNED_WARNING);
-
-  // Dependencies: keys of the file, or tickets of this project.
-  const references = new Set<number>();
-  for (const entry of file.tickets) {
-    for (const item of entry.blocked_by ?? []) {
-      const reference = TicketReference.safeParse(item);
-      if (reference.success && item.startsWith(`${project.key}-`)) {
-        references.add(Number(item.slice(project.key.length + 1)));
-      }
-    }
-  }
-  const existing =
-    references.size === 0
-      ? []
-      : await executor
-          .select()
-          .from(schema.tickets)
-          .where(
-            and(
-              eq(schema.tickets.projectId, project.id),
-              inArray(schema.tickets.number, [...references]),
-            ),
-          );
-  const existingByNumber = new Map(existing.map((row) => [row.number, row]));
-
-  const planned: PlannedTicket[] = file.tickets.map((entry, index) => {
-    const fileBlockers: string[] = [];
-    const existingBlockers: TicketRow[] = [];
-    for (const item of new Set(entry.blocked_by ?? [])) {
-      const here = at(index, 'blocked_by');
-      if (TicketKey.safeParse(item).success) {
-        if (item === entry.key) {
-          problems.push(
-            problem(here, `“${item}” is this ticket's own key: a ticket cannot wait for itself`),
-          );
-        } else if (!positionOf.has(item)) {
-          problems.push(problem(here, `no ticket of the file has the key “${item}”`));
-        } else {
-          fileBlockers.push(item);
-        }
-      } else if (TicketReference.safeParse(item).success) {
-        const row = item.startsWith(`${project.key}-`)
-          ? existingByNumber.get(Number(item.slice(project.key.length + 1)))
-          : undefined;
-        if (!item.startsWith(`${project.key}-`)) {
-          problems.push(
-            problem(
-              here,
-              `${item} belongs to another project: a ticket can only wait for tickets of ${project.key}`,
-            ),
-          );
-        } else if (!row) {
-          problems.push(problem(here, `there is no ticket ${item} in this project`));
-        } else {
-          existingBlockers.push(row);
-          if (TicketStatus.parse(row.status) === 'cancelled') {
-            warnings.push(
-              `${entry.key} is blocked by ${item}, which is cancelled: it will stay blocked until you remove that dependency.`,
-            );
-          }
-        }
-      } else {
-        problems.push(
-          problem(
-            here,
-            `“${item}” is neither a key of this file nor a ticket number such as ${project.key}-3`,
-          ),
+  if (file.tickets.some((entry) => entry.assignee)) warnings.push(ASSIGNED_WARNING);
+  for (const each of planned) {
+    for (const row of each.existingBlockers) {
+      if (TicketStatus.parse(row.status) === 'cancelled') {
+        warnings.push(
+          `${each.key} is blocked by ${ticketReference(project.key, row.number)}, which is cancelled: it will stay blocked until you remove that dependency.`,
         );
       }
     }
-    const assignee = entry.assignee ? (profileByKey.get(entry.assignee) ?? null) : null;
-    return {
-      key: entry.key,
-      ticket: {
-        type: entry.type,
-        title: entry.title,
-        description: entry.description ?? '',
-        acceptanceCriteria: entry.acceptance_criteria ?? [],
-        priority: entry.priority ?? 'normal',
-        assignee,
-      },
-      fileBlockers,
-      existingBlockers,
-    };
-  });
-
-  // No cycle, inside the file or through the project's tickets: the graph as it would be.
-  const node = (key: string) => `file:${key}`;
-  const projectEdges = await executor
-    .select({
-      ticketId: schema.ticketDependencies.ticketId,
-      blockedById: schema.ticketDependencies.blockedById,
-    })
-    .from(schema.ticketDependencies)
-    .where(eq(schema.ticketDependencies.projectId, project.id));
-  const edges = [
-    ...projectEdges,
-    ...planned.flatMap((each) => [
-      ...each.fileBlockers.map((key) => ({ ticketId: node(each.key), blockedById: node(key) })),
-      ...each.existingBlockers.map((row) => ({ ticketId: node(each.key), blockedById: row.id })),
-    ]),
-  ];
-  const numberById = new Map<string, number>();
-  if (projectEdges.length > 0) {
-    const rows = await executor
-      .select({ id: schema.tickets.id, number: schema.tickets.number })
-      .from(schema.tickets)
-      .where(eq(schema.tickets.projectId, project.id));
-    for (const row of rows) numberById.set(row.id, row.number);
   }
-  const name = (id: string) =>
-    id.startsWith('file:')
-      ? id.slice('file:'.length)
-      : ticketReference(project.key, numberById.get(id) ?? 0);
-  const cycles = new Set<string>();
-  planned.forEach((each, index) => {
-    for (const key of each.fileBlockers) {
-      const path = findPath(edges, node(key), node(each.key));
-      if (path === null) continue;
-      // Each cycle once, on its first ticket in the file.
-      const members = [node(each.key), ...path.slice(0, -1)];
-      const first = members.reduce((best, id) =>
-        (positionOf.get(name(id)) ?? Infinity) < (positionOf.get(name(best)) ?? Infinity)
-          ? id
-          : best,
-      );
-      const start = members.indexOf(first);
-      const loop = [...members.slice(start), ...members.slice(0, start)];
-      const label = [...loop, first].map(name).join(' → ');
-      if (cycles.has(label)) continue;
-      cycles.add(label);
-      problems.push(
-        problem(
-          at(positionOf.get(name(first)) ?? index, 'blocked_by'),
-          `these tickets wait for each other, so none of them could ever start: ${label}. Remove one of these dependencies`,
-        ),
-      );
-    }
-  });
 
   const titleOfKey = new Map(file.tickets.map((entry) => [entry.key, entry.title]));
   const preview: TicketImportPreview = {
