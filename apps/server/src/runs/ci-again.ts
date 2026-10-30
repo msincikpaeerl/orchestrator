@@ -193,7 +193,7 @@ export class CiCheckAgain {
     const since = Math.max(...starts.map((at) => at.getTime()));
     const minutes =
       run.ciStartWaitMinutes ??
-      (await resolveSettings(this.options.db, ['ciStartWaitMinutes'], run.projectId))
+      (await resolveSettings(this.options.db, ['ciStartWaitMinutes'], run.projectId ?? undefined))
         .ciStartWaitMinutes;
     return this.now().getTime() - since >= minutes * 60_000;
   }

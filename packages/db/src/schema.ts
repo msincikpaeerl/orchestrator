@@ -298,7 +298,9 @@ export const requests = pgTable(
 
 /**
  * Plans (01, section 3.3; lot 5): the Project Manager's answer to a request, written by
- * `plan.propose` from step E1. `new_project` holds the project it creates, if any.
+ * `plan.propose` from step E1b. `new_project` holds the project it creates, if any (a
+ * `PlanNewProject`), `tickets` the plan's tickets until its approval creates them (`PlanTickets`
+ * of `@orchestrator/protocol`; owner's answer 9, lot 5 step E1).
  */
 export const plans = pgTable(
   'plans',
@@ -309,6 +311,7 @@ export const plans = pgTable(
       .references(() => requests.id),
     summary: text('summary').notNull(),
     newProject: jsonb('new_project'),
+    tickets: jsonb('tickets').notNull(),
     status: text('status').notNull(),
     ownerFeedback: text('owner_feedback'),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
@@ -320,6 +323,10 @@ export const plans = pgTable(
       sql`${table.status} IN ('proposed', 'approved', 'rejected', 'superseded')`,
     ),
     index('plans_request_id').on(table.requestId, table.createdAt),
+    // At most one plan waits for the owner per request (lot 5 step E1b, answer 8).
+    uniqueIndex('plans_one_proposed_per_request')
+      .on(table.requestId)
+      .where(sql`${table.status} = 'proposed'`),
   ],
 );
 
@@ -710,9 +717,8 @@ export const runs = pgTable(
   'runs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id),
+    /** Empty only for the planning run of a request for a new project (lot 5 step E1b). */
+    projectId: uuid('project_id').references(() => projects.id),
     /** Empty for planning runs (lot 5). */
     ticketId: uuid('ticket_id').references(() => tickets.id),
     /** A planning run's request, and only a planning run's (lot 5 step D2a). */
@@ -940,6 +946,8 @@ export const runs = pgTable(
       'runs_subject',
       sql`(${table.purpose} = 'plan') = (${table.requestId} IS NOT NULL) AND (${table.purpose} = 'plan') = (${table.ticketId} IS NULL) AND (${table.purpose} = 'plan') = (${table.branchName} IS NULL)`,
     ),
+    // Only a planning run may have no project: its request asks for a new one (lot 5 step E1b).
+    check('runs_project', sql`${table.purpose} = 'plan' OR ${table.projectId} IS NOT NULL`),
     // At most one active run per ticket (01, invariant 2).
     uniqueIndex('runs_one_active_per_ticket')
       .on(table.ticketId)

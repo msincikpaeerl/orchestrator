@@ -219,7 +219,8 @@ const OWNER: Starter = { by: 'owner' };
 /** Everything about one run, locked for the rest of the transaction. */
 interface Locked {
   run: RunRow;
-  project: ProjectRow;
+  /** Null only for the planning run of a request for a new project (lot 5 step E1b). */
+  project: ProjectRow | null;
   ticket: TicketRow | null;
   /** A planning run's request, locked before the run (lot 5 step D2a); null for any other run. */
   request: RequestRow | null;
@@ -227,6 +228,16 @@ interface Locked {
 }
 
 const ACTIVE = new Set<string>(ACTIVE_RUN_STATUSES);
+
+/** The project of a run that has one: every run but a new project's planning run (lot 5 E1b). */
+function projectOf(locked: Pick<Locked, 'run' | 'project'>): ProjectRow {
+  if (locked.project === null) throw new Error(`run ${locked.run.id} has no project`);
+  return locked.project;
+}
+
+function repositoryOf(project: ProjectRow): string {
+  return `${project.repoOwner}/${project.repoName}`;
+}
 
 /** The template of the owner's answer to a run: a planning run's is about its request. */
 function answerTemplate(run: Pick<RunRow, 'purpose'>): AnswerTemplate {
@@ -401,7 +412,10 @@ export class RunService {
       .where(eq(schema.runs.id, runId));
     if (!found) return null;
     return this.db.transaction(async (tx) => {
-      const project = await this.lockProject(tx, eq(schema.projects.id, found.projectId));
+      const project =
+        found.projectId === null
+          ? null
+          : await this.lockProject(tx, eq(schema.projects.id, found.projectId));
       // A planning run's request before the run: the order of the MCP backend's request_ask.
       const [request] =
         found.requestId === null
@@ -431,7 +445,9 @@ export class RunService {
   }
 
   private reference(locked: Pick<Locked, 'project' | 'ticket'>): string {
-    return locked.ticket ? ticketReference(locked.project.key, locked.ticket.number) : '';
+    return locked.ticket && locked.project
+      ? ticketReference(locked.project.key, locked.ticket.number)
+      : '';
   }
 
   /** Changes the run's status with its event; a terminal status also revokes the run's token. */
@@ -485,10 +501,10 @@ export class RunService {
             : 'system',
         entityType: 'run',
         entityId: locked.run.id,
-        projectId: locked.project.id,
+        projectId: locked.project?.id ?? null,
         type: 'run.status_changed',
         payload: {
-          project: locked.project.key,
+          project: locked.project?.key ?? '',
           ticket: this.reference(locked),
           machine: locked.machine.name,
           from,
@@ -511,7 +527,7 @@ export class RunService {
     if (terminal && from !== to && locked.ticket) {
       // The failures its machine caused, in a row, or every count again (07, section 4).
       await recordRunEnd(tx, {
-        project: locked.project,
+        project: projectOf(locked),
         ticket: locked.ticket,
         machine: locked.machine,
         runId: locked.run.id,
@@ -587,12 +603,7 @@ export class RunService {
       // Never counted, and the ticket stays in review (owner's answer 6c, lot 3 step H2).
       const why =
         facts.reviewWhy ??
-        this.reviewWhy(
-          locked.run,
-          failureReason,
-          facts.detail,
-          `${locked.project.repoOwner}/${locked.project.repoName}`,
-        );
+        this.reviewWhy(locked.run, failureReason, facts.detail, repositoryOf(projectOf(locked)));
       await this.reviewTicketBack(
         tx,
         locked,
@@ -617,7 +628,7 @@ export class RunService {
     // The stop at **Failed attempts before asking you**, read now (04, section 5; lot 3 step K1).
     const stop = counted ? await this.failedAttemptsStop(tx, locked) : null;
     const updated = await applyRunAction(tx, {
-      projectKey: locked.project.key,
+      projectKey: projectOf(locked).key,
       ticket: locked.ticket,
       action: 'run_ended',
       actor: 'system',
@@ -647,7 +658,7 @@ export class RunService {
     const { maxFailedAttempts } = await resolveSettings(
       tx,
       ['maxFailedAttempts'],
-      locked.project.id,
+      locked.project?.id,
     );
     const count = ticket.attemptCount + 1;
     if (count < maxFailedAttempts) return null;
@@ -669,7 +680,7 @@ export class RunService {
       ...ticketEntity(ticket),
       type: 'ticket.stopped',
       payload: {
-        project: locked.project.key,
+        project: locked.project?.key ?? '',
         ticket: this.reference(locked),
         cause: stop.cause,
         count: stop.count,
@@ -717,7 +728,7 @@ export class RunService {
     const now = this.now();
     if (ticket.status === 'waiting_human') {
       await applyRunAction(tx, {
-        projectKey: locked.project.key,
+        projectKey: projectOf(locked).key,
         ticket,
         action: 'review_ended',
         actor,
@@ -747,7 +758,7 @@ export class RunService {
       ...ticketEntity(ticket),
       type: 'ticket.commented',
       payload: {
-        project: locked.project.key,
+        project: locked.project?.key ?? '',
         ticket: this.reference(locked),
         commentId: row.id,
         kind: 'note',
@@ -805,7 +816,7 @@ export class RunService {
         ...ticketEntity(ticket),
         type: 'ticket.commented',
         payload: {
-          project: locked.project.key,
+          project: locked.project?.key ?? '',
           ticket: this.reference(locked),
           commentId: row.id,
           kind: 'review',
@@ -820,7 +831,7 @@ export class RunService {
     // (owner's answers 1 and 2, lot 3 step I); never a failed attempt.
     const round = ticket.reviewRounds + 1;
     await applyRunAction(tx, {
-      projectKey: locked.project.key,
+      projectKey: projectOf(locked).key,
       ticket,
       action: decision.kind === 'approved' ? 'review_approved' : 'review_changes_requested',
       actor: 'agent',
@@ -845,8 +856,8 @@ export class RunService {
     // wants one (owner's answer 3, lot 5 step 5bis B).
     const automaticMerge =
       decision.kind === 'approved' &&
-      locked.project.mergesAutomatic &&
-      locked.project.status === 'active' &&
+      projectOf(locked).mergesAutomatic &&
+      projectOf(locked).status === 'active' &&
       ticket.pullRequestNumber !== null;
     if (automaticMerge && ticket.pullRequestNumber !== null) {
       await tx
@@ -885,7 +896,7 @@ export class RunService {
   private async stopAfterRounds(tx: Executor, locked: Locked, round: number, now: Date) {
     const { ticket } = locked;
     if (!ticket) return;
-    const { maxReviewRounds } = await resolveSettings(tx, ['maxReviewRounds'], locked.project.id);
+    const { maxReviewRounds } = await resolveSettings(tx, ['maxReviewRounds'], locked.project?.id);
     if (round <= maxReviewRounds) return;
     const stop: TicketStop = {
       cause: 'review_rounds',
@@ -909,7 +920,7 @@ export class RunService {
       ...ticketEntity(ticket),
       type: 'ticket.commented',
       payload: {
-        project: locked.project.key,
+        project: locked.project?.key ?? '',
         ticket: this.reference(locked),
         commentId: comment.id,
         kind: 'status_change',
@@ -929,10 +940,10 @@ export class RunService {
       actor: 'system',
       entityType: 'run',
       entityId: locked.run.id,
-      projectId: locked.project.id,
+      projectId: locked.project?.id ?? null,
       type: 'run.review_discarded',
       payload: {
-        project: locked.project.key,
+        project: locked.project?.key ?? '',
         ticket: this.reference(locked),
         machine: locked.machine.name,
         decision: decision.kind,
@@ -964,7 +975,7 @@ export class RunService {
    * K2): which of the three causes, what to do, and that it is not counted.
    */
   private downloadFailedComment(locked: Locked): string {
-    const repository = `${locked.project.repoOwner}/${locked.project.repoName}`;
+    const repository = repositoryOf(projectOf(locked));
     const { why, todo } = downloadWords(runDownload(locked.run), repository);
     return `The run on machine ${locked.machine.name} ended: the project could not be downloaded from GitHub at its start${why} It does not count as a failed attempt. ${todo}`;
   }
@@ -2265,8 +2276,7 @@ export class RunService {
           ),
         )
         .for('update');
-      // Until step E2 every planning run has a project.
-      if (!run || !project) throw new Error(`waiting request ${request.id} has no active run`);
+      if (!run) throw new Error(`waiting request ${request.id} has no active run`);
       const [machine] = await tx
         .select()
         .from(schema.machines)
@@ -2297,7 +2307,7 @@ export class RunService {
         type: 'request.commented',
         payload: {
           request: updated.number,
-          project: project.key,
+          project: project?.key ?? null,
           commentId: answer.id,
           kind: 'answer',
         },
@@ -2672,7 +2682,7 @@ export class RunService {
         );
       } else if (locked.ticket) {
         await applyRunAction(tx, {
-          projectKey: locked.project.key,
+          projectKey: projectOf(locked).key,
           ticket: locked.ticket,
           action: 'stop_run',
           actor: 'owner',
@@ -2690,7 +2700,7 @@ export class RunService {
         const review = locked.run.purpose === 'review';
         await holdTicket(
           tx,
-          locked.project,
+          projectOf(locked),
           locked.ticket,
           {
             cause: review ? 'stop_review' : 'stop_run',
@@ -2767,7 +2777,7 @@ export class RunService {
   }
 
   private ciFacts(locked: Locked) {
-    return { project: locked.project.key, ticket: this.reference(locked) };
+    return { project: locked.project?.key ?? '', ticket: this.reference(locked) };
   }
 
   /** The result read, or the failed check, kept on the run with their events. */
@@ -2781,7 +2791,7 @@ export class RunService {
       const now = this.now();
       // Every check changes the run page's CI card (its time, its checks), also when it writes no
       // event (lot 3 step G1b): the screens read the run again.
-      await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project.id });
+      await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project?.id ?? null });
       const previous =
         locked.run.ciCheckFailure === null ? null : CiCheckFailure.parse(locked.run.ciCheckFailure);
       const event = <T extends 'run.ci_check_failed' | 'run.ci_check_recovered' | 'run.ci_result'>(
@@ -2792,7 +2802,7 @@ export class RunService {
           actor: 'system',
           entityType: 'run',
           entityId: runId,
-          projectId: locked.project.id,
+          projectId: locked.project?.id ?? null,
           type,
           payload: { ...this.ciFacts(locked), ...payload },
           at: now,
@@ -2870,13 +2880,17 @@ export class RunService {
         updatedAt: now,
       })
       .where(eq(schema.runs.id, locked.run.id));
-    await notifyChange(tx, { entity: 'run', id: locked.run.id, projectId: locked.project.id });
+    await notifyChange(tx, {
+      entity: 'run',
+      id: locked.run.id,
+      projectId: locked.project?.id ?? null,
+    });
     if (locked.run.ciCheckFailure !== null) {
       await recordEvent(tx, {
         actor: 'system',
         entityType: 'run',
         entityId: locked.run.id,
-        projectId: locked.project.id,
+        projectId: locked.project?.id ?? null,
         type: 'run.ci_check_recovered',
         payload: this.ciFacts(locked),
         at: now,
@@ -2888,7 +2902,7 @@ export class RunService {
       actor: 'system',
       entityType: 'run',
       entityId: locked.run.id,
-      projectId: locked.project.id,
+      projectId: locked.project?.id ?? null,
       type: 'run.ci_result',
       payload: {
         ...this.ciFacts(locked),
@@ -2925,7 +2939,7 @@ export class RunService {
       await this.setStatus(tx, locked, 'succeeded', 'ci_result');
       if (locked.ticket) {
         await applyRunAction(tx, {
-          projectKey: locked.project.key,
+          projectKey: projectOf(locked).key,
           ticket: locked.ticket,
           action: 'run_submitted',
           actor: 'system',
@@ -2964,7 +2978,7 @@ export class RunService {
     const { maxCiFailuresPerRun } = await resolveSettings(
       executor,
       ['maxCiFailuresPerRun'],
-      run.projectId,
+      run.projectId ?? undefined,
     );
     return maxCiFailuresPerRun;
   }
@@ -2987,7 +3001,7 @@ export class RunService {
     let result: CiResult = decided.result;
     const [row] = await this.db.select().from(schema.runs).where(eq(schema.runs.id, runId));
     if (!row || row.ciCommit !== commit || row.ciRoundMessageId !== null) return;
-    if (kind === 'failed') {
+    if (kind === 'failed' && row.projectId !== null) {
       const [project] = await this.db
         .select()
         .from(schema.projects)
@@ -3151,7 +3165,7 @@ export class RunService {
           actor: 'system',
           entityType: 'run',
           entityId: runId,
-          projectId: locked.project.id,
+          projectId: locked.project?.id ?? null,
           type: 'run.ci_round_sent',
           payload: {
             ...this.ciFacts(locked),
@@ -3162,7 +3176,7 @@ export class RunService {
           },
           at: now,
         });
-        await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project.id });
+        await notifyChange(tx, { entity: 'run', id: runId, projectId: locked.project?.id ?? null });
         return false;
       }
       const { message } = ack.payload;
@@ -3197,7 +3211,7 @@ export class RunService {
           actor: 'system',
           entityType: 'run',
           entityId: runId,
-          projectId: locked.project.id,
+          projectId: locked.project?.id ?? null,
           type: 'run.ci_round_not_taken',
           payload: {
             ...this.ciFacts(locked),
@@ -3448,13 +3462,13 @@ export class RunService {
             actor: 'system',
             entityType: 'run',
             entityId: run.id,
-            projectId: locked.project.id,
+            projectId: locked.project?.id ?? null,
             type: 'run.git_config_restored',
             payload: {
-              project: locked.project.key,
+              project: locked.project?.key ?? '',
               ticket: this.reference(locked),
               machine: locked.machine.name,
-              repository: `${locked.project.repoOwner}/${locked.project.repoName}`,
+              repository: locked.project ? repositoryOf(locked.project) : '',
               changes: maskSecrets(payload.gitConfigRestored),
             },
             at: this.now(),
@@ -3462,7 +3476,7 @@ export class RunService {
         }
         if (payload.push !== null && locked.ticket) {
           await recordPush(tx, {
-            project: locked.project,
+            project: projectOf(locked),
             ticket: locked.ticket,
             run: { id: locked.run.id, branchName: runBranch(locked.run) },
             machine: locked.machine,
@@ -3491,7 +3505,11 @@ export class RunService {
               updatedAt: this.now(),
             })
             .where(eq(schema.runs.id, run.id));
-          await notifyChange(tx, { entity: 'run', id: run.id, projectId: locked.project.id });
+          await notifyChange(tx, {
+            entity: 'run',
+            id: run.id,
+            projectId: locked.project?.id ?? null,
+          });
           return true;
         }
         await tx
@@ -3548,7 +3566,7 @@ export class RunService {
           });
           if (locked.ticket) {
             await applyRunAction(tx, {
-              projectKey: locked.project.key,
+              projectKey: projectOf(locked).key,
               ticket: locked.ticket,
               action: 'run_submitted',
               actor: 'system',

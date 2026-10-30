@@ -403,7 +403,9 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
         .select({ projectId: schema.runs.projectId, at: max(schema.runs.createdAt) })
         .from(schema.runs)
         .groupBy(schema.runs.projectId)
-    ).map((row) => [row.projectId, row.at?.getTime() ?? 0]),
+    ).flatMap((row): [string, number][] =>
+      row.projectId === null ? [] : [[row.projectId, row.at?.getTime() ?? 0]],
+    ),
   );
   const ordered = order(drafts, served);
 
@@ -412,6 +414,8 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
   for (const row of await db
     .selectDistinct({ projectId: schema.runs.projectId, machineId: schema.runs.machineId })
     .from(schema.runs)) {
+    // A new project's planning run has no project, so no clone (lot 5 step E1b).
+    if (row.projectId === null) continue;
     cloned.set(row.projectId, (cloned.get(row.projectId) ?? new Set()).add(row.machineId));
   }
   const started = await runsToday(
