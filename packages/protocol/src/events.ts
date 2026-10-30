@@ -124,6 +124,7 @@ export const EventType = z.enum([
   'request.created',
   'request.commented',
   'request.status_changed',
+  'plan.proposed',
   'setting.changed',
   'setting.reset',
   'setting.time_zone_saved',
@@ -337,16 +338,30 @@ export const EventPayloads = {
   /**
    * A request's status changed (01, section 3.2; lot 5 step D2a): `planning` when its planning run
    * started, back to `open` when that run ended without a plan, with its failure reason (the
-   * owner's answer that could not reach it ends it `machine_offline`).
+   * owner's answer that could not reach it ends it `machine_offline`), `plan_proposed` at an
+   * accepted `plan_propose` (step E1b).
    */
   'request.status_changed': z.object({
     request: z.int().positive(),
     project: z.string().nullable(),
     from: RequestStatus,
     to: RequestStatus,
-    cause: z.enum(['run_started', 'run_ended']),
+    cause: z.enum(['run_started', 'run_ended', 'plan_proposed']),
     runId: z.uuid(),
     failureReason: FailureReason.optional(),
+  }),
+  /**
+   * The Project Manager proposed a plan for a request (06, section 4.4; lot 5 step E1b): the
+   * request, its project's key or null, the plan, how many tickets it holds, the project it
+   * creates, if any, and the agent and its run.
+   */
+  'plan.proposed': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    planId: z.uuid(),
+    tickets: z.int().positive(),
+    newProject: z.string().nullable(),
+    ...AgentFacts,
   }),
   /** An agent's submission was accepted and its report stored (04, section 3.1). */
   'ticket.submitted': z.object({

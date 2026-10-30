@@ -714,6 +714,7 @@ describe('tool descriptions', () => {
       [
         'agent_list',
         'ci_status',
+        'plan_propose',
         'request_ask',
         'request_get',
         'review_approve',

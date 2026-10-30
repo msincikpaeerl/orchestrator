@@ -113,6 +113,44 @@ const examples: Record<McpToolName, { input: Json; output: Json }> = {
       request: { number: 7, text: 'A bakery website.', status: 'planning', project: 'WEB' },
     },
   },
+  plan_propose: {
+    input: {
+      summary: 'A one-page website with a contact form.',
+      new_project: { name: 'Bakery website', kind: 'website' },
+      tickets: [
+        {
+          key: 'setup',
+          type: 'chore',
+          title: 'Bootstrap project harness',
+          assignee: 'architect',
+          acceptance_criteria: ['CI runs lint and tests on pull requests'],
+          bootstrap: true,
+        },
+        { key: 'contact', type: 'feature', title: 'Contact form', blocked_by: ['setup'] },
+      ],
+    },
+    output: {
+      plan: { id: '7b1c2f4e-58f4-4c1d-9a64-1f8f2d6f0a11', status: 'proposed' },
+      request: { number: 7, text: 'A bakery website.', status: 'plan_proposed', project: null },
+      tickets: [
+        {
+          key: 'setup',
+          title: 'Bootstrap project harness',
+          blocked_by: [],
+          bootstrap: true,
+          added_criteria: ['CLAUDE.md is complete: commands, folder map and conventions.'],
+        },
+        {
+          key: 'contact',
+          title: 'Contact form',
+          blocked_by: ['setup'],
+          bootstrap: false,
+          added_criteria: [],
+        },
+      ],
+      note: 'Your plan for request 7 is recorded. End your turn now.',
+    },
+  },
   ticket_give_up: {
     input: { reason: 'The payment API does not exist.', tried: 'Searched the docs and the code.' },
     output: { ticket: { ...ticket, status: 'todo' } },
@@ -230,6 +268,10 @@ const inputFields: Partial<Record<McpToolName, { required?: string; text?: [stri
   ticket_submit: { required: 'summary', text: ['summary', TEXT_CEILING] },
   review_approve: { required: 'summary', text: ['summary', settingCeiling('commentMaxLength')] },
   review_request_changes: { required: 'points' },
+  plan_propose: {
+    required: 'tickets',
+    text: ['summary', settingCeiling('ticketDescriptionMaxLength')],
+  },
 };
 
 describe('MCP_TOOLS', () => {
@@ -269,6 +311,9 @@ describe('MCP_TOOLS', () => {
       ['ticket_update', 'they go in plan_propose'],
       ['request_ask', 'Do not ask about technical choices'],
       ['request_ask', 'End your turn right after calling it'],
+      ['plan_propose', 'exactly one ticket has bootstrap true'],
+      ['plan_propose', 'A refusal lists every problem'],
+      ['plan_propose', 'One plan per run'],
     ];
     for (const [name, text] of guidance) expect(MCP_TOOLS[name].description).toContain(text);
     expect(MCP_TOOLS.ticket_progress.description).not.toContain('LIMIT_REACHED');
@@ -333,6 +378,28 @@ describe('wrong types and inconsistent inputs', () => {
       'an assignee that is not a profile key',
       'ticket_create',
       { ...examples.ticket_create.input, assignee: 'Web Dev' },
+    ],
+    ['a plan with no ticket', 'plan_propose', { ...examples.plan_propose.input, tickets: [] }],
+    [
+      'an uppercase ticket key',
+      'plan_propose',
+      {
+        ...examples.plan_propose.input,
+        tickets: [{ key: 'Setup', type: 'chore', title: 'Bootstrap' }],
+      },
+    ],
+    [
+      'an unknown field in a plan ticket',
+      'plan_propose',
+      {
+        ...examples.plan_propose.input,
+        tickets: [{ key: 'setup', type: 'chore', title: 'Bootstrap', parent: 'x' }],
+      },
+    ],
+    [
+      'an unknown project kind',
+      'plan_propose',
+      { ...examples.plan_propose.input, new_project: { name: 'Shop', kind: 'shop' } },
     ],
     ['nothing to change', 'ticket_update', { ticket: 'WEB-12' }],
     ['an empty title', 'ticket_update', { ticket: 'WEB-12', title: ' ' }],

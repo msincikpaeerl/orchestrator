@@ -170,7 +170,7 @@ const BEFORE: [string, Record<string, string>, string][] = [
   ],
   [
     'request-not-planning',
-    { request: '7', status: 'open' },
+    { request: '7', status: 'open', tool: 'request_ask' },
     'Request 7 is open: request_ask needs it planning. End your turn.',
   ],
   [
@@ -206,6 +206,160 @@ const BEFORE: [string, Record<string, string>, string][] = [
     { cycle: 'WEB-3 → WEB-4 → WEB-3' },
     'closes the cycle WEB-3 → WEB-4 → WEB-3',
   ],
+  // `plan_propose` and a planning run with no project (lot 5 step E1b).
+  [
+    'plan-no-project',
+    { request: '7', tool: 'ticket_list' },
+    'Request 7 asks for a new project: there is no project yet, so ticket_list has nothing to work on. Plan it with plan_propose and new_project.',
+  ],
+  [
+    'plan-project-archived',
+    { project: 'WEB' },
+    'The project WEB is archived: no plan can be proposed for it. End your run with ticket_give_up, saying so.',
+  ],
+  [
+    'plan-refused',
+    { problems: '- The plan, tickets: x' },
+    'Your plan is not recorded. Fix every problem below, then call plan_propose again with the whole plan:\n- The plan, tickets: x',
+  ],
+  [
+    'plan-problem',
+    { place: 'The plan, summary', message: 'too long' },
+    '- The plan, summary: too long',
+  ],
+  [
+    'plan-place-ticket',
+    { position: '2', key: 'contact', field: 'title' },
+    'Ticket 2 (contact), title',
+  ],
+  ['plan-place-whole', {}, 'The plan'],
+  [
+    'plan-too-many',
+    { count: '16', max: '15' },
+    '16 tickets: at most 15 per plan (setting "Most tickets per plan"). Plan the first part of the work now, and say in the summary what a later request should add',
+  ],
+  [
+    'plan-duplicate-key',
+    { key: 'form', earlier: '1' },
+    'the key "form" is already the key of ticket 1: give each ticket its own key',
+  ],
+  [
+    'plan-too-long',
+    { length: '201', max: '200', setting: 'Longest ticket title' },
+    'too long: 201 characters, at most 200 (setting "Longest ticket title")',
+  ],
+  [
+    'plan-too-many-criteria',
+    { count: '21', max: '20' },
+    '21 criteria: at most 20 (setting "Most acceptance criteria")',
+  ],
+  [
+    'plan-criterion-too-long',
+    { number: '2', length: '501', max: '500' },
+    'criterion 2 is too long: 501 characters, at most 500 (setting "Longest acceptance criterion")',
+  ],
+  [
+    'plan-assignee',
+    { refusal: 'No agent profile with the key writer', assignable: 'web_dev (Web Developer)' },
+    'No agent profile with the key writer. Choose one of web_dev (Web Developer), or leave the assignee out',
+  ],
+  [
+    'plan-blocks-itself',
+    { item: 'form' },
+    `"form" is this ticket's own key: a ticket cannot wait for itself`,
+  ],
+  ['plan-unknown-key', { item: 'layout' }, 'no ticket of your plan has the key "layout"'],
+  [
+    'plan-other-project',
+    { item: 'APP-3', project: 'WEB' },
+    'APP-3 belongs to another project: name keys of your plan, or tickets of WEB',
+  ],
+  [
+    'plan-unknown-ticket',
+    { item: 'WEB-99' },
+    'there is no ticket WEB-99 in the project: use ticket_list to find its tickets',
+  ],
+  [
+    'plan-no-project-ticket',
+    { item: 'WEB-3' },
+    'WEB-3 is a ticket number, but the request asks for a new project, which has no tickets yet: name keys of your plan',
+  ],
+  [
+    'plan-not-a-reference',
+    { item: 'Layout', project: 'WEB' },
+    '"Layout" is neither a key of your plan nor a ticket number such as WEB-3',
+  ],
+  [
+    'plan-not-a-key',
+    { item: 'Layout' },
+    '"Layout" is not a key of your plan: keys are 1 to 40 lowercase letters, digits, "-" or "_"',
+  ],
+  [
+    'plan-cycle',
+    { cycle: 'a → b → a' },
+    'these tickets wait for each other, so none of them could ever start: a → b → a. Remove one of these dependencies',
+  ],
+  [
+    'plan-new-project-unwanted',
+    { request: '7', project: 'WEB' },
+    'request 7 is for the project WEB: leave new_project out',
+  ],
+  [
+    'plan-new-project-missing',
+    { request: '7' },
+    'request 7 asks for a new project: give new_project, with its name, kind and description',
+  ],
+  [
+    'plan-android',
+    {},
+    'Android projects come with version 0.8.0: choose website or web_app. If the request needs an Android app, end your run with ticket_give_up, saying so',
+  ],
+  [
+    'plan-bootstrap-unwanted',
+    { project: 'WEB' },
+    'the project WEB already exists: only a plan for a new project has a bootstrap ticket. Remove bootstrap',
+  ],
+  [
+    'plan-bootstrap-missing',
+    {},
+    'a plan for a new project needs exactly one ticket with bootstrap true: a chore assigned to architect and blocked by nothing, which sets the project up',
+  ],
+  [
+    'plan-bootstrap-several',
+    { count: '2', keys: 'setup, harness' },
+    '2 tickets have bootstrap true (setup, harness): exactly one may have it',
+  ],
+  [
+    'plan-bootstrap-type',
+    { type: 'feature' },
+    'the bootstrap ticket must be a chore, not a feature',
+  ],
+  ['plan-bootstrap-assignee', {}, 'the bootstrap ticket must be assigned to architect'],
+  [
+    'plan-bootstrap-blocked',
+    {},
+    'the bootstrap ticket waits for nothing: remove its blocked_by (every other ticket waits for it)',
+  ],
+  [
+    'plan-bootstrap-criteria',
+    { count: '22', added: '8', max: '20', own: '12' },
+    '22 criteria once the 8 fixed ones the Orchestrator adds are counted: at most 20 (setting "Most acceptance criteria"). Keep at most 12 criteria of your own besides the fixed ones',
+  ],
+  [
+    'plan-bootstrap-settings',
+    { setting: 'Most acceptance criteria', value: '5', needed: '8 criteria' },
+    'the setting "Most acceptance criteria" (5) is too low for the fixed criteria of the bootstrap ticket, which need 8 criteria. Only the owner can raise it: end your run with ticket_give_up, saying so',
+  ],
+  [
+    'plan-accepted',
+    { request: '7', count: '5' },
+    "Your plan for request 7 is recorded, with 5 tickets, and waits for the owner's review. End your turn now, without another tool call.",
+  ],
+  [
+    'plan-accepted-bootstrap',
+    { key: 'setup', added: '7' },
+    'The bootstrap ticket setup is first: it received 7 fixed criteria, and every other ticket waits for it.',
+  ],
 ];
 
 describe("the MCP tools' texts in agents/templates/mcp-tools.md", () => {
@@ -221,9 +375,13 @@ describe("the MCP tools' texts in agents/templates/mcp-tools.md", () => {
     });
   }
 
-  it('have no part left out above, and none that backend.ts does not use', async () => {
+  it('have no part left out above, and none that backend.ts or plan_propose does not use', async () => {
     expect([...texts.parts.keys()].sort()).toEqual(BEFORE.map(([name]) => name).sort());
-    const source = await readFile(new URL('./backend.ts', import.meta.url), 'utf8');
+    // plan_propose words its problems in its own module (lot 5 step E1b).
+    const source = [
+      await readFile(new URL('./backend.ts', import.meta.url), 'utf8'),
+      await readFile(new URL('../requests/plan-propose.ts', import.meta.url), 'utf8'),
+    ].join('\n');
     for (const name of texts.parts.keys()) {
       // `too-long-${unit}` names the two units' parts.
       const used = name.startsWith('too-long-')

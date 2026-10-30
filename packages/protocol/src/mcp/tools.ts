@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { AgentKey, AgentRole } from '../api/agents.js';
 import { HarnessElement, ProjectKey, ProjectKind } from '../api/projects.js';
+import { PlanNewProjectEntry, PlanStatus, PlanTicketEntry } from '../api/plans.js';
 import { RequestNumber, RequestStatus } from '../api/requests.js';
+import { TicketKey } from '../api/ticket-import.js';
 import {
   CommentKind,
   TicketPriority,
@@ -300,6 +302,32 @@ export const MCP_TOOLS = {
         message: 'give at least one field to change besides ticket',
       }),
     output: z.object({ ticket: McpTicket }),
+  },
+  plan_propose: {
+    description:
+      'Submits your plan for the request your planning run plans: a summary for the owner, new_project when the request has no project (its name, kind and description), and the tickets, each with a lowercase key such as "contact-form". blocked_by names keys of your plan, or existing tickets of the project (WEB-3). For a new project, exactly one ticket has bootstrap true: a chore assigned to architect and blocked by nothing; the Orchestrator adds the fixed acceptance criteria it lacks and makes every other ticket wait for it. Nothing is created before the owner approves the plan. A refusal lists every problem: fix them all and call it again. When it is accepted, end your turn. One plan per run.',
+    input: z.strictObject({
+      summary: requiredText(DESCRIPTION_CEILING),
+      /** The project the plan creates; null or absent for a request with a project. */
+      new_project: PlanNewProjectEntry.nullish(),
+      tickets: z.array(PlanTicketEntry).min(1).max(settingCeiling('maxTicketsPerPlan')),
+    }),
+    /** The plan as recorded (06, section 4.4; owner's answer 10, lot 5 step E1b). */
+    output: z.object({
+      plan: z.object({ id: z.uuid(), status: PlanStatus }),
+      request: McpRequest,
+      tickets: z.array(
+        z.object({
+          key: TicketKey,
+          title: z.string(),
+          blocked_by: z.array(z.string()),
+          bootstrap: z.boolean(),
+          /** The bootstrap's fixed criteria the Orchestrator added (08, section 3.2). */
+          added_criteria: z.array(z.string()),
+        }),
+      ),
+      note: z.string(),
+    }),
   },
   ticket_submit: {
     description:

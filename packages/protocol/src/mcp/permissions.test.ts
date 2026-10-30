@@ -46,7 +46,10 @@ describe('runMcpTools', () => {
     expect(runMcpTools(ROLE_MCP_PERMISSIONS.builder, 'implement')).toEqual(
       Object.keys(MCP_TOOLS).filter(
         (name) =>
-          !name.startsWith('review_') && !name.startsWith('request_') && name !== 'ticket_update',
+          !name.startsWith('review_') &&
+          !name.startsWith('request_') &&
+          name !== 'ticket_update' &&
+          name !== 'plan_propose',
       ),
     );
     expect(runMcpTools(['ticket_get', 'plan_propose', 'review_approve'], 'review')).toEqual([
@@ -64,6 +67,7 @@ describe('runMcpTools', () => {
       const tools = runMcpTools(all, purpose);
       expect(tools).not.toContain('request_get');
       expect(tools).not.toContain('request_ask');
+      expect(tools).not.toContain('plan_propose');
     }
   });
 
@@ -80,6 +84,7 @@ describe('runMcpTools', () => {
       'request_ask',
       'ticket_give_up',
       'ticket_update',
+      'plan_propose',
     ]);
   });
 
