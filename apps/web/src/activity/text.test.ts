@@ -387,6 +387,20 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     runId: '00000000-0000-4000-8000-000000000001',
     failureReason: 'machine_offline',
   },
+  'request.stopped': {
+    request: 7,
+    project: 'WEB',
+    cause: 'failed_attempts',
+    count: 2,
+    limit: 2,
+    runId: '00000000-0000-4000-8000-000000000001',
+  },
+  'request.tried_again': {
+    request: 7,
+    project: null,
+    cause: 'failed_attempts',
+    commentId: COMMENT_ID,
+  },
   'plan.proposed': {
     request: 7,
     project: null,
@@ -667,6 +681,40 @@ describe('eventText', () => {
         ),
       ),
     ).toBe('Request 7: planning, a planning run started');
+    expect(
+      plainText(
+        eventText(
+          entry('request.status_changed', {
+            payload: { ...examples['request.status_changed'], failureReason: 'timeout' },
+          }),
+        ),
+      ),
+    ).toBe(
+      'Request 7 back to open: its planning run ended, it ran out of time (counted as a failed attempt)',
+    );
+  });
+
+  it('says why a request stopped and that Try again let it go on (lot 5 step E2)', () => {
+    expect(plainText(eventText(entry('request.stopped')))).toBe(
+      'Request 7 stopped after 2 failed planning attempts (Failed attempts before asking you: 2)',
+    );
+    expect(
+      plainText(
+        eventText(
+          entry('request.stopped', {
+            payload: {
+              request: 7,
+              project: null,
+              cause: 'stop_run',
+              runId: '00000000-0000-4000-8000-000000000001',
+            },
+          }),
+        ),
+      ),
+    ).toBe('Request 7 stopped: you stopped its planning run; Try again lets it go on');
+    expect(plainText(eventText(entry('request.tried_again')))).toBe(
+      'Request 7: you used Try again; its failed attempts count from 0 again',
+    );
   });
 
   it('says what a proposed plan holds, and that the request has a plan to review (lot 5 step E1b)', () => {

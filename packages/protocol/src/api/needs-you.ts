@@ -14,7 +14,7 @@ import {
   PullRequestWatchFailure,
 } from './pull-requests.js';
 import { ReviewDecision, ReviewEnd, ReviewStart, StopCause } from './reviews.js';
-import { RequestNumber, RequestProject } from './requests.js';
+import { RequestNumber, RequestProject, RequestStop } from './requests.js';
 import { Run } from './runs.js';
 import { Comment, TicketStatus, WorkflowFlag } from './tickets.js';
 import { GitHash } from '../daemon/git.js';
@@ -132,6 +132,17 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     request: z.object({ number: RequestNumber, line: z.string(), project: RequestProject }),
     question: Comment,
     /** When it was asked. */
+    since: z.iso.datetime(),
+  }),
+  /**
+   * "Planning stopped for request 7 (TESTB): <first line>" (01, section 3.2; owner's answer 7, lot
+   * 5 step E2): no planning run starts for the request until the owner's **Try again**.
+   */
+  z.object({
+    type: z.literal('planning_stopped'),
+    request: z.object({ number: RequestNumber, line: z.string(), project: RequestProject }),
+    stop: RequestStop,
+    /** When it was stopped. */
     since: z.iso.datetime(),
   }),
   /** A ticket an agent created with `ticket_create`: **Accept** or **Reject** (04, section 2). */

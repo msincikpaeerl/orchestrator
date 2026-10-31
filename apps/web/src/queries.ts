@@ -185,8 +185,9 @@ export function useTickets(projectKey: string, enabled = true) {
   });
 }
 
-export function useTicket(projectKey: string, number: number) {
+export function useTicket(projectKey: string, number: number, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: keys.ticket(projectKey, number),
     queryFn: () =>
       api(

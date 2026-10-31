@@ -27,7 +27,8 @@ import { formatDateTime } from '../github/text';
 /** **Stop new runs** in force (07, section 5.5): the account's screens and Run now's refusal. */
 export const PAUSED_TEXT = 'you stopped new runs on it';
 import { WAITING_FOR_CI } from './ci-text';
-import { statusLabel } from '../tickets/text';
+import { requestPath } from '../requests/text';
+import { statusLabel, ticketPath } from '../tickets/text';
 
 // Runs in plain words (02, section 1: the owner never reads codes), for the run screens, the
 // refusals and the event log.
@@ -311,7 +312,10 @@ export function isActive(status: RunStatus): boolean {
  * step L). `commits` is false when there is no branch whose commits could be listed.
  */
 export function runBranchText(
-  run: Pick<Run, 'branch' | 'status' | 'endReason'> & { machine: { name: string } },
+  run: Pick<Run, 'status' | 'endReason'> & {
+    branch: NonNullable<Run['branch']>;
+    machine: { name: string };
+  },
 ): { text: string; commits: boolean } {
   const { name, head } = run.branch;
   const machine = run.machine.name;
@@ -572,6 +576,28 @@ export function logTime(at: string): string {
 /** The run page (02, section 7). */
 export function runPath(id: string): string {
   return `/activity/runs/${encodeURIComponent(id)}`;
+}
+
+/**
+ * What a run works on, as the run lists and the run page name it (lot 5 step E2): its ticket
+ * (`WEB-12`), or a planning run's request ("Request 7: <first line>"), with that page's path.
+ */
+export function runSubject(run: Pick<Run, 'ticket' | 'projectKey' | 'request'>): {
+  name: string;
+  label: string;
+  path: string;
+} {
+  if (run.request) {
+    const name = `Request ${String(run.request.number)}`;
+    return { name, label: `${name}: ${run.request.line}`, path: requestPath(run.request.number) };
+  }
+  const ticket = run.ticket ?? '';
+  const key = run.projectKey ?? '';
+  return {
+    name: ticket,
+    label: ticket,
+    path: ticketPath(key, Number(ticket.slice(key.length + 1))),
+  };
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   notInArray,
   or,
   sql,
@@ -38,7 +39,8 @@ import { SERVER_VERSION } from './version.js';
 import { toProject } from './projects/model.js';
 import { ciOutcome, ciSourceRun } from './runs/ci-outcome.js';
 import { runDownload } from './runs/download.js';
-import { requestQuestion } from './requests/model.js';
+import { waitingQuestion } from './requests/model.js';
+import { requestStop } from './requests/planning-end.js';
 import { reviewCiOf, ticketReview } from './runs/review-view.js';
 import type { RunService } from './runs/service.js';
 import { automaticMergeView } from './tickets/automatic-merge.js';
@@ -184,7 +186,8 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
   const { maxSchedulerResumes } = await resolveSettings(db, ['maxSchedulerResumes']);
   for (const run of paused) {
     const ticket = titles.find((row) => row.runId === run.id);
-    if (!ticket) continue;
+    // A paused planning run has no ticket: its resume comes with step E2b (lot 5).
+    if (!ticket || run.projectKey === null) continue;
     const ticketRef = { projectKey: run.projectKey, number: ticket.number, title: ticket.title };
     if (run.schedulerResumes >= maxSchedulerResumes) {
       items.push({
@@ -228,8 +231,9 @@ export async function requestQuestionItems(db: Database): Promise<Items> {
   const items: Items = [];
   const profiles = await profileLinks(db);
   for (const { request, project } of rows) {
-    const open = await requestQuestion(db, request.id);
-    if (!open || open.answer) continue;
+    // A question left by a run that ended waits for no one (owner's answer 8, lot 5 step E2).
+    const question = await waitingQuestion(db, request.id);
+    if (!question) continue;
     items.push({
       type: 'request_question',
       request: {
@@ -237,11 +241,45 @@ export async function requestQuestionItems(db: Database): Promise<Items> {
         line: requestLine(request.body),
         project: project ? { key: project.key, name: project.name } : null,
       },
-      question: toComment(open.question, profiles),
-      since: open.question.createdAt.toISOString(),
+      question: toComment(question, profiles),
+      since: question.createdAt.toISOString(),
     });
   }
   return items;
+}
+
+/**
+ * "Planning stopped" (owner's answer 7, lot 5 step E2): a request stopped after its failed planning
+ * runs or the owner's **Stop run**, not closed, on a project not archived or for a new project.
+ */
+export async function planningStoppedItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ request: schema.requests, project: schema.projects })
+    .from(schema.requests)
+    .leftJoin(schema.projects, eq(schema.projects.id, schema.requests.projectId))
+    .where(
+      and(
+        isNotNull(schema.requests.stopped),
+        ne(schema.requests.status, 'closed'),
+        or(isNull(schema.requests.projectId), eq(schema.projects.status, 'active')),
+      ),
+    );
+  return rows.flatMap(({ request, project }): Items => {
+    const stop = requestStop(request);
+    if (stop === null) return [];
+    return [
+      {
+        type: 'planning_stopped',
+        request: {
+          number: request.number,
+          line: requestLine(request.body),
+          project: project ? { key: project.key, name: project.name } : null,
+        },
+        stop,
+        since: stop.at,
+      },
+    ];
+  });
 }
 
 /**
@@ -797,6 +835,7 @@ export function registerNeedsYouRoutes(
     }
     items.push(...(await ticketItems(db, runs, now())));
     items.push(...(await requestQuestionItems(db)));
+    items.push(...(await planningStoppedItems(db)));
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));
 
     // Setup still to do (02, section 3), before the rest.

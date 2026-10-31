@@ -12,6 +12,7 @@ import { FailureReason, PauseReason, RunStatus } from './run-status.js';
 import { TicketStatus } from './tickets.js';
 import { PullRequestState } from './pull-requests.js';
 import { RunDownloadFailure } from './download-failure.js';
+import { RequestNumber } from './requests.js';
 
 export {
   ACCOUNT_BUSY_RUN_STATUSES,
@@ -125,9 +126,12 @@ export type RunBranch = z.infer<typeof RunBranch>;
 /** A run as the API shows it (02, sections 6.4 and 8). */
 export const Run = z.object({
   id: z.uuid(),
-  projectKey: z.string(),
-  /** `WEB-12`. */
-  ticket: z.string(),
+  /** Null only for the planning run of a request for a new project (lot 5 step E1b). */
+  projectKey: z.string().nullable(),
+  /** `WEB-12`; null for a planning run, which has its request instead (lot 5 step E2). */
+  ticket: z.string().nullable(),
+  /** A planning run's request, its number and first line; null for any other run. */
+  request: z.object({ number: RequestNumber, line: z.string() }).nullable(),
   purpose: RunPurpose,
   profile: z.object({ key: AgentKey, name: z.string(), version: z.int().positive() }),
   machine: z.object({ id: z.uuid(), name: z.string(), online: z.boolean() }),
@@ -153,7 +157,8 @@ export const Run = z.object({
   attempt: z.int().positive(),
   /** Whether its Claude Code session is running on the machine. */
   sessionAlive: z.boolean(),
-  branch: RunBranch,
+  /** Null for a planning run, which has no branch (lot 5 step D2a). */
+  branch: RunBranch.nullable(),
   /**
    * The run's latest push of the ticket branch (at a submission or at its end) and when it was
    * reported; null when it pushed nothing (05, section 4.9; lot 3 step D3).

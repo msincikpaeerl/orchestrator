@@ -124,6 +124,8 @@ export const EventType = z.enum([
   'request.created',
   'request.commented',
   'request.status_changed',
+  'request.stopped',
+  'request.tried_again',
   'plan.proposed',
   'setting.changed',
   'setting.reset',
@@ -349,6 +351,26 @@ export const EventPayloads = {
     cause: z.enum(['run_started', 'run_ended', 'plan_proposed']),
     runId: z.uuid(),
     failureReason: FailureReason.optional(),
+  }),
+  /**
+   * The request is stopped (01, section 3.2; owner's answers 3 and 7, lot 5 step E2): its counted
+   * failed planning runs reached **Failed attempts before asking you** (`count`, `limit`), or the
+   * owner stopped its planning run (`stop_run`); `runId` is the run whose end stopped it.
+   */
+  'request.stopped': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    cause: z.enum(['failed_attempts', 'stop_run']),
+    count: z.int().positive().optional(),
+    limit: z.int().positive().optional(),
+    runId: z.uuid(),
+  }),
+  /** The owner's **Try again** on a stopped request: the stop's cause; its count starts again. */
+  'request.tried_again': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    cause: z.enum(['failed_attempts', 'stop_run']),
+    commentId: z.uuid(),
   }),
   /**
    * The Project Manager proposed a plan for a request (06, section 4.4; lot 5 step E1b): the

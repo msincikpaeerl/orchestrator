@@ -9,7 +9,7 @@ import { budgetText, scheduleText } from '../machines/schedule-text';
 import { concurrentRuns, osLabel, planLabel, statusText } from '../machines/text';
 import { useAccounts, useAccountsLive, useLiveRuns, useMachines } from '../queries';
 import { AccountStatusText, ResetCountdown } from '../runs/components';
-import { runPath, runStateText } from '../runs/text';
+import { runPath, runStateText, runSubject } from '../runs/text';
 
 const badgeLook: Record<Machine['state'], string> = {
   online: 'bg-green-100 text-green-900',
@@ -55,7 +55,7 @@ export function ActiveRunList({ runs }: { runs: Run[] }) {
       {runs.map((run) => (
         <li key={run.id} className="break-words">
           <Link to={runPath(run.id)} className="text-blue-700 underline">
-            {run.ticket}
+            {runSubject(run).label}
           </Link>{' '}
           · {run.profile.name} · {runStateText(run)}
         </li>

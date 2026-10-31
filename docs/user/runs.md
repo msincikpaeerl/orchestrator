@@ -93,6 +93,8 @@ The screens update on their own while you look at them: you never need to reload
   - from version 0.4.0, the **Latest refused submission**: when the checks refused the agent's work in this run, each check's result and why, in plain words (see [The checks](tickets.md#the-checks)). An agent refused again and again shows here what it keeps getting wrong. The latest refusal stays on the page after the work is accepted: the card then says "The agent then handed its work in again, and it was accepted on …", so it is never the run's outcome, which the run's status gives;
   - the **log**: what the agent writes, each tool it uses with a short input, the results (long ones shortened, see **Longest stored log entry** in [Settings](settings.md#runs)), and the messages sent to it. Passwords and tokens are hidden.
 
+A **planning run**, the Project Manager's work on a request (see [Requests](requests.md)), shows in **Activity** and on its machine's page as **Request 7: <its first line>**, linked to the request. Its run page, **Planning run for request 7**, has no branch: the Project Manager changes no file. When it waits for your answer, answer it on the request's page.
+
 The agent sends a progress line when it moves to another part of the work. A new one is shown at most once per **Progress update interval** (60 seconds by default).
 
 The **Runs** list of the ticket page shows every run of the ticket, newest first, with its result, and **Failed attempts**: the runs that failed in a way that counts (see [When a run ends](#when-a-run-ends)).
@@ -144,6 +146,8 @@ The answer is added to the ticket's timeline, the ticket goes back to **In progr
 On the ticket page or the run page, click **Stop run**, then confirm. The agent stops at once and the ticket goes back to **To do**. The branch and its commits stay on the machine, and the next run goes on from them. From version 0.4.0 the machine also sends the commits GitHub does not have yet to the ticket's branch on GitHub, once the agent's programs are stopped (see [Where the work is](#where-the-work-is)). A run you stop never counts as a failed attempt. Stopping a run frees its Claude usage at once, and the ticket is not started again by itself: start it with **Run now** when you want (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)).
 
 If the machine is offline, the run is marked as failed because of that, and its session is stopped when the machine reconnects.
+
+**Stop run** on a planning run (Activity, its machine's page or its run page) stops the Project Manager and the request: no planning run starts for it until you click **Try again** (see [If planning fails](requests.md#if-planning-fails)). It does not count as a failed attempt.
 
 ## Usage limits
 

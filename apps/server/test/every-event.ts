@@ -828,7 +828,7 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   }
 
   // Request 1's planning run asks its question, then crashes: the request is open again
-  // (`request.status_changed`; lot 5 step D2a).
+  // (`request.status_changed`; lot 5 step D2a), the crash counted on it (step E2).
   const planning = await startPlanningRun(t.db, { request: 1, machineId: machine.id });
   const planningState = (payload: object) =>
     daemon.request({
@@ -860,8 +860,12 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     download: null,
     sessionAlive: false,
   });
-  // Request 2's planning run proposes a plan (`plan.proposed`; lot 5 step E1b); request 1's
-  // question still waits for its answer.
+  // Request 1's next planning run, stopped by the owner: the request is stopped
+  // (`request.stopped`), then the owner's Try again (`request.tried_again`; lot 5 step E2).
+  const stopping = await startPlanningRun(t.db, { request: 1, machineId: machine.id });
+  await call('POST', `/api/runs/${stopping.runId}/stop`);
+  await call('POST', '/api/requests/1/try-again');
+  // Request 2's planning run proposes a plan (`plan.proposed`; lot 5 step E1b).
   await call('POST', '/api/requests', { body: 'A home page', project: 'SHOP' });
   const proposing = await startPlanningRun(t.db, { request: 2, machineId: machine.id });
   await daemon.request({

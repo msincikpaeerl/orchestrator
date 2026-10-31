@@ -14,22 +14,38 @@ import {
   purposeLabel,
   runBranchText,
   runStateText,
+  runSubject,
   usageText,
 } from '../runs/text';
 import { runPushText } from '../tickets/branch-text';
 import { CheckList, ReportFiles } from '../tickets/submission';
 import { RunReviewCard } from '../tickets/review';
-import { ticketPath } from '../tickets/text';
 
 /** The ticket's number in `WEB-12`. */
 function ticketNumber(run: RunDetail): number {
-  return Number(run.ticket.slice(run.projectKey.length + 1));
+  return Number((run.ticket ?? '').slice((run.projectKey ?? '').length + 1));
 }
 
 /** The answer box while the run waits for the owner's answer (owner's decision, lot 2 step L). */
 function RunQuestion({ run }: { run: RunDetail }) {
-  const ticket = useTicket(run.projectKey, ticketNumber(run));
-  if (run.status !== 'waiting_human' || !ticket.data) return null;
+  const ticket = useTicket(run.projectKey ?? '', ticketNumber(run), run.ticket !== null);
+  if (run.status !== 'waiting_human') return null;
+  // A planning run's question is answered on its request's page (lot 5 step E2).
+  if (run.request) {
+    const subject = runSubject(run);
+    return (
+      <InfoMessage>
+        <p>
+          The Project Manager waits for your answer.{' '}
+          <Link to={subject.path} className="text-blue-700 underline">
+            Answer it on the page of {subject.name}
+          </Link>
+          .
+        </p>
+      </InfoMessage>
+    );
+  }
+  if (!ticket.data) return null;
   return <AnswerBox ticket={ticket.data} />;
 }
 
@@ -91,19 +107,49 @@ function RefusedSubmission({ run }: { run: RunDetail }) {
   );
 }
 
-function RunContent({ run }: { run: RunDetail }) {
-  const number = ticketNumber(run);
+function BranchCard({ run }: { run: RunDetail & { branch: NonNullable<RunDetail['branch']> } }) {
   const branch = runBranchText(run);
   return (
+    <Card className="space-y-2">
+      <h2 className="text-lg font-semibold text-slate-900">Branch</h2>
+      <p className="break-words" aria-label="Branch">
+        {branch.text}
+      </p>
+      {run.push && (
+        <p className="break-words text-slate-700" aria-label="Push">
+          {runPushText(run.push)}
+        </p>
+      )}
+      {run.branch.head === null && isActive(run.status) ? (
+        <p className="text-slate-700">The commits are shown when the run ends.</p>
+      ) : (
+        branch.commits && <CommitList commits={run.branch.commits} />
+      )}
+    </Card>
+  );
+}
+
+function RunContent({ run }: { run: RunDetail }) {
+  const subject = runSubject(run);
+  return (
     <>
-      <PageHeader title={`Run of ${run.ticket} · attempt ${String(run.attempt)}`} help="runs" />
+      <PageHeader
+        title={
+          run.request
+            ? `Planning run for request ${String(run.request.number)} · attempt ${String(run.attempt)}`
+            : `Run of ${subject.name} · attempt ${String(run.attempt)}`
+        }
+        help="runs"
+      />
       <div className="space-y-4">
-        <Link
-          to={ticketPath(run.projectKey, number)}
-          className="inline-block text-blue-700 underline"
-        >
-          Back to {run.ticket}
+        <Link to={subject.path} className="inline-block text-blue-700 underline">
+          Back to {run.request ? `request ${String(run.request.number)}` : subject.name}
         </Link>
+        {run.request && (
+          <p className="break-words text-slate-800" aria-label="Request">
+            {subject.label}
+          </p>
+        )}
         {isActive(run.status) && !run.machine.online && (
           <InfoMessage>
             <p>
@@ -176,22 +222,8 @@ function RunContent({ run }: { run: RunDetail }) {
         <RunReviewCard run={run} />
         <CiWaitCard run={run} />
         <CiHistoryCard run={run} />
-        <Card className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">Branch</h2>
-          <p className="break-words" aria-label="Branch">
-            {branch.text}
-          </p>
-          {run.push && (
-            <p className="break-words text-slate-700" aria-label="Push">
-              {runPushText(run.push)}
-            </p>
-          )}
-          {run.branch.head === null && isActive(run.status) ? (
-            <p className="text-slate-700">The commits are shown when the run ends.</p>
-          ) : (
-            branch.commits && <CommitList commits={run.branch.commits} />
-          )}
-        </Card>
+        {/* A planning run has no branch (lot 5 step D2a). */}
+        {run.branch && <BranchCard run={{ ...run, branch: run.branch }} />}
         <RefusedSubmission run={run} />
         <RunLog run={run} />
       </div>

@@ -278,10 +278,19 @@ export const requests = pgTable(
     projectId: uuid('project_id').references(() => projects.id),
     body: text('body').notNull(),
     status: text('status').notNull().default('open'),
-    /** Failed planning runs, for **Failed attempts before asking you** (written from step E2). */
+    /** Counted failed planning runs, for **Failed attempts before asking you** (lot 5 step E2). */
     attemptCount: integer('attempt_count').notNull().default(0),
-    /** The stop at **Failed attempts before asking you**: cause and when (written from step E2). */
+    /**
+     * Why no planning run starts for it until the owner's **Try again** (`RequestStop`): the
+     * failed attempts, or the owner's **Stop run** (lot 5 step E2).
+     */
     stopped: jsonb('stopped'),
+    /**
+     * The failures in a row its machines caused (`TicketMachineFailures`, `asked` always null; 07,
+     * section 4; owner's answer 9, lot 5 step E2): each machine left out for the request from its
+     * latest failure until it connects again. No "could not start on" item for requests.
+     */
+    machineFailures: jsonb('machine_failures').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

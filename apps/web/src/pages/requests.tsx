@@ -27,11 +27,15 @@ import { refusalText } from '../refusals';
 import {
   requestCommentAuthor,
   requestName,
+  ENDED_QUESTION_TEXT,
+  planningStoppedText,
   requestOpenQuestion,
   requestPath,
   requestStatusLabel,
 } from '../requests/text';
+import { RequestTryAgain } from '../requests/try-again';
 import { QuestionAnswer } from '../runs/components';
+import { runPath } from '../runs/text';
 
 const MARKDOWN_HINT = 'Markdown is allowed. Links open in a new tab; images are shown as links.';
 
@@ -318,14 +322,38 @@ function RequestContent({ number }: { number: number }) {
           )}
           {data.status === 'planning' && (
             <p className="text-slate-700">
-              {question
+              {question?.live
                 ? 'Planning: the Project Manager waits for your answer.'
                 : 'Planning: the Project Manager is working on it.'}
+              {data.run && (
+                <>
+                  {' '}
+                  <Link to={runPath(data.run.id)} className="text-blue-700 underline">
+                    See the run
+                  </Link>
+                </>
+              )}
             </p>
           )}
         </Card>
+        {data.stopped && (
+          <section aria-label="Planning stopped">
+            <Card className="space-y-2">
+              <SectionTitle>Planning stopped</SectionTitle>
+              <p className="break-words text-slate-700">{planningStoppedText(data.stopped)}</p>
+              <RequestTryAgain number={data.number} />
+            </Card>
+          </section>
+        )}
         {question && (
-          <QuestionAnswer key={question.id} target={{ request: data.number }} question={question} />
+          <div className="space-y-2">
+            <QuestionAnswer
+              key={question.question.id}
+              target={{ request: data.number }}
+              question={question.question}
+            />
+            {!question.live && <p className="text-slate-700">{ENDED_QUESTION_TEXT}</p>}
+          </div>
         )}
         <Card className="space-y-2">
           <SectionTitle>Plan</SectionTitle>

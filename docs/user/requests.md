@@ -51,4 +51,17 @@ The question and your answer stay in the request's conversation, marked **Questi
 - after it, its session was closed to free the machine; your answer starts it again on the same machine, where it finds the request and your answer;
 - if that machine is offline, the planning run fails because of it (this does not count as a failed attempt), the request goes back to **Open**, and your answer stays in the conversation, with a note from the Orchestrator saying so: the next planning run reads it.
 
-If the planning run ends before you answer (it crashed or was stopped), the request goes back to **Open** and the question leaves **Needs you**; it stays in the conversation. A request of an archived project cannot be answered.
+If the planning run ends before you answer (it crashed or was stopped), the request goes back to **Open** and the question leaves **Needs you**. It stays on the request's page with the answer box and "Its planning run ended: your answer is kept and the next planning run reads it.": answer it there when you want, and the next planning run finds your answer in the conversation. A question left this way never holds up the next planning run. A request of an archived project cannot be answered.
+
+## If planning fails
+
+A planning run can end without a plan. Each time, the request goes back to **Open** and the Orchestrator adds a note to its conversation saying what happened and whether it counts as a failed attempt:
+
+- it **counts** when the Project Manager's session crashed, ran out of time, used up its reminders without proposing a plan, or gave up because the request cannot be planned (its reasons are then in the conversation, from the Project Manager);
+- it **does not count** when you stopped it, or when its machine caused it (offline, revoked, Claude Code missing or too old, Claude Code that could not be started). A machine that caused it is not used again for this request until it connects again.
+
+When the failed attempts reach **Failed attempts before asking you** (2 by default, in [Settings](settings.md) or the project's settings), the request is **stopped**: no planning run starts for it until you decide. **Needs you** then shows **Planning stopped for request 7 (WEB): …**, and the request's page a **Planning stopped** section, each saying how many attempts failed.
+
+**Stop run** on a planning run stops the request in the same way, so it does not start again by itself: the item says "You stopped its planning run at …". It never counts as a failed attempt.
+
+Read the conversation first: add a comment if the request was unclear. Then click **Try again**, in **Needs you** or on the request's page. It starts no session by itself: the failed attempts count from 0 again, the machines left out can be used again, and the Project Manager plans the request again when a machine and its Claude account are free. A request of an archived project cannot be tried again.

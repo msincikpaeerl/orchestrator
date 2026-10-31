@@ -1,6 +1,6 @@
 import { schema } from '@orchestrator/db';
-import { RequestStatus, type FailureReason } from '@orchestrator/protocol';
-import { and, desc, eq } from 'drizzle-orm';
+import { ACTIVE_RUN_STATUSES, RequestStatus, type FailureReason } from '@orchestrator/protocol';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 
@@ -52,6 +52,55 @@ export async function requestQuestion(
     .orderBy(desc(schema.comments.createdAt))
     .limit(1);
   return { question, answer: answer ?? null };
+}
+
+/**
+ * The question that waits for the owner (owner's answer 8, lot 5 step E2): the latest question,
+ * unanswered, asked by a planning run still active. A question left by a run that ended waits for
+ * no one: it blocks neither `request_ask` nor `plan_propose`, and its answer reaches no run.
+ */
+export async function waitingQuestion(
+  executor: Executor,
+  requestId: string,
+): Promise<CommentRow | null> {
+  const asked = await requestQuestion(executor, requestId);
+  if (!asked || asked.answer !== null || asked.question.runId === null) return null;
+  const [run] = await executor
+    .select({ id: schema.runs.id })
+    .from(schema.runs)
+    .where(
+      and(
+        eq(schema.runs.id, asked.question.runId),
+        inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+      ),
+    );
+  return run ? asked.question : null;
+}
+
+/** A `system` comment on a request, with its `request.commented` event. */
+export async function requestSystemComment(
+  tx: Executor,
+  request: RequestRow,
+  body: string,
+  at: Date,
+): Promise<void> {
+  const [comment] = await tx
+    .insert(schema.comments)
+    .values({ requestId: request.id, author: 'system', kind: 'status_change', body, createdAt: at })
+    .returning({ id: schema.comments.id });
+  if (!comment) throw new Error('comment not inserted');
+  await recordEvent(tx, {
+    actor: 'system',
+    ...requestEntity(request),
+    type: 'request.commented',
+    payload: {
+      request: request.number,
+      project: await requestProjectKey(tx, request),
+      commentId: comment.id,
+      kind: 'status_change',
+    },
+    at,
+  });
 }
 
 /**

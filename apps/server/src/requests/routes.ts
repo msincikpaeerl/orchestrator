@@ -1,11 +1,13 @@
 import { schema } from '@orchestrator/db';
 import {
+  ACTIVE_RUN_STATUSES,
   AddCommentRequest,
   AnswerRequest,
   CreateRequestRequest,
   ProjectKey,
   RequestNumber,
   RequestStatus,
+  RunStatus,
   requestLine,
   type LimitExceeded,
   type RequestDetail,
@@ -13,7 +15,7 @@ import {
   type RequestProject,
   type RequestSummary,
 } from '@orchestrator/protocol';
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
 import type { Database, Executor } from '../database.js';
@@ -23,6 +25,7 @@ import { resolveSettings } from '../settings/store.js';
 import { profileLinks, toComment } from '../tickets/model.js';
 import type { RunService } from '../runs/service.js';
 import { requestEntity, requestProjectKey, type RequestRow } from './model.js';
+import { requestStop } from './planning-end.js';
 
 export interface RequestRoutesOptions {
   db: Database;
@@ -87,10 +90,22 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
       .where(eq(schema.comments.requestId, row.id))
       .orderBy(asc(schema.comments.createdAt), asc(schema.comments.id));
     const profiles = await profileLinks(executor);
+    const [run] = await executor
+      .select({ id: schema.runs.id, status: schema.runs.status })
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.requestId, row.id),
+          inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      );
     return {
       ...summary(row, await projectsById(executor)),
       body: row.body,
       comments: comments.map((comment) => toComment(comment, profiles)),
+      run: run ? { id: run.id, status: RunStatus.parse(run.status) } : null,
+      attemptCount: row.attemptCount,
+      stopped: requestStop(row),
     };
   }
 
@@ -228,9 +243,81 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
     },
   );
 
+  // **Try again** on a stopped request (owner's answers 3, 6 and 7, lot 5 step E2): the stop
+  // cleared, its failed attempts counted from 0 and its machines no longer left out. It starts no
+  // session: the scheduler plans it again when it can.
+  app.post<{ Params: { number: string } }>('/api/requests/:number/try-again', async (request) => {
+    await requireSession(db, request);
+    const result = await db.transaction(async (tx) => {
+      const found = await findRequest(tx, request.params.number);
+      // The project's row lock first, then the request's (the run service's order).
+      if (found.projectId !== null) {
+        const [project] = await tx
+          .select({ status: schema.projects.status })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, found.projectId))
+          .for('no key update');
+        if (project?.status === 'archived') {
+          throw new HttpError(
+            409,
+            'project_archived',
+            'This project is archived and read-only: unarchive it first',
+          );
+        }
+      }
+      const row = await findRequest(tx, request.params.number, true);
+      const stop = requestStop(row);
+      if (stop === null || row.status === 'closed') {
+        throw new HttpError(
+          409,
+          'request_not_stopped',
+          'This request is not stopped: the Project Manager can plan it',
+        );
+      }
+      const at = now();
+      const why =
+        stop.cause === 'failed_attempts'
+          ? `${String(stop.count)} failed planning attempt${stop.count === 1 ? '' : 's'} (Failed attempts before asking you: ${String(stop.limit)})`
+          : 'the owner stopped its planning run';
+      const [comment] = await tx
+        .insert(schema.comments)
+        .values({
+          requestId: row.id,
+          author: 'owner',
+          kind: 'status_change',
+          body: `The owner used Try again: the request was stopped after ${why}. Its failed attempts count from 0 again.`,
+          createdAt: at,
+        })
+        .returning({ id: schema.comments.id });
+      if (!comment) throw new Error('comment not inserted');
+      const [updated] = await tx
+        .update(schema.requests)
+        .set({ stopped: null, attemptCount: 0, machineFailures: [], updatedAt: at })
+        .where(eq(schema.requests.id, row.id))
+        .returning();
+      if (!updated) throw new Error('request disappeared');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...requestEntity(updated),
+        type: 'request.tried_again',
+        payload: {
+          request: updated.number,
+          project: await requestProjectKey(tx, updated),
+          cause: stop.cause,
+          commentId: comment.id,
+        },
+        at,
+      });
+      return detail(tx, updated);
+    });
+    request.log.info({ request: result.number }, 'stopped request tried again by the owner');
+    return result;
+  });
+
   // The owner's answer to the open question of the request's planning run (owner's answer 9, lot
   // 5 step D2a): delivered live or by resume; with its machine offline, the run fails with
-  // `machine_offline` and the request is open again.
+  // `machine_offline` and the request is open again. A question left by a run that ended keeps
+  // its answer for the next planning run (owner's answer 8, lot 5 step E2).
   app.post<{ Params: { number: string } }>('/api/requests/:number/answer', async (request) => {
     await requireSession(db, request);
     const input = parseInput(AnswerRequest, request.body);

@@ -162,7 +162,6 @@ describe('the other tools in a planning run (owner answer 4)', () => {
     for (const [tool, input] of [
       ['ticket_comment', { body: 'A note' }],
       ['ticket_ask', { question: 'Why?' }],
-      ['ticket_give_up', { reason: 'No', tried: 'Nothing' }],
     ] as const) {
       const refused = refusal(await h.tool(daemon, runToken, tool, input));
       expect(refused.code).toBe('INVALID_TRANSITION');
@@ -411,14 +410,13 @@ describe("the owner's answer (owner answers 6, 9 and 10)", () => {
 });
 
 describe('the end of a planning run (owner answer 7)', () => {
-  it('opens its request again, not counted, whatever ended it', async () => {
+  // A crash counts on the request from step E2 (owner's answer 4): planning-run-ends.test.ts.
+  it('opens its request again, whatever ended it', async () => {
     const { daemon, runId } = await planning();
     await h.report(daemon, { ...state(runId, { state: 'ended', reason: 'crashed' }) });
     expect(await runRow(runId)).toMatchObject({ status: 'failed', failureReason: 'crash' });
     const detail = await request();
     expect(detail).toMatchObject({ status: 'open' });
-    const [row] = await h.t.db.select().from(schema.requests);
-    expect(row?.attemptCount).toBe(0);
     expect((await h.events('request.status_changed')).at(-1)?.payload).toEqual({
       request: 1,
       project: 'WEB',

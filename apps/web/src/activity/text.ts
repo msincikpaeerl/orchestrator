@@ -1,6 +1,7 @@
 import {
   EventPayloads,
   SETTINGS,
+  UNCOUNTED_FAILURES,
   shorten,
   type CiCheckFailureReason,
   type EventActor,
@@ -95,6 +96,8 @@ export const eventTypeLabel: Record<EventType, string> = {
   'request.created': 'Request submitted',
   'request.commented': 'Comment added to a request',
   'request.status_changed': 'Request status changed',
+  'request.stopped': 'Request stopped',
+  'request.tried_again': 'Request tried again',
   'plan.proposed': 'Plan proposed',
   'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
@@ -548,8 +551,19 @@ const describe: { [T in EventType]: Describe<T> } = {
         ? [requestLink(p.request), ': a plan to review']
         : [
             requestLink(p.request),
-            ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (not counted as a failed attempt)`,
+            ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (${p.failureReason && !UNCOUNTED_FAILURES.includes(p.failureReason) ? 'counted' : 'not counted'} as a failed attempt)`,
           ],
+  'request.stopped': (p) =>
+    p.cause === 'stop_run'
+      ? [requestLink(p.request), ' stopped: you stopped its planning run; Try again lets it go on']
+      : [
+          requestLink(p.request),
+          ` stopped after ${String(p.count ?? 0)} failed planning ${p.count === 1 ? 'attempt' : 'attempts'} (Failed attempts before asking you: ${String(p.limit ?? 0)})`,
+        ],
+  'request.tried_again': (p) => [
+    requestLink(p.request),
+    ': you used Try again; its failed attempts count from 0 again',
+  ],
   'plan.proposed': (p) => [
     'Agent ',
     quote(p.agentName ?? p.agent ?? 'Project Manager', null),

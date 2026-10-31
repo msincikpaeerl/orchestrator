@@ -493,7 +493,10 @@ describe('lot 4 step G: a machine offline during a run, real server and daemon',
       // Back: the session is stopped (not active), its end push and branch report are kept.
       await online(machineId);
       await until('the session stopped', () => Promise.resolve(!sessionAlive(started.id)));
-      await until('the end reported', async () => (await run(started.id)).branch.head !== null);
+      await until(
+        'the end reported',
+        async () => ((await run(started.id)).branch?.head ?? null) !== null,
+      );
       expect(await run(started.id)).toMatchObject({
         status: 'failed',
         failureReason: 'machine_offline',
