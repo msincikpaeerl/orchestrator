@@ -366,6 +366,15 @@ The owner's answers to E2's questions (2026-10-30), A to all:
 - The `plan` candidate, its order and words (answer 10); the loop's start and `startPlanning` (answer 11); the first message's "Started by the scheduler" and the owner's later answer in it; a paused planning run's resume (answer 12).
 - Help > Runs > "What starts by itself", Requests; CHANGELOG (answer 13).
 
+The owner's answers to E2b's questions (2026-10-31), A to all:
+
+1. **A plan candidate's other reasons**: the GitHub connection's (the commit author needs the GitHub account, a new project's run too) and the Project Manager's instructions too large, in the tickets' order: GitHub, the project, stopped, instructions; so the loop never tries a start it knows refused.
+2. **Triggers**: every event of a request (created, status changed, commented, stopped, tried again) triggers a tick (07, section 2).
+3. **A new project's run's base branch**: `main`, as the test helper stores it, shown nowhere; no migration.
+4. **A paused planning run in Needs you**: `run_paused` and `run_resumes_used` name a request instead of a ticket ("Request 7 (TESTB): <first line>", "(new project)" for none, linked to the request), with the queue's resume reason, **Resume**, **Stop run** and **Open the run**; a new project's run is listed, an archived project's is not.
+5. **"Please continue" for a planning run**: the `continue` template's part `plan`: "Your session was paused on a Claude usage limit, or what looked like one, and has now been resumed. Continue planning the request where you left off. If you are not sure what was already done, read it again with `request_get` first. End the turn with `plan_propose`, `request_ask` or `ticket_give_up`, as usual."
+6. **Words**: the request page's Open: "Open: the request waits for the Project Manager. The scheduler starts its planning run when a machine is free; Activity > Queue says why it waits."; Help > Requests without "nothing starts yet" and without **Planning**'s "(later version)" (**Plan to review** and **Closed** keep theirs until F and G).
+
 **Done when** server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request then **Try again** starting the next run, the order against reviews and `implement` candidates, the owner's later answer given in the next run's first message, a paused planning run resumed; Playwright on both viewports shows a planning candidate in Activity > Queue.
 
 ### E2 as first planned (split above)
