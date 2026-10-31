@@ -13,8 +13,9 @@ import {
   type QueueReason,
   type QueueResponse,
   type RunPurpose,
+  requestLine,
 } from '@orchestrator/protocol';
-import { count, desc, eq, inArray, max } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, max, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../database.js';
 import { accountToday, accountUsage, todayKey } from '../machines/account-day.js';
@@ -29,6 +30,8 @@ import {
 import type { ProjectRow } from '../projects/model.js';
 import { shippedAgents } from '../agents/files.js';
 import { profileRunInstructions } from '../agents/messages.js';
+import { requestMachineFailures, requestStop } from '../requests/planning-end.js';
+import type { RequestRow } from '../requests/model.js';
 import { isCounted } from '../runs/model.js';
 import { ticketReview } from '../runs/review-view.js';
 import { resolveSettings } from '../settings/store.js';
@@ -63,8 +66,17 @@ import { runsToday } from './facts.js';
 // candidate that could start takes its account's place and its machine's "run today", so the next
 // ones are told the account is at its maximum once it is full. A candidate without a reason is
 // what the loop would start now, on `machine`.
+//
+// From lot 5 step E2b a request is a candidate too: one `plan` candidate per open request not
+// stopped, and a paused planning run's resume (owner's answers 10 and 12, lot 5 step E2).
 
-const KIND_ORDER: Record<QueueKind, number> = { resume: 0, review: 1, fix_review: 2, implement: 3 };
+const KIND_ORDER: Record<QueueKind, number> = {
+  resume: 0,
+  review: 1,
+  fix_review: 2,
+  plan: 3,
+  implement: 4,
+};
 const PRIORITY_ORDER: Record<TicketPriority, number> = { high: 0, normal: 1, low: 2 };
 const CLOSED = new Set(['done', 'cancelled']);
 
@@ -94,6 +106,7 @@ type TicketFacts = {
 const runColumns = {
   id: schema.runs.id,
   ticketId: schema.runs.ticketId,
+  requestId: schema.runs.requestId,
   purpose: schema.runs.purpose,
   status: schema.runs.status,
   failureReason: schema.runs.failureReason,
@@ -118,8 +131,14 @@ type RunFacts = { [Key in keyof typeof runColumns]: (typeof schema.runs.$inferSe
 /** A candidate before the walk: what it starts, its order, and a reason found before machines. */
 interface Draft {
   kind: QueueKind;
-  ticket: TicketFacts;
-  project: ProjectRow;
+  /** The ticket it works on; null for a request's planning. */
+  ticket: TicketFacts | null;
+  /** The request a `plan` candidate or a paused planning run's resume plans; else null. */
+  request: RequestRow | null;
+  /** Null for a request asking for a new project. */
+  project: ProjectRow | null;
+  /** Its place in "projects in turn": its project, or a new project's request on its own. */
+  turn: string;
   /** The paused run of a resume. */
   run: RunFacts | null;
   blocks: number;
@@ -305,7 +324,9 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     const earlier = runsByTicket.get(ticket.id) ?? [];
     const base = {
       ticket,
+      request: null,
       project,
+      turn: project.id,
       blocks: blocks(ticket.id),
       last: earlier[0]?.machineId,
       leftOut: leftOutMachines(machineFailures(ticket), machines),
@@ -395,6 +416,88 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     });
   }
 
+  // Requests (07, section 3; owner's answers 10 and 12, lot 5 step E2): a paused planning run's
+  // resume, and one `plan` candidate per open request not of an archived project, with the
+  // Project Manager's run, which needs no capability.
+  const planner = [...profiles.values()].find((profile) => profile.key === 'pm');
+  const pausedRequests = paused.flatMap((run) => (run.requestId === null ? [] : [run.requestId]));
+  const requests = await db
+    .select()
+    .from(schema.requests)
+    .where(
+      or(
+        eq(schema.requests.status, 'open'),
+        pausedRequests.length === 0 ? undefined : inArray(schema.requests.id, pausedRequests),
+      ),
+    );
+  const runsByRequest = new Map<string, RunFacts[]>();
+  if (requests.length > 0) {
+    const rows = await db
+      .select(runColumns)
+      .from(schema.runs)
+      .where(
+        inArray(
+          schema.runs.requestId,
+          requests.map((request) => request.id),
+        ),
+      )
+      .orderBy(desc(schema.runs.createdAt));
+    for (const run of rows) {
+      if (run.requestId === null) continue;
+      runsByRequest.set(run.requestId, [...(runsByRequest.get(run.requestId) ?? []), run]);
+    }
+  }
+  for (const request of requests) {
+    const project = request.projectId === null ? null : projects.get(request.projectId);
+    if (project === undefined) continue;
+    const earlier = runsByRequest.get(request.id) ?? [];
+    const base = {
+      ticket: null,
+      request,
+      project,
+      turn: project?.id ?? requestTurn(request.id),
+      blocks: 0,
+      last: undefined,
+      leftOut: leftOutMachines(requestMachineFailures(request), machines),
+      required: [],
+      holding: null,
+    };
+    const resumes = paused.filter((run) => run.requestId === request.id);
+    for (const run of resumes) {
+      drafts.push({
+        ...base,
+        kind: 'resume',
+        run,
+        afterFailure: false,
+        since: run.statusSince,
+        early:
+          (project === null ? null : projectRefusal(project)) ??
+          resumesUsed(run, maxSchedulerResumes) ??
+          quotaWait(run, now, quotaFallbackDelayMinutes),
+      });
+    }
+    if (resumes.length > 0 || request.status !== 'open' || !planner) continue;
+    if (project?.status === 'archived') continue;
+    const latest = earlier[0];
+    const failed =
+      latest?.status === 'failed' &&
+      latest.failureReason !== null &&
+      isCounted(FailureReason.parse(latest.failureReason));
+    drafts.push({
+      ...base,
+      kind: 'plan',
+      run: null,
+      afterFailure: failed,
+      since: new Date(Math.max(request.createdAt.getTime(), latest?.endedAt?.getTime() ?? 0)),
+      // The commit author needs the GitHub account, a new project's run too (owner's answer 1).
+      early:
+        github ??
+        (project === null ? null : projectRefusal(project)) ??
+        (requestStop(request) === null ? null : { reason: 'planning_stopped' }) ??
+        tooLarge(planner.id, 'plan'),
+    });
+  }
+
   // Projects served in turn (07, section 3): at each level, the project whose latest run started
   // longest ago first (none before any), then one candidate of each project after the other.
   const served = new Map(
@@ -407,6 +510,14 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
       row.projectId === null ? [] : [[row.projectId, row.at?.getTime() ?? 0]],
     ),
   );
+  // A new project's request is served as its own project (owner's answer 10, lot 5 step E2).
+  for (const row of await db
+    .select({ requestId: schema.runs.requestId, at: max(schema.runs.createdAt) })
+    .from(schema.runs)
+    .where(and(isNull(schema.runs.projectId), isNotNull(schema.runs.requestId)))
+    .groupBy(schema.runs.requestId)) {
+    if (row.requestId !== null) served.set(requestTurn(row.requestId), row.at?.getTime() ?? 0);
+  }
   const ordered = order(drafts, served);
 
   // The walk, as the loop starts them: one account place per candidate that can start.
@@ -454,7 +565,7 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
           choice.machines.length === 1 && only?.id === draft.holding?.machineId
             ? only
             : preferredMachine(choice.machines, {
-                cloned: cloned.get(draft.project.id) ?? new Set(),
+                cloned: (draft.project && cloned.get(draft.project.id)) ?? new Set(),
                 today: started,
                 last: draft.last,
               });
@@ -466,12 +577,23 @@ export async function computeQueue(db: Database, now: Date): Promise<QueueRespon
     }
     return {
       kind: draft.kind,
-      ticket: {
-        projectKey: draft.project.key,
-        number: draft.ticket.number,
-        title: draft.ticket.title,
-        priority: TicketPriority.parse(draft.ticket.priority),
-      },
+      ticket:
+        draft.ticket === null || draft.project === null
+          ? null
+          : {
+              projectKey: draft.project.key,
+              number: draft.ticket.number,
+              title: draft.ticket.title,
+              priority: TicketPriority.parse(draft.ticket.priority),
+            },
+      request:
+        draft.request === null
+          ? null
+          : {
+              number: draft.request.number,
+              line: requestLine(draft.request.body),
+              projectKey: draft.project?.key ?? null,
+            },
       runId: draft.run?.id ?? null,
       blocks: draft.blocks,
       afterFailure: draft.afterFailure,
@@ -509,18 +631,25 @@ function accountStatus(
   return { state, limitedUntil, limitedUntilEstimated, dailyBudget, today };
 }
 
+/** A new project's request in "projects in turn" (owner's answer 10, lot 5 step E2). */
+function requestTurn(requestId: string): string {
+  return `request:${requestId}`;
+}
+
 /**
  * The scheduler's order (07, sections 3 and 6): by category; a candidate whose latest run failed
- * and counted behind the others of its category; then ticket priority; then projects in turn, each
- * project's candidates by the tickets they block (directly or through others), then oldest first.
+ * and counted behind the others of its category; then ticket priority (a request's planning takes
+ * `normal`'s place); then projects in turn, each project's candidates by the tickets they block
+ * (directly or through others), then oldest first.
  */
 function order(drafts: readonly Draft[], served: ReadonlyMap<string, number>): Draft[] {
   const levels = new Map<string, Draft[]>();
   for (const draft of drafts) {
+    const priority = draft.ticket === null ? 'normal' : TicketPriority.parse(draft.ticket.priority);
     const level = [
       KIND_ORDER[draft.kind],
       draft.afterFailure ? 1 : 0,
-      PRIORITY_ORDER[TicketPriority.parse(draft.ticket.priority)],
+      PRIORITY_ORDER[priority],
     ].join('|');
     levels.set(level, [...(levels.get(level) ?? []), draft]);
   }
@@ -532,20 +661,20 @@ function order(drafts: readonly Draft[], served: ReadonlyMap<string, number>): D
   for (const key of keys) {
     const byProject = new Map<string, Draft[]>();
     for (const draft of levels.get(key) ?? []) {
-      byProject.set(draft.project.id, [...(byProject.get(draft.project.id) ?? []), draft]);
+      byProject.set(draft.turn, [...(byProject.get(draft.turn) ?? []), draft]);
     }
     const turns = [...byProject.entries()]
       .sort(
         ([a, first], [b, second]) =>
           (served.get(a) ?? 0) - (served.get(b) ?? 0) ||
-          (first[0]?.project.key ?? '').localeCompare(second[0]?.project.key ?? ''),
+          (first[0]?.project?.key ?? '').localeCompare(second[0]?.project?.key ?? ''),
       )
       .map(([, list]) =>
         list.sort(
           (a, b) =>
             b.blocks - a.blocks ||
             a.since.getTime() - b.since.getTime() ||
-            a.ticket.number - b.ticket.number,
+            subjectNumber(a) - subjectNumber(b),
         ),
       );
     for (let index = 0; turns.some((list) => index < list.length); index += 1) {
@@ -556,4 +685,9 @@ function order(drafts: readonly Draft[], served: ReadonlyMap<string, number>): D
     }
   }
   return result;
+}
+
+/** The ticket's or the request's number, the order's last tie-break. */
+function subjectNumber(draft: Draft): number {
+  return draft.ticket?.number ?? draft.request?.number ?? 0;
 }
