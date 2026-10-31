@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a and D2b done (2026-10-28); step E1 split into E1a and E1b, E1a done (2026-10-28), E1b done (2026-10-30); step E2 split into E2a and E2b (2026-10-30), E2a and E2b done (2026-10-31)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a and D2b done (2026-10-28); step E1 split into E1a and E1b, E1a done (2026-10-28), E1b done (2026-10-30); step E2 split into E2a and E2b (2026-10-30), E2a and E2b done (2026-10-31); step F split into F1 and F2 (2026-10-31)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets, dropped by the owner's answer 9 of step E1; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -392,12 +392,50 @@ The owner's answers to E2b's questions (2026-10-31), A to all:
 
 *First planned "Done when"*: server tests (scripted daemons) cover a request planned with no owner action, a question then the plan, two failures stopping the request and **Try again**, the order against reviews and `implement` candidates, a question left unanswered by a run that ended neither blocking the next run's `request_ask` and `plan_propose` nor waiting any more, the owner's later answer kept as a comment and given in the next run's first message; Playwright on both viewports shows a planning candidate in Activity > Queue.
 
-### [ ] F. Plan review (branch `lot5/f-plan-review`)
+### Step F, split in two (owner's decision, 2026-10-31)
+
+Step F was too large for one session (rule 15): the plan on the request's API, edits, removal, approval, rejection, closing a request, a Needs you item, events, the request page's plan section with its form and three dialogs, Help and Playwright. The owner approved the split into F1 (server), then F2 (screens), as for D2 and E2. Step F's scope as first planned is kept below.
+
+The owner's answers to F's questions (2026-10-31), A to all:
+
+1. **The split**: F1, then F2, below.
+2. **`rejected` and `superseded`**: **Reject with feedback** makes the plan `superseded` at once, with the feedback and when it was decided (01, section 3.3); `rejected` is a proposed plan whose request the owner closed (answer 3).
+3. **When a request is closed** (the open point "When a request is closed or withdrawn"): `closed` at **Approve**, in its transaction, or by the owner's **Close request**, at any status but `closed`, with a confirmation. Closing stops an active planning run (`cancelled`, not counted, no stop), so its question no longer waits and its Needs you item goes; a proposed plan becomes `rejected`; a stop is cleared. A closed request is final: no reopen, the owner submits a new one; **Add a comment** stays (02, section 5.3). `request.status_changed` gains the causes `plan_approved`, `plan_rejected` and `closed_by_owner`.
+4. **A plan for a new project**: its approval is step G's; until then the server refuses it (`plan_new_project_later`) and the page says "A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request."; edits, removal and **Reject with feedback** work on it.
+5. **An edit's checks**: `PATCH /api/requests/<number>/plan/tickets/<key>` checks the edit at once with the owner's form limits, an assignee that exists and can be assigned, and `blocked_by` naming keys of the plan or tickets of the project that are not cancelled, never itself, with no cycle; the plan's own rules (**Most tickets per plan**, the bootstrap's, its fixed criteria) are checked again at **Approve**, which lists every problem in the owner's words (`checkTickets`).
+6. **The bootstrap ticket**: its type, assignee and dependencies are fixed and it cannot be removed (every other ticket keeps waiting for it); its title, description, criteria and priority can be edited; step G's approval adds its missing fixed criteria again.
+7. **Removing a ticket others wait for**: allowed; the confirmation names them ("CONTACT and DOCS wait for it: they will no longer."), and it leaves their `blocked_by`, said in the same event; removing the last ticket is refused (reject the plan instead).
+8. **Events**: `plan.ticket_updated` (the fields changed, with their old and new values), `plan.ticket_removed` (its key and title, the tickets it left), `plan.approved` (each key and the ticket created for it), `plan.rejected` (`superseded` or `rejected`, the feedback); `ticket.created` of each ticket carries the plan's id; no `tickets.imported`. Activity texts and the every-event guard.
+9. **Approval for an existing project**: under the project's lock; the plan still `proposed`, the request `plan_proposed`, the project not archived, `checkTickets` against the current settings and tickets; the tickets created in `todo`, numbered in the plan's order, each with `plan_id` (the import's path); the plan `approved`, the request `closed`, a scheduler tick. A project not ready is accepted (its tickets wait); a blocker done or cancelled since is accepted silently, as `plan_propose` accepts it.
+10. **Who created them**: `created_by` `agent`, the Project Manager and its run; the ticket page adds "From request 7's plan, approved by you" (F2). Needs you's "proposed by an agent" item is not concerned (they are `todo`).
+11. **Reject with feedback**: the feedback required, with the comment box's rules; the plan `superseded`, the request `open` (cause `plan_rejected`), its attempt count unchanged; the queue starts the next planning run, and `planRequest` gives it the latest superseded plan and its feedback (E1a's `rejected`). The feedback is shown in the plan's history, not also as a comment. Allowed on an archived project's request (Approve is refused there, Close allowed).
+12. **Confirmations** (F2): **Approve**: "Approve this plan? It creates 4 tickets in TESTB, in To do. The scheduler starts them by themselves as machines are free: each one uses Claude Code sessions." (**Approve**, **Keep reviewing**); **Reject with feedback**: a box, "A new planning run starts: one Claude Code session."; **Close request**: "Close request 7? …", naming the run it stops and the plan it rejects.
+13. **"Plan to review" in Needs you**: "Plan to review for request 7 (TESTB): <first line>" ("(new project)" for none), "The Project Manager proposed 4 tickets at <time>.", **Review the plan** (a link, no inline button); while the plan is `proposed` and its project not archived; ordered by when it was proposed.
+14. **Two tabs**: every write names the plan's id; a write on a plan no longer `proposed` (or not the request's current one) is refused `plan_not_proposed`; otherwise the last write wins, each with its event.
+15. **Tests and documents**: one new server test file per step, named for shard 2 or 4 after the placement check, shard times in the summary; F2's e2e control endpoint makes a scripted planning run call `plan_propose` (D2b's path); Playwright in `requests.e2e.ts`, checked against the two e2e shards; no migration, no daemon change, no `PROTOCOL_VERSION` bump; these answers in this plan and in specs 01 (3.2, 3.3), 02 (4, 5.3) and 07 as F1's first commit, the open point removed.
+
+### [ ] F1. Plan review on the server (branch `lot5/f-plan-review`)
+
+- The plan on `RequestDetail`: the current plan (`proposed` or `approved`) with its tickets, each dependency named (a key of the plan with its title, or a ticket of the project with its title and status), and the earlier plans (`superseded`, `rejected`) with their feedback, newest first.
+- Edits and removal (answers 5 to 7, 14); **Approve** for an existing project (answers 4, 9, 10); **Reject with feedback** (answers 2, 11) and the next run's first message; **Close request** (answer 3); events (answer 8); Needs you's `plan_to_review` data (answer 13).
+- Specs; no Help page or CHANGELOG entry (nothing on screen but Activity's texts).
+
+**Done when** server tests cover each edit and its refusals, a removal and its dependents, approval checked again and its tickets in `todo` with `plan_id`, rejection with feedback starting a new candidate whose first message has the rejected plan and the feedback and leaving no ticket in the project, the history, **Close request** with a planning run active, a question waiting and a plan proposed, the Needs you data, and the every-event guard.
+
+### [ ] F2. Plan review on screen (branch `lot5/f2-plan-review-screens`)
+
+- The request page's plan section (02, section 5.3): summary, new project, tickets with type, assignee, priority, criteria and dependencies; the edit form, **Remove**, **Approve**, **Reject with feedback** and **Close request** with their confirmations (answer 12); the earlier plans; the ticket page's "From request 7's plan"; Needs you's "Plan to review" card.
+- Help > Requests ("Review a plan", "Close a request"); CHANGELOG.
+
+**Done when** Playwright on both viewports reviews, edits, removes, rejects, approves and closes.
+
+### F as first planned (split above)
+
 
 - Request detail (02 section 5.3): the summary, the plan's tickets (kept on the plan, `plans.tickets`: answer 9 of step E1) as a list with type, assignee, priority, criteria and dependencies; edits and removal (answer 12) on the plan, with events; **Approve** (an existing project: the ticket rows created in `todo`, numbered then, each with `plan_id` and `ticket.created`); **Reject with feedback** (the old plan `superseded`, nothing left in the project, a new planning run); superseded plans' history; Needs you's "Plan to approve".
 - Help > Requests ("Review a plan"); CHANGELOG.
 
-**Done when** server tests cover each edit, removal, approval with its validation again, rejection with feedback starting a new candidate and leaving no ticket in the project, the superseded history; Playwright on both viewports reviews, edits, rejects and approves a plan.
+*First planned "Done when"*: server tests cover each edit, removal, approval with its validation again, rejection with feedback starting a new candidate and leaving no ticket in the project, the superseded history; Playwright on both viewports reviews, edits, rejects and approves a plan.
 
 ### [ ] G. A new project from a plan (branch `lot5/g-new-project`)
 
@@ -572,7 +610,6 @@ The owner's answers (2026-10-27, A to all, with one rule for answers 1 and 7):
 
 ## Open points
 
-- **When a request is closed or withdrawn** (owner's answer 10 of step D, for step F): the specs give the status `closed` but not when it is set (at the plan's approval, by the owner withdrawing a request, or both), nor what a withdrawal does to a planning run or a waiting question.
 - **The launch without command-line texts** (option B of step 5bis C, kept aside for lot 8, owner's answer 1): `--append-system-prompt-file` for the instructions (documented, never validated: ADR 0002) and the first message sent through a tmux buffer once `SessionStart` arrives would remove Linux's 128 KiB cap on one argument; it changes how Claude Code is driven, so it needs the owner's smoke test with the real Claude Code and an ADR.
 
 - **Automatic merge of a branch behind the default branch** (owner's review of step 5bis B, 2026-10-25; a possible later step, not now): CI and Quality checked the pull request against the default branch as it was at its last push, so two pull requests merged automatically one after the other can reach the default branch never tested together (04, section 4, "Known limit"). A later step could refuse to merge a pull request whose branch is behind the default branch and send it back to its agent to bring the default branch in (`git merge origin/<base>`), so that CI and Quality run again before the merge.
