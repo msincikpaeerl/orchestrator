@@ -411,6 +411,41 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     agentName: 'Project Manager',
     runId: '00000000-0000-4000-8000-000000000001',
   },
+  'plan.ticket_updated': {
+    request: 7,
+    project: 'WEB',
+    planId: '00000000-0000-4000-8000-000000000002',
+    key: 'contact',
+    title: 'Contact form',
+    changes: [
+      { field: 'title', from: 'Contact', to: 'Contact form' },
+      { field: 'blockedBy', from: [], to: ['home'] },
+    ],
+  },
+  'plan.ticket_removed': {
+    request: 7,
+    project: 'WEB',
+    planId: '00000000-0000-4000-8000-000000000002',
+    key: 'home',
+    title: 'Home page',
+    left: ['contact', 'docs'],
+  },
+  'plan.approved': {
+    request: 7,
+    project: 'WEB',
+    planId: '00000000-0000-4000-8000-000000000002',
+    tickets: [
+      { key: 'home', ticket: 'WEB-12' },
+      { key: 'contact', ticket: 'WEB-13' },
+    ],
+  },
+  'plan.rejected': {
+    request: 7,
+    project: 'WEB',
+    planId: '00000000-0000-4000-8000-000000000002',
+    status: 'superseded',
+    feedback: 'Two tickets only.',
+  },
   'ticket.pull_request_not_opened': {
     project: 'WEB',
     ticket: 'WEB-12',
@@ -732,6 +767,67 @@ describe('eventText', () => {
     expect(plainText(eventText(entry('request.tried_again')))).toBe(
       'Request 7: you used Try again; its failed attempts count from 0 again',
     );
+  });
+
+  it('says what the owner did with a plan and its tickets (lot 5 step F)', () => {
+    const text = (type: keyof typeof examples, payload?: object) =>
+      plainText(
+        eventText(
+          entry(type, {
+            entityType: 'request',
+            ...(payload ? { payload: { ...examples[type], ...payload } } : {}),
+          }),
+        ),
+      );
+    expect(text('plan.ticket_updated')).toBe(
+      'You edited “Contact form” (contact) in the plan of Request 7: title, dependencies',
+    );
+    expect(text('plan.ticket_removed')).toBe(
+      'You removed “Home page” (home) from the plan of Request 7; contact, docs no longer wait for it',
+    );
+    expect(text('plan.ticket_removed', { left: [] })).toBe(
+      'You removed “Home page” (home) from the plan of Request 7',
+    );
+    const approved = eventText(entry('plan.approved', { entityType: 'request' }));
+    expect(plainText(approved)).toBe(
+      'You approved the plan of Request 7: 2 tickets created, WEB-12, WEB-13',
+    );
+    expect(links(approved)).toEqual([
+      { text: 'Request 7', to: '/requests/7' },
+      { text: 'WEB-12', to: '/projects/WEB/tickets/12' },
+      { text: 'WEB-13', to: '/projects/WEB/tickets/13' },
+    ]);
+    expect(text('plan.rejected')).toBe(
+      'You rejected the plan of Request 7 with feedback “Two tickets only.”; the Project Manager plans it again',
+    );
+    expect(text('plan.rejected', { status: 'rejected', feedback: null })).toBe(
+      'The plan of Request 7 was rejected: you closed the request',
+    );
+    const status = (cause: string) =>
+      text('request.status_changed', {
+        project: 'WEB',
+        from: 'plan_proposed',
+        to: 'closed',
+        cause,
+      });
+    expect(status('plan_approved')).toBe('Request 7: closed, you approved its plan');
+    expect(status('plan_rejected')).toBe(
+      'Request 7: open again, you rejected its plan with feedback',
+    );
+    expect(status('closed_by_owner')).toBe('Request 7: closed by you');
+    expect(
+      plainText(
+        eventText(
+          entry('ticket.created', {
+            payload: {
+              ...examples['ticket.created'],
+              request: 7,
+              planId: '00000000-0000-4000-8000-000000000002',
+            },
+          }),
+        ),
+      ),
+    ).toMatch(/, from the plan of Request 7$/);
   });
 
   it('says what a proposed plan holds, and that the request has a plan to review (lot 5 step E1b)', () => {

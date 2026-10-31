@@ -309,6 +309,35 @@ export async function planningStoppedItems(db: Database): Promise<Items> {
 }
 
 /**
+ * "Plan to review" (owner's answer 13, lot 5 step F): a `proposed` plan, its project not archived
+ * or a new project; a link to the request, ordered by when it was proposed.
+ */
+export async function planToReviewItems(db: Database): Promise<Items> {
+  const rows = await db
+    .select({ plan: schema.plans, request: schema.requests, project: schema.projects })
+    .from(schema.plans)
+    .innerJoin(schema.requests, eq(schema.requests.id, schema.plans.requestId))
+    .leftJoin(schema.projects, eq(schema.projects.id, schema.requests.projectId))
+    .where(
+      and(
+        eq(schema.plans.status, 'proposed'),
+        or(isNull(schema.requests.projectId), eq(schema.projects.status, 'active')),
+      ),
+    );
+  return rows.map(({ plan, request, project }) => ({
+    type: 'plan_to_review',
+    request: {
+      number: request.number,
+      line: requestLine(request.body),
+      project: project ? { key: project.key, name: project.name } : null,
+    },
+    planId: plan.id,
+    ticketCount: Array.isArray(plan.tickets) ? plan.tickets.length : 0,
+    since: plan.createdAt.toISOString(),
+  }));
+}
+
+/**
  * Tickets whose run ended with `push_failed` and whose branch has not been pushed since (04,
  * section 5; lot 3 step F): from that run's end until the next push done (an end push included),
  * or until the ticket is cancelled or done, or its machine revoked; still shown while a next run
@@ -862,6 +891,7 @@ export function registerNeedsYouRoutes(
     items.push(...(await ticketItems(db, runs, now())));
     items.push(...(await requestQuestionItems(db)));
     items.push(...(await planningStoppedItems(db)));
+    items.push(...(await planToReviewItems(db)));
     items.sort((a, b) => ('since' in a && 'since' in b ? a.since.localeCompare(b.since) : 0));
 
     // Setup still to do (02, section 3), before the rest.

@@ -6,6 +6,7 @@ import {
   EnrollmentResponse,
   PROTOCOL_VERSION,
   Project,
+  RequestDetail,
   Run,
   TicketDetail,
   type McpCall,
@@ -884,9 +885,43 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     runToken: proposing.runToken,
     input: {
       summary: 'A contact form.',
-      tickets: [{ key: 'contact', type: 'feature', title: 'Contact form' }],
+      tickets: [
+        { key: 'contact', type: 'feature', title: 'Contact form' },
+        { key: 'faq', type: 'docs', title: 'FAQ', blocked_by: ['contact'] },
+      ],
     },
   });
+  // The owner reviews it (lot 5 step F): an edit (`plan.ticket_updated`), a removal
+  // (`plan.ticket_removed`), then Approve (`plan.approved`, the request closed).
+  const proposedPlan = RequestDetail.parse((await call('GET', '/api/requests/2')).json()).plan?.id;
+  await call('PATCH', '/api/requests/2/plan/tickets/contact', {
+    planId: proposedPlan,
+    title: 'Contact page',
+  });
+  await call('POST', '/api/requests/2/plan/tickets/faq/remove', { planId: proposedPlan });
+  await call('POST', '/api/requests/2/plan/approve', { planId: proposedPlan });
+  // Request 1 planned again, its plan rejected when the owner closes it (`plan.rejected`).
+  const replanning = await startPlanningRun(t.db, { request: 1, machineId: machine.id });
+  await daemon.request({
+    type: 'run.state',
+    id: randomUUID(),
+    payload: {
+      runId: replanning.runId,
+      at: new Date().toISOString(),
+      claudeSessionId: SESSION,
+      sessionAlive: true,
+      state: 'working',
+    },
+  });
+  await tool({
+    tool: 'plan_propose',
+    runToken: replanning.runToken,
+    input: {
+      summary: 'A blog.',
+      tickets: [{ key: 'blog', type: 'feature', title: 'Blog' }],
+    },
+  });
+  await call('POST', '/api/requests/1/close');
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

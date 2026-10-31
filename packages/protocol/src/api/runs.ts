@@ -52,6 +52,8 @@ export const RunChangeCause = z.enum([
   'owner_stopped',
   'ticket_cancelled',
   'ticket_done',
+  /** The owner's **Close request** stopped its planning run (lot 5 step F). */
+  'request_closed',
   /** The machine did not acknowledge `run.start` or `run.resume` in time (07, section 2). */
   'dispatch_timeout',
   /** The machine answered `run.start` or `run.resume` with a refusal. */

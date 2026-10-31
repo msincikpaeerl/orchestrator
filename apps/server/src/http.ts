@@ -15,6 +15,7 @@ export class HttpError extends Error {
       | 'limits'
       | 'cycle'
       | 'importProblems'
+      | 'planProblems'
       | 'settingOrder'
       | 'settingProduct'
       | 'settingSum'

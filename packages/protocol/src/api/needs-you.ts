@@ -156,6 +156,19 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     /** When it was stopped. */
     since: z.iso.datetime(),
   }),
+  /**
+   * "Plan to review for request 7 (TESTB): <first line>" (02, section 4; owner's answer 13, lot 5
+   * step F): the plan is `proposed` and its project not archived; a link to the request.
+   */
+  z.object({
+    type: z.literal('plan_to_review'),
+    request: z.object({ number: RequestNumber, line: z.string(), project: RequestProject }),
+    planId: z.uuid(),
+    /** How many tickets it holds now (not `tickets`, the field of items tied to tickets). */
+    ticketCount: z.int().positive(),
+    /** When it was proposed. */
+    since: z.iso.datetime(),
+  }),
   /** A ticket an agent created with `ticket_create`: **Accept** or **Reject** (04, section 2). */
   z.object({
     type: z.literal('ticket_proposed'),
