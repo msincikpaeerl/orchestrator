@@ -77,6 +77,7 @@ export const causeText: Record<RunChangeCause, string> = {
   owner_stopped: 'stopped by you',
   ticket_cancelled: 'the ticket was cancelled',
   ticket_done: 'the ticket was marked as done',
+  request_closed: 'you closed its request',
   dispatch_timeout: 'the machine did not confirm in time',
   dispatch_refused: 'the machine refused it',
   machine_offline: 'the machine was offline',

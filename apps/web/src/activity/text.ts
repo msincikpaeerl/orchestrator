@@ -99,6 +99,10 @@ export const eventTypeLabel: Record<EventType, string> = {
   'request.stopped': 'Request stopped',
   'request.tried_again': 'Request tried again',
   'plan.proposed': 'Plan proposed',
+  'plan.ticket_updated': 'Plan ticket edited',
+  'plan.ticket_removed': 'Plan ticket removed',
+  'plan.approved': 'Plan approved',
+  'plan.rejected': 'Plan rejected',
   'ticket.machine_branch_kept': 'Ticket branch kept on a machine',
   'setting.changed': 'Setting changed',
   'setting.reset': 'Setting reset to default',
@@ -181,6 +185,7 @@ const ticketFieldLabel: Record<string, string> = {
   acceptanceCriteria: 'acceptance criteria',
   priority: 'priority',
   assignee: 'assignee',
+  blockedBy: 'dependencies',
 };
 
 function projectPath(key: string): string {
@@ -360,6 +365,7 @@ const describe: { [T in EventType]: Describe<T> } = {
     });
     if (p.assigneeName !== undefined) pieces.push(', assigned to ', quote(p.assigneeName, null));
     if (p.agentName !== undefined) pieces.push(', proposed by agent ', quote(p.agentName, null));
+    if (p.request !== undefined) pieces.push(', from the plan of ', requestLink(p.request));
     return pieces;
   },
   'ticket.updated': (p, c) => {
@@ -545,14 +551,20 @@ const describe: { [T in EventType]: Describe<T> } = {
     ...(p.agentName === undefined ? [] : [' by agent ', quote(p.agentName, null)]),
   ],
   'request.status_changed': (p) =>
-    p.cause === 'run_started'
-      ? [requestLink(p.request), ': planning, a planning run started']
-      : p.cause === 'plan_proposed'
-        ? [requestLink(p.request), ': a plan to review']
-        : [
-            requestLink(p.request),
-            ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (${p.failureReason && !UNCOUNTED_FAILURES.includes(p.failureReason) ? 'counted' : 'not counted'} as a failed attempt)`,
-          ],
+    p.cause === 'plan_approved'
+      ? [requestLink(p.request), ': closed, you approved its plan']
+      : p.cause === 'plan_rejected'
+        ? [requestLink(p.request), ': open again, you rejected its plan with feedback']
+        : p.cause === 'closed_by_owner'
+          ? [requestLink(p.request), ': closed by you']
+          : p.cause === 'run_started'
+            ? [requestLink(p.request), ': planning, a planning run started']
+            : p.cause === 'plan_proposed'
+              ? [requestLink(p.request), ': a plan to review']
+              : [
+                  requestLink(p.request),
+                  ` back to ${requestStatusLabel[p.to].toLowerCase()}: its planning run ended, ${p.failureReason ? failureText[p.failureReason] : 'without a plan'} (${p.failureReason && !UNCOUNTED_FAILURES.includes(p.failureReason) ? 'counted' : 'not counted'} as a failed attempt)`,
+                ],
   'request.stopped': (p) =>
     p.cause === 'stop_run'
       ? [requestLink(p.request), ' stopped: you stopped its planning run; Try again lets it go on']
@@ -572,6 +584,36 @@ const describe: { [T in EventType]: Describe<T> } = {
     `: ${String(p.tickets)} ${p.tickets === 1 ? 'ticket' : 'tickets'}`,
     ...(p.newProject === null ? [] : [', new project ', quote(p.newProject, null)]),
   ],
+  'plan.ticket_updated': (p) => [
+    'You edited ',
+    quote(p.title, null),
+    ` (${p.key}) in the plan of `,
+    requestLink(p.request),
+    `: ${list(p.changes.map((change) => ticketFieldLabel[change.field] ?? change.field))}`,
+  ],
+  'plan.ticket_removed': (p) => [
+    'You removed ',
+    quote(p.title, null),
+    ` (${p.key}) from the plan of `,
+    requestLink(p.request),
+    ...(p.left.length === 0 ? [] : [`; ${list(p.left)} no longer wait for it`]),
+  ],
+  'plan.approved': (p) => [
+    'You approved the plan of ',
+    requestLink(p.request),
+    `: ${String(p.tickets.length)} ${p.tickets.length === 1 ? 'ticket' : 'tickets'} created`,
+    ...p.tickets.flatMap((each, index) => [index === 0 ? ', ' : ', ', ticketRefLink(each.ticket)]),
+  ],
+  'plan.rejected': (p) =>
+    p.status === 'superseded'
+      ? [
+          'You rejected the plan of ',
+          requestLink(p.request),
+          ' with feedback ',
+          quote(p.feedback ?? '', null),
+          '; the Project Manager plans it again',
+        ]
+      : ['The plan of ', requestLink(p.request), ' was rejected: you closed the request'],
   'ticket.pull_request_closed': (p, c) => [
     c.ticket,
     p.by === 'orchestrator'
