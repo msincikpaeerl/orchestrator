@@ -694,6 +694,23 @@ describe('eventText', () => {
     );
   });
 
+  it("names a planning run's request and links to it (lot 5 step E2b)", () => {
+    const created = eventText(
+      entry('run.created', {
+        ticket: null,
+        payload: {
+          ...examples['run.created'],
+          ticket: 'Request 7',
+          purpose: 'plan',
+          profile: 'pm',
+          profileName: 'Project Manager',
+        },
+      }),
+    );
+    expect(plainText(created)).toMatch(/^Attempt 1 at Request 7 started by “Project Manager”/);
+    expect(links(created)).toContainEqual({ text: 'Request 7', to: '/requests/7' });
+  });
+
   it('says why a request stopped and that Try again let it go on (lot 5 step E2)', () => {
     expect(plainText(eventText(entry('request.stopped')))).toBe(
       'Request 7 stopped after 2 failed planning attempts (Failed attempts before asking you: 2)',

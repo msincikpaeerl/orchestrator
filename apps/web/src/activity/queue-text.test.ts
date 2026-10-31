@@ -37,6 +37,7 @@ const candidate = (fields: Partial<QueueCandidate> = {}): QueueCandidate => ({
     title: 'Add a CONTRIBUTING.md file',
     priority: 'normal',
   },
+  request: null,
   runId: null,
   blocks: 0,
   afterFailure: false,
@@ -45,6 +46,24 @@ const candidate = (fields: Partial<QueueCandidate> = {}): QueueCandidate => ({
   machine: null,
   ...fields,
 });
+const PLAN_REQUEST = { number: 7, line: 'A contact form', projectKey: 'TESTB' };
+
+describe("a request's planning in the queue (owner's answer 10, lot 5 step E2)", () => {
+  it('says Plan, with no priority, and why a stopped request waits', () => {
+    const plan = candidate({ kind: 'plan', ticket: null, request: PLAN_REQUEST });
+    expect(candidateFactsText(plan)).toBe('Plan');
+    expect(candidateFactsText({ ...plan, afterFailure: true })).toBe(
+      'Plan · after a failed attempt: behind the others of its kind',
+    );
+    expect(candidateReasonText({ ...plan, machine })).toBe(
+      'The scheduler starts it at its next check, on machine Laptop.',
+    );
+    expect(candidateReasonText({ ...plan, reason: { reason: 'planning_stopped' } })).toBe(
+      'Planning stopped: use Try again in Needs you.',
+    );
+  });
+});
+
 const line = (reason: QueueReason | null, kind: QueueCandidate['kind'] = 'implement') =>
   candidateReasonText(
     candidate({
@@ -155,6 +174,7 @@ const everyReason: QueueReason[] = [
     [null, machine].map((on) => ({ reason: 'needs_you' as const, item, machine: on })),
   ),
   { reason: 'reviews_off' },
+  { reason: 'planning_stopped' },
   { reason: 'quota_wait', until: at, minutes: 60 },
   { reason: 'quota_wait', until: at, minutes: 90 },
 ];
@@ -476,6 +496,7 @@ describe('the start offered on a queue line (review of lot 4 step H)', () => {
     held: true,
     quota_wait: true,
     reviews_off: true,
+    planning_stopped: false,
     machine_unavailable: 'machine',
     no_machine: 'machine',
     blocked: false,
@@ -522,6 +543,22 @@ describe('the start offered on a queue line (review of lot 4 step H)', () => {
   it('offers it on a candidate that can start', () => {
     expect(candidateStartOffered(candidate({ machine }))).toBe(true);
     expect(candidateStartOffered(candidate({ kind: 'review', machine }))).toBe(true);
+  });
+
+  it("never offers one on a request's planning: the scheduler alone starts it (lot 5 step E2b)", () => {
+    const plan = candidate({ kind: 'plan', ticket: null, request: PLAN_REQUEST, machine });
+    expect(candidateStartOffered(plan)).toBe(false);
+    expect(
+      candidateStartOffered({
+        ...plan,
+        reason: {
+          reason: 'machine_unavailable',
+          machine,
+          commits: null,
+          unavailable: { why: 'left_out', cause: 'dispatch_refused', at },
+        },
+      }),
+    ).toBe(false);
   });
 
   it.each(everyReason.map((reason) => [JSON.stringify(reason), reason] as const))(

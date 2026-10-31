@@ -39,6 +39,32 @@ export function requestQuestionHeading(request: {
 }
 
 /**
+ * A request named with its project and first line: "Request 7 (TESTB): <first line>", "(new
+ * project)" for none; a paused planning run's subject in Needs you (owner's answer 4, lot 5 step
+ * E2b).
+ */
+export function requestSubjectText(request: {
+  number: number;
+  line: string;
+  project: RequestProject;
+}): string {
+  const project = request.project === null ? 'new project' : request.project.key;
+  return `${requestName(request.number)} (${project}): ${request.line}`;
+}
+
+/**
+ * A request's line in Activity > Queue (owner's answer 10, lot 5 step E2): "Request 7 (TESTB) ·
+ * <first line>", "(new project)" for none.
+ */
+export function requestQueueTitle(request: {
+  number: number;
+  line: string;
+  projectKey: string | null;
+}): string {
+  return `${requestName(request.number)} (${request.projectKey ?? 'new project'}) · ${request.line}`;
+}
+
+/**
  * The request's latest question with no answer (owner's answer 3, lot 5 step D2b; answer 8, step
  * E2): `live` while the planning run that asked it is active, so the answer reaches it; else that
  * run ended, and the answer is kept for the next planning run. None on a closed request.

@@ -17,6 +17,7 @@ export const queueKindLabel: Record<QueueKind, string> = {
   resume: 'Resume its paused run',
   review: 'Review by Quality',
   fix_review: 'Fix after review',
+  plan: 'Plan',
   implement: 'Implement',
 };
 
@@ -26,7 +27,7 @@ export const queueKindLabel: Record<QueueKind, string> = {
  */
 export function candidateFactsText(candidate: QueueCandidate): string {
   const parts: string[] = [queueKindLabel[candidate.kind]];
-  if (candidate.ticket.priority !== 'normal') {
+  if (candidate.ticket !== null && candidate.ticket.priority !== 'normal') {
     parts.push(`${priorityLabel[candidate.ticket.priority].toLowerCase()} priority`);
   }
   if (candidate.blocks > 0) {
@@ -69,6 +70,8 @@ const OVERRIDDEN: readonly MachineUnavailable['why'][] = [
  * the account's limit, pause or maximum, a machine that cannot take it.
  */
 export function candidateStartOffered(candidate: QueueCandidate): boolean {
+  // The scheduler alone starts a request's planning: no Run now for requests (lot 5 step E2b).
+  if (candidate.kind === 'plan') return false;
   const { reason } = candidate;
   if (reason === null) return true;
   switch (reason.reason) {

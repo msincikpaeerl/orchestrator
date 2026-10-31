@@ -6,6 +6,7 @@ import { Button, Card, ErrorMessage, Loading } from '../components/ui';
 import { PauseButton } from '../machines/account-parts';
 import { ticketsChanged, useQueue } from '../queries';
 import { refusalText } from '../refusals';
+import { requestPath, requestQueueTitle } from '../requests/text';
 import { runPath } from '../runs/text';
 import { RunNowAction, StartReviewAction } from '../tickets/actions';
 import { ticketPath, ticketRef } from '../tickets/text';
@@ -49,23 +50,38 @@ function ResumeAction({ runId }: { runId: string }) {
  * it can start the line (`candidateStartOffered`).
  */
 function CandidateAction({ candidate }: { candidate: QueueCandidate }) {
-  const ticket = { projectKey: candidate.ticket.projectKey, number: candidate.ticket.number };
   if (candidate.kind === 'resume' && candidate.runId !== null) {
     return <ResumeAction runId={candidate.runId} />;
   }
+  if (candidate.ticket === null) return null;
+  const ticket = { projectKey: candidate.ticket.projectKey, number: candidate.ticket.number };
   if (candidate.kind === 'review') return <StartReviewAction ticket={ticket} />;
   return <RunNowAction ticket={ticket} />;
 }
 
+/** The ticket's line, or a request's (owner's answer 10, lot 5 step E2), linked to its page. */
+function CandidateTitle({ candidate }: { candidate: QueueCandidate }) {
+  const { ticket, request } = candidate;
+  if (ticket !== null) {
+    return (
+      <Link to={ticketPath(ticket.projectKey, ticket.number)} className="text-blue-700 underline">
+        {ticketRef(ticket.projectKey, ticket.number)} · {ticket.title}
+      </Link>
+    );
+  }
+  if (request === null) return null;
+  return (
+    <Link to={requestPath(request.number)} className="text-blue-700 underline">
+      {requestQueueTitle(request)}
+    </Link>
+  );
+}
+
 function CandidateItem({ candidate, place }: { candidate: QueueCandidate; place: number }) {
-  const { ticket } = candidate;
   return (
     <li className="space-y-1 border-b border-slate-200 py-3 last:border-b-0">
       <p className="font-medium break-words text-slate-900">
-        <span className="text-slate-600">{place}.</span>{' '}
-        <Link to={ticketPath(ticket.projectKey, ticket.number)} className="text-blue-700 underline">
-          {ticketRef(ticket.projectKey, ticket.number)} · {ticket.title}
-        </Link>
+        <span className="text-slate-600">{place}.</span> <CandidateTitle candidate={candidate} />
       </p>
       <p className="text-sm break-words text-slate-600">{candidateFactsText(candidate)}</p>
       <p className="break-words text-slate-800" aria-label="Why it is not running">
@@ -127,8 +143,8 @@ export function Queue() {
           {queue.data.candidates.length === 0 ? (
             <Card>
               <p>
-                Nothing is waiting: no ticket in To do or In review, and no paused run, for the
-                scheduler to start.
+                Nothing is waiting: no ticket in To do or In review, no open request, and no paused
+                run, for the scheduler to start.
               </p>
             </Card>
           ) : (
@@ -136,7 +152,7 @@ export function Queue() {
               <ol aria-label="Queue">
                 {queue.data.candidates.map((candidate, index) => (
                   <CandidateItem
-                    key={`${candidate.kind}-${candidate.runId ?? ''}-${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`}
+                    key={`${candidate.kind}-${candidate.runId ?? ''}-${candidate.ticket === null ? `request-${String(candidate.request?.number)}` : `${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`}`}
                     candidate={candidate}
                     place={index + 1}
                   />
