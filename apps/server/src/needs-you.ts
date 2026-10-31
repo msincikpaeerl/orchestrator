@@ -332,7 +332,7 @@ export async function planToReviewItems(db: Database): Promise<Items> {
       project: project ? { key: project.key, name: project.name } : null,
     },
     planId: plan.id,
-    tickets: Array.isArray(plan.tickets) ? plan.tickets.length : 0,
+    ticketCount: Array.isArray(plan.tickets) ? plan.tickets.length : 0,
     since: plan.createdAt.toISOString(),
   }));
 }

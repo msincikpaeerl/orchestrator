@@ -164,8 +164,8 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
     type: z.literal('plan_to_review'),
     request: z.object({ number: RequestNumber, line: z.string(), project: RequestProject }),
     planId: z.uuid(),
-    /** How many tickets it holds now. */
-    tickets: z.int().positive(),
+    /** How many tickets it holds now (not `tickets`, the field of items tied to tickets). */
+    ticketCount: z.int().positive(),
     /** When it was proposed. */
     since: z.iso.datetime(),
   }),

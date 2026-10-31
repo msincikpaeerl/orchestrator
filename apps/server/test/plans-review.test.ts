@@ -164,7 +164,7 @@ describe('the plan on the request page', () => {
           project: { key: 'WEB', name: 'Bakery website' },
         },
         planId,
-        tickets: 2,
+        ticketCount: 2,
         since: detail.plan?.proposedAt,
       },
     ]);
@@ -305,7 +305,7 @@ describe('editing the plan (answers 5, 7, 8 and 14)', () => {
       await refused('POST', '/api/requests/1/plan/tickets/home/remove', { planId }),
     ).toMatchObject({ status: 404, error: { code: 'plan_ticket_not_found' } });
     expect((await needsYou()).find((item) => item.type === 'plan_to_review')).toMatchObject({
-      tickets: 1,
+      ticketCount: 1,
     });
   });
 
