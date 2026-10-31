@@ -4,10 +4,13 @@ import {
   AddCommentRequest,
   AnswerRequest,
   CreateRequestRequest,
+  PlanActionRequest,
   ProjectKey,
+  RejectPlanRequest,
   RequestNumber,
   RequestStatus,
   RunStatus,
+  UpdatePlanTicketRequest,
   requestLine,
   type LimitExceeded,
   type RequestDetail,
@@ -24,13 +27,27 @@ import { HttpError, parseInput } from '../http.js';
 import { resolveSettings } from '../settings/store.js';
 import { profileLinks, toComment } from '../tickets/model.js';
 import type { RunService } from '../runs/service.js';
-import { requestEntity, requestProjectKey, type RequestRow } from './model.js';
+import type { ProjectRow } from '../projects/model.js';
+import { changeRequestStatus, requestEntity, requestProjectKey, type RequestRow } from './model.js';
+import {
+  approvePlan,
+  editPlanTicket,
+  planViews,
+  proposedPlan,
+  rejectForClosing,
+  rejectPlan,
+  removePlanTicket,
+  requestClosed,
+} from './plan-review.js';
 import { requestStop } from './planning-end.js';
 
 export interface RequestRoutesOptions {
   db: Database;
-  /** Delivers the owner's answer to a planning run's question (lot 5 step D2a). */
-  runs: Pick<RunService, 'answerRequest'>;
+  /**
+   * Delivers the owner's answer to a planning run's question (lot 5 step D2a), and stops the
+   * planning run of a request the owner closes (step F).
+   */
+  runs: Pick<RunService, 'answerRequest' | 'endForRequest'>;
   now?: () => Date;
 }
 
@@ -106,6 +123,7 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
       run: run ? { id: run.id, status: RunStatus.parse(run.status) } : null,
       attemptCount: row.attemptCount,
       stopped: requestStop(row),
+      ...(await planViews(executor, row)),
     };
   }
 
@@ -312,6 +330,166 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
     });
     request.log.info({ request: result.number }, 'stopped request tried again by the owner');
     return result;
+  });
+
+  /**
+   * The request locked for a change by the owner (lot 5 step F): its project's row first, as the
+   * run service and the scheduler take them, then the request's.
+   */
+  async function lockRequest(
+    tx: Executor,
+    number: string,
+  ): Promise<{ row: RequestRow; project: ProjectRow | null }> {
+    const found = await findRequest(tx, number);
+    let project: ProjectRow | null = null;
+    if (found.projectId !== null) {
+      [project = null] = await tx
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, found.projectId))
+        .for('no key update');
+    }
+    return { row: await findRequest(tx, number, true), project };
+  }
+
+  type PlanParams = { Params: { number: string; key: string } };
+
+  // The owner's edit of a ticket of the proposed plan (owner's answers 5, 6, 8 and 14, lot 5
+  // step F): checked at once, refused for the problems it brings.
+  app.patch<PlanParams>('/api/requests/:number/plan/tickets/:key', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(UpdatePlanTicketRequest, request.body);
+    return db.transaction(async (tx) => {
+      const { row, project } = await lockRequest(tx, request.params.number);
+      const plan = await proposedPlan(tx, row, input.planId);
+      await editPlanTicket(tx, {
+        request: row,
+        project,
+        plan,
+        key: request.params.key,
+        edit: input,
+        at: now(),
+      });
+      return detail(tx, row);
+    });
+  });
+
+  // **Remove** a ticket from the proposed plan (owner's answer 7).
+  app.post<PlanParams>('/api/requests/:number/plan/tickets/:key/remove', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(PlanActionRequest, request.body);
+    return db.transaction(async (tx) => {
+      const { row, project } = await lockRequest(tx, request.params.number);
+      const plan = await proposedPlan(tx, row, input.planId);
+      await removePlanTicket(tx, {
+        request: row,
+        project,
+        plan,
+        key: request.params.key,
+        at: now(),
+      });
+      return detail(tx, row);
+    });
+  });
+
+  // **Approve** (owner's answers 4, 9 and 10): the plan checked again, its tickets created in the
+  // project in `todo`, the request closed. The scheduler starts them by itself.
+  app.post<{ Params: { number: string } }>(
+    '/api/requests/:number/plan/approve',
+    async (request) => {
+      await requireSession(db, request);
+      const input = parseInput(PlanActionRequest, request.body);
+      const result = await db.transaction(async (tx) => {
+        const { row, project } = await lockRequest(tx, request.params.number);
+        const plan = await proposedPlan(tx, row, input.planId);
+        const created = await approvePlan(tx, { request: row, project, plan, at: now() });
+        return { detail: await detail(tx, await findRequest(tx, request.params.number)), created };
+      });
+      request.log.info(
+        {
+          request: result.detail.number,
+          project: result.detail.project?.key,
+          tickets: result.created.length,
+        },
+        'plan approved by the owner',
+      );
+      return result.detail;
+    },
+  );
+
+  // **Reject with feedback** (owner's answers 2 and 11): the plan superseded, the request open,
+  // planned again by the scheduler. Allowed on an archived project's request.
+  app.post<{ Params: { number: string } }>('/api/requests/:number/plan/reject', async (request) => {
+    await requireSession(db, request);
+    const input = parseInput(RejectPlanRequest, request.body);
+    const { commentMaxLength: max } = await resolveSettings(db, ['commentMaxLength']);
+    if (input.feedback.length > max) {
+      throw new HttpError(400, 'invalid_request', `feedback: at most ${String(max)} characters`, {
+        limits: [{ field: 'comment', max, unit: 'characters' }],
+      });
+    }
+    const result = await db.transaction(async (tx) => {
+      const { row, project } = await lockRequest(tx, request.params.number);
+      const plan = await proposedPlan(tx, row, input.planId);
+      await rejectPlan(tx, { request: row, project, plan, feedback: input.feedback, at: now() });
+      return detail(tx, await findRequest(tx, request.params.number));
+    });
+    request.log.info({ request: result.number }, 'plan rejected with feedback by the owner');
+    return result;
+  });
+
+  // **Close request** (owner's answer 3, lot 5 step F): at any status but closed. Its planning run
+  // is stopped (not counted, no stop), a proposed plan rejected, a stop cleared; final.
+  app.post<{ Params: { number: string } }>('/api/requests/:number/close', async (request) => {
+    await requireSession(db, request);
+    const result = await db.transaction(async (tx) => {
+      const { row, project } = await lockRequest(tx, request.params.number);
+      if (row.status === 'closed') throw requestClosed();
+      const at = now();
+      const [cleared] = await tx
+        .update(schema.requests)
+        .set({ stopped: null, updatedAt: at })
+        .where(eq(schema.requests.id, row.id))
+        .returning();
+      if (!cleared) throw new Error('request disappeared');
+      const closed = await changeRequestStatus(tx, {
+        request: cleared,
+        to: 'closed',
+        cause: 'closed_by_owner',
+        at,
+      });
+      const run = await options.runs.endForRequest(tx, project, closed);
+      const rejected = await rejectForClosing(tx, { request: closed, project, at });
+      const body = [
+        'The owner closed the request.',
+        ...(run.stopped
+          ? ['Its planning run was stopped; it does not count as a failed attempt.']
+          : []),
+        ...(rejected ? ['Its proposed plan is rejected.'] : []),
+        'Nothing is planned for it any more.',
+      ].join(' ');
+      const [comment] = await tx
+        .insert(schema.comments)
+        .values({ requestId: row.id, author: 'owner', kind: 'status_change', body, createdAt: at })
+        .returning({ id: schema.comments.id });
+      if (!comment) throw new Error('comment not inserted');
+      await recordEvent(tx, {
+        actor: 'owner',
+        ...requestEntity(closed),
+        type: 'request.commented',
+        payload: {
+          request: closed.number,
+          project: project?.key ?? null,
+          commentId: comment.id,
+          kind: 'status_change',
+        },
+        at,
+      });
+      return { detail: await detail(tx, closed), send: run.send };
+    });
+    await result.send();
+    request.log.info({ request: result.detail.number }, 'request closed by the owner');
+    return result.detail;
   });
 
   // The owner's answer to the open question of the request's planning run (owner's answer 9, lot
