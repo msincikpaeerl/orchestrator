@@ -37,6 +37,17 @@ const TicketRef = z.object({ projectKey: ProjectKey, number: z.int(), title: z.s
  * One item of "Needs you" (02, section 4), besides the GitHub connection problems of
  * `GET /api/github`. Each lot adds its own types.
  */
+/**
+ * What a paused run works on: its ticket, or a planning run's request (owner's answer 4, lot 5
+ * step E2b), "Request 7 (TESTB): <first line>"; the other one null.
+ */
+const PausedSubject = {
+  ticket: TicketRef.nullable(),
+  request: z
+    .object({ number: RequestNumber, line: z.string(), project: RequestProject })
+    .nullable(),
+};
+
 export const NeedsYouItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('project_setup_failed'),
@@ -395,7 +406,7 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('run_paused'),
     run: Run,
-    ticket: TicketRef,
+    ...PausedSubject,
     /** When it paused. */
     since: z.iso.datetime(),
     /**
@@ -414,7 +425,7 @@ export const NeedsYouItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('run_resumes_used'),
     run: Run,
-    ticket: TicketRef,
+    ...PausedSubject,
     /** When it paused the last time. */
     since: z.iso.datetime(),
     resumes: z.int().positive(),

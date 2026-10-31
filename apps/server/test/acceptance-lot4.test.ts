@@ -629,7 +629,7 @@ describe('lot 4 acceptance scenarios, the scheduler overnight, real server and d
   async function queueLines(): Promise<string[]> {
     return (await queue()).candidates.map(
       (candidate) =>
-        `${candidate.kind} WEB-${String(candidate.ticket.number)}: ${candidate.reason?.reason ?? `starts on ${candidate.machine?.name ?? '?'}`}`,
+        `${candidate.kind} WEB-${String(candidate.ticket?.number)}: ${candidate.reason?.reason ?? `starts on ${candidate.machine?.name ?? '?'}`}`,
     );
   }
   async function theAccount() {

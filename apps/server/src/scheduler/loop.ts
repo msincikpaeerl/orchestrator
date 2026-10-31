@@ -21,7 +21,9 @@ import { computeQueue } from './queue.js';
 // also resumes the runs paused on a usage limit, first in their account's queue, on their own
 // machine, through Resume's own path (07, section 5.2). From step G each tick first fails the runs
 // of a machine offline for **Runs of an offline machine fail after** (05, section 6), and wakes
-// when the next one is due.
+// when the next one is due. From lot 5 step E2b it starts a request's planning run too, through
+// `startPlanning`, its only starter (owner's answers 10 and 11, lot 5 step E2), and every event of
+// a request triggers a tick (owner's answer 2, step E2b).
 
 /** The advisory lock of the loop (07, section 2): one pass at a time across server instances. */
 export const SCHEDULER_LOCK = 4_701_517_242;
@@ -33,6 +35,7 @@ const RELEVANT = new Set<EventEntityType>([
   'machine',
   'claude_account',
   'project',
+  'request',
   'setting',
   'github_connection',
 ]);
@@ -42,7 +45,7 @@ const LONGEST_WAKE_MS = 24 * 60 * 60 * 1000;
 
 export interface SchedulerStart {
   runId: string;
-  /** `WEB-12`. */
+  /** `WEB-12`, or `Request 7` for a request's planning. */
   ticket: string;
   kind: QueueCandidate['kind'];
   machine: string;
@@ -58,7 +61,7 @@ export interface SchedulerOptions {
   db: Database;
   pool: Pool;
   log: FastifyBaseLogger;
-  runs: Pick<RunService, 'runNow' | 'startReview' | 'resume' | 'failOfflineRuns'>;
+  runs: Pick<RunService, 'runNow' | 'startReview' | 'startPlanning' | 'resume' | 'failOfflineRuns'>;
   /** The changes that trigger a tick; none in tests that run the ticks themselves. */
   feed?: ChangeFeed;
   now?: () => Date;
@@ -248,18 +251,27 @@ export class Scheduler {
 
   /** Starts one candidate as the scheduler; a refusal is logged and starts nothing. */
   private async startOne(candidate: QueueCandidate): Promise<SchedulerStart | null> {
-    const { projectKey, number } = candidate.ticket;
     const machine = candidate.machine;
     if (!machine) return null;
     const starter = { by: 'scheduler' as const, machineId: machine.id };
-    const ticket = `${projectKey}-${String(number)}`;
+    const ticket = subject(candidate);
+    const { runs } = this.options;
     try {
       const run =
         candidate.kind === 'resume' && candidate.runId !== null
-          ? await this.options.runs.resume(candidate.runId, starter)
-          : candidate.kind === 'review'
-            ? await this.options.runs.startReview(projectKey, number, starter)
-            : await this.options.runs.runNow(projectKey, number, starter);
+          ? await runs.resume(candidate.runId, starter)
+          : candidate.kind === 'plan' && candidate.request !== null
+            ? await runs.startPlanning(candidate.request.number, starter)
+            : candidate.ticket === null
+              ? null
+              : candidate.kind === 'review'
+                ? await runs.startReview(
+                    candidate.ticket.projectKey,
+                    candidate.ticket.number,
+                    starter,
+                  )
+                : await runs.runNow(candidate.ticket.projectKey, candidate.ticket.number, starter);
+      if (run === null) return null;
       this.options.log.info(
         { run: run.id, ticket, machine: machine.name, kind: candidate.kind },
         'scheduler started a run',
@@ -275,8 +287,16 @@ export class Scheduler {
   }
 }
 
+/** `WEB-12`, or `Request 7` for a request's planning or its paused run. */
+function subject(candidate: QueueCandidate): string {
+  if (candidate.ticket !== null) {
+    return `${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`;
+  }
+  return `Request ${String(candidate.request?.number ?? 0)}`;
+}
+
 function key(candidate: QueueCandidate): string {
-  return `${candidate.kind}:${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`;
+  return `${candidate.kind}:${subject(candidate)}`;
 }
 
 function relevant(message: StreamMessage): boolean {

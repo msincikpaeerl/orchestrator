@@ -50,7 +50,8 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
         [...keys.requests],
       ];
     case 'request':
-      return [[...keys.requests], [...keys.needsYou]];
+      // A request's planning is a line of the queue (lot 5 step E2b).
+      return [[...keys.requests], [...keys.needsYou], [...keys.queue]];
     case 'run':
       // A planning run's request links to it (lot 5 step E2).
       return [

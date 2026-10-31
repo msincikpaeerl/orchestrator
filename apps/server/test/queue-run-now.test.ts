@@ -20,7 +20,7 @@ async function queue(): Promise<QueueResponse> {
 
 async function queueReason(number: number): Promise<QueueReason | null> {
   const found = (await queue()).candidates.find(
-    (candidate) => candidate.ticket.projectKey === 'WEB' && candidate.ticket.number === number,
+    (candidate) => candidate.ticket?.projectKey === 'WEB' && candidate.ticket.number === number,
   );
   if (!found) throw new Error(`WEB-${String(number)} is not in the queue`);
   return found.reason;
@@ -57,7 +57,7 @@ describe('the queue and Run now (07, section 3)', () => {
     });
     // Ticket 3 is next and can start; reading the queue twice started nothing.
     expect(await queueReason(3)).toBeNull();
-    expect((await queue()).candidates.find((c) => c.ticket.number === 3)?.machine?.name).toBe(
+    expect((await queue()).candidates.find((c) => c.ticket?.number === 3)?.machine?.name).toBe(
       'Laptop',
     );
     expect((await h.ticket(3)).status).toBe('todo');
@@ -83,7 +83,7 @@ describe('the queue and Run now (07, section 3)', () => {
     // The machine gone: both say it is offline.
     await daemon.close();
     await expect
-      .poll(async () => (await queue()).candidates.find((c) => c.ticket.number === 4)?.reason)
+      .poll(async () => (await queue()).candidates.find((c) => c.ticket?.number === 4)?.reason)
       .toMatchObject({ machines: [{ unavailable: { why: 'offline' } }] });
     expect(await sameReason(4)).toMatchObject({
       reason: 'no_machine',

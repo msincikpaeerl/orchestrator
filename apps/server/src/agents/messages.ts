@@ -461,9 +461,13 @@ export function answerResumeMessage(
   return render(shortQuestion, cutText(a, answerLines, 'answer-cut'));
 }
 
-/** Sent with `run.resume` after a pause on a usage limit, detected or suspected. */
-export function continueMessage(templates: Templates): string {
-  return `${fill(templates.continue, templates.continue.main, {})}\n`;
+/**
+ * Sent with `run.resume` after a pause on a usage limit, detected or suspected; a planning run's
+ * points to `request_get` (owner's answer 5, lot 5 step E2b).
+ */
+export function continueMessage(templates: Templates, purpose: RunPurpose = 'implement'): string {
+  const text = purpose === 'plan' ? part(templates.continue, 'plan') : templates.continue.main;
+  return `${fill(templates.continue, text, {})}\n`;
 }
 
 /**

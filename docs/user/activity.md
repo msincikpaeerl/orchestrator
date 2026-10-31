@@ -26,23 +26,24 @@ What the scheduler starts next, in its order, and why each one is not running ye
 - "Starts no run until its usage limit resets.";
 - "Starts no other run: it already runs its maximum of 1 run at a time.".
 
-**Then each ticket waiting**, numbered in the order the scheduler takes them: its ticket (a link to its page), what would start ("Implement", "Fix after review", "Review by Quality", "Resume its paused run") with what places it ("high priority", "1 ticket waits for it", "after a failed attempt"), then why it is not running, in the words **Run now** would use. For example:
+**Then each ticket or request waiting**, numbered in the order the scheduler takes them: its ticket (a link to its page), or from version 0.6.0 its request ("Request 7 (WEB) · <its first line>", "(new project)" for a request with no project, a link to the request), what would start ("Implement", "Fix after review", "Review by Quality", "Plan", "Resume its paused run") with what places it ("high priority", "1 ticket waits for it", "after a failed attempt"), then why it is not running, in the words **Run now** would use. For example:
 
 - "No machine can take the run: Laptop: its Claude account Personal is outside its window until 10:00 PM." The ticket starts when the window opens;
 - "This ticket waits for WEB-3, which is not done yet.";
 - "Held: you stopped its run. Run now releases it and starts it." (a review you stopped: "Start review releases it and starts it."). A held ticket's line always says how to release it;
 - "The Claude account Personal reached its usage limit. You can resume after 3:45 PM." for a paused run, or "Paused on a possible usage limit: the scheduler resumes it at 4:10 AM, 2 hours after it paused.";
 - "The ticket's branch has 2 commits not on GitHub, only on machine Laptop, and it is offline since 3:12 PM. The run can only continue there.";
+- "Planning stopped: use Try again in Needs you." for a request stopped after its failed planning runs, or whose planning run you stopped (see [If planning fails](requests.md#if-planning-fails));
 - "Waiting for you in Needs you: …", for a ticket with an item to handle first, such as "it could not start on Laptop" or "the scheduler resumed its run as many times as Most resumes per run allows, and it still hits a usage limit";
 - "The scheduler starts it at its next check, on machine Laptop." when nothing stops it: it starts within **Scheduler check interval**.
 
 A line has the button that starts it now, **Run now** (**Start review** for a review, **Resume** for a paused run), when that button can help: on a ticket the scheduler would start at its next check, and where the button goes past what stops it (outside the window, the daily budget used, held, a machine left out after its failures, a paused run's wait, reviews not started by themselves). It goes through the same checks as on the ticket page: a ticket that cannot start shows the reason under the button, and one that starts opens its run page.
 
-A line without the button waits for something you do elsewhere: the ticket it waits for done (or the dependency removed), an assignee, the project or GitHub set up again, **Try again** on a stopped ticket, the button of its item in "Needs you", or the account or a machine available again.
+A request's **Plan** line never has a button: only the scheduler starts a planning run. A line without the button waits for something you do elsewhere: the ticket it waits for done (or the dependency removed), an assignee, the project or GitHub set up again, **Try again** on a stopped ticket, the button of its item in "Needs you", or the account or a machine available again.
 
-**It follows by itself**, without reloading: the queue is read again at every change of a ticket, a project, a run, a machine, a Claude account, a setting, the GitHub connection or an agent, at the time a line names (a window opening, a limit or a wait ending, the day's end), and at least every minute.
+**It follows by itself**, without reloading: the queue is read again at every change of a ticket, a request, a project, a run, a machine, a Claude account, a setting, the GitHub connection or an agent, at the time a line names (a window opening, a limit or a wait ending, the day's end), and at least every minute.
 
-When nothing waits, it says "Nothing is waiting: no ticket in To do or In review, and no paused run, for the scheduler to start."
+When nothing waits, it says "Nothing is waiting: no ticket in To do or In review, no open request, and no paused run, for the scheduler to start."
 
 ## History
 

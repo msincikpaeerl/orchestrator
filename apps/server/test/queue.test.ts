@@ -215,6 +215,10 @@ async function loopAsks(): Promise<string[]> {
     runs: {
       runNow: start,
       startReview: start,
+      startPlanning: (number: number): Promise<never> => {
+        asked.push(`Request ${String(number)}`);
+        return Promise.reject(new Error('recorded only'));
+      },
       resume: (runId: string): Promise<never> => {
         asked.push(`resume ${runId}`);
         return Promise.reject(new Error('recorded only'));
@@ -230,7 +234,9 @@ async function loopAsks(): Promise<string[]> {
 }
 
 const label = (candidate: QueueCandidate) =>
-  `${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`;
+  candidate.ticket === null
+    ? `Request ${String(candidate.request?.number)}`
+    : `${candidate.ticket.projectKey}-${String(candidate.ticket.number)}`;
 
 async function reasonOf(reference: string): Promise<QueueReason | null> {
   const found = (await queue()).candidates.find((candidate) => label(candidate) === reference);
@@ -711,7 +717,7 @@ describe("each reason, in Run now's terms (07, sections 3 and 7)", () => {
     });
     const { candidates } = await queue();
     expect(
-      candidates.find((candidate) => candidate.ticket.number === fresh.number)?.machine,
+      candidates.find((candidate) => candidate.ticket?.number === fresh.number)?.machine,
     ).toEqual({ id: desktop.id, name: 'Desktop' });
   });
 

@@ -156,14 +156,18 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
   items.push(...(await machineFailureItems(db)));
   items.push(...(await stoppedItems(db)));
 
+  // A new project's paused planning run has no project (owner's answer 4, lot 5 step E2b).
   const paused = await runs.list(
     and(
       eq(schema.runs.status, 'paused_quota'),
-      sql`${schema.runs.projectId} IN (SELECT ${schema.projects.id} FROM ${schema.projects} WHERE ${schema.projects.status} = 'active')`,
+      or(
+        isNull(schema.runs.projectId),
+        sql`${schema.runs.projectId} IN (SELECT ${schema.projects.id} FROM ${schema.projects} WHERE ${schema.projects.status} = 'active')`,
+      ),
     ),
     [asc(schema.runs.statusSince)],
   );
-  const titles =
+  const subjects =
     paused.length === 0
       ? []
       : await db
@@ -171,9 +175,13 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
             runId: schema.runs.id,
             number: schema.tickets.number,
             title: schema.tickets.title,
+            request: schema.requests,
+            project: schema.projects,
           })
           .from(schema.runs)
-          .innerJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+          .leftJoin(schema.tickets, eq(schema.tickets.id, schema.runs.ticketId))
+          .leftJoin(schema.requests, eq(schema.requests.id, schema.runs.requestId))
+          .leftJoin(schema.projects, eq(schema.projects.id, schema.runs.projectId))
           .where(
             inArray(
               schema.runs.id,
@@ -185,15 +193,33 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
   const queue = paused.length === 0 ? null : await computeQueue(db, now);
   const { maxSchedulerResumes } = await resolveSettings(db, ['maxSchedulerResumes']);
   for (const run of paused) {
-    const ticket = titles.find((row) => row.runId === run.id);
-    // A paused planning run has no ticket: its resume comes with step E2b (lot 5).
-    if (!ticket || run.projectKey === null) continue;
-    const ticketRef = { projectKey: run.projectKey, number: ticket.number, title: ticket.title };
+    const found = subjects.find((row) => row.runId === run.id);
+    if (!found) continue;
+    // Its ticket, or a planning run's request, "Request 7 (TESTB): <first line>".
+    const subject =
+      found.number !== null && found.title !== null && run.projectKey !== null
+        ? {
+            ticket: { projectKey: run.projectKey, number: found.number, title: found.title },
+            request: null,
+          }
+        : found.request !== null
+          ? {
+              ticket: null,
+              request: {
+                number: found.request.number,
+                line: requestLine(found.request.body),
+                project: found.project
+                  ? { key: found.project.key, name: found.project.name }
+                  : null,
+              },
+            }
+          : null;
+    if (subject === null) continue;
     if (run.schedulerResumes >= maxSchedulerResumes) {
       items.push({
         type: 'run_resumes_used',
         run,
-        ticket: ticketRef,
+        ...subject,
         since: run.statusSince,
         resumes: run.schedulerResumes,
         limit: maxSchedulerResumes,
@@ -204,7 +230,7 @@ async function ticketItems(db: Database, runs: RunService, now: Date): Promise<I
     items.push({
       type: 'run_paused',
       run,
-      ticket: ticketRef,
+      ...subject,
       since: run.statusSince,
       resume: candidate?.reason ?? null,
     });

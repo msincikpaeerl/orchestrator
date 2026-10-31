@@ -158,6 +158,7 @@ describe("the queue's reasons in plain words (07, section 7; lot 4 step D1)", ()
       machine: item === 'download_failed' || item === 'machine_failures' ? machine : null,
     })),
     { reason: 'reviews_off' },
+    { reason: 'planning_stopped' },
     { reason: 'quota_wait', until, minutes: 120 },
   ];
 

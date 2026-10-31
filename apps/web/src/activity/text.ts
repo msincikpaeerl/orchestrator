@@ -985,10 +985,17 @@ export function eventText(entry: EventLogEntry): Piece[] {
       : typeof payload.ticket === 'string'
         ? payload.ticket
         : 'A ticket';
+  // A planning run's events name its request, "Request 7" (lot 5 step E2b): linked to it.
+  const request = ticketTo === null ? /^Request (\d+)$/.exec(reference) : null;
   const context: Context = {
     project: projectTo === null ? (key ?? 'A project') : { text: key ?? '', to: projectTo },
     projectTo,
-    ticket: ticketTo === null ? reference : { text: reference, to: ticketTo },
+    ticket:
+      ticketTo !== null
+        ? { text: reference, to: ticketTo }
+        : request?.[1] !== undefined
+          ? requestLink(Number(request[1]))
+          : reference,
     ticketTo,
     comment: entry.comment,
   };

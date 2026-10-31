@@ -1,9 +1,16 @@
 import { schema } from '@orchestrator/db';
-import { CommentKind, TicketPriority, TicketStatus, TicketType } from '@orchestrator/protocol';
+import {
+  CommentKind,
+  ProjectKind,
+  TicketPriority,
+  TicketStatus,
+  TicketType,
+} from '@orchestrator/protocol';
 import { and, asc, eq, gt, ne } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { acceptanceCriteria, ticketReference, type TicketRow } from '../tickets/model.js';
 import type { FixReviewTicket, ImplementTicket } from '../agents/messages.js';
+import type { PlanRequest } from '../agents/planning-run-message.js';
 import type { PreviousReview, ReviewCi, ReviewTicket } from '../agents/review-message.js';
 import { resolveSettings } from '../settings/store.js';
 import { latestRequest } from '../tickets/changes.js';
@@ -269,5 +276,98 @@ async function previousReview(
     after: request.after,
     comment: comment?.body ?? '',
     notes,
+  };
+}
+
+/**
+ * Layer 3 of 03, section 3 for a `plan` run (lot 5 step E2b): the request, its whole conversation
+ * oldest first (an answer given after its question's run ended included), its project with its
+ * tickets but the cancelled ones, in number order, and the profiles that can be assigned a
+ * ticket. No rejected plan before step F.
+ */
+export async function planRequest(
+  executor: Executor,
+  input: {
+    request: { id: string; number: number; body: string };
+    project: {
+      name: string;
+      key: string;
+      kind: string;
+      projectId: string;
+      base: string;
+    } | null;
+    attempt: number;
+    maxTicketsPerPlan: number;
+  },
+): Promise<PlanRequest> {
+  const { request, project } = input;
+  const comments = await executor
+    .select({ comment: schema.comments, agentName: schema.agentProfiles.name })
+    .from(schema.comments)
+    .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.comments.authorProfileId))
+    .where(eq(schema.comments.requestId, request.id))
+    .orderBy(asc(schema.comments.createdAt));
+  const profiles = await executor
+    .select()
+    .from(schema.agentProfiles)
+    .orderBy(asc(schema.agentProfiles.key));
+  const keys = new Map(profiles.map((profile) => [profile.id, profile.key]));
+  const tickets =
+    project === null
+      ? []
+      : await executor
+          .select()
+          .from(schema.tickets)
+          .where(
+            and(
+              eq(schema.tickets.projectId, project.projectId),
+              ne(schema.tickets.status, 'cancelled'),
+            ),
+          )
+          .orderBy(asc(schema.tickets.number));
+  return {
+    number: request.number,
+    body: request.body,
+    comments: comments.map(({ comment, agentName }) => ({
+      author:
+        comment.author === 'owner'
+          ? { kind: 'owner' as const }
+          : comment.author === 'agent'
+            ? { kind: 'agent' as const, name: agentName ?? 'unknown' }
+            : { kind: 'system' as const },
+      kind: CommentKind.parse(comment.kind),
+      at: comment.createdAt,
+      body: comment.body,
+    })),
+    project:
+      project === null
+        ? null
+        : {
+            name: project.name,
+            key: project.key,
+            kind: ProjectKind.parse(project.kind),
+            base: project.base,
+            tickets: tickets.map((ticket) => ({
+              reference: ticketReference(project.key, ticket.number),
+              status: TicketStatus.parse(ticket.status),
+              type: TicketType.parse(ticket.type),
+              assignee:
+                ticket.assigneeProfileId === null
+                  ? null
+                  : (keys.get(ticket.assigneeProfileId) ?? null),
+              title: ticket.title,
+            })),
+          },
+    // Only a builder or a writer implements a ticket (03, section 4).
+    agents: profiles
+      .filter((profile) => profile.role === 'builder' || profile.role === 'writer')
+      .map((profile) => ({
+        key: profile.key,
+        name: profile.name,
+        description: profile.description,
+      })),
+    maxTicketsPerPlan: input.maxTicketsPerPlan,
+    attempt: input.attempt,
+    rejected: null,
   };
 }

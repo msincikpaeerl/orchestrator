@@ -190,6 +190,9 @@ export function blockingItemText(item: BlockingItem, machine: string | null): st
 export const REVIEWS_OFF =
   "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.";
 
+/** A request stopped after its failed planning runs or Stop run (lot 5 step E2b), in the queue. */
+export const PLANNING_STOPPED = 'Planning stopped: use Try again in Needs you.';
+
 export function queueReasonText(reason: QueueReason): string {
   switch (reason.reason) {
     case 'held':
@@ -198,6 +201,8 @@ export function queueReasonText(reason: QueueReason): string {
       return `Waiting for you in Needs you: ${blockingItemText(reason.item, reason.machine?.name ?? null)}.`;
     case 'reviews_off':
       return REVIEWS_OFF;
+    case 'planning_stopped':
+      return PLANNING_STOPPED;
     case 'quota_wait':
       return `Paused on a possible usage limit: the scheduler resumes it at ${formatDateTime(reason.until)}, ${waitText(reason.minutes)} after it paused.`;
     default:

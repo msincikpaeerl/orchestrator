@@ -180,8 +180,8 @@ export function NewRequestPage() {
             ))}
           </SelectField>
           <p className="text-slate-700">
-            Nothing starts yet when you submit: the request waits as Open. Planning by the Project
-            Manager comes with a later version.
+            When you submit, the request waits as Open until the scheduler starts the Project
+            Manager on it, as soon as a machine is free.
           </p>
           {submit.error && <ErrorMessage>{refusalText(submit.error)}</ErrorMessage>}
           <div className="flex flex-wrap items-center gap-3">
@@ -317,7 +317,8 @@ function RequestContent({ number }: { number: number }) {
           </section>
           {data.status === 'open' && (
             <p className="text-slate-700">
-              Open: the request waits for the Project Manager. Planning comes with a later version.
+              Open: the request waits for the Project Manager. The scheduler starts its planning run
+              when a machine is free; Activity {'>'} Queue says why it waits.
             </p>
           )}
           {data.status === 'planning' && (

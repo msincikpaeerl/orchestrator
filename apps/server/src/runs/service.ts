@@ -89,13 +89,15 @@ import {
 import type { Database, Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import {
+  changeRequestStatus,
   requestEntity,
   requestQuestion,
   requestSystemComment,
   waitingQuestion,
   type RequestRow,
 } from '../requests/model.js';
-import { planningRunEnded } from '../requests/planning-end.js';
+import { planningRunEnded, requestMachineFailures, requestStop } from '../requests/planning-end.js';
+import { planFirstMessage } from '../agents/planning-run-message.js';
 import { notifyChange, notifyRunLog } from '../realtime/changes.js';
 import { createGitHubClient, GitHubUnreachableError } from '../github/client.js';
 import { loadToken } from '../github/connection.js';
@@ -132,7 +134,7 @@ import {
   releaseHold,
 } from '../tickets/holds.js';
 import { applyRunAction } from '../tickets/transitions.js';
-import { fixReviewTicket, implementTicket, reviewTicket } from './first-message.js';
+import { fixReviewTicket, implementTicket, planRequest, reviewTicket } from './first-message.js';
 import { standingRequest } from '../tickets/changes.js';
 import { ciOutcome, ciSourceRun } from './ci-outcome.js';
 import { reviewCiOf } from './review-view.js';
@@ -446,10 +448,12 @@ export class RunService {
     });
   }
 
-  private reference(locked: Pick<Locked, 'project' | 'ticket'>): string {
-    return locked.ticket && locked.project
-      ? ticketReference(locked.project.key, locked.ticket.number)
-      : '';
+  /** `WEB-12`, or a planning run's `Request 7` (lot 5 step E2b), for its events and logs. */
+  private reference(locked: Pick<Locked, 'project' | 'ticket' | 'request'>): string {
+    if (locked.ticket && locked.project) {
+      return ticketReference(locked.project.key, locked.ticket.number);
+    }
+    return locked.request ? `Request ${String(locked.request.number)}` : '';
   }
 
   /** Changes the run's status with its event; a terminal status also revokes the run's token. */
@@ -1512,9 +1516,203 @@ export class RunService {
         runId: run.id,
         purpose,
         project,
-        ticket: { id: ticket.id, reference },
+        subject: { kind: 'ticket', id: ticket.id, reference },
         baseBranch,
         branchName,
+        profile,
+        github,
+        files: { templates, rules, allowlist },
+        runToken,
+        initialPrompt,
+        settings,
+      });
+      return { run, start, machine, reference, ackDeadline };
+    });
+
+    return this.dispatch(prepared, starter);
+  }
+
+  /**
+   * The scheduler's start of a request's planning run (07, section 3; owner's answers 10 and 11,
+   * lot 5 step E2), its only starter: the Project Manager's `plan` run on the machine the queue
+   * chose, after the checks the queue read, again under the locks (the project, then the
+   * request). The request goes `planning` with a `system` comment; the run is `queued`, then
+   * `dispatched`. A refusal starts nothing: the next tick reads the queue again.
+   */
+  async startPlanning(
+    requestNumber: number,
+    starter: Extract<Starter, { by: 'scheduler' }>,
+  ): Promise<Run> {
+    const github = await this.githubIdentity();
+    const { templates, rules, allowlist } = await this.files();
+    const settings = await resolveSettings(this.db, RUN_START_SETTINGS);
+
+    const prepared = await this.db.transaction(async (tx) => {
+      const now = this.now();
+      const [found] = await tx
+        .select({ projectId: schema.requests.projectId })
+        .from(schema.requests)
+        .where(eq(schema.requests.number, requestNumber));
+      if (!found) throw new HttpError(404, 'request_not_found', 'No request with this number');
+      // The project, then the request: the order of every planning path (lot 5 step D2a).
+      const project =
+        found.projectId === null
+          ? null
+          : await this.lockProject(tx, eq(schema.projects.id, found.projectId));
+      const [request] = await tx
+        .select()
+        .from(schema.requests)
+        .where(eq(schema.requests.number, requestNumber))
+        .for('update');
+      if (!request) throw new HttpError(404, 'request_not_found', 'No request with this number');
+      if (project !== null) {
+        const projectRefused = projectRefusal(project);
+        if (projectRefused !== null) throw refused(projectRefused);
+      }
+      if (request.status !== 'open')
+        throw new Error(`request ${String(requestNumber)} is ${request.status}`);
+      if (requestStop(request) !== null) {
+        throw new Error('the request is stopped: only Try again lets it be planned');
+      }
+      const machines = await tx
+        .select({ id: schema.machines.id, connectedAt: schema.machines.connectedAt })
+        .from(schema.machines);
+      if (leftOutMachines(requestMachineFailures(request), machines).has(starter.machineId)) {
+        throw new Error('the machine the scheduler chose is left out for this request');
+      }
+      const [profile] = await tx
+        .select()
+        .from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.key, 'pm'));
+      if (!profile) throw new Error('the Project Manager profile is not seeded');
+      const instructionsRefused = this.instructionsRefused(profile, 'plan', { rules, allowlist });
+      if (instructionsRefused !== null) throw refused(instructionsRefused);
+      // A new project's request reads the global value (owner's answer 6, lot 5 step E2).
+      const { maxTicketsPerPlan, maxAgentTicketsPerRun } = await resolveSettings(
+        tx,
+        ['maxTicketsPerPlan', 'maxAgentTicketsPerRun'],
+        project?.id,
+      );
+
+      const earlier = await tx
+        .select()
+        .from(schema.runs)
+        .where(eq(schema.runs.requestId, request.id))
+        .orderBy(desc(schema.runs.createdAt));
+      // A planning run needs no capability (07, section 4).
+      const { machine, account } = await this.chooseMachine(tx, {
+        projectId: project?.id ?? null,
+        earlier,
+        required: [],
+        now,
+        holding: null,
+        only: starter.machineId,
+      });
+      const attempt = earlier.filter((run) => run.acknowledgedAt !== null).length + 1;
+      // A new project's run has no base branch: `main`, shown nowhere (owner's answer 3, E2b).
+      const baseBranch = project?.defaultBranch ?? 'main';
+
+      let initialPrompt: string;
+      const lead = startedBy(templates.plan, true);
+      try {
+        initialPrompt =
+          lead +
+          planFirstMessage(
+            templates.plan,
+            await planRequest(tx, {
+              request,
+              project:
+                project === null
+                  ? null
+                  : {
+                      name: project.name,
+                      key: project.key,
+                      kind: project.kind,
+                      projectId: project.id,
+                      base: `origin/${baseBranch}`,
+                    },
+              attempt,
+              maxTicketsPerPlan,
+            }),
+            FIRST_MESSAGE_MAX_BYTES - Buffer.byteLength(lead, 'utf8'),
+          );
+      } catch (error) {
+        if (!(error instanceof FirstMessageTooLarge)) throw error;
+        throw refuse(
+          { reason: 'first_message_too_large', maxBytes: FIRST_MESSAGE_MAX_BYTES },
+          error.message,
+        );
+      }
+
+      const runToken = newRunToken();
+      const dispatchMessageId = randomUUID();
+      const ackDeadline = new Date(Date.now() + settings.dispatchAckTimeoutSeconds * this.secondMs);
+      const [run] = await tx
+        .insert(schema.runs)
+        .values({
+          projectId: project?.id ?? null,
+          requestId: request.id,
+          profileId: profile.id,
+          profileVersion: profile.version,
+          purpose: 'plan',
+          machineId: machine.id,
+          accountId: account.id,
+          status: 'queued',
+          attempt,
+          maxAgentTickets: maxAgentTicketsPerRun,
+          runTokenHash: hashCredential(runToken),
+          dispatchMessageId,
+          dispatchKind: 'start',
+          ackDeadline,
+          baseBranch,
+          statusSince: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      if (!run) throw new Error('run not inserted');
+      const reference = `Request ${String(request.number)}`;
+      await recordEvent(tx, {
+        actor: 'system',
+        entityType: 'run',
+        entityId: run.id,
+        projectId: project?.id ?? null,
+        type: 'run.created',
+        payload: {
+          project: project?.key ?? '',
+          ticket: reference,
+          purpose: 'plan',
+          machine: machine.name,
+          account: account.label,
+          profile: profile.key,
+          profileName: profile.name,
+          profileVersion: profile.version,
+          attempt,
+        },
+        at: now,
+      });
+      const planning = await changeRequestStatus(tx, {
+        request,
+        to: 'planning',
+        cause: 'run_started',
+        runId: run.id,
+        at: now,
+      });
+      await requestSystemComment(
+        tx,
+        planning,
+        `Started by the scheduler: planning attempt ${String(attempt)} on machine ${machine.name}.`,
+        now,
+      );
+
+      const start = this.startMessage({
+        messageId: dispatchMessageId,
+        runId: run.id,
+        purpose: 'plan',
+        project,
+        subject: { kind: 'request', id: request.id },
+        baseBranch,
+        branchName: null,
         profile,
         github,
         files: { templates, rules, allowlist },
@@ -1690,7 +1888,7 @@ export class RunService {
         runId: run.id,
         purpose: 'review',
         project,
-        ticket: { id: ticket.id, reference },
+        subject: { kind: 'ticket', id: ticket.id, reference },
         baseBranch,
         branchName,
         profile,
@@ -1893,10 +2091,13 @@ export class RunService {
     messageId: string;
     runId: string;
     purpose: RunPurpose;
-    project: ProjectRow;
-    ticket: { id: string; reference: string };
+    /** Null for a new project's planning run, which gets no repository. */
+    project: ProjectRow | null;
+    /** The ticket, or a planning run's request (lot 5 step E2b). */
+    subject: { kind: 'ticket'; id: string; reference: string } | { kind: 'request'; id: string };
     baseBranch: string;
-    branchName: string;
+    /** Null for a planning run, which has no ticket branch. */
+    branchName: string | null;
     profile: typeof schema.agentProfiles.$inferSelect;
     github: { login: string; id: number };
     files: { templates: Templates; rules: Rules; allowlist: Template };
@@ -1913,14 +2114,21 @@ export class RunService {
       payload: {
         runId: input.runId,
         purpose: input.purpose,
-        subject: { kind: 'ticket', id: input.ticket.id, number: input.ticket.reference },
-        repository: {
-          owner: project.repoOwner,
-          name: project.repoName,
-          cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
-          baseBranch: input.baseBranch,
-          ticketBranch: input.branchName,
-        },
+        subject:
+          input.subject.kind === 'ticket'
+            ? { kind: 'ticket', id: input.subject.id, number: input.subject.reference }
+            : { kind: 'request', id: input.subject.id },
+        ...(project === null
+          ? {}
+          : {
+              repository: {
+                owner: project.repoOwner,
+                name: project.repoName,
+                cloneUrl: `${this.options.gitBaseUrl.replace(/\/+$/, '')}/${project.repoOwner}/${project.repoName}.git`,
+                baseBranch: input.baseBranch,
+                ...(input.branchName === null ? {} : { ticketBranch: input.branchName }),
+              },
+            }),
         commitAuthor: {
           name: `${profile.name} (Orchestrator)`,
           email: `${String(github.id)}+${github.login}@users.noreply.github.com`,
@@ -2006,7 +2214,8 @@ export class RunService {
   private async chooseMachine(
     tx: Executor,
     input: {
-      projectId: string;
+      /** Null for a new project's planning run: no clone to prefer. */
+      projectId: string | null;
       earlier: readonly RunRow[];
       required: Capability[];
       now: Date;
@@ -2077,19 +2286,21 @@ export class RunService {
    */
   private async preferred(
     tx: Executor,
-    projectId: string,
+    projectId: string | null,
     earlier: readonly RunRow[],
     available: readonly MachineRow[],
   ): Promise<MachineRow> {
     const ids = available.map((machine) => machine.id);
     const cloned = new Set(
-      (
-        await tx
-          .select({ machineId: schema.runs.machineId })
-          .from(schema.runs)
-          .where(and(eq(schema.runs.projectId, projectId), inArray(schema.runs.machineId, ids)))
-          .groupBy(schema.runs.machineId)
-      ).map((row) => row.machineId),
+      projectId === null
+        ? []
+        : (
+            await tx
+              .select({ machineId: schema.runs.machineId })
+              .from(schema.runs)
+              .where(and(eq(schema.runs.projectId, projectId), inArray(schema.runs.machineId, ids)))
+              .groupBy(schema.runs.machineId)
+          ).map((row) => row.machineId),
     );
     const today = await runsToday(tx, ids, this.now());
     return preferredMachine(available, { cloned, today, last: earlier[0]?.machineId });
@@ -2623,7 +2834,7 @@ export class RunService {
           payload: {
             runId: run.id,
             claudeSessionId: run.claudeSessionId,
-            message: continueMessage(templates),
+            message: continueMessage(templates, RunPurpose.parse(run.purpose)),
           },
         } satisfies ServerMessage,
       };

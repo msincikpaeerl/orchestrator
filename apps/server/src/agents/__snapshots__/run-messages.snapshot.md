@@ -262,6 +262,11 @@ Continue planning the request with this answer. If it still leaves you unable to
 Your session was paused on a Claude usage limit, or what looked like one, and has now been resumed. Continue your ticket where you left off. If you are not sure what was already done, check with `git status`, `git log` and `ticket_comments` first. End the turn with `ticket_submit`, `ticket_ask` or `ticket_give_up`, as usual.
 
 
+# Continue a planning run after a usage-limit pause (lot 5 step E2b)
+
+Your session was paused on a Claude usage limit, or what looked like one, and has now been resumed. Continue planning the request where you left off. If you are not sure what was already done, read it again with `request_get` first. End the turn with `plan_propose`, `request_ask` or `ticket_give_up`, as usual.
+
+
 # Nudge
 
 Your turn ended without `ticket_submit`, `ticket_ask` or `ticket_give_up`. Continue working on your ticket, and end your next turn with exactly one of these tools. If you are stuck, use `ticket_ask`; if the ticket cannot be done, use `ticket_give_up`. Without one of them, the run will soon end as failed.

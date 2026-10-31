@@ -153,3 +153,38 @@ test('a long queue with long reasons reads on the phone', async ({ page }, testI
   await expectFitsScreen(page);
   await screenshot(page.getByRole('region', { name: 'Queue' }), testInfo, 'queue-long');
 });
+
+test("a request's planning waits in the queue, linked to the request, with no button", async ({
+  page,
+}, testInfo) => {
+  // Lot 5 step E2b (owner's answer 10 of step E2): "Plan" and its request's line, after the
+  // review and fix candidates, before the implement ones; the scheduler alone starts it.
+  await page.goto(await readyForRuns(page));
+  const created = await page.request.post('/api/requests', {
+    data: { body: 'A contact form on the home page.\nVisitors leave a message.', project: 'WEB' },
+  });
+  expect(created.status()).toBe(201);
+  await windowLater(page, 'Personal');
+
+  await page.goto('/activity');
+  const items = page.getByRole('list', { name: 'Queue', exact: true }).getByRole('listitem');
+  await expect(items).toHaveCount(2);
+  const plan = items.first();
+  await expect(plan).toContainText('1. Request 1 (WEB) · A contact form on the home page.');
+  await expect(plan).toContainText('Plan');
+  await expect(plan.getByLabel('Why it is not running')).toHaveText(
+    /^No machine can take the run: Laptop: its Claude account Personal is outside its window until .+\.$/,
+  );
+  await expect(plan.getByRole('button')).toHaveCount(0);
+  await expect(items.nth(1)).toContainText('2. WEB-1 · Contact form');
+  await expectFitsScreen(page);
+  await screenshot(page.getByRole('region', { name: 'Queue' }), testInfo, 'queue-plan');
+
+  await plan
+    .getByRole('link', { name: 'Request 1 (WEB) · A contact form on the home page.' })
+    .click();
+  await expect(page).toHaveURL(/\/requests\/1$/);
+  await expect(page.getByText('Open: the request waits for the Project Manager.')).toContainText(
+    'Activity > Queue says why it waits.',
+  );
+});

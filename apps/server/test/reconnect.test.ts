@@ -90,7 +90,7 @@ async function reasonOf(number = 1) {
   const response = await h.call('GET', '/api/queue');
   expect(response.statusCode, response.body).toBe(200);
   const found = QueueResponse.parse(response.json()).candidates.find(
-    (candidate) => candidate.ticket.number === number,
+    (candidate) => candidate.ticket?.number === number,
   );
   if (!found) throw new Error(`WEB-${String(number)} is not in the queue`);
   return found.reason;

@@ -312,6 +312,8 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
       ),
       '# Continue after a usage-limit pause',
       continueMessage(templates),
+      '# Continue a planning run after a usage-limit pause (lot 5 step E2b)',
+      continueMessage(templates, 'plan'),
       '# Nudge',
       nudgeMessage(templates),
     ];

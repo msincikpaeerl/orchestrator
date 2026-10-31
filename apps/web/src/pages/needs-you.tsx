@@ -16,6 +16,7 @@ import {
   planningStoppedText,
   requestPath,
   requestQuestionHeading,
+  requestSubjectText,
 } from '../requests/text';
 import { RequestTryAgain } from '../requests/try-again';
 import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
@@ -116,6 +117,24 @@ function TicketTitle({
       className="break-words text-blue-700 underline"
     >
       {ticketRef(ticket.projectKey, ticket.number)} · {ticket.title}
+    </Link>
+  );
+}
+
+/**
+ * What a paused run works on: its ticket, or a planning run's request, "Request 7 (TESTB): <first
+ * line>" (owner's answer 4, lot 5 step E2b).
+ */
+function PausedSubject({
+  item,
+}: {
+  item: Extract<NeedsYouItem, { type: 'run_paused' | 'run_resumes_used' }>;
+}) {
+  if (item.ticket !== null) return <TicketTitle ticket={item.ticket} />;
+  if (item.request === null) return null;
+  return (
+    <Link to={requestPath(item.request.number)} className="break-words text-blue-700 underline">
+      {requestSubjectText(item.request)}
     </Link>
   );
 }
@@ -234,7 +253,7 @@ function WorkItemCard({
               ? 'Run paused: possible Claude usage limit'
               : 'Run paused: Claude usage limit reached'}
           </h2>
-          <TicketTitle ticket={item.ticket} />
+          <PausedSubject item={item} />
           <p className="text-slate-700">{resumeText(item.resume)}</p>
           <RunActions run={item.run} />
           <Link to={runPath(item.run.id)} className="text-blue-700 underline">
@@ -451,7 +470,7 @@ function ResumesUsedCard({ item }: { item: Extract<NeedsYouItem, { type: 'run_re
   return (
     <Card className="space-y-2">
       <h2 className="font-semibold break-words text-slate-900">{title}</h2>
-      <TicketTitle ticket={item.ticket} />
+      <PausedSubject item={item} />
       <p className="break-words text-slate-700">{detail}</p>
       <p className="text-sm text-slate-600">Paused since {formatDateTime(item.since)}</p>
       <RunActions run={item.run} />

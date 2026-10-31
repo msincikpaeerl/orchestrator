@@ -47,22 +47,25 @@ From version 0.5.0 the Orchestrator's **scheduler** starts runs by itself, so ti
 
 - a ticket in **To do** with an assignee, waiting for no other ticket: a run of its agent, as **Run now** does (one that addresses the request for changes, when Quality or you asked for some);
 - a run paused at a usage limit, once the limit resets or, for a possible limit, once its wait is over: it continues where it stopped, as **Resume** does, before any other work of its account (see [Usage limits](#usage-limits));
+- from version 0.6.0, a request in **Open**: a planning run of the Project Manager, which reads the request and its conversation, may ask you questions, and proposes a plan (see [Requests](requests.md)). Only the scheduler starts it: there is no **Run now** for requests. It needs none of the project's capabilities (it runs no tests), and starts on a machine that already has the project's repository when one can, else on the one that ran the fewest runs today. A planning run paused at a usage limit is resumed like any other run, where it stopped;
 - a ticket **Ready for review**: Quality's review, as **Start review** does, unless you turned off **Start reviews by themselves** in the project's settings (see [Reviews by themselves](projects.md#reviews-by-themselves)). If you do not want a review, use **Skip review** before it starts. "Ready for review" says which: "The review starts by itself as soon as a machine and its Claude account can take it." or "Start reviews by themselves is off in this project's settings: the review waits for you to use Start review.".
 
 A fix after a request for changes starts by itself whether the switch is on or off: the switch is only about reviews.
 
-**In which order**: paused runs first, then reviews, then fixes after a request for changes, then new work. Within each of these, in this order:
+**In which order**: paused runs first, then reviews, then fixes after a request for changes, then requests' planning, then new work. Within each of these, in this order:
 
 1. a ticket whose last attempt failed (and counted as a failed attempt) goes behind the others, even a high-priority one;
 2. then priority: high, then normal, then low;
 3. then the tickets that the most other tickets wait for;
 4. then the one waiting the longest.
 
-Projects take turns, so one large project does not hold up the others.
+Projects take turns, so one large project does not hold up the others. A request has no priority: it counts as normal. A request for a new project takes its own turn, as a project of its own.
 
 **Where and how many**: only on a Claude account that can start a run: inside its windows, under its daily budget, not paused and not at its usage limit (see [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself)), and on a machine that can take the run, as for **Run now**. It starts one run per account at a time, until the account runs its **Runs at the same time**; the next ticket starts when a run ends.
 
-**How you can tell**: **Activity > Queue** shows what it starts next and why each other ticket waits (see [Queue](activity.md#queue)); the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
+**How you can tell**: **Activity > Queue** shows what it starts next and why each other ticket waits (see [Queue](activity.md#queue)); the ticket's timeline says "Started by the scheduler: attempt 1 on machine Laptop." (for a review: "Started by the scheduler: Quality's review of attempt 1 on machine Laptop."; for a request, in its conversation: "Started by the scheduler: planning attempt 1 on machine Laptop."), and Activity shows "the scheduler started a run".
+
+**How much it can start for one request**: one planning session when you submit it, then one each time you reject its plan with feedback (later version). A planning run that fails and counts (see [If planning fails](requests.md#if-planning-fails)) is started again, at most **Failed attempts before asking you** (2 by default) failed sessions before the request is stopped and waits for you. A failure its machine caused does not count: another machine can take the request, and that machine again once it connects.
 
 **How much it can start for one ticket**, with the default settings and nothing done by you: the first run, then a review, and after each request for changes by Quality a fix and another review. Quality may ask for changes **Most review rounds per ticket** times (2 by default): one more request stops the ticket, so at most 3 runs of its agent and 3 reviews. Failed runs of its agent count too, at most **Failed attempts before asking you** (2 by default) over the ticket's life before it stops. So at most 8 Claude Code sessions for one ticket before it waits for you, and usually 2 (one run, one review). A run whose machine went offline during it does not count: it can start again once that machine is back, at most **Machine failures before asking you** (2 by default) times in a row on that machine. Each **Request changes** of yours starts a fix and a review again, within the same limits.
 
@@ -74,6 +77,8 @@ Projects take turns, so one large project does not hold up the others.
 - a ticket with an item in [Needs you](needs-you.md) about its CI, its push or its download, or a review that did not finish, until you handle the item;
 - a ticket on a machine that just failed it (see [When a machine keeps failing a ticket](#when-a-machine-keeps-failing-a-ticket)): that machine is left out for that ticket until it connects again or you use **Run now**; another machine can still take the ticket;
 - a ticket CI cancelled because its branch changed on GitHub: it waits for your **Run now** (see [CI items](needs-you.md#ci-items));
+- a request stopped after its failed planning runs, or whose planning run you stopped: it waits for your **Try again** (see [If planning fails](requests.md#if-planning-fails));
+- a request of an archived project;
 
 ## Watch a run
 

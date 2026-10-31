@@ -2,7 +2,7 @@
 
 A request is what you want, in your own words: a new website, a feature for one of your projects, a change. The Project Manager, an agent, will read it, ask you questions if something is unclear, and propose a plan: the tickets to do, in order. You approve the plan, and the other agents do the tickets.
 
-In this version you can submit requests and add to them, but nothing starts yet: the Project Manager and the plans come with a later version. A request stays **Open** until then.
+From version 0.6.0, the Orchestrator's scheduler starts the Project Manager on a request by itself, as soon as a machine and its Claude account are free (see [What starts by itself](runs.md#what-starts-by-itself)). Reviewing and approving its plan come with a later version.
 
 ## Submit a request
 
@@ -23,8 +23,8 @@ A request's page shows its status, its project, when you submitted it, its full 
 
 | Status | Meaning |
 |---|---|
-| Open | Submitted; nothing is working on it yet. |
-| Planning | The Project Manager is working on it (later version). |
+| Open | Waiting for the Project Manager: the scheduler starts its planning run when a machine is free. **Activity > Queue** says why it waits (see [Queue](activity.md#queue)). |
+| Planning | The Project Manager is working on it. |
 | Plan to review | A plan waits for your approval (later version). |
 | Closed | Done with (later version). |
 
@@ -36,7 +36,7 @@ On the request's page, write in **Add a comment** and click **Add comment**: som
 
 ## Questions
 
-While it plans a request (later version), the Project Manager may need a decision only you can make. It asks a question, and the request stays **Planning**:
+While it plans a request, the Project Manager may need a decision only you can make. It asks a question, and the request stays **Planning**:
 
 - **Needs you** shows **Question on request 7 (WEB): <its first line>**, or **(new project)** for a request with no project, with the question and an answer box;
 - the request's page says "Planning: the Project Manager waits for your answer." and shows the same yellow box between the request and its plan.
@@ -52,6 +52,10 @@ The question and your answer stay in the request's conversation, marked **Questi
 - if that machine is offline, the planning run fails because of it (this does not count as a failed attempt), the request goes back to **Open**, and your answer stays in the conversation, with a note from the Orchestrator saying so: the next planning run reads it.
 
 If the planning run ends before you answer (it crashed or was stopped), the request goes back to **Open** and the question leaves **Needs you**. It stays on the request's page with the answer box and "Its planning run ended: your answer is kept and the next planning run reads it.": answer it there when you want, and the next planning run finds your answer in the conversation. A question left this way never holds up the next planning run. A request of an archived project cannot be answered.
+
+## When planning starts
+
+The scheduler starts one planning run per request, when you submit it: the request becomes **Planning**, and its conversation says "Started by the scheduler: planning attempt 1 on machine Laptop.". The Project Manager reads the request with its whole conversation, your comments and answers included, and the project's tickets. While it plans, the request is not started again. If its Claude account reaches a usage limit, the planning run pauses and **Needs you** shows **Run paused: …** with **Request 7 (WEB): <its first line>**; the scheduler resumes it once the limit resets, where it stopped (see [Usage limits](runs.md#usage-limits)).
 
 ## If planning fails
 

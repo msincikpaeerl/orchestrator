@@ -54,7 +54,7 @@ async function queue(): Promise<QueueCandidate[]> {
 }
 
 async function reasonOf(number: number) {
-  const found = (await queue()).find((candidate) => candidate.ticket.number === number);
+  const found = (await queue()).find((candidate) => candidate.ticket?.number === number);
   if (!found) throw new Error(`WEB-${String(number)} is not in the queue`);
   return found.reason;
 }
