@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { HoldCause } from './holds.js';
 import { ClaudeAccount } from './machines.js';
 import { AccountRef, MachineRef, MachineUnavailable, RunRefusal } from './runs.js';
+import { ProjectKey } from './projects.js';
+import { RequestNumber } from './requests.js';
 import { TicketPriority } from './tickets.js';
 
 // The scheduler's queue (07, sections 2, 3 and 7; lot 4 step D1): every candidate in the order the
@@ -9,7 +11,7 @@ import { TicketPriority } from './tickets.js';
 // so the queue and Run now say the same thing in the same words.
 
 /** What a candidate starts, in the scheduler's order of categories (07, section 3). */
-export const QueueKind = z.enum(['resume', 'review', 'fix_review', 'implement']);
+export const QueueKind = z.enum(['resume', 'review', 'fix_review', 'plan', 'implement']);
 export type QueueKind = z.infer<typeof QueueKind>;
 
 /**
@@ -38,6 +40,11 @@ export const QueueReason = z.discriminatedUnion('reason', [
   /** A review while its project's **Start reviews by themselves** is off (07, section 1). */
   z.object({ reason: z.literal('reviews_off') }),
   /**
+   * A request stopped after its failed planning runs or the owner's **Stop run** (01, section
+   * 3.2; lot 5 step E2b): no planning run starts for it until **Try again** in Needs you.
+   */
+  z.object({ reason: z.literal('planning_stopped') }),
+  /**
    * A run paused on a suspected usage limit, resumed by the scheduler at `until`: `minutes` after
    * its pause, **Quota wait when the reset time is unknown** doubled at each pause of the run (07,
    * section 5.2; owner's answer 9, lot 4 step E). The owner's **Resume** can resume it before.
@@ -52,12 +59,22 @@ export type QueueReason = z.infer<typeof QueueReason>;
 
 export const QueueCandidate = z.object({
   kind: QueueKind,
-  ticket: z.object({
-    projectKey: z.string(),
-    number: z.int().positive(),
-    title: z.string(),
-    priority: TicketPriority,
-  }),
+  /** The ticket it starts work on; null for a request's planning (lot 5 step E2b). */
+  ticket: z
+    .object({
+      projectKey: z.string(),
+      number: z.int().positive(),
+      title: z.string(),
+      priority: TicketPriority,
+    })
+    .nullable(),
+  /**
+   * The request a `plan` candidate, or a paused planning run's resume, plans: its number, first
+   * line and project (null for a new project); null for a ticket's candidate.
+   */
+  request: z
+    .object({ number: RequestNumber, line: z.string(), projectKey: ProjectKey.nullable() })
+    .nullable(),
   /** The paused run a resume continues; null for the others. */
   runId: z.uuid().nullable(),
   /** Tickets waiting on it, directly or through others, not done or cancelled (07, section 3). */
