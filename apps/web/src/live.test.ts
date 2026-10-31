@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { connectStream } from './live';
+import { connectStream, handleStreamMessage } from './live';
 import { keys, queryClient } from './queries';
 
 /** Stands in for the browser's EventSource: the test opens it by hand. */
@@ -49,5 +49,13 @@ describe('connectStream', () => {
     source().onopen?.();
     expect(stale()).toBe(true);
     close();
+  });
+});
+
+describe('handleStreamMessage', () => {
+  it("reads the queue again at a request's change: its planning is a line (lot 5 step E2b)", () => {
+    queryClient.setQueryData(keys.queue, { at: '', accounts: [], candidates: [] });
+    handleStreamMessage({ type: 'changed', entity: 'request', id: null, project: null });
+    expect(queryClient.getQueryState(keys.queue)?.isInvalidated).toBe(true);
   });
 });
