@@ -127,6 +127,10 @@ export const EventType = z.enum([
   'request.stopped',
   'request.tried_again',
   'plan.proposed',
+  'plan.ticket_updated',
+  'plan.ticket_removed',
+  'plan.approved',
+  'plan.rejected',
   'setting.changed',
   'setting.reset',
   'setting.time_zone_saved',
@@ -283,6 +287,9 @@ export const EventPayloads = {
     assigneeName: z.string().optional(),
     /** For a ticket an agent created: its profile's key and name, and its run. */
     ...AgentFacts,
+    /** For a ticket created by a plan's approval (lot 5 step F): the plan and its request. */
+    planId: z.uuid().optional(),
+    request: z.int().positive().optional(),
   }),
   /** `fields` names the fields changed; type, title and priority are copied when changed. */
   'ticket.updated': z.object({
@@ -348,8 +355,19 @@ export const EventPayloads = {
     project: z.string().nullable(),
     from: RequestStatus,
     to: RequestStatus,
-    cause: z.enum(['run_started', 'run_ended', 'plan_proposed']),
-    runId: z.uuid(),
+    cause: z.enum([
+      'run_started',
+      'run_ended',
+      'plan_proposed',
+      /** The owner's **Approve** closed it (lot 5 step F). */
+      'plan_approved',
+      /** The owner's **Reject with feedback** put it back to `open` (lot 5 step F). */
+      'plan_rejected',
+      /** The owner's **Close request** (lot 5 step F). */
+      'closed_by_owner',
+    ]),
+    /** The planning run behind the change; absent for the owner's actions (lot 5 step F). */
+    runId: z.uuid().optional(),
     failureReason: FailureReason.optional(),
   }),
   /**
@@ -384,6 +402,51 @@ export const EventPayloads = {
     tickets: z.int().positive(),
     newProject: z.string().nullable(),
     ...AgentFacts,
+  }),
+  /**
+   * The owner edited a ticket of a proposed plan (owner's answer 8, lot 5 step F): each field
+   * changed with its old and new value (a text, a list of texts, or null for no assignee).
+   */
+  'plan.ticket_updated': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    planId: z.uuid(),
+    key: z.string(),
+    title: z.string(),
+    changes: z.array(
+      z.object({
+        field: z.string(),
+        from: z.union([z.string(), z.array(z.string())]).nullable(),
+        to: z.union([z.string(), z.array(z.string())]).nullable(),
+      }),
+    ),
+  }),
+  /** The owner removed a ticket from a proposed plan; `left`: the keys that waited for it. */
+  'plan.ticket_removed': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    planId: z.uuid(),
+    key: z.string(),
+    title: z.string(),
+    left: z.array(z.string()),
+  }),
+  /** The owner approved a plan: each key of the plan with the ticket created for it (`WEB-12`). */
+  'plan.approved': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    planId: z.uuid(),
+    tickets: z.array(z.object({ key: z.string(), ticket: z.string() })),
+  }),
+  /**
+   * The owner rejected a plan: `superseded` by **Reject with feedback**, with the feedback, or
+   * `rejected` when the owner closed its request (owner's answers 2 and 3, lot 5 step F).
+   */
+  'plan.rejected': z.object({
+    request: z.int().positive(),
+    project: z.string().nullable(),
+    planId: z.uuid(),
+    status: z.enum(['superseded', 'rejected']),
+    feedback: z.string().nullable(),
   }),
   /** An agent's submission was accepted and its report stored (04, section 3.1). */
   'ticket.submitted': z.object({

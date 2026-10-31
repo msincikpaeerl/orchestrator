@@ -122,12 +122,18 @@ export {
   requestLine,
 } from './api/requests.js';
 export {
+  PlanActionRequest,
+  PlanBlocker,
   PlanNewProject,
   PlanNewProjectEntry,
   PlanStatus,
   PlanTicket,
   PlanTicketEntry,
+  PlanTicketView,
   PlanTickets,
+  PlanView,
+  RejectPlanRequest,
+  UpdatePlanTicketRequest,
 } from './api/plans.js';
 export {
   TICKET_IMPORT_FORMAT,

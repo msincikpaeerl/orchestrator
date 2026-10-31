@@ -124,10 +124,11 @@ export type TicketReference = z.infer<typeof TicketReference>;
  * Text fields are checked for structure here; their length limits are settings of the server
  * (04, section 8), checked there.
  */
-const Title = z.string().trim().min(1, 'cannot be empty');
-const Description = z.string().trim();
-const AcceptanceCriteria = z.array(z.string().trim().min(1, 'cannot be empty'));
-const CommentBody = z.string().trim().min(1, 'cannot be empty');
+// The owner's form fields, shared with the plan review's edit (lot 5 step F).
+export const Title = z.string().trim().min(1, 'cannot be empty');
+export const Description = z.string().trim();
+export const AcceptanceCriteria = z.array(z.string().trim().min(1, 'cannot be empty'));
+export const CommentBody = z.string().trim().min(1, 'cannot be empty');
 
 /** Another ticket of the same project, as a dependency list shows it. */
 export const TicketLink = z.object({

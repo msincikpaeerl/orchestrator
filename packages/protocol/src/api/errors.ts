@@ -107,6 +107,23 @@ export const ApiErrorCode = z.enum([
   'ticket_not_stopped',
   /** **Try again** on a request that is not stopped (lot 5 step E2). */
   'request_not_stopped',
+  /**
+   * A write on a plan that is no longer the request's proposed plan (owner's answer 14, lot 5
+   * step F): approved, rejected, superseded, or another one.
+   */
+  'plan_not_proposed',
+  /** **Approve** of a plan that creates a project, before step G (owner's answer 4). */
+  'plan_new_project_later',
+  /** An edit or an approval with problems; `planProblems` lists them (owner's answers 5 and 9). */
+  'plan_invalid',
+  /** No ticket with this key in the plan. */
+  'plan_ticket_not_found',
+  /** **Remove** of the plan's only ticket (owner's answer 7). */
+  'plan_last_ticket',
+  /** A change of the bootstrap ticket's type, assignee or dependencies, or its removal (answer 6). */
+  'plan_bootstrap_fixed',
+  /** **Close request**, or a plan's action, on a closed request (owner's answer 3). */
+  'request_closed',
 ]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
 
@@ -145,6 +162,8 @@ export const ApiError = z.object({
     cycle: z.array(z.string()).optional(),
     /** `ticket_import_invalid`: every problem of the file, as the preview gives them. */
     importProblems: z.array(TicketImportProblem).optional(),
+    /** `plan_invalid`: every problem of the plan, each located by its ticket and field. */
+    planProblems: z.array(TicketImportProblem).optional(),
     /** `ci_check_refused`: why **Check CI again** was refused. */
     ciRefusal: CheckCiAgainRefused.optional(),
     /** `setting_order_invalid`: the two settings and the values they would have. */
