@@ -248,3 +248,216 @@ test('a planning run in Activity and on its machine, stopped, then Try again', a
     'The owner used Try again',
   );
 });
+
+// The plan review (lot 5 step F2; 02, sections 4 and 5.3): the planning run is D2a's test helper,
+// whose scripted daemon calls `plan_propose`, as the Project Manager does.
+
+const home = {
+  key: 'home',
+  type: 'feature',
+  title: 'Home page',
+  acceptance_criteria: ['The home page shows the bakery name'],
+  assignee: 'web_dev',
+};
+const contact = {
+  key: 'contact',
+  type: 'feature',
+  title: 'Contact form',
+  description: 'Messages saved in a file.',
+  acceptance_criteria: ['A message is saved'],
+  assignee: 'web_dev',
+  blocked_by: ['home'],
+};
+const docs = {
+  key: 'docs',
+  type: 'docs',
+  title: 'User guide',
+  acceptance_criteria: ['The guide explains the form'],
+  assignee: 'web_dev',
+  blocked_by: ['home'],
+};
+
+/** Request 1 for TESTB and a planning run on Laptop; its id and token. */
+async function planning(page: Page): Promise<{ machineId: string }> {
+  await completeSetup(page);
+  await createReadyProject(page, { key: 'TESTB', name: 'Test B', repository: 'test-b' });
+  const { id, code } = await createMachine(page, { name: 'Laptop', account: 'Personal' });
+  expect(await connectDaemon(page, code)).toBe(204);
+  const created = await page.request.post('/api/requests', {
+    data: { body: 'A contact form\n\nOn the home page.', project: 'TESTB' },
+  });
+  expect(created.status()).toBe(201);
+  return { machineId: id };
+}
+
+/** A planning run of request 1 proposes `tickets`; it ends unless `keepRunning`. */
+async function propose(
+  page: Page,
+  machineId: string,
+  tickets: object[],
+  keepRunning = false,
+): Promise<void> {
+  const { runId, runToken } = await startPlanningRun(page, 1, machineId);
+  await reportState(page, runId, 'working');
+  await callTool(page, runToken, 'plan_propose', {
+    summary: 'A home page, then the **contact form** and its guide.',
+    tickets,
+  });
+  if (!keepRunning) {
+    await reportState(page, runId, 'ended', { reason: 'submitted', detail: null, branch: null });
+  }
+}
+
+test('a plan reviewed, edited, a ticket removed, rejected with feedback, then approved', async ({
+  page,
+}, testInfo) => {
+  const { machineId } = await planning(page);
+  await propose(page, machineId, [home, contact, docs]);
+
+  // Needs you links to the request.
+  await page.goto('/');
+  await expect(
+    page.getByText('Plan to review for request 1 (TESTB): A contact form'),
+  ).toBeVisible();
+  await expect(page.getByText(/^The Project Manager proposed 3 tickets at .+\.$/)).toBeVisible();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-to-review');
+  await page.getByRole('link', { name: 'Review the plan' }).click();
+
+  await expect(page.getByText('Plan to review', { exact: true })).toBeVisible();
+  const plan = page.getByRole('region', { name: 'Plan', exact: true });
+  await expect(plan.locator('strong')).toHaveText('contact form');
+  const tickets = plan.getByRole('list', { name: 'Tickets of the plan' }).locator(':scope > li');
+  await expect(tickets).toHaveCount(3);
+  const contactItem = plan.getByRole('listitem', { name: 'contact · Contact form' });
+  await expect(contactItem).toContainText('Feature · Normal priority · Web Developer');
+  await expect(contactItem).toContainText('Messages saved in a file.');
+  await expect(contactItem).toContainText('A message is saved');
+  await expect(contactItem).toContainText('Waits for home (Home page).');
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-review');
+
+  // An edit in the ticket's card.
+  await contactItem.getByRole('button', { name: 'Edit contact' }).click();
+  const form = plan.getByRole('form', { name: 'Edit contact' });
+  await form.getByLabel('Title').fill('');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form.getByText('Enter a title.')).toBeVisible();
+  await form.getByLabel('Title').fill('Contact form with a phone field');
+  await form.getByLabel('Priority').selectOption('high');
+  await form.getByRole('button', { name: 'Remove home from what it waits for' }).click();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-ticket-edit');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form).toBeHidden();
+  const edited = plan.getByRole('listitem', { name: 'contact · Contact form with a phone field' });
+  await expect(edited).toContainText('Feature · High priority · Web Developer');
+  await expect(edited).toContainText('Waits for nothing.');
+
+  // Remove: the confirmation names the tickets waiting for it.
+  await plan
+    .getByRole('listitem', { name: 'home · Home page' })
+    .getByRole('button', { name: 'Remove home' })
+    .click();
+  const removeHome = page.getByRole('dialog', { name: 'Remove home (Home page) from the plan?' });
+  await expect(removeHome).toContainText('docs waits for it: it will no longer.');
+  await removeHome.getByRole('button', { name: 'Keep it' }).click();
+  await expect(removeHome).toBeHidden();
+  await plan
+    .getByRole('listitem', { name: 'docs · User guide' })
+    .getByRole('button', { name: 'Remove docs' })
+    .click();
+  const removeDocs = page.getByRole('dialog', { name: 'Remove docs (User guide) from the plan?' });
+  await expect(removeDocs).toContainText('A removed ticket cannot be added back');
+  await removeDocs.getByRole('button', { name: 'Remove' }).click();
+  await expect(removeDocs).toBeHidden();
+  await expect(tickets).toHaveCount(2);
+
+  // Reject with feedback: the box under the actions.
+  await plan.getByRole('button', { name: 'Reject with feedback' }).click();
+  const reject = plan.getByRole('form', { name: 'Reject with feedback' });
+  await expect(reject).toContainText('A new planning run starts: one Claude Code session.');
+  await reject.getByRole('button', { name: 'Reject with feedback' }).click();
+  await expect(reject.getByText('Write your feedback first.')).toBeVisible();
+  await reject.getByLabel('What should change?').fill('Keep the **user guide**.');
+  await expectFitsScreen(page);
+  await reject.getByRole('button', { name: 'Reject with feedback' }).click();
+  await expect(plan.getByText('No plan yet.')).toBeVisible();
+  await expect(page.getByText('Open', { exact: true })).toBeVisible();
+  const earlier = page.getByRole('region', { name: 'Earlier plans' });
+  await expect(earlier.getByRole('heading', { name: 'Earlier plans (1)' })).toBeVisible();
+  await earlier.getByText(/^Proposed at .+, rejected with your feedback at .+$/).click();
+  await expect(earlier.locator('strong').first()).toHaveText('user guide');
+  await expect(earlier.getByRole('listitem', { name: /^contact · / })).toBeVisible();
+  await expect(earlier.getByRole('button', { name: 'Edit contact' })).toBeHidden();
+
+  // The next plan, approved.
+  await propose(page, machineId, [home, contact, docs]);
+  await expect(tickets).toHaveCount(3);
+  await plan.getByRole('button', { name: 'Approve' }).click();
+  const approve = page.getByRole('dialog', { name: 'Approve this plan?' });
+  await expect(approve).toContainText(
+    'It creates 3 tickets in TESTB, in To do. The scheduler starts them by themselves as machines are free: each one uses Claude Code sessions.',
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-approve');
+  await approve.getByRole('button', { name: 'Approve' }).click();
+  await expect(approve).toBeHidden();
+  await expect(plan.getByRole('heading', { name: /^Plan, approved by you at / })).toBeVisible();
+  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close request' })).toBeHidden();
+  await expect(plan.getByRole('button', { name: /^Edit / })).toHaveCount(0);
+  await expectFitsScreen(page);
+  const created = plan.getByRole('listitem', { name: 'contact · Contact form' });
+  await created.getByRole('link', { name: /^TESTB-\d+$/ }).click();
+  await expect(page.getByRole('heading', { name: /^TESTB-\d+ · Contact form$/ })).toBeVisible();
+  await expect(page.getByText("From request 1's plan, approved by you")).toBeVisible();
+  await page.getByRole('link', { name: 'request 1' }).click();
+  await expect(page.getByRole('heading', { name: 'Request 1 · A contact form' })).toBeVisible();
+
+  await page.goto('/');
+  await expect(page.getByText('Plan to review for request 1', { exact: false })).toBeHidden();
+});
+
+test('a request closed while its planning run works and its plan is proposed', async ({
+  page,
+}, testInfo) => {
+  const { machineId } = await planning(page);
+  await propose(page, machineId, [home, contact], true);
+
+  await page.goto('/requests/1');
+  await page.getByRole('button', { name: 'Close request' }).click();
+  const close = page.getByRole('dialog', { name: 'Close request 1?' });
+  await expect(close).toContainText(
+    'It is final: the request cannot be reopened. Submit a new request to ask again.',
+  );
+  await expect(close).toContainText(
+    'Its planning run stops now; this does not count as a failed attempt.',
+  );
+  await expect(close).toContainText('Its proposed plan is rejected: no ticket is created.');
+  await expect(close).toContainText('You can still add comments.');
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'request-close');
+  await close.getByRole('button', { name: 'Keep it open' }).click();
+  await expect(close).toBeHidden();
+  await page.getByRole('button', { name: 'Close request' }).click();
+  await close.getByRole('button', { name: 'Close request' }).click();
+  await expect(close).toBeHidden();
+
+  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close request' })).toBeHidden();
+  await expect(page.getByRole('region', { name: 'Plan', exact: true })).toContainText(
+    'No plan yet.',
+  );
+  const earlier = page.getByRole('region', { name: 'Earlier plans' });
+  await earlier.getByText(/^Proposed at .+, rejected at .+$/).click();
+  await expect(earlier).toContainText('Rejected: you closed the request.');
+  await expect(page.getByRole('list', { name: 'Conversation' })).toContainText(
+    'The owner closed the request.',
+  );
+  await expect(page.getByLabel('Add a comment')).toBeVisible();
+  await expectFitsScreen(page);
+
+  await page.goto('/');
+  await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
+});
