@@ -1,11 +1,13 @@
 import {
   TicketType,
+  type BoardTicket,
   type Project,
   type TicketStatus,
   type TicketSummary,
 } from '@orchestrator/protocol';
-import { useId, useState } from 'react';
-import { Link } from 'react-router';
+import { useId, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
+import { DependencyGraph, type GraphItem } from '../components/dependency-graph';
 import {
   Button,
   buttonLinkClass,
@@ -17,12 +19,20 @@ import {
 import { useAgents, useTickets } from '../queries';
 import { cardRunText } from '../runs/text';
 import { ImportTicketsDialog } from './import-dialog';
-import { assigneeLabel, showsBlocked, statusLabel, ticketPath, ticketRef, typeLabel } from './text';
+import {
+  assigneeLabel,
+  graphTickets,
+  showsBlocked,
+  statusLabel,
+  ticketPath,
+  ticketRef,
+  typeLabel,
+} from './text';
 
 /**
  * Columns shown open, in the order of 04, section 1. `proposed` is hidden (02, section 6.3),
- * except for the tickets agents proposed, shown in a "Proposed" column whenever there is one; the
- * toggle for plan tickets comes with plans (lot 5).
+ * except for the tickets agents proposed, shown in a "Proposed" column whenever there is one. A
+ * plan's tickets are never on the board (owner's answer 9, lot 5 step E1).
  */
 const OPEN_COLUMNS: readonly TicketStatus[] = [
   'todo',
@@ -128,6 +138,104 @@ function CollapsedColumn({ status, tickets }: { status: TicketStatus; tickets: T
   );
 }
 
+/** A ticket's card in the board's dependency graph (owner's answer 9, lot 5 step H). */
+function GraphCard({ ticket }: { ticket: TicketSummary }) {
+  return (
+    <>
+      <Link
+        to={ticketPath(ticket.projectKey, ticket.number)}
+        className="block font-medium break-words text-blue-700 underline"
+      >
+        {ticketRef(ticket.projectKey, ticket.number)} · {ticket.title}
+      </Link>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+        <span>{typeLabel[ticket.type]}</span>
+        <span className={ticket.assignee ? undefined : 'text-slate-500'}>
+          · {assigneeLabel(ticket.assignee)}
+        </span>
+        <span className="rounded bg-slate-100 px-2 py-0.5 text-sm text-slate-800">
+          {statusLabel[ticket.status]}
+        </span>
+        {showsBlocked(ticket) && <BlockedBadge />}
+        {ticket.stop && <StoppedBadge />}
+        {ticket.held && <HeldBadge />}
+        {ticket.createdByAgent && (
+          <span className="rounded bg-violet-100 px-2 py-0.5 text-sm text-violet-900">
+            created by agent
+          </span>
+        )}
+      </div>
+      {ticket.activeRun && (
+        <p className="mt-2 rounded bg-green-50 px-2 py-1 text-sm text-green-900">
+          {cardRunText(ticket.activeRun).status}
+        </p>
+      )}
+    </>
+  );
+}
+
+function BoardGraph({
+  all,
+  shown,
+}: {
+  all: readonly BoardTicket[];
+  shown: readonly BoardTicket[];
+}) {
+  const items = useMemo(
+    (): GraphItem[] =>
+      graphTickets(all).map((ticket) => ({
+        id: String(ticket.number),
+        name: ticketRef(ticket.projectKey, ticket.number),
+        waitsFor: ticket.blockedBy.map(String),
+        label: `${ticketRef(ticket.projectKey, ticket.number)} · ${ticket.title}`,
+        content: <GraphCard ticket={ticket} />,
+      })),
+    [all],
+  );
+  const hidden = useMemo(() => {
+    const visible = new Set(shown.map((ticket) => String(ticket.number)));
+    return new Set(items.filter((item) => !visible.has(item.id)).map((item) => item.id));
+  }, [items, shown]);
+  if (items.length === 0) {
+    return <p className="text-slate-700">Every ticket is done or cancelled: nothing waits.</p>;
+  }
+  return <DependencyGraph label="Dependency graph" items={items} hidden={hidden} />;
+}
+
+/** The board's two views, kept in the address (`?view=graph`; owner's answer 9). */
+function ViewSwitch({ graph, onChange }: { graph: boolean; onChange: (graph: boolean) => void }) {
+  const look = (on: boolean) =>
+    `px-3 py-2 text-sm font-medium ${on ? 'bg-slate-800 text-white' : 'bg-white text-slate-800 hover:bg-slate-100'}`;
+  return (
+    <div
+      role="group"
+      aria-label="View"
+      className="flex overflow-hidden rounded border border-slate-300"
+    >
+      <button
+        type="button"
+        aria-pressed={!graph}
+        className={look(!graph)}
+        onClick={() => {
+          onChange(false);
+        }}
+      >
+        Columns
+      </button>
+      <button
+        type="button"
+        aria-pressed={graph}
+        className={`border-l border-slate-300 ${look(graph)}`}
+        onClick={() => {
+          onChange(true);
+        }}
+      >
+        Dependency graph
+      </button>
+    </div>
+  );
+}
+
 /** The text filter matches the number (`WEB-12`, `12`) or the title. */
 function matches(ticket: TicketSummary, text: string): boolean {
   const words = text.trim().toLowerCase();
@@ -163,6 +271,8 @@ export function Board({ project }: { project: Project }) {
   const [assignee, setAssignee] = useState(ALL);
   const [text, setText] = useState('');
   const [importing, setImporting] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const graph = params.get('view') === 'graph';
   const canCreate = project.status === 'active' && project.setup.status === 'ready';
 
   if (tickets.isPending) return <Loading />;
@@ -257,6 +367,17 @@ export function Board({ project }: { project: Project }) {
                 }}
               />
             </div>
+            <ViewSwitch
+              graph={graph}
+              onChange={(next) => {
+                setParams((current) => {
+                  const updated = new URLSearchParams(current);
+                  if (next) updated.set('view', 'graph');
+                  else updated.delete('view');
+                  return updated;
+                });
+              }}
+            />
           </>
         )}
       </div>
@@ -271,6 +392,8 @@ export function Board({ project }: { project: Project }) {
             </>
           )}
         </p>
+      ) : graph ? (
+        <BoardGraph all={all} shown={shown} />
       ) : (
         <>
           <div

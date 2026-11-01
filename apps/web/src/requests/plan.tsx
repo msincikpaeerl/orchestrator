@@ -11,6 +11,7 @@ import {
   TicketType,
   UpdatePlanTicketRequest,
   type AgentKey,
+  type PlanBlocker,
   type PlanTicketView,
   type PlanView,
   type TicketImportProblem,
@@ -19,6 +20,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode, type SubmitEvent } from 'react';
 import { Link } from 'react-router';
 import { api, ApiRequestError } from '../api';
+import { DependencyGraph, type GraphItem } from '../components/dependency-graph';
 import { UntrustedMarkdown } from '../components/markdown';
 import {
   Button,
@@ -536,6 +538,103 @@ function PlanTicketCard({
   );
 }
 
+/** "WEB-3" → 3; null for a reference the page cannot link. */
+function referenceNumber(reference: string): number | null {
+  const match = /-(\d+)$/.exec(reference);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * The plan's dependency graph (02, section 5.3; owner's answers 7 and 8, lot 5 step H): its
+ * tickets by key, and the project's tickets they wait for, as cards in the first column.
+ */
+function PlanGraph({ request, plan }: { request: RequestDetail; plan: PlanView }) {
+  if (plan.tickets.length < 2) return null;
+  const projectKey = request.project?.key ?? null;
+  const existing = new Map<string, Extract<PlanBlocker, { kind: 'ticket' }>>();
+  for (const ticket of plan.tickets) {
+    for (const blocker of ticket.waitsFor) {
+      if (blocker.kind === 'ticket') existing.set(blocker.reference, blocker);
+    }
+  }
+  const items: GraphItem[] = [
+    ...[...existing.values()].map((blocker): GraphItem => {
+      const number = referenceNumber(blocker.reference);
+      const name = `${blocker.reference} · ${blocker.title ?? 'no such ticket in the project'}`;
+      return {
+        id: `ticket:${blocker.reference}`,
+        name: blocker.reference,
+        waitsFor: [],
+        label: name,
+        content: (
+          <>
+            {projectKey !== null && number !== null && blocker.title !== null ? (
+              <Link
+                to={ticketPath(projectKey, number)}
+                className="block font-medium break-words text-blue-700 underline"
+              >
+                {name}
+              </Link>
+            ) : (
+              <p className="font-medium break-words text-slate-900">{name}</p>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+              {projectKey !== null && <span>Already in {projectKey}</span>}
+              {blocker.status !== null && (
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-800">
+                  {statusLabel[blocker.status]}
+                </span>
+              )}
+            </div>
+          </>
+        ),
+      };
+    }),
+    ...plan.tickets.map((ticket): GraphItem => ({
+      id: `plan:${ticket.key}`,
+      name: ticket.key,
+      waitsFor: ticket.waitsFor.map((blocker) =>
+        blocker.kind === 'plan' ? `plan:${blocker.key}` : `ticket:${blocker.reference}`,
+      ),
+      label: `${ticket.key} · ${ticket.title}`,
+      content: (
+        <>
+          <p className="font-medium break-words text-slate-900">
+            {ticket.key} · {ticket.title}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+            <span>
+              {typeLabel[ticket.type]} · {ticket.assigneeName ?? 'No assignee'}
+            </span>
+            {ticket.bootstrap && (
+              <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-800">
+                Bootstrap ticket
+              </span>
+            )}
+          </div>
+          {ticket.created && projectKey !== null && (
+            <p className="mt-1 text-sm text-slate-700">
+              Created as{' '}
+              <Link
+                to={ticketPath(projectKey, ticket.created.number)}
+                className="text-blue-700 underline"
+              >
+                {ticket.created.reference}
+              </Link>
+            </p>
+          )}
+        </>
+      ),
+    })),
+  ];
+  return (
+    <div className="space-y-2">
+      <SubTitle>Dependencies</SubTitle>
+      <DependencyGraph label="Dependencies" items={items} headingLevel={4} />
+    </div>
+  );
+}
+
 function PlanTickets({
   request,
   plan,
@@ -968,6 +1067,7 @@ function EarlierPlans({ request }: { request: RequestDetail }) {
                     </div>
                   )}
                   <NewProjectDetails plan={plan} />
+                  <PlanGraph request={request} plan={plan} />
                   <PlanTickets request={request} plan={plan} editable={false} />
                 </div>
               </details>
@@ -1008,6 +1108,7 @@ export function PlanSection({ request }: { request: RequestDetail }) {
               )}
               <NewProjectDetails plan={plan} />
               <CreatedProject request={request} plan={plan} />
+              <PlanGraph request={request} plan={plan} />
               <PlanTickets request={request} plan={plan} editable={plan.status === 'proposed'} />
               {plan.status === 'proposed' && <PlanActions request={request} plan={plan} />}
             </>
