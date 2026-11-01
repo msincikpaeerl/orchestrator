@@ -2,7 +2,7 @@
 
 A request is what you want, in your own words: a new website, a feature for one of your projects, a change. The Project Manager, an agent, will read it, ask you questions if something is unclear, and propose a plan: the tickets to do, in order. You approve the plan, and the other agents do the tickets.
 
-From version 0.6.0, the Orchestrator's scheduler starts the Project Manager on a request by itself, as soon as a machine and its Claude account are free (see [What starts by itself](runs.md#what-starts-by-itself)). Reviewing and approving its plan come with a later version.
+From version 0.6.0, the Orchestrator's scheduler starts the Project Manager on a request by itself, as soon as a machine and its Claude account are free (see [What starts by itself](runs.md#what-starts-by-itself)). You review its plan, change it if you want, and approve it or reject it with feedback (see [Review a plan](#review-a-plan)). Approving a plan for a new project comes with a later version.
 
 ## Submit a request
 
@@ -19,16 +19,16 @@ The request cannot be edited once submitted: add what you forgot as a comment (b
 
 **Requests** lists every request, newest first, each with its number ("Request 7"), its first line, its status and its project ("For a new project" when it has none). Click one to open its page.
 
-A request's page shows its status, its project, when you submitted it, its full text, its plan (none yet in this version) and the conversation: your comments, and later the Project Manager's questions and your answers.
+A request's page shows its status, its project, when you submitted it, its full text, its plan (see [Review a plan](#review-a-plan)), the earlier plans and the conversation: your comments, and later the Project Manager's questions and your answers.
 
 | Status | Meaning |
 |---|---|
 | Open | Waiting for the Project Manager: the scheduler starts its planning run when a machine is free. **Activity > Queue** says why it waits (see [Queue](activity.md#queue)). |
 | Planning | The Project Manager is working on it. |
-| Plan to review | A plan waits for your approval (later version). |
-| Closed | Done with (later version). |
+| Plan to review | A plan waits for your review: see [Review a plan](#review-a-plan). |
+| Closed | You approved its plan, or closed the request. A closed request is final. |
 
-The [Activity](activity.md) log shows each request submitted and each comment added, under the kind **Requests**.
+The [Activity](activity.md) log shows each request submitted, each comment added and each change to a plan, under the kind **Requests**.
 
 ## Add a comment
 
@@ -69,3 +69,29 @@ When the failed attempts reach **Failed attempts before asking you** (2 by defau
 **Stop run** on a planning run stops the request in the same way, so it does not start again by itself: the item says "You stopped its planning run at …". It never counts as a failed attempt.
 
 Read the conversation first: add a comment if the request was unclear. Then click **Try again**, in **Needs you** or on the request's page. It starts no session by itself: the failed attempts count from 0 again, the machines left out can be used again, and the Project Manager plans the request again when a machine and its Claude account are free. A request of an archived project cannot be tried again.
+
+## Review a plan
+
+When the Project Manager proposes a plan, the request becomes **Plan to review** and **Needs you** shows **Plan to review for request 7 (WEB): <its first line>** ("(new project)" for a request with no project), "The Project Manager proposed 4 tickets at …" and **Review the plan**, which opens the request's page. Nothing is created in the project until you approve: the plan's tickets have short names (keys) such as `contact`, not numbers.
+
+The **Plan** section shows the Project Manager's summary, the new project it proposes (if any), and each ticket with its type, priority, assignee, description, acceptance criteria and what it waits for: another ticket of the plan, or a ticket of the project.
+
+**Change a ticket.** Click **Edit** under it: its form opens in place, with its type, title, description, acceptance criteria, priority, assignee and **Waits for** (remove one, or add another ticket of the plan or a ticket of the project not cancelled). Click **Save**, or **Cancel** to leave it as it was. A change is refused when it brings a problem (for example a ticket waiting for itself, or a loop of tickets waiting for each other); the problems are listed under the form. A new project's first ticket, its **Bootstrap ticket**, keeps its type, assignee and dependencies: every other ticket waits for it.
+
+**Remove a ticket.** Click **Remove** under it and confirm. The confirmation names the tickets that wait for it: they no longer do. A removed ticket cannot be added back (reject the plan with feedback to get it again), and the plan's last ticket cannot be removed. The bootstrap ticket has no **Remove**.
+
+**Approve.** Click **Approve**, read the confirmation ("It creates 4 tickets in WEB, in To do. …") and click **Approve** again. The Orchestrator checks the whole plan again against your current settings and the project's tickets: if something is wrong, every problem is listed and nothing is created. Otherwise the tickets are created in **To do**, numbered in the plan's order, and the request is **Closed**. The scheduler then starts them by itself as machines are free: each one uses Claude Code sessions from your plan. The section then reads "Plan, approved by you at …", each ticket with a link to the ticket it became ("Created as WEB-12"), and each of those tickets says on its page "From request 7's plan, approved by you". A plan for a new project cannot be approved yet ("A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request."), nor a plan for an archived project.
+
+**Reject with feedback.** Click **Reject with feedback**, say in **What should change?** what the Project Manager should do differently (required; Markdown is allowed, as long as **Longest comment** allows) and click **Reject with feedback**. The plan moves to **Earlier plans** with your feedback, nothing is created in the project, and the request goes back to **Open**: the scheduler starts a new planning run (one Claude Code session), which reads the rejected plan and your feedback. **Keep reviewing** closes the box.
+
+**Earlier plans** lists the plans rejected before, newest first: click one to see your feedback (or "Rejected: you closed the request.") and its tickets.
+
+## Close a request
+
+When you no longer want a request, click **Close request** at the bottom of its first box, at any status but **Closed**. The confirmation says what it does:
+
+- it is final: a closed request cannot be reopened; submit a new request to ask again;
+- its planning run, if one is working, stops now (this does not count as a failed attempt), and its question no longer waits;
+- its proposed plan, if any, is rejected: no ticket is created.
+
+Click **Close request** to confirm, or **Keep it open**. Its items leave **Needs you**, and the conversation says the request was closed. You can still add comments to a closed request.
