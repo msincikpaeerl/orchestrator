@@ -329,7 +329,9 @@ test('a plan reviewed, edited, a ticket removed, rejected with feedback, then ap
   await expect(plan.locator('strong')).toHaveText('contact form');
   const tickets = plan.getByRole('list', { name: 'Tickets of the plan' }).locator(':scope > li');
   await expect(tickets).toHaveCount(3);
-  const contactItem = plan.getByRole('listitem', { name: 'contact · Contact form' });
+  const contactItem = plan
+    .getByRole('list', { name: 'Tickets of the plan' })
+    .getByRole('listitem', { name: 'contact · Contact form' });
   await expect(contactItem).toContainText('Feature · Normal priority · Web Developer');
   await expect(contactItem).toContainText('Messages saved in a file.');
   await expect(contactItem).toContainText('A message is saved');
@@ -350,12 +352,15 @@ test('a plan reviewed, edited, a ticket removed, rejected with feedback, then ap
   await screenshot(page, testInfo, 'plan-ticket-edit');
   await form.getByRole('button', { name: 'Save' }).click();
   await expect(form).toBeHidden();
-  const edited = plan.getByRole('listitem', { name: 'contact · Contact form with a phone field' });
+  const edited = plan
+    .getByRole('list', { name: 'Tickets of the plan' })
+    .getByRole('listitem', { name: 'contact · Contact form with a phone field' });
   await expect(edited).toContainText('Feature · High priority · Web Developer');
   await expect(edited).toContainText('Waits for nothing.');
 
   // Remove: the confirmation names the tickets waiting for it.
   await plan
+    .getByRole('list', { name: 'Tickets of the plan' })
     .getByRole('listitem', { name: 'home · Home page' })
     .getByRole('button', { name: 'Remove home' })
     .click();
@@ -364,6 +369,7 @@ test('a plan reviewed, edited, a ticket removed, rejected with feedback, then ap
   await removeHome.getByRole('button', { name: 'Keep it' }).click();
   await expect(removeHome).toBeHidden();
   await plan
+    .getByRole('list', { name: 'Tickets of the plan' })
     .getByRole('listitem', { name: 'docs · User guide' })
     .getByRole('button', { name: 'Remove docs' })
     .click();
@@ -388,7 +394,11 @@ test('a plan reviewed, edited, a ticket removed, rejected with feedback, then ap
   await expect(earlier.getByRole('heading', { name: 'Earlier plans (1)' })).toBeVisible();
   await earlier.getByText(/^Proposed at .+, rejected with your feedback at .+$/).click();
   await expect(earlier.locator('strong').first()).toHaveText('user guide');
-  await expect(earlier.getByRole('listitem', { name: /^contact · / })).toBeVisible();
+  await expect(
+    earlier
+      .getByRole('list', { name: 'Tickets of the plan' })
+      .getByRole('listitem', { name: /^contact · / }),
+  ).toBeVisible();
   await expect(earlier.getByRole('button', { name: 'Edit contact' })).toBeHidden();
 
   // The next plan, approved.
@@ -408,7 +418,9 @@ test('a plan reviewed, edited, a ticket removed, rejected with feedback, then ap
   await expect(page.getByRole('button', { name: 'Close request' })).toBeHidden();
   await expect(plan.getByRole('button', { name: /^Edit / })).toHaveCount(0);
   await expectFitsScreen(page);
-  const created = plan.getByRole('listitem', { name: 'contact · Contact form' });
+  const created = plan
+    .getByRole('list', { name: 'Tickets of the plan' })
+    .getByRole('listitem', { name: 'contact · Contact form' });
   await created.getByRole('link', { name: /^TESTB-\d+$/ }).click();
   await expect(page.getByRole('heading', { name: /^TESTB-\d+ · Contact form$/ })).toBeVisible();
   await expect(page.getByText("From request 1's plan, approved by you")).toBeVisible();
@@ -525,9 +537,12 @@ test('a plan creating a project approved with its form', async ({ page }, testIn
   await expect(plan.getByRole('heading', { name: /^Plan, approved by you at / })).toBeVisible();
   await expect(page.getByText('Closed', { exact: true })).toBeVisible();
   await expect(
-    plan.getByRole('listitem', { name: 'setup · Set up the project' }).getByRole('link', {
-      name: 'SHOP-1',
-    }),
+    plan
+      .getByRole('list', { name: 'Tickets of the plan' })
+      .getByRole('listitem', { name: 'setup · Set up the project' })
+      .getByRole('link', {
+        name: 'SHOP-1',
+      }),
   ).toBeVisible();
   await expect(plan).toContainText('Project SHOP was created:');
   await expectFitsScreen(page);

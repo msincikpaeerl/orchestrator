@@ -127,7 +127,7 @@ export function DependencyGraph({
 
   return (
     <div role="region" aria-label={label} className="min-w-0 sm:overflow-x-auto">
-      <div ref={inner} className="relative flex flex-col gap-3 sm:w-max sm:flex-row sm:gap-12">
+      <div ref={inner} className="relative flex flex-col gap-3 sm:flex-row sm:gap-10">
         {columns.map((column) => (
           <GraphColumn
             key={column.heading}
@@ -187,7 +187,10 @@ function GraphColumn({
   const id = useId();
   const Heading = level === 3 ? 'h3' : 'h4';
   return (
-    <section aria-labelledby={id} className="min-w-0 space-y-2 rounded-lg bg-slate-100 p-3 sm:w-64">
+    <section
+      aria-labelledby={id}
+      className="min-w-0 space-y-2 rounded-lg bg-slate-100 p-3 sm:w-64 sm:min-w-44 sm:shrink"
+    >
       <Heading id={id} className="font-semibold text-slate-900">
         {heading}
       </Heading>
