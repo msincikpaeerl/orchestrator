@@ -39,7 +39,7 @@ function Connect({ machineId, enrollment }: { machineId: string; enrollment: Enr
  * refuses it, since the machine's key and the GitHub token would travel unencrypted (05, section
  * 3.2; owner's decision, lot 2 step E).
  */
-function PlainHttpWarning() {
+export function PlainHttpWarning() {
   const address = useQuery({
     queryKey: ['machines', 'server-address'],
     queryFn: () => api('GET', '/api/machines/server-address', ServerAddressResponse),

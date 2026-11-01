@@ -59,7 +59,9 @@ function RequireSetup() {
       <Navigate to={next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`} replace />
     );
   }
-  if (!setup.data.githubConnected) return <Navigate to="/setup" replace />;
+  if (!setup.data.githubConnected || !setup.data.setupFinished) {
+    return <Navigate to="/setup" replace />;
+  }
   return (
     <Shell>
       <Outlet />

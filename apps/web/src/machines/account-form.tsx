@@ -21,9 +21,18 @@ const runChoices = Array.from(
 
 /**
  * Adds a Claude account, or edits `account` (02, section 9.1): label, plan and maximum
- * concurrent runs. Only the changed fields are sent.
+ * concurrent runs. Only the changed fields are sent. `onDone` gets the account once saved; the
+ * setup wizard's step 3 shows no **Cancel** (`cancel` false).
  */
-export function AccountForm({ account, onDone }: { account?: ClaudeAccount; onDone: () => void }) {
+export function AccountForm({
+  account,
+  onDone,
+  cancel = true,
+}: {
+  account?: ClaudeAccount;
+  onDone: (saved?: ClaudeAccount) => void;
+  cancel?: boolean;
+}) {
   const [label, setLabel] = useState(account?.label ?? '');
   const [plan, setPlan] = useState<AccountPlan>(account?.plan ?? 'pro');
   const [runs, setRuns] = useState(account?.maxConcurrentRuns ?? MAX_CONCURRENT_RUNS.default);
@@ -33,9 +42,9 @@ export function AccountForm({ account, onDone }: { account?: ClaudeAccount; onDo
       account
         ? api('PATCH', `/api/accounts/${account.id}`, ClaudeAccount, input)
         : api('POST', '/api/accounts', ClaudeAccount, input),
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await machinesChanged();
-      onDone();
+      onDone(saved);
     },
   });
   const labelError = touched && label.trim() === '' ? 'Enter a label.' : null;
@@ -114,9 +123,17 @@ export function AccountForm({ account, onDone }: { account?: ClaudeAccount; onDo
         <Button type="submit" disabled={save.isPending}>
           {account ? 'Save' : 'Add the account'}
         </Button>
-        <Button variant="secondary" onClick={onDone} disabled={save.isPending}>
-          Cancel
-        </Button>
+        {cancel && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              onDone();
+            }}
+            disabled={save.isPending}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
     </form>
   );

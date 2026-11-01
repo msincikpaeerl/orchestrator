@@ -1,4 +1,4 @@
-import { EnrollmentResponse, Machine, type Enrollment } from '@orchestrator/protocol';
+import { Machine, type Enrollment } from '@orchestrator/protocol';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
@@ -9,7 +9,6 @@ import {
   ConfirmDialog,
   ErrorMessage,
   HelpLink,
-  InfoMessage,
   Loading,
   PageHeader,
   WarningMessage,
@@ -17,7 +16,7 @@ import {
 import { formatDateTime } from '../github/text';
 import { CapabilitiesEditor } from '../machines/capabilities';
 import { Command } from '../machines/command';
-import { EnrollmentSteps } from '../machines/enrollment';
+import { EnrollmentSteps, NewEnrollmentCode } from '../machines/enrollment';
 import {
   buildText,
   claudeCodeText,
@@ -156,47 +155,6 @@ function Doctor({ machine }: { machine: Machine }) {
         ))}
       </ul>
     </Card>
-  );
-}
-
-/** A new enrollment code: for a machine waiting for enrollment, or revoked (01, section 3.8). */
-function NewCode({
-  machine,
-  onIssued,
-}: {
-  machine: Machine;
-  onIssued: (enrollment: Enrollment) => void;
-}) {
-  const issue = useMutation({
-    mutationFn: () =>
-      api('POST', `/api/machines/${machine.id}/enrollment-code`, EnrollmentResponse),
-    onSuccess: async (result) => {
-      onIssued(result.enrollment);
-      await machinesChanged(result.machine);
-    },
-  });
-  const revoked = machine.state === 'revoked';
-  return (
-    <InfoMessage>
-      <div className="space-y-2">
-        <p>
-          {revoked
-            ? 'This machine is revoked: its daemon can no longer connect. To use this computer again, generate a new enrollment code and enroll it again.'
-            : machine.enrollmentCodeExpiresAt === null
-              ? 'This machine has not enrolled yet, and its enrollment code has expired or was used.'
-              : `This machine has not enrolled yet. Its enrollment code works until ${formatDateTime(machine.enrollmentCodeExpiresAt)}; generate a new one to see the commands again.`}
-        </p>
-        {issue.error && <ErrorMessage>{refusalText(issue.error)}</ErrorMessage>}
-        <Button
-          onClick={() => {
-            issue.mutate();
-          }}
-          disabled={issue.isPending}
-        >
-          New enrollment code
-        </Button>
-      </div>
-    </InfoMessage>
   );
 }
 
@@ -341,7 +299,7 @@ export function MachinePage() {
           <EnrollmentSteps enrollment={enrollment} machine={data} />
         ) : (
           (data.state === 'waiting_enrollment' || data.state === 'revoked') && (
-            <NewCode machine={data} onIssued={setEnrollment} />
+            <NewEnrollmentCode machine={data} onIssued={setEnrollment} />
           )
         )}
         <Details machine={data} />

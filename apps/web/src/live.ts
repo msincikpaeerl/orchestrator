@@ -88,6 +88,8 @@ function affected(message: Extract<StreamMessage, { type: 'changed' }>): readonl
       // An agent's required capabilities choose the machines of its tickets (07, section 4).
       return [[...keys.agents], [...keys.queue]];
     case 'owner':
+      // The wizard's finish (lot 5 step J), for another tab still on it.
+      return [[...keys.session], [...keys.setup]];
     case 'session':
       return [[...keys.session]];
   }

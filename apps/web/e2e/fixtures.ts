@@ -78,7 +78,10 @@ export function inDays(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-/** Creates the owner and connects GitHub through the API, as the wizard would. Logs in. */
+/**
+ * Creates the owner, connects GitHub and leaves the wizard's steps 3 and 4 through the API, as
+ * the wizard would with **Skip for now** before adding an account. Logs in.
+ */
 export async function completeSetup(
   page: Page,
   github: { token: string; expiresOn: string | null } = {
@@ -88,6 +91,7 @@ export async function completeSetup(
 ) {
   expect((await page.request.post('/api/setup/owner', { data: OWNER })).status()).toBe(201);
   expect((await page.request.put('/api/github/token', { data: github })).status()).toBe(200);
+  expect((await page.request.post('/api/setup/finish')).status()).toBe(204);
 }
 
 /** Opens a section from the main navigation, through "Menu" on a phone. */
