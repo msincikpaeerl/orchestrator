@@ -435,9 +435,24 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       db,
       rows.map((row) => row.ticket.id),
     );
+    // What each ticket waits for, by number, for the board's graph (lot 5 step H, answer 1).
+    const numbers = new Map(rows.map((row) => [row.ticket.id, row.ticket.number]));
+    const waits = new Map<string, number[]>();
+    const dependencies = await db
+      .select({
+        ticketId: schema.ticketDependencies.ticketId,
+        blockedById: schema.ticketDependencies.blockedById,
+      })
+      .from(schema.ticketDependencies)
+      .where(eq(schema.ticketDependencies.projectId, project.id));
+    for (const dependency of dependencies) {
+      const number = numbers.get(dependency.blockedById);
+      if (number === undefined) continue;
+      waits.set(dependency.ticketId, [...(waits.get(dependency.ticketId) ?? []), number]);
+    }
     const tickets = rows
-      .map((row) =>
-        toTicketSummary(
+      .map((row) => ({
+        ...toTicketSummary(
           row.ticket,
           project.key,
           row.blocked,
@@ -445,7 +460,8 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
           profiles,
           active.get(row.ticket.id) ?? null,
         ),
-      )
+        blockedBy: (waits.get(row.ticket.id) ?? []).sort((a, b) => a - b),
+      }))
       .sort(boardOrder);
     return { tickets } satisfies TicketListResponse;
   });
