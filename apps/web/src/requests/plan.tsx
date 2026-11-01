@@ -1,6 +1,11 @@
 import {
+  ApprovePlanRequest,
   PlanActionRequest,
+  ProjectKey,
   RejectPlanRequest,
+  RepositoryName,
+  slugify,
+  type PlanNewProject,
   RequestDetail,
   TicketPriority,
   TicketType,
@@ -25,12 +30,33 @@ import {
   TextField,
 } from '../components/ui';
 import { formatDateTime } from '../github/text';
-import { requestsChanged, useProject, useTickets } from '../queries';
-import { kindLabel } from '../projects/text';
+import {
+  projectsChanged,
+  requestsChanged,
+  useGitHubStatus,
+  useProject,
+  useTickets,
+} from '../queries';
+import {
+  KeyField,
+  KindHint,
+  RepositoryNameField,
+  VisibilityField,
+  keyError,
+  repositoryNameError,
+  useAvailability,
+} from '../projects/new-project-fields';
+import {
+  kindLabel,
+  refusalText as projectRefusal,
+  suggestKey,
+  type ErrorField,
+} from '../projects/text';
 import { refusalText } from '../refusals';
 import { AssigneeField, CriteriaEditor } from '../tickets/fields';
 import { priorityLabel, statusLabel, ticketPath, ticketRef, typeLabel } from '../tickets/text';
 import {
+  approveNewProjectText,
   approveText,
   blockerText,
   blockerValue,
@@ -596,6 +622,208 @@ function ApproveAction({ request, plan }: { request: RequestDetail; plan: PlanVi
   );
 }
 
+/**
+ * The approval form of a plan creating a project, with **Approve** and its confirmation (owner's
+ * answers 2, 6 and 7, step G): the name from the plan, the key suggested from it, the repository
+ * name made from it, both checked free as they are typed, and the visibility; the kind and the
+ * description are the plan's. A key or a name refused is shown next to its field.
+ */
+function NewProjectApproval({
+  request,
+  plan,
+  planned,
+}: {
+  request: RequestDetail;
+  plan: PlanView;
+  planned: PlanNewProject;
+}) {
+  const [name, setName] = useState(planned.name);
+  const [key, setKey] = useState(suggestKey(planned.name));
+  const [keyEdited, setKeyEdited] = useState(false);
+  const [repositoryName, setRepositoryName] = useState(slugify(planned.name));
+  const [repositoryEdited, setRepositoryEdited] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
+  const [refusal, setRefusal] = useState<{ field: ErrorField; text: string } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const github = useGitHubStatus();
+  const account = github.data?.connected ? github.data.account : null;
+
+  const keyValid = ProjectKey.safeParse(key).success;
+  const keyAvailability = useAvailability('key', key, keyValid);
+  const repositoryValid = RepositoryName.safeParse(repositoryName).success;
+  const repositoryAvailability = useAvailability('repositoryName', repositoryName, repositoryValid);
+  const keyErrorText = keyError({
+    key,
+    availability: keyAvailability,
+    refusal: refusal?.field === 'key' ? refusal.text : null,
+    submitted,
+  });
+  const repositoryError = repositoryNameError({
+    name: repositoryName,
+    availability: repositoryAvailability,
+    refusal: refusal?.field === 'repository' ? refusal.text : null,
+    submitted,
+    linkOffered: false,
+  });
+  const nameError = submitted && name.trim() === '' ? 'Enter a name.' : null;
+
+  const approve = useMutation({
+    mutationFn: () =>
+      api(
+        'POST',
+        planApi(request, '/approve'),
+        RequestDetail,
+        ApprovePlanRequest.parse({
+          planId: plan.id,
+          project: { name: name.trim(), key, repositoryName, private: isPrivate },
+        }),
+      ),
+    onSuccess: async (detail) => {
+      await Promise.all([requestsChanged(detail), projectsChanged()]);
+      setAsking(false);
+    },
+    onError: (error) => {
+      // A key or a repository name taken since: shown next to its field.
+      const found = projectRefusal(error);
+      if (found.field !== 'form') {
+        setRefusal(found);
+        setAsking(false);
+      }
+    },
+  });
+
+  function changeName(value: string) {
+    setName(value);
+    setRefusal(null);
+    if (!keyEdited) setKey(suggestKey(value));
+    if (!repositoryEdited) setRepositoryName(slugify(value));
+  }
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    setSubmitted(true);
+    setRefusal(null);
+    if (
+      name.trim() === '' ||
+      !keyValid ||
+      !repositoryValid ||
+      keyAvailability === 'taken' ||
+      repositoryAvailability === 'taken'
+    ) {
+      return;
+    }
+    approve.reset();
+    setAsking(true);
+  }
+
+  return (
+    <form
+      aria-label="The new project"
+      className="space-y-4 rounded border border-slate-200 p-3"
+      onSubmit={submit}
+      noValidate
+    >
+      <div>
+        <SubTitle>The new project</SubTitle>
+        <p className="text-sm text-slate-600">
+          Approving the plan creates this project and its repository on your GitHub account, as{' '}
+          <Link to="/projects/new" className="text-blue-700 underline">
+            New project
+          </Link>{' '}
+          does. To use an existing repository instead, reject the plan with feedback.
+        </p>
+      </div>
+      <TextField
+        label="Name"
+        value={name}
+        maxLength={100}
+        error={nameError}
+        onChange={(event) => {
+          changeName(event.target.value);
+        }}
+      />
+      <KeyField
+        value={key}
+        error={keyErrorText}
+        onChange={(value) => {
+          setKey(value);
+          setKeyEdited(true);
+          if (refusal?.field === 'key') setRefusal(null);
+        }}
+      />
+      <div>
+        <p className="font-medium text-slate-800">Kind</p>
+        <p className="text-slate-800">{kindLabel[planned.kind]}</p>
+        <p className="text-sm text-slate-600">
+          <KindHint kind={planned.kind} />
+        </p>
+      </div>
+      {planned.description !== '' && (
+        <div>
+          <p className="font-medium text-slate-800">Description</p>
+          <p className="break-words text-slate-800">{planned.description}</p>
+          <p className="text-sm text-slate-600">You can change it later in the project settings.</p>
+        </div>
+      )}
+      <RepositoryNameField
+        value={repositoryName}
+        error={repositoryError}
+        free={repositoryAvailability === 'free'}
+        onChange={(value) => {
+          setRepositoryName(value);
+          setRepositoryEdited(true);
+          if (refusal?.field === 'repository') setRefusal(null);
+        }}
+      />
+      <VisibilityField isPrivate={isPrivate} onChange={setIsPrivate} />
+      <Button type="submit">Approve</Button>
+      {asking && (
+        <ConfirmDialog
+          title="Approve this plan?"
+          confirmLabel="Approve"
+          dismissLabel="Keep reviewing"
+          busy={approve.isPending}
+          error={approve.error && <Refusal error={approve.error} />}
+          onConfirm={() => {
+            approve.mutate();
+          }}
+          onCancel={() => {
+            setAsking(false);
+          }}
+        >
+          <p>
+            {approveNewProjectText({
+              ticketCount: plan.tickets.length,
+              name: name.trim(),
+              key,
+              repository: account === null ? repositoryName : `${account}/${repositoryName}`,
+              private: isPrivate,
+            })}
+          </p>
+        </ConfirmDialog>
+      )}
+    </form>
+  );
+}
+
+/** After the approval of a plan that created its project: where its setup is shown (answer 7). */
+function CreatedProject({ request, plan }: { request: RequestDetail; plan: PlanView }) {
+  if (plan.status !== 'approved' || plan.newProject === null || request.project === null) {
+    return null;
+  }
+  const { key } = request.project;
+  return (
+    <p className="text-slate-700">
+      Project {key} was created:{' '}
+      <Link to={`/projects/${encodeURIComponent(key)}`} className="text-blue-700 underline">
+        its setup is shown on its page
+      </Link>
+      .
+    </p>
+  );
+}
+
 /** **Reject with feedback**'s box, under the plan's actions (owner's answer 6, step F2). */
 function RejectBox({
   request,
@@ -669,15 +897,19 @@ function PlanActions({ request, plan }: { request: RequestDetail; plan: PlanView
   const project = useProject(request.project?.key ?? '', request.project !== null);
   const archived = request.project !== null && project.data?.status === 'archived';
   const blocked = notApprovableText(
-    plan,
     request.project === null ? null : { key: request.project.key, archived },
   );
+  // A plan creating a project is approved with its form (step G).
+  const planned = request.project === null ? plan.newProject : null;
   return (
     <div className="space-y-3">
       {blocked && <p className="text-slate-700">{blocked}</p>}
+      {planned !== null && !rejecting && (
+        <NewProjectApproval request={request} plan={plan} planned={planned} />
+      )}
       {!rejecting && (
         <div className="flex flex-wrap gap-3">
-          {blocked === null && (request.project === null || project.data) && (
+          {blocked === null && planned === null && project.data && (
             <ApproveAction request={request} plan={plan} />
           )}
           <Button
@@ -775,6 +1007,7 @@ export function PlanSection({ request }: { request: RequestDetail }) {
                 </div>
               )}
               <NewProjectDetails plan={plan} />
+              <CreatedProject request={request} plan={plan} />
               <PlanTickets request={request} plan={plan} editable={plan.status === 'proposed'} />
               {plan.status === 'proposed' && <PlanActions request={request} plan={plan} />}
             </>

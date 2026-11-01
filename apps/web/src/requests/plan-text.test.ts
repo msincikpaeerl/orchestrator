@@ -1,6 +1,7 @@
 import type { PlanTicketView } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  approveNewProjectText,
   approveText,
   blockerText,
   closeTexts,
@@ -45,14 +46,35 @@ describe('Needs you and Approve (owner answers 12 and 13, lot 5 step F)', () => 
     expect(approveText(1, 'TESTB')).toMatch(/^It creates 1 ticket in TESTB/);
   });
 
-  it('says why Approve is not offered (owner answer 5, step F2)', () => {
-    const existing = { newProject: null };
-    const created = { newProject: { name: 'Shop', kind: 'website' as const, description: '' } };
-    expect(notApprovableText(existing, { key: 'TESTB', archived: false })).toBeNull();
-    expect(notApprovableText(created, null)).toBe(
-      'A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request.',
+  it('says what Approve creates for a new project (owner answer 6, step G)', () => {
+    expect(
+      approveNewProjectText({
+        ticketCount: 4,
+        name: 'Contact site',
+        key: 'SITE',
+        repository: 'octo-owner/contact-site',
+        private: true,
+      }),
+    ).toBe(
+      "It creates the project Contact site (SITE) and its private repository octo-owner/contact-site on GitHub with the starting files, then 4 tickets in SITE, in To do. They wait for the project's setup; then the scheduler starts them by themselves as machines are free: each one uses Claude Code sessions.",
     );
-    expect(notApprovableText(existing, { key: 'TESTB', archived: true })).toBe(
+    expect(
+      approveNewProjectText({
+        ticketCount: 1,
+        name: 'Blog',
+        key: 'BLOG',
+        repository: 'blog',
+        private: false,
+      }),
+    ).toMatch(
+      /^It creates the project Blog \(BLOG\) and its public repository blog on GitHub with the starting files, then 1 ticket in BLOG/,
+    );
+  });
+
+  it('says why Approve is not offered (owner answer 5, step F2)', () => {
+    expect(notApprovableText({ key: 'TESTB', archived: false })).toBeNull();
+    expect(notApprovableText(null)).toBeNull();
+    expect(notApprovableText({ key: 'TESTB', archived: true })).toBe(
       'TESTB is archived: its plan cannot be approved. Reject it with feedback, or close the request.',
     );
   });
