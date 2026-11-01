@@ -401,6 +401,7 @@ export function registerTicketRoutes(app: FastifyInstance, options: TicketRoutes
       reviewRounds: ticket.reviewRounds,
       changeRequest: await ticketChangeRequest(executor, ticket),
       branchCleanUp: await ticketBranchCleanUp(executor, ticket.id),
+      fromPlan: await fromPlan(executor, ticket),
     };
   }
 
@@ -1099,4 +1100,18 @@ function limitRefusal(exceeded: LimitExceeded[], commentField = 'comment'): Http
     })
     .join('; ');
   return new HttpError(400, 'invalid_request', message, { limits: exceeded });
+}
+
+/** The request whose plan created the ticket at **Approve** (owner's answer 1, lot 5 step F2). */
+async function fromPlan(
+  executor: Executor,
+  ticket: Pick<TicketRow, 'planId'>,
+): Promise<{ request: number } | null> {
+  if (ticket.planId === null) return null;
+  const [row] = await executor
+    .select({ request: schema.requests.number })
+    .from(schema.plans)
+    .innerJoin(schema.requests, eq(schema.requests.id, schema.plans.requestId))
+    .where(eq(schema.plans.id, ticket.planId));
+  return row ?? null;
 }

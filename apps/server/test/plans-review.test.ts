@@ -409,6 +409,9 @@ describe('Approve (answers 9 and 10)', () => {
     ]);
     expect((await h.ticket(3)).blockedBy.map((each) => each.number)).toEqual([1]);
     expect((await h.ticket(4)).blockedBy.map((each) => each.number)).toEqual([3]);
+    // Its page names the request whose plan created it (owner's answer 1, step F2); others none.
+    expect((await h.ticket(3)).fromPlan).toEqual({ request: 1 });
+    expect((await h.ticket(1)).fromPlan).toBeNull();
 
     const created = (await h.events('ticket.created')).slice(-2);
     expect(created.map((event) => event.payload)).toMatchObject([

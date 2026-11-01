@@ -389,6 +389,11 @@ export const TicketDetail = TicketSummary.extend({
   changeRequest: TicketChangeRequest.nullable(),
   /** The ticket branch's clean-up on GitHub after the latest recorded merge; null when none. */
   branchCleanUp: TicketBranchCleanUp.nullable(),
+  /**
+   * The request whose plan created it at **Approve** ("From request 7's plan, approved by you",
+   * owner's answer 1, lot 5 step F2); null for any other ticket.
+   */
+  fromPlan: z.object({ request: z.int().positive() }).nullable(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
 
