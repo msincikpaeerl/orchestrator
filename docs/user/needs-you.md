@@ -9,7 +9,7 @@ In this version, it shows:
 - runs that stopped at **CI wait at submission** (see [CI items](#ci-items));
 - problems with the GitHub connection, projects whose setup failed, the setup still to do (a Claude account and a machine), machines that cannot work and machines offline while agents were working on them.
 
-Plans to approve come with a later version.
+Plans to review are listed too, with **Review the plan** (see [Review a plan](requests.md#review-a-plan)), and requests whose planning stopped, with **Try again**.
 
 The setup still to do comes first. Every other item is listed oldest first, by the time its reason began: when the question was asked, the ticket proposed, the work submitted, the ticket moved to **Awaiting merge**, the pull request closed, or the run paused.
 

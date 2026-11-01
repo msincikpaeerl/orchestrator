@@ -461,3 +461,77 @@ test('a request closed while its planning run works and its plan is proposed', a
   await page.goto('/');
   await expect(page.getByText('Nothing needs you right now.')).toBeVisible();
 });
+
+// A new project from a plan (lot 5 step G; 02, section 5.3): the approval form creates the
+// project, its repository on the fake GitHub and the tickets.
+test('a plan creating a project approved with its form', async ({ page }, testInfo) => {
+  await completeSetup(page);
+  const { id: machineId, code } = await createMachine(page, {
+    name: 'Laptop',
+    account: 'Personal',
+  });
+  expect(await connectDaemon(page, code)).toBe(204);
+  const created = await page.request.post('/api/requests', {
+    data: { body: 'A bakery website\n\nWith a contact form.', project: null },
+  });
+  expect(created.status()).toBe(201);
+  const { runId, runToken } = await startPlanningRun(page, 1, machineId);
+  await reportState(page, runId, 'working');
+  await callTool(page, runToken, 'plan_propose', {
+    summary: 'A bakery website with a contact form.',
+    new_project: { name: 'Bakery shop', kind: 'website', description: 'The bakery online.' },
+    tickets: [
+      {
+        key: 'setup',
+        type: 'chore',
+        title: 'Set up the project',
+        assignee: 'architect',
+        bootstrap: true,
+      },
+      { ...contact, blocked_by: [] },
+    ],
+  });
+  await reportState(page, runId, 'ended', { reason: 'submitted', detail: null, branch: null });
+
+  await page.goto('/requests/1');
+  const plan = page.getByRole('region', { name: 'Plan', exact: true });
+  const form = plan.getByRole('form', { name: 'The new project' });
+  await expect(form.getByLabel('Name', { exact: true })).toHaveValue('Bakery shop');
+  await expect(form.getByLabel('Key')).toHaveValue('BS');
+  await expect(form.getByLabel('Repository name')).toHaveValue('bakery-shop');
+  await expect(form.getByLabel('Private')).toBeChecked();
+  await expect(form).toContainText('Website');
+  await expect(form).toContainText('The bakery online.');
+  await expect(form.getByText('This name is free.')).toBeVisible();
+
+  // The key checked as it is typed.
+  await form.getByLabel('Key').fill('S');
+  await expect(form.getByText('Use 2 to 6 capital letters, for example WEB.')).toBeVisible();
+  await form.getByLabel('Key').fill('SHOP');
+  await expect(form.getByText('Use 2 to 6 capital letters, for example WEB.')).toBeHidden();
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-new-project-form');
+
+  await form.getByRole('button', { name: 'Approve' }).click();
+  const approve = page.getByRole('dialog', { name: 'Approve this plan?' });
+  await expect(approve).toContainText(
+    "It creates the project Bakery shop (SHOP) and its private repository octo-owner/bakery-shop on GitHub with the starting files, then 2 tickets in SHOP, in To do. They wait for the project's setup; then the scheduler starts them by themselves as machines are free: each one uses Claude Code sessions.",
+  );
+  await expectFitsScreen(page);
+  await screenshot(page, testInfo, 'plan-new-project-approve');
+  await approve.getByRole('button', { name: 'Approve' }).click();
+  await expect(approve).toBeHidden();
+
+  await expect(plan.getByRole('heading', { name: /^Plan, approved by you at / })).toBeVisible();
+  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(
+    plan.getByRole('listitem', { name: 'setup · Set up the project' }).getByRole('link', {
+      name: 'SHOP-1',
+    }),
+  ).toBeVisible();
+  await expect(plan).toContainText('Project SHOP was created:');
+  await expectFitsScreen(page);
+  await plan.getByRole('link', { name: 'its setup is shown on its page' }).click();
+  await expect(page.getByRole('heading', { name: 'Bakery shop' })).toBeVisible();
+  await expect(page.getByText('bakery-shop', { exact: false }).first()).toBeVisible();
+});

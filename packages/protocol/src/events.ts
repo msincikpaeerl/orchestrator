@@ -223,6 +223,8 @@ export const EventPayloads = {
     private: z.boolean(),
     /** From lot 5 step C2; absent from earlier events. */
     requiredCapabilities: z.array(z.string()).optional(),
+    /** The request whose approved plan created it (lot 5 step G); absent otherwise. */
+    request: z.int().positive().optional(),
   }),
   'project.updated': z.object({
     ...ProjectFacts,
@@ -436,6 +438,8 @@ export const EventPayloads = {
     project: z.string().nullable(),
     planId: z.uuid(),
     tickets: z.array(z.object({ key: z.string(), ticket: z.string() })),
+    /** The plan created `project` (lot 5 step G); absent for an existing project. */
+    newProject: z.literal(true).optional(),
   }),
   /**
    * The owner rejected a plan: `superseded` by **Reject with feedback**, with the feedback, or

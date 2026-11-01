@@ -797,6 +797,17 @@ describe('eventText', () => {
       { text: 'WEB-12', to: '/projects/WEB/tickets/12' },
       { text: 'WEB-13', to: '/projects/WEB/tickets/13' },
     ]);
+    // A plan creating a project (lot 5 step G).
+    const founding = eventText(
+      entry('plan.approved', {
+        entityType: 'request',
+        payload: { ...examples['plan.approved'], newProject: true },
+      }),
+    );
+    expect(plainText(founding)).toBe(
+      'You approved the plan of Request 7: project WEB created, 2 tickets created, WEB-12, WEB-13',
+    );
+    expect(links(founding)[1]).toEqual({ text: 'WEB', to: '/projects/WEB' });
     expect(text('plan.rejected')).toBe(
       'You rejected the plan of Request 7 with feedback “Two tickets only.”; the Project Manager plans it again',
     );
@@ -962,6 +973,12 @@ describe('eventText', () => {
     expect(plainText(eventText({ ...created, payload }))).toBe(
       'WEB created: “Web shop”, web app, new private repository octo-owner/web-shop, requiring browser-tests',
     );
+    // Created by approving request 7's plan (lot 5 step G).
+    const founded = eventText({ ...created, payload: { ...payload, request: 7 } });
+    expect(plainText(founded)).toBe(
+      'WEB created: “Web shop”, web app, new private repository octo-owner/web-shop, requiring browser-tests, from the plan of Request 7',
+    );
+    expect(links(founded).at(-1)).toEqual({ text: 'Request 7', to: '/requests/7' });
     expect(plainText(eventText(entry('project.required_capabilities_changed')))).toBe(
       'WEB: required capabilities set to none (before: browser-tests)',
     );

@@ -122,6 +122,8 @@ export {
   requestLine,
 } from './api/requests.js';
 export {
+  ApprovalProject,
+  ApprovePlanRequest,
   PlanActionRequest,
   PlanBlocker,
   PlanNewProject,

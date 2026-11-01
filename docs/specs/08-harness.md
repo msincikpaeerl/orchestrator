@@ -66,7 +66,7 @@ The most important file for agents. Rules:
 
 ## 3. Project creation
 
-A project is created either with a **new repository**, which receives the skeleton (section 3.1), or by **linking an existing repository** of the owner's personal account, which is left as it is (section 3.4). The owner creates projects from the Projects screen (02, section 6.2); from lot 5, approving a plan that creates a project does the same.
+A project is created either with a **new repository**, which receives the skeleton (section 3.1), or by **linking an existing repository** of the owner's personal account, which is left as it is (section 3.4). The owner creates projects from the Projects screen (02, section 6.2); from lot 5, approving a plan that creates a project does the same. As built in lot 5 step G: the approval form gives the name, key, repository name and visibility (the kind and description are the plan's); the project, with a new repository, and the plan's tickets are created in one transaction, `project.created` naming the request; the same setup (section 3.1), run by the one setup runner of both paths, then creates the repository and the skeleton, and its **Try again** resumes a failed step. Linking an existing repository stays on the Projects screen.
 
 ### 3.1 Skeleton
 

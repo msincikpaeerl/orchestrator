@@ -21,76 +21,40 @@ import {
 import { and, asc, count, eq, isNotNull, max, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
-import type { Database } from '../database.js';
 import { recordEvent } from '../events.js';
-import { GitHubUnreachableError, type GitHubClient } from '../github/client.js';
-import { storedTokenClient } from '../github/connection.js';
 import {
-  GitHubOperationError,
   findMissingHarness,
   findRepository,
   listOwnerRepositories,
 } from '../github/repositories.js';
-import { HttpError, parseInput, uniqueViolation } from '../http.js';
-import { SecretUnreadableError, type SecretKey } from '../secrets.js';
-import { projectEntity, toProject, type ProjectRow } from './model.js';
-import { ProjectSetupRunner } from './setup.js';
+import { HttpError, parseInput } from '../http.js';
+import {
+  alreadyLinked,
+  askGitHub,
+  githubAccount,
+  insertProject,
+  keyIsTaken,
+  keyTaken,
+  newRepositoryValues,
+  repositoryNameTaken,
+  type GitHubAccess,
+} from './creation.js';
+import { toProject, projectEntity, type ProjectRow } from './model.js';
+import type { ProjectSetupRunner } from './setup.js';
 
-export interface ProjectRoutesOptions {
-  db: Database;
-  key: SecretKey;
-  apiUrl: string;
+export interface ProjectRoutesOptions extends GitHubAccess {
+  /** Runs the setups, shared with the approval of a plan creating a project (lot 5 step G). */
+  setups: ProjectSetupRunner;
   now?: () => Date;
 }
 
-const keyTaken = () =>
-  new HttpError(409, 'project_key_taken', 'Another project already uses this key');
-const alreadyLinked = () =>
-  new HttpError(409, 'repository_already_linked', 'This repository is already linked to a project');
-
 /** Projects (02, sections 6.1, 6.2 and 6.5). Archiving and editing never send a request to GitHub. */
 export function registerProjectRoutes(app: FastifyInstance, options: ProjectRoutesOptions) {
-  const { db } = options;
+  const { db, setups } = options;
   const now = () => options.now?.() ?? new Date();
-  const setups = new ProjectSetupRunner({ ...options, log: app.log });
-  app.addHook('onClose', () => setups.idle());
 
-  /** The stored-token client and the account it belongs to, or the reason there is none. */
-  async function github(): Promise<{ client: GitHubClient; account: string }> {
-    let client: GitHubClient | null;
-    try {
-      client = await storedTokenClient({ ...options, log: app.log });
-    } catch (error) {
-      if (!(error instanceof SecretUnreadableError)) throw error;
-      throw new HttpError(
-        409,
-        'github_token_unreadable',
-        'The saved token cannot be decrypted with the current ORCHESTRATOR_SECRET_KEY; save the token again',
-      );
-    }
-    const [connection] = await db
-      .select({ account: schema.githubConnection.account })
-      .from(schema.githubConnection);
-    if (client === null || !connection) {
-      throw new HttpError(409, 'github_not_connected', 'No GitHub token saved');
-    }
-    return { client, account: connection.account };
-  }
-
-  async function askGitHub<T>(action: () => Promise<T>): Promise<T> {
-    try {
-      return await action();
-    } catch (error) {
-      if (error instanceof GitHubUnreachableError) {
-        app.log.warn({ err: error }, 'GitHub unreachable');
-        throw new HttpError(502, 'github_unreachable', 'GitHub could not be reached; try again');
-      }
-      if (error instanceof GitHubOperationError) {
-        throw new HttpError(502, 'github_request_failed', error.message);
-      }
-      throw error;
-    }
-  }
+  const github = () => githubAccount({ ...options, log: app.log });
+  const ask = <T>(action: () => Promise<T>) => askGitHub(app.log, action);
 
   async function findByKey(key: string): Promise<ProjectRow> {
     const parsed = ProjectKey.safeParse(key);
@@ -105,14 +69,6 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
     if (row.status === 'archived') {
       throw new HttpError(409, 'project_archived', 'This project is archived: unarchive it first');
     }
-  }
-
-  async function keyIsTaken(key: string): Promise<boolean> {
-    const rows = await db
-      .select({ id: schema.projects.id })
-      .from(schema.projects)
-      .where(eq(schema.projects.key, key));
-    return rows.length > 0;
   }
 
   async function linkedProject(owner: string, name: string): Promise<boolean> {
@@ -172,7 +128,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
     if (query.key !== undefined) {
       result.key = !ProjectKey.safeParse(query.key).success
         ? 'invalid'
-        : (await keyIsTaken(query.key))
+        : (await keyIsTaken(db, query.key))
           ? 'taken'
           : 'free';
     }
@@ -181,7 +137,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
         result.repositoryName = 'invalid';
       } else {
         const { client, account } = await github();
-        const found = await askGitHub(() =>
+        const found = await ask(() =>
           findRepository(client, { owner: account, name: query.repositoryName ?? '' }),
         );
         result.repositoryName = found === null ? 'free' : 'taken';
@@ -193,7 +149,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
   app.get('/api/projects/linkable-repositories', async (request) => {
     await requireSession(db, request);
     const { client } = await github();
-    const repositories = await askGitHub(() => listOwnerRepositories(client));
+    const repositories = await ask(() => listOwnerRepositories(client));
     const linked = await db
       .select({ owner: schema.projects.repoOwner, name: schema.projects.repoName })
       .from(schema.projects);
@@ -215,39 +171,24 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
   app.post('/api/projects', async (request, reply) => {
     await requireSession(db, request);
     const input = parseInput(CreateProjectRequest, request.body);
-    if (await keyIsTaken(input.key)) throw keyTaken();
+    if (await keyIsTaken(db, input.key)) throw keyTaken();
     const { client, account } = await github();
-    const found = await askGitHub(() =>
+    const found = await ask(() =>
       findRepository(client, { owner: account, name: input.repository.name }),
     );
 
     let values: typeof schema.projects.$inferInsert;
-    const common = {
-      key: input.key,
-      name: input.name,
-      description: input.description,
-      kind: input.kind,
-      // A new repository or a linked one alike (owner's answer, lot 5 step C).
-      requiredCapabilities: defaultRequiredCapabilities(input.kind),
-      setupStatus: 'in_progress',
-    } as const;
     if (input.repository.origin === 'created') {
-      if (found !== null) {
-        throw new HttpError(
-          409,
-          'repository_name_taken',
-          'A repository with this name already exists on your GitHub account',
-        );
-      }
-      values = {
-        ...common,
-        slug: input.repository.name,
-        repoOwner: account,
-        repoName: input.repository.name,
-        repoOrigin: 'created',
-        repoPrivate: input.repository.private,
-        setupStep: 'repository',
-      };
+      if (found !== null) throw repositoryNameTaken();
+      values = newRepositoryValues({
+        key: input.key,
+        name: input.name,
+        description: input.description,
+        kind: input.kind,
+        account,
+        repositoryName: input.repository.name,
+        private: input.repository.private,
+      });
     } else {
       if (found === null) {
         throw new HttpError(
@@ -265,7 +206,13 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       }
       if (await linkedProject(found.owner, found.name)) throw alreadyLinked();
       values = {
-        ...common,
+        key: input.key,
+        name: input.name,
+        description: input.description,
+        kind: input.kind,
+        // A new repository or a linked one alike (owner's answer, lot 5 step C).
+        requiredCapabilities: defaultRequiredCapabilities(input.kind),
+        setupStatus: 'in_progress',
         slug: slugify(input.name) || input.key.toLowerCase(),
         repoOwner: found.owner,
         repoName: found.name,
@@ -277,37 +224,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       };
     }
 
-    let row: ProjectRow;
-    try {
-      row = await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(schema.projects)
-          .values({ ...values, createdAt: now(), updatedAt: now() })
-          .returning();
-        if (!inserted) throw new Error('project not inserted');
-        await recordEvent(tx, {
-          actor: 'owner',
-          ...projectEntity(inserted),
-          type: 'project.created',
-          payload: {
-            key: inserted.key,
-            name: inserted.name,
-            kind: inserted.kind,
-            origin: inserted.repoOrigin,
-            repository: `${inserted.repoOwner}/${inserted.repoName}`,
-            private: inserted.repoPrivate,
-            requiredCapabilities: common.requiredCapabilities,
-          },
-        });
-        return inserted;
-      });
-    } catch (error) {
-      // Two requests at the same time: the database has the last word.
-      const constraint = uniqueViolation(error);
-      if (constraint === 'projects_key_unique') throw keyTaken();
-      if (constraint === 'projects_repository') throw alreadyLinked();
-      throw error;
-    }
+    const row = await db.transaction((tx) => insertProject(tx, values, { at: now() }));
     request.log.info({ project: row.key, origin: row.repoOrigin }, 'project created');
     setups.start(row.id);
     return reply.code(201).send(toProject(row) satisfies Project);
@@ -497,7 +414,7 @@ export function registerProjectRoutes(app: FastifyInstance, options: ProjectRout
       );
     }
     const { client } = await github();
-    const missing = await askGitHub(() =>
+    const missing = await ask(() =>
       findMissingHarness(client, {
         owner: project.repoOwner,
         name: project.repoName,

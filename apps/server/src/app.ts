@@ -23,6 +23,7 @@ import { DaemonGateway } from './machines/gateway.js';
 import { registerMachineRoutes } from './machines/routes.js';
 import { registerNeedsYouRoutes } from './needs-you.js';
 import { registerProjectRoutes } from './projects/routes.js';
+import { ProjectSetupRunner } from './projects/setup.js';
 import { registerRequestRoutes } from './requests/routes.js';
 import { ChangeFeed } from './realtime/changes.js';
 import { registerStreamRoute } from './realtime/stream.js';
@@ -271,7 +272,17 @@ export function buildApp(dependencies: AppDependencies) {
       logger.error({ err: error }, 'automatic merges still wanted not tried');
     });
   });
+  // Repository setups of new projects (08, section 3.1), from the Projects screen and from an
+  // approved plan (lot 5 step G).
+  const setups = new ProjectSetupRunner({
+    db,
+    key,
+    apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
+    log: logger,
+    now: dependencies.now,
+  });
   app.addHook('onClose', async () => {
+    await setups.idle();
     await scheduler.close();
     await ci.close();
     runs.close();
@@ -315,7 +326,7 @@ export function buildApp(dependencies: AppDependencies) {
       apiUrl: dependencies.githubApiUrl ?? GITHUB_API_URL,
     };
     registerGitHubRoutes(scope, github);
-    registerProjectRoutes(scope, { ...github, now: dependencies.now });
+    registerProjectRoutes(scope, { ...github, setups, now: dependencies.now });
     registerTicketRoutes(scope, {
       db,
       runs,
@@ -324,7 +335,13 @@ export function buildApp(dependencies: AppDependencies) {
       watcher,
       now: dependencies.now,
     });
-    registerRequestRoutes(scope, { db, runs, now: dependencies.now });
+    registerRequestRoutes(scope, {
+      ...github,
+      runs,
+      setups,
+      templates: () => (templates ??= loadTemplates()),
+      now: dependencies.now,
+    });
     registerRunRoutes(scope, { db, runs });
     registerAgentRoutes(scope, { db });
     registerNeedsYouRoutes(scope, {

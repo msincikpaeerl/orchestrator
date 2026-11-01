@@ -112,8 +112,6 @@ export const ApiErrorCode = z.enum([
    * step F): approved, rejected, superseded, or another one.
    */
   'plan_not_proposed',
-  /** **Approve** of a plan that creates a project, before step G (owner's answer 4). */
-  'plan_new_project_later',
   /** An edit or an approval with problems; `planProblems` lists them (owner's answers 5 and 9). */
   'plan_invalid',
   /** No ticket with this key in the plan. */

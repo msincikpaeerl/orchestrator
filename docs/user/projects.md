@@ -27,6 +27,10 @@ The project page opens and shows the setup while it runs. The page updates by it
 
 When all the steps are done, the setup says **Ready**, and you can create the project's tickets on its page (see [Tickets](tickets.md)).
 
+## Create a project from a request
+
+When you submit a request for a new project, the Project Manager proposes the project with its plan. Approving the plan creates the project with a new repository, as above, and its tickets: see [Approve a plan for a new project](requests.md#approve-a-plan-for-a-new-project). The project's Activity says it was created from the request's plan.
+
 ## Link an existing repository
 
 Use this for a repository you already have on your personal GitHub account. The Orchestrator leaves it exactly as it is: it adds no files and changes no settings.

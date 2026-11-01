@@ -2,7 +2,7 @@
 
 A request is what you want, in your own words: a new website, a feature for one of your projects, a change. The Project Manager, an agent, will read it, ask you questions if something is unclear, and propose a plan: the tickets to do, in order. You approve the plan, and the other agents do the tickets.
 
-From version 0.6.0, the Orchestrator's scheduler starts the Project Manager on a request by itself, as soon as a machine and its Claude account are free (see [What starts by itself](runs.md#what-starts-by-itself)). You review its plan, change it if you want, and approve it or reject it with feedback (see [Review a plan](#review-a-plan)). Approving a plan for a new project comes with a later version.
+From version 0.6.0, the Orchestrator's scheduler starts the Project Manager on a request by itself, as soon as a machine and its Claude account are free (see [What starts by itself](runs.md#what-starts-by-itself)). You review its plan, change it if you want, and approve it or reject it with feedback (see [Review a plan](#review-a-plan)). A plan for a new project creates the project and its GitHub repository when you approve it (see [Approve a plan for a new project](#approve-a-plan-for-a-new-project)).
 
 ## Submit a request
 
@@ -80,7 +80,27 @@ The **Plan** section shows the Project Manager's summary, the new project it pro
 
 **Remove a ticket.** Click **Remove** under it and confirm. The confirmation names the tickets that wait for it: they no longer do. A removed ticket cannot be added back (reject the plan with feedback to get it again), and the plan's last ticket cannot be removed. The bootstrap ticket has no **Remove**.
 
-**Approve.** Click **Approve**, read the confirmation ("It creates 4 tickets in WEB, in To do. …") and click **Approve** again. The Orchestrator checks the whole plan again against your current settings and the project's tickets: if something is wrong, every problem is listed and nothing is created. Otherwise the tickets are created in **To do**, numbered in the plan's order, and the request is **Closed**. The scheduler then starts them by itself as machines are free: each one uses Claude Code sessions from your plan. The section then reads "Plan, approved by you at …", each ticket with a link to the ticket it became ("Created as WEB-12"), and each of those tickets says on its page "From request 7's plan, approved by you". A plan for a new project cannot be approved yet ("A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request."), nor a plan for an archived project.
+**Approve.** Click **Approve**, read the confirmation ("It creates 4 tickets in WEB, in To do. …") and click **Approve** again. The Orchestrator checks the whole plan again against your current settings and the project's tickets: if something is wrong, every problem is listed and nothing is created. Otherwise the tickets are created in **To do**, numbered in the plan's order, and the request is **Closed**. The scheduler then starts them by itself as machines are free: each one uses Claude Code sessions from your plan. The section then reads "Plan, approved by you at …", each ticket with a link to the ticket it became ("Created as WEB-12"), and each of those tickets says on its page "From request 7's plan, approved by you". A plan for an archived project cannot be approved. A plan for a new project has a form first: see below.
+
+### Approve a plan for a new project
+
+When the request has no project, the plan proposes one (its name, its kind and a description), and its first ticket is the **Bootstrap ticket**, assigned to the Architect, which sets the project up; every other ticket waits for it. Above **Approve**, the box **The new project** asks what the Projects screen asks for a new repository (see [Create a project with a new repository](projects.md#create-a-project-with-a-new-repository)):
+
+- **Name**: the plan's, which you can change;
+- **Key**: suggested from the name; it starts every ticket number and cannot be changed later. The form tells you if another project already uses it;
+- **Kind** and **Description**: the plan's (you can change the description later in the project settings). A website or a web app requires the capability `browser-tests` (see [Browser tests](machines.md#browser-tests));
+- **Repository name**: made from the name, which you can change; the form tells you if a repository with this name already exists on your GitHub account;
+- **Visibility**: **Private** (the default) or **Public**.
+
+To use one of your existing repositories instead, reject the plan with feedback and create the project with **Link an existing repository** on the Projects screen.
+
+Click **Approve** and read the confirmation: "It creates the project Bakery shop (SHOP) and its private repository you/bakery-shop on GitHub with the starting files, then 4 tickets in SHOP, in To do. They wait for the project's setup; then the scheduler starts them by themselves as machines are free: each one uses Claude Code sessions." Click **Approve** again. The Orchestrator checks the plan again; it also adds back to the bootstrap ticket any of its fixed acceptance criteria you removed (if they no longer fit within **Most acceptance criteria**, the approval is refused and says so: remove some of its other criteria). Then, at once:
+
+- the project is created, with the request now belonging to it;
+- the tickets are created in **To do**, numbered from 1, the bootstrap ticket first (`SHOP-1`);
+- the request is **Closed**, and the plan says "Project SHOP was created: its setup is shown on its page", with a link.
+
+The project's setup then runs as for a project created on the Projects screen: the repository, the starting files, branch protection. Its tickets wait until it is **Ready** (the **Queue** says "the project is not ready"); then the scheduler starts the bootstrap ticket first, since every other ticket waits for it. If the setup fails, the project page and **Needs you** say why, with **Try again** (see [If the setup fails](projects.md#if-the-setup-fails)). A key or a repository name taken in the meantime is refused next to its field, and nothing is created.
 
 **Reject with feedback.** Click **Reject with feedback**, say in **What should change?** what the Project Manager should do differently (required; Markdown is allowed, as long as **Longest comment** allows) and click **Reject with feedback**. The plan moves to **Earlier plans** with your feedback, nothing is created in the project, and the request goes back to **Open**: the scheduler starts a new planning run (one Claude Code session), which reads the rejected plan and your feedback. **Keep reviewing** closes the box.
 

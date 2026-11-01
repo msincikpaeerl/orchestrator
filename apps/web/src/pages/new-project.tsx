@@ -1,6 +1,4 @@
 import {
-  AvailabilityResponse,
-  defaultRequiredCapabilities,
   LinkableRepositoriesResponse,
   Project,
   ProjectKey,
@@ -10,7 +8,7 @@ import {
   type CreateProjectRequest,
 } from '@orchestrator/protocol';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useState, type SubmitEvent } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../api';
 import {
@@ -18,49 +16,25 @@ import {
   Card,
   ErrorMessage,
   FieldError,
-  HelpLink,
   Loading,
   PageHeader,
   SelectField,
   TextArea,
   TextField,
 } from '../components/ui';
-import { kindHint, kindLabel, refusalText, suggestKey, type ErrorField } from '../projects/text';
+import {
+  KeyField,
+  KindHint,
+  RepositoryNameField,
+  VisibilityField,
+  keyError,
+  repositoryNameError,
+  useAvailability,
+} from '../projects/new-project-fields';
+import { kindLabel, refusalText, suggestKey, type ErrorField } from '../projects/text';
 import { projectsChanged } from '../queries';
 
 type Way = 'created' | 'linked';
-
-/** The value once the owner has stopped typing for a moment, for availability checks. */
-function useSettled(value: string, delayMs = 400): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSettled(value);
-    }, delayMs);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [value, delayMs]);
-  return settled;
-}
-
-/** Asks the server whether a key or a repository name is free. */
-function useAvailability(field: 'key' | 'repositoryName', value: string, enabled: boolean) {
-  const settled = useSettled(value);
-  const query = useQuery({
-    queryKey: ['availability', field, settled],
-    queryFn: () =>
-      api(
-        'GET',
-        `/api/projects/availability?${field}=${encodeURIComponent(settled)}`,
-        AvailabilityResponse,
-      ),
-    enabled: enabled && settled === value,
-    staleTime: 0,
-    gcTime: 0,
-  });
-  return settled === value && enabled ? query.data?.[field] : undefined;
-}
 
 function WayChoice({ way, onChange }: { way: Way; onChange: (way: Way) => void }) {
   const options: { value: Way; label: string; detail: string }[] = [
@@ -162,27 +136,23 @@ export function NewProjectPage() {
   }
 
   const nameError = submitted && name.trim() === '' ? 'Enter a name.' : null;
-  const keyError =
-    refusal?.field === 'key'
-      ? refusal.text
-      : key !== '' && !keyValid
-        ? 'Use 2 to 6 capital letters, for example WEB.'
-        : keyAvailability === 'taken'
-          ? 'Another project already uses this key (archived projects count too). Choose another key.'
-          : submitted && key === ''
-            ? 'Enter a key.'
-            : null;
+  const keyErrorText = keyError({
+    key,
+    availability: keyAvailability,
+    refusal: refusal?.field === 'key' ? refusal.text : null,
+    submitted,
+  });
   const repositoryError =
-    refusal?.field === 'repository'
-      ? refusal.text
-      : way === 'created'
-        ? repositoryName !== '' && !repositoryValid
-          ? 'Use only letters, digits, “.”, “-” and “_”.'
-          : repositoryAvailability === 'taken'
-            ? 'A repository with this name already exists on your GitHub account. Choose another name, or link that repository instead.'
-            : submitted && repositoryName === ''
-              ? 'Enter a repository name.'
-              : null
+    way === 'created'
+      ? repositoryNameError({
+          name: repositoryName,
+          availability: repositoryAvailability,
+          refusal: refusal?.field === 'repository' ? refusal.text : null,
+          submitted,
+          linkOffered: true,
+        })
+      : refusal?.field === 'repository'
+        ? refusal.text
         : submitted && linked === ''
           ? 'Choose a repository.'
           : null;
@@ -269,33 +239,18 @@ export function NewProjectPage() {
               changeName(event.target.value);
             }}
           />
-          <TextField
-            label="Key"
-            hint="2 to 6 capital letters. It starts every ticket number (for example WEB-12) and cannot be changed later."
+          <KeyField
             value={key}
-            maxLength={6}
-            autoCapitalize="characters"
-            autoComplete="off"
-            error={keyError}
-            onChange={(event) => {
-              setKey(event.target.value.toUpperCase());
+            error={keyErrorText}
+            onChange={(value) => {
+              setKey(value);
               setKeyEdited(true);
               clearRefusal('key');
             }}
           />
           <SelectField
             label="Kind"
-            hint={
-              <>
-                {kindHint(kind)}
-                {defaultRequiredCapabilities(kind).length > 0 && (
-                  <>
-                    {' '}
-                    <HelpLink page="machines#browser-tests">Browser tests</HelpLink>
-                  </>
-                )}
-              </>
-            }
+            hint={<KindHint kind={kind} />}
             value={kind}
             onChange={(event) => {
               setKind(ProjectKind.parse(event.target.value));
@@ -319,52 +274,17 @@ export function NewProjectPage() {
 
           {way === 'created' && (
             <>
-              <TextField
-                label="Repository name"
-                hint="The name of the new repository on your GitHub account, made from the project name. You can change it."
+              <RepositoryNameField
                 value={repositoryName}
-                maxLength={100}
-                autoCapitalize="none"
-                autoComplete="off"
                 error={repositoryError}
-                onChange={(event) => {
-                  setRepositoryName(event.target.value);
+                free={repositoryAvailability === 'free'}
+                onChange={(value) => {
+                  setRepositoryName(value);
                   setRepositoryEdited(true);
                   clearRefusal('repository');
                 }}
               />
-              {repositoryAvailability === 'free' && repositoryError === null && (
-                <p className="-mt-3 text-sm text-green-800">This name is free.</p>
-              )}
-              <fieldset>
-                <legend className="font-medium text-slate-800">Visibility</legend>
-                <div className="mt-2 space-y-2">
-                  {[
-                    { value: true, label: 'Private', detail: 'Only you can see it (recommended).' },
-                    { value: false, label: 'Public', detail: 'Anyone on the internet can see it.' },
-                  ].map((option) => (
-                    <label key={option.label} className="flex cursor-pointer gap-3">
-                      <input
-                        type="radio"
-                        name="visibility"
-                        className="mt-1 h-5 w-5 shrink-0"
-                        checked={isPrivate === option.value}
-                        onChange={() => {
-                          setIsPrivate(option.value);
-                        }}
-                      />
-                      <span>
-                        <span className="font-medium">{option.label}</span>:{' '}
-                        <span className="text-slate-700">{option.detail}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <p className="mt-2 text-sm text-slate-600">
-                  On a free GitHub plan, branch protection is only available on public repositories.{' '}
-                  <HelpLink page="projects#branch-protection">Learn more</HelpLink>
-                </p>
-              </fieldset>
+              <VisibilityField isPrivate={isPrivate} onChange={setIsPrivate} />
             </>
           )}
 

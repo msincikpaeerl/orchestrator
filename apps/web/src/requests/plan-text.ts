@@ -41,14 +41,24 @@ export function approveText(ticketCount: number, projectKey: string): string {
   return `It creates ${plural(ticketCount, 'ticket')} in ${projectKey}, in To do. The scheduler starts them by themselves as machines are free: each one uses Claude Code sessions.`;
 }
 
+/**
+ * **Approve**'s confirmation for a plan creating a project (owner's answer 6, step G); the
+ * repository is `<account>/<name>`, or its name alone when the account is not known.
+ */
+export function approveNewProjectText(input: {
+  ticketCount: number;
+  name: string;
+  key: string;
+  repository: string;
+  private: boolean;
+}): string {
+  return `It creates the project ${input.name} (${input.key}) and its ${input.private ? 'private' : 'public'} repository ${input.repository} on GitHub with the starting files, then ${plural(input.ticketCount, 'ticket')} in ${input.key}, in To do. They wait for the project's setup; then the scheduler starts them by themselves as machines are free: each one uses Claude Code sessions.`;
+}
+
 /** Why **Approve** is not offered (owner's answer 5, step F2); null when it is. */
 export function notApprovableText(
-  plan: Pick<PlanView, 'newProject'>,
   project: { key: string; archived: boolean } | null,
 ): string | null {
-  if (plan.newProject !== null) {
-    return 'A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request.';
-  }
   if (project?.archived) {
     return `${project.key} is archived: its plan cannot be approved. Reject it with feedback, or close the request.`;
   }

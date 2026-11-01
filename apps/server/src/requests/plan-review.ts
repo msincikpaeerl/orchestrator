@@ -2,6 +2,8 @@ import { schema } from '@orchestrator/db';
 import {
   PlanNewProject,
   PlanStatus,
+  type ApprovalProject,
+  type ProjectKind,
   PlanTickets,
   TicketKey,
   TicketStatus,
@@ -18,11 +20,14 @@ import { and, asc, desc, eq, inArray, lte } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError } from '../http.js';
+import type { Template } from '../agents/files.js';
+import { insertProject, keyIsTaken, keyTaken, newRepositoryValues } from '../projects/creation.js';
 import type { ProjectRow } from '../projects/model.js';
 import { ticketReference, type TicketRow } from '../tickets/model.js';
 import { completeOwnerTicket, insertNumberedTicket } from '../tickets/rules.js';
 import { checkTickets, type CheckedEntry, type TicketProblem } from '../tickets/ticket-checks.js';
 import { changeRequestStatus, requestEntity, type RequestRow } from './model.js';
+import { fixedCriteria } from './plan-propose.js';
 
 /*
  * The owner's review of a plan (01, section 3.3; 02, section 5.3; owner's answers, lot 5 step F):
@@ -34,18 +39,22 @@ import { changeRequestStatus, requestEntity, type RequestRow } from './model.js'
 
 export type PlanRow = typeof schema.plans.$inferSelect;
 
-/** The request's proposed plan, locked, if it is `planId`; refused otherwise (answer 14). */
+/**
+ * The request's proposed plan, locked (unless `lock` is false, for a check before the
+ * transaction), if it is `planId`; refused otherwise (answer 14).
+ */
 export async function proposedPlan(
   tx: Executor,
   request: RequestRow,
   planId: string,
+  lock = true,
 ): Promise<PlanRow> {
   if (request.status === 'closed') throw requestClosed();
-  const [plan] = await tx
+  const query = tx
     .select()
     .from(schema.plans)
-    .where(and(eq(schema.plans.id, planId), eq(schema.plans.requestId, request.id)))
-    .for('update');
+    .where(and(eq(schema.plans.id, planId), eq(schema.plans.requestId, request.id)));
+  const [plan] = lock ? await query.for('update') : await query;
   if (!plan || plan.status !== 'proposed' || request.status !== 'plan_proposed') {
     throw new HttpError(
       409,
@@ -468,34 +477,162 @@ export async function removePlanTicket(
 // ------------------------------------------------------------------------------------------------
 // Approve and reject (owner's answers 2, 4, 9 to 11)
 
+/** The project a plan creates, from the approval form (owner's answers 2 to 4, lot 5 step G). */
+export interface ApprovalNewProject {
+  form: ApprovalProject;
+  /** The GitHub account the repository is created on, found free before the transaction. */
+  account: string;
+  /** The template of the bootstrap ticket's fixed criteria (08, section 3.2). */
+  bootstrap: Template;
+}
+
+export const projectFormMissing = () =>
+  new HttpError(
+    400,
+    'invalid_request',
+    'project: this plan creates a project; give its name, key, repository name and visibility',
+  );
+export const projectFormUnwanted = () =>
+  new HttpError(400, 'invalid_request', 'project: this plan is for an existing project');
+
 /**
- * **Approve** for an existing project (owner's answers 9 and 10): the plan checked again against
- * the current settings and tickets, then its tickets created in `todo`, numbered in its order,
- * each with the plan and the Project Manager's run; the plan `approved`, the request `closed`.
- * Under the project's lock. A plan for a new project waits for step G.
+ * The bootstrap ticket of a new project's plan at approval (owner's answer 5, lot 5 step G): its
+ * rules checked again, its missing fixed criteria added again, and every other ticket waiting
+ * for it. The added criteria are counted against the limits by the shared checks afterwards.
+ */
+function bootstrapAtApproval(
+  tickets: readonly PlanTicket[],
+  kind: ProjectKind,
+  template: Template,
+): { tickets: PlanTicket[]; problems: TicketImportProblem[]; added: number } {
+  const problems: TicketImportProblem[] = [];
+  const bootstraps = tickets.filter((each) => each.bootstrap);
+  const at = (ticket: PlanTicket, field: string | null, message: string) => {
+    problems.push({
+      position: tickets.indexOf(ticket) + 1,
+      key: ticket.key,
+      field,
+      message: sentence(message),
+    });
+  };
+  const bootstrap = bootstraps[0];
+  if (bootstrap === undefined || bootstraps.length > 1) {
+    problems.push({
+      position: null,
+      key: null,
+      field: null,
+      message: sentence(
+        bootstrap === undefined
+          ? 'a plan creating a project needs one bootstrap ticket, which sets the project up: reject the plan with feedback'
+          : `a plan creating a project has one bootstrap ticket, not ${String(bootstraps.length)} (${bootstraps.map((each) => each.key).join(', ')}): reject the plan with feedback`,
+      ),
+    });
+    return { tickets: [...tickets], problems, added: 0 };
+  }
+  if (bootstrap.type !== 'chore') at(bootstrap, 'type', 'the bootstrap ticket is a chore');
+  if (bootstrap.assignee !== 'architect') {
+    at(bootstrap, 'assignee', 'the bootstrap ticket is assigned to the Architect');
+  }
+  if (bootstrap.blocked_by.length > 0) {
+    at(bootstrap, 'blockedBy', 'the bootstrap ticket waits for no other ticket');
+  }
+  const same = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
+  const missing = fixedCriteria(template, kind).filter(
+    (text) => !bootstrap.acceptance_criteria.some((mine) => same(mine) === same(text)),
+  );
+  const result = tickets.map((ticket): PlanTicket => {
+    if (ticket === bootstrap) {
+      return { ...ticket, acceptance_criteria: [...ticket.acceptance_criteria, ...missing] };
+    }
+    return ticket.blocked_by.includes(bootstrap.key)
+      ? ticket
+      : { ...ticket, blocked_by: [...ticket.blocked_by, bootstrap.key] };
+  });
+  // The bootstrap first, as `plan_propose` keeps it: it becomes the project's first ticket.
+  const first = result.find((each) => each.bootstrap);
+  const ordered = first ? [first, ...result.filter((each) => each !== first)] : result;
+  return { tickets: ordered, problems, added: missing.length };
+}
+
+/**
+ * **Approve** (owner's answers 9 and 10, lot 5 step F; 2 to 5, step G): the plan checked again
+ * against the current settings and tickets, then its tickets created in `todo`, numbered in its
+ * order, each with the plan and the Project Manager's run; the plan `approved`, the request
+ * `closed`. For a plan creating a project, the project is created first from the approval form,
+ * as the Projects screen creates one, and becomes the request's; its setup is the caller's to
+ * start after the commit. Under the project's lock, for an existing project.
  */
 export async function approvePlan(
   tx: Executor,
-  input: { request: RequestRow; project: ProjectRow | null; plan: PlanRow; at: Date },
-): Promise<TicketRow[]> {
-  const { request, project, plan, at } = input;
-  if (plan.newProject !== null || project === null) {
-    throw new HttpError(
-      409,
-      'plan_new_project_later',
-      'A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request',
+  input: {
+    request: RequestRow;
+    project: ProjectRow | null;
+    plan: PlanRow;
+    at: Date;
+    newProject?: ApprovalNewProject;
+  },
+): Promise<{ project: ProjectRow; tickets: TicketRow[]; created: boolean }> {
+  const { plan, at } = input;
+  let { request } = input;
+  const planned = plan.newProject === null ? null : PlanNewProject.parse(plan.newProject);
+  let tickets = ticketsOf(plan);
+  let checked;
+  let project: ProjectRow;
+  if (planned === null || input.project !== null) {
+    if (input.newProject !== undefined) throw projectFormUnwanted();
+    if (input.project === null) throw new Error('a plan for an existing project with no project');
+    project = input.project;
+    if (project.status === 'archived') {
+      throw new HttpError(
+        409,
+        'project_archived',
+        'This project is archived and read-only: unarchive it first',
+      );
+    }
+    checked = await planProblems(tx, project, tickets);
+    if (checked.problems.length > 0) throw planInvalid(checked.problems, 'Not approved');
+  } else {
+    const { newProject } = input;
+    if (newProject === undefined) throw projectFormMissing();
+    const bootstrap = bootstrapAtApproval(tickets, planned.kind, newProject.bootstrap);
+    tickets = bootstrap.tickets;
+    checked = await planProblems(tx, null, tickets);
+    const problems = [
+      ...bootstrap.problems,
+      ...checked.problems.map((problem) =>
+        problem.position === 1 && problem.field === 'acceptanceCriteria' && bootstrap.added > 0
+          ? {
+              ...problem,
+              message: `${problem.message.replace(/\.$/, '')}, with the ${String(bootstrap.added)} fixed criteria it lacked added again. Remove some of its own criteria.`,
+            }
+          : problem,
+      ),
+    ];
+    if (problems.length > 0) throw planInvalid(problems, 'Not approved');
+    const { form } = newProject;
+    if (await keyIsTaken(tx, form.key)) throw keyTaken();
+    project = await insertProject(
+      tx,
+      newRepositoryValues({
+        key: form.key,
+        name: form.name,
+        description: planned.description,
+        kind: planned.kind,
+        account: newProject.account,
+        repositoryName: form.repositoryName,
+        private: form.private,
+      }),
+      { at, request: request.number },
     );
+    // The request is the new project's from now on; its planning runs keep none.
+    const [moved] = await tx
+      .update(schema.requests)
+      .set({ projectId: project.id, updatedAt: at })
+      .where(eq(schema.requests.id, request.id))
+      .returning();
+    if (!moved) throw new Error(`request ${request.id} disappeared`);
+    request = moved;
   }
-  if (project.status === 'archived') {
-    throw new HttpError(
-      409,
-      'project_archived',
-      'This project is archived and read-only: unarchive it first',
-    );
-  }
-  const tickets = ticketsOf(plan);
-  const checked = await planProblems(tx, project, tickets);
-  if (checked.problems.length > 0) throw planInvalid(checked.problems, 'Not approved');
 
   // The run that proposed it: the request's latest planning run started before the plan.
   const [run] = await tx
@@ -529,8 +666,14 @@ export async function approvePlan(
 
   await tx
     .update(schema.plans)
-    .set({ status: 'approved', decidedAt: at })
+    .set({
+      status: 'approved',
+      decidedAt: at,
+      // The bootstrap's criteria and dependencies as they were created (step G).
+      tickets: PlanTickets.parse(tickets),
+    })
     .where(eq(schema.plans.id, plan.id));
+  const created = planned !== null && input.project === null;
   await recordEvent(tx, {
     actor: 'owner',
     ...requestEntity(request),
@@ -543,11 +686,12 @@ export async function approvePlan(
         key: each.key,
         ticket: ticketReference(project.key, rows[index]?.number ?? 0),
       })),
+      ...(created ? { newProject: true as const } : {}),
     },
     at,
   });
   await changeRequestStatus(tx, { request, to: 'closed', cause: 'plan_approved', at });
-  return rows;
+  return { project, tickets: rows, created };
 }
 
 /**
