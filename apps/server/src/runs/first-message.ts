@@ -1,4 +1,5 @@
 import { schema } from '@orchestrator/db';
+import { rejectedPlan } from '../requests/plan-review.js';
 import {
   CommentKind,
   ProjectKind,
@@ -283,7 +284,8 @@ async function previousReview(
  * Layer 3 of 03, section 3 for a `plan` run (lot 5 step E2b): the request, its whole conversation
  * oldest first (an answer given after its question's run ended included), its project with its
  * tickets but the cancelled ones, in number order, and the profiles that can be assigned a
- * ticket. No rejected plan before step F.
+ * ticket; after **Reject with feedback**, the plan the owner rejected and the feedback (owner's
+ * answer 11, lot 5 step F).
  */
 export async function planRequest(
   executor: Executor,
@@ -368,6 +370,6 @@ export async function planRequest(
       })),
     maxTicketsPerPlan: input.maxTicketsPerPlan,
     attempt: input.attempt,
-    rejected: null,
+    rejected: await rejectedPlan(executor, request.id),
   };
 }

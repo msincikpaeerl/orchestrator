@@ -2971,6 +2971,44 @@ export class RunService {
       );
   }
 
+  /**
+   * The owner's **Close request** with a planning run active (owner's answer 3, lot 5 step F): in
+   * the caller's transaction, which closed the request first under the project's lock and the
+   * request's, the run is cancelled and its token revoked, never counted, setting no stop (the
+   * request is no longer `planning`, so its end leaves it as it is). Returns what to do once the
+   * transaction committed: send `run.stop`.
+   */
+  async endForRequest(
+    tx: Executor,
+    project: ProjectRow | null,
+    request: RequestRow,
+  ): Promise<{ stopped: boolean; send: () => Promise<void> }> {
+    const [run] = await tx
+      .select()
+      .from(schema.runs)
+      .where(
+        and(
+          eq(schema.runs.requestId, request.id),
+          inArray(schema.runs.status, [...ACTIVE_RUN_STATUSES]),
+        ),
+      )
+      .for('update');
+    if (!run) return { stopped: false, send: () => Promise.resolve() };
+    const [machine] = await tx
+      .select()
+      .from(schema.machines)
+      .where(eq(schema.machines.id, run.machineId));
+    if (!machine) throw new Error('machine not found');
+    const locked: Locked = { run, project, ticket: null, request, machine };
+    await this.setStatus(tx, locked, 'cancelled', 'request_closed', {
+      failureReason: 'cancelled',
+    });
+    return {
+      stopped: true,
+      send: () => this.sendStop(machine.id, run.id, 'owner_stopped'),
+    };
+  }
+
   // ---------------------------------------------------------------------------------------------
   // The wait for CI (04, section 3.1; lot 3 step G1a): what `CiWatcher` found
 

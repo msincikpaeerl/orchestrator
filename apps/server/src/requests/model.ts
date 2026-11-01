@@ -104,16 +104,24 @@ export async function requestSystemComment(
 }
 
 /**
- * The request moves to `to` because of its planning run, with `request.status_changed`; nothing
- * when it is already there. Returns the request as changed.
+ * The request moves to `to` because of its planning run, or of the owner's decision on its plan
+ * or **Close request** (lot 5 step F), with `request.status_changed`; nothing when it is already
+ * there. Returns the request as changed.
  */
 export async function changeRequestStatus(
   tx: Executor,
   input: {
     request: RequestRow;
     to: RequestStatus;
-    cause: 'run_started' | 'run_ended' | 'plan_proposed';
-    runId: string;
+    cause:
+      | 'run_started'
+      | 'run_ended'
+      | 'plan_proposed'
+      | 'plan_approved'
+      | 'plan_rejected'
+      | 'closed_by_owner';
+    /** The planning run behind the change; absent for the owner's. */
+    runId?: string;
     failureReason?: FailureReason;
     at: Date;
   },
@@ -128,7 +136,7 @@ export async function changeRequestStatus(
     .returning();
   if (!updated) throw new Error(`request ${request.id} disappeared`);
   await recordEvent(tx, {
-    actor: 'system',
+    actor: input.runId === undefined ? 'owner' : 'system',
     ...requestEntity(updated),
     type: 'request.status_changed',
     payload: {
@@ -137,7 +145,7 @@ export async function changeRequestStatus(
       from,
       to,
       cause: input.cause,
-      runId: input.runId,
+      ...(input.runId === undefined ? {} : { runId: input.runId }),
       ...(input.failureReason ? { failureReason: input.failureReason } : {}),
     },
     at,

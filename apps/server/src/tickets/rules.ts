@@ -12,7 +12,7 @@ import { recordEvent } from '../events.js';
 import type { ProjectRow } from '../projects/model.js';
 import { resolveSettings } from '../settings/store.js';
 import { ticketEntity, ticketReference, type TicketRow } from './model.js';
-import { insertOwnerTicket } from './transitions.js';
+import { insertOwnerTicket, type PlanOrigin } from './transitions.js';
 
 /*
  * The rules of a ticket the owner creates, shared by the ticket form and the import of a file
@@ -175,6 +175,7 @@ export async function insertNumberedTicket(
   project: ProjectRow,
   ticket: NewTicket,
   at: Date,
+  origin?: PlanOrigin,
 ): Promise<TicketRow> {
   const [counter] = await tx
     .update(schema.projects)
@@ -192,6 +193,7 @@ export async function insertNumberedTicket(
     priority: ticket.priority,
     assigneeProfileId: ticket.assignee?.id ?? null,
     now: at,
+    ...(origin ? { origin } : {}),
   });
 }
 
@@ -203,6 +205,8 @@ export async function completeOwnerTicket(
   assignee: ProfileRow | null,
   blockers: readonly Blocker[],
   at: Date,
+  /** A plan's ticket (lot 5 step F): its `ticket.created` names the plan and its request. */
+  plan?: { planId: string; request: number },
 ): Promise<void> {
   if (blockers.length > 0) {
     await tx.insert(schema.ticketDependencies).values(
@@ -228,6 +232,7 @@ export async function completeOwnerTicket(
       blockedBy: blockers.map((blocker) => ticketReference(project.key, blocker.number)).sort(),
       assignee: assignee?.key ?? null,
       ...(assignee ? { assigneeName: assignee.name } : {}),
+      ...(plan ?? {}),
     },
     at,
   });

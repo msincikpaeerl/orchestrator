@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { RunStatus } from './run-status.js';
 import { ProjectKey } from './projects.js';
+import { PlanView } from './plans.js';
 import { Comment } from './tickets.js';
 
 // Requests (01, section 3.2; 02, section 5; lot 5 step D1): the owner's free text, for a project
@@ -78,6 +79,10 @@ export const RequestDetail = RequestSummary.extend({
   attemptCount: z.int().min(0),
   /** Why no planning run starts for it until **Try again**; null when it is not stopped. */
   stopped: RequestStop.nullable(),
+  /** The plan to review, or the approved one; null when none (lot 5 step F). */
+  plan: PlanView.nullable(),
+  /** The earlier plans, `superseded` or `rejected`, newest first. */
+  earlierPlans: z.array(PlanView),
 });
 export type RequestDetail = z.infer<typeof RequestDetail>;
 

@@ -52,16 +52,36 @@ export interface NewOwnerTicket {
   /** The assignee's profile; null when unassigned. */
   assigneeProfileId: string | null;
   now: Date;
+  /** A plan's ticket, created at its approval (lot 5 step F): absent for the owner's own. */
+  origin?: PlanOrigin;
 }
 
-/** Inserts a ticket created by the owner, in `todo`. */
+/**
+ * Where an approved plan's ticket comes from (owner's answer 10, lot 5 step F): the plan, and the
+ * Project Manager and the run that proposed it, so it is `created_by` `agent`.
+ */
+export interface PlanOrigin {
+  planId: string;
+  profileId: string | null;
+  runId: string | null;
+}
+
+/** Inserts a ticket created by the owner, or by the approval of a plan, in `todo`. */
 export async function insertOwnerTicket(tx: Executor, ticket: NewOwnerTicket): Promise<TicketRow> {
+  const { origin, ...fields } = ticket;
   const [row] = await tx
     .insert(schema.tickets)
     .values({
-      ...ticket,
+      ...fields,
       status: OWNER_CREATION_STATUS,
-      createdBy: 'owner',
+      ...(origin
+        ? {
+            planId: origin.planId,
+            createdBy: 'agent',
+            createdByProfileId: origin.profileId,
+            createdByRunId: origin.runId,
+          }
+        : { createdBy: 'owner' }),
       createdAt: ticket.now,
       updatedAt: ticket.now,
     })

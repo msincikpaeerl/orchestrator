@@ -75,6 +75,7 @@ function itemKey(item: NeedsYouItem): string {
       return `${item.type}-${item.ticket.projectKey}-${String(item.ticket.number)}`;
     case 'request_question':
     case 'planning_stopped':
+    case 'plan_to_review':
       return `${item.type}-${String(item.request.number)}`;
     case 'run_paused':
     case 'run_resumes_used':
@@ -950,7 +951,7 @@ export function NeedsYouPage() {
                     setOffer({ ticket, after: 'try_again' });
                   }}
                 />
-              ) : (
+              ) : item.type === 'plan_to_review' ? null /* Its card comes with step F2. */ : (
                 <MachineItemCard item={item} />
               )}
             </li>

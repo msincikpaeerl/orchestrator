@@ -180,6 +180,17 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
     'Quality is reviewing this ticket now: wait for the review to end, or stop its run first.',
   ticket_not_stopped: () => 'This ticket is not stopped any more. Reload the page.',
   request_not_stopped: () => 'This request is not stopped any more. Reload the page.',
+  plan_not_proposed: () =>
+    'This plan is no longer waiting for your review: it was approved, rejected or replaced. Reload the page.',
+  plan_new_project_later: () =>
+    'A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request.',
+  plan_invalid: () => 'The plan has problems. They are listed below; correct them and try again.',
+  plan_ticket_not_found: () => 'This ticket is no longer in the plan. Reload the page.',
+  plan_last_ticket: () =>
+    'This is the only ticket of the plan: it cannot be removed. Reject the plan with feedback, or close the request.',
+  plan_bootstrap_fixed: () =>
+    "The bootstrap ticket's type, assignee and dependencies cannot change, and it cannot be removed: every other ticket of the new project waits for it.",
+  request_closed: () => 'This request is closed. Reload the page.',
 };
 
 /** Why **Check CI again** was refused, in the words of the owner's table (lot 3 step G2c). */
