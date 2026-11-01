@@ -12,6 +12,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode, type SubmitEvent } from 'react';
 import { Link } from 'react-router';
+import { requestPath } from '../requests/text';
 import { api, ApiRequestError } from '../api';
 import { UntrustedMarkdown } from '../components/markdown';
 import {
@@ -863,6 +864,16 @@ function TicketContent({ project, number }: { project: Project; number: number }
             <dd>
               {formatDateTime(data.createdAt)}{' '}
               {data.createdByAgent ? `by agent ${data.createdByAgent.profile.name}` : 'by you'}
+              {data.fromPlan && (
+                // Owner's answer 1, lot 5 step F2.
+                <span className="block">
+                  From{' '}
+                  <Link to={requestPath(data.fromPlan.request)} className="text-blue-700 underline">
+                    request {data.fromPlan.request}
+                  </Link>
+                  's plan, approved by you
+                </span>
+              )}
             </dd>
           </dl>
           <Actions project={project} ticket={data} />
