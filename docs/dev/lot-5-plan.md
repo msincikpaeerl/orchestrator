@@ -480,6 +480,19 @@ The owner's answers to G's questions (2026-11-01), A to all:
 
 **Done when** web unit tests cover the depth computation (a chain, a diamond, independent tickets); Playwright on both viewports shows the graph and the phone's list (screenshots for the owner).
 
+The owner's answers to H's questions (2026-11-01), A to all:
+
+1. **The board's dependencies**: each ticket of the board's list (`GET /api/projects/<key>/tickets`) gains `blockedBy`, the numbers of the tickets it waits for; an API field only, no migration, no daemon change, no `PROTOCOL_VERSION` bump; server test in `tickets.test.ts`.
+2. **The board's graph shows** every ticket but **Done** and **Cancelled** ones (a done ticket no longer blocks), and a cancelled ticket something still waits for, with its state (it keeps that ticket blocked).
+3. **Filters**: type, assignee and text hide cards in the graph too; depth is computed from every ticket the graph shows, so nothing changes column while typing.
+4. **Lines**: on a wide screen, arrows between the cards drawn by the page (positions measured in the browser, no library), and each card says "Waits for WEB-3, WEB-5." as text (screen readers, the tests).
+5. **Headings**: "Step 1 · waits for nothing", "Step 2", "Step 3", …; below Tailwind's `sm` (640 px) the columns become one list under the same headings, each ticket with its "Waits for …" line, nothing scrolling sideways.
+6. **Depth**: 1 for a ticket waiting for nothing shown, else 1 plus its deepest blocker's; tickets in a cycle (refused by the server, never expected) go in a last column "Waits in a loop" instead of hanging the page; unit tests for a chain, a diamond, independent tickets and a cycle.
+7. **Existing tickets in the plan's graph**: a project ticket a plan ticket waits for (`WEB-3`) is a card in Step 1 with its number, title and state, "Already in TESTB", linked to its page (what it waits for is not shown); plan tickets show key, title, type, assignee and **Bootstrap ticket**, no state.
+8. **In the plan review**: a **Dependencies** part above the ticket cards, for every plan of at least 2 tickets (the proposed one, an approved one with each "Created as WEB-12" linked, earlier plans in their fold); it follows edits and removals at once.
+9. **The board's toggle**: **Dependency graph** / **Columns** next to the filters, only when the project has tickets, kept in the address (`?view=graph`); the graph's cards show number, title, type, assignee, state, the **Blocked**, **Stopped**, **Held** and **created by agent** badges and a short "Running" line for an active run (no progress text).
+10. **Documents and tests**: Help > Tickets gains "The dependency graph" (the board's Help is there), Help > Requests a paragraph under "Review a plan", Help > Projects a line pointing to it; CHANGELOG. The component in `apps/web/src/components/dependency-graph.tsx`, depth in `dependency-depth.ts` with its unit test; a new Playwright file `graph.e2e.ts` (the board on both viewports; a plan with a diamond and an existing ticket; screenshots), checked against the two e2e shards; specs 02 (5.3, 6.3) as built.
+
 ### [ ] J. Setup wizard steps 3 to 5 (branch `lot5/j-wizard`)
 
 - Step 3 (a Claude account: label, plan, optional windows and budget), step 4 (a machine: its commands, waiting for the daemon and its checks, **Skip for now**), step 5 (Done, suggesting a first request); fresh installs only (answer 15).
