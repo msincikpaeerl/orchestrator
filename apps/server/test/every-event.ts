@@ -922,6 +922,39 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
     },
   });
   await call('POST', '/api/requests/1/close');
+  // Request 3, for a new project: its plan approved with the approval form creates the project
+  // NEW from request 3 (`project.created` with its request, `plan.approved` with `newProject`;
+  // lot 5 step G).
+  await call('POST', '/api/requests', { body: 'A blog', project: null });
+  const founding = await startPlanningRun(t.db, { request: 3, machineId: machine.id });
+  await daemon.request({
+    type: 'run.state',
+    id: randomUUID(),
+    payload: {
+      runId: founding.runId,
+      at: new Date().toISOString(),
+      claudeSessionId: SESSION,
+      sessionAlive: true,
+      state: 'working',
+    },
+  });
+  await tool({
+    tool: 'plan_propose',
+    runToken: founding.runToken,
+    input: {
+      summary: 'A blog.',
+      new_project: { name: 'Blog', kind: 'website' },
+      tickets: [
+        { key: 'setup', type: 'chore', title: 'Set up', assignee: 'architect', bootstrap: true },
+      ],
+    },
+  });
+  const foundingPlan = RequestDetail.parse((await call('GET', '/api/requests/3')).json()).plan?.id;
+  await call('POST', '/api/requests/3/plan/approve', {
+    planId: foundingPlan,
+    project: { name: 'Blog', key: 'NEW', repositoryName: 'blog', private: true },
+  });
+  expect((await settled('NEW')).setup.status).toBe('ready');
 
   // A run's process scope could not be created: the checks again while connected.
   await daemon.request({

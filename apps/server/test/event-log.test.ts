@@ -99,7 +99,8 @@ describe('events of every type', () => {
       const concernsProject =
         event.entityType === 'project' ||
         event.entityType === 'ticket' ||
-        event.entityType === 'run' ||
+        // A new project's planning run has none (lot 5 step E1b): its events' project is ''.
+        (event.entityType === 'run' && event.payload?.project !== '') ||
         (event.entityType === 'request' && event.payload?.project !== null) ||
         (event.entityType === 'setting' && event.payload?.scope === 'project');
       expect(event.project !== null, `${event.type} ${String(event.id)}`).toBe(concernsProject);
@@ -187,7 +188,7 @@ describe('events of every type', () => {
     expect(await readAll(t, cookie, 'entity=setting&project=SHOP')).toHaveLength(2);
 
     const ready = await readAll(t, cookie, 'type=project.ready');
-    expect(ready.map((event) => event.project?.key).sort()).toEqual(['LEG', 'SHOP']);
+    expect(ready.map((event) => event.project?.key).sort()).toEqual(['LEG', 'NEW', 'SHOP']);
 
     // Dates: from included, to excluded.
     const middle = all[Math.floor(all.length / 2)];

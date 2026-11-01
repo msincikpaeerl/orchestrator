@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { settingCeiling } from '../text-limits.js';
 import { AgentKey } from './agents.js';
-import { ProjectDescription, ProjectKind, ProjectName } from './projects.js';
+import {
+  ProjectDescription,
+  ProjectKey,
+  ProjectKind,
+  ProjectName,
+  RepositoryName,
+} from './projects.js';
 import { TicketImportEntry, TicketKey } from './ticket-import.js';
 import {
   AcceptanceCriteria,
@@ -132,9 +138,32 @@ export const UpdatePlanTicketRequest = z
   });
 export type UpdatePlanTicketRequest = z.infer<typeof UpdatePlanTicketRequest>;
 
-/** **Remove** a ticket of the plan, and **Approve** the plan. */
+/** **Remove** a ticket of the plan. */
 export const PlanActionRequest = z.strictObject(PlanId);
 export type PlanActionRequest = z.infer<typeof PlanActionRequest>;
+
+/**
+ * The approval form of a plan creating a project (owner's answers 2 and 6, lot 5 step G): its
+ * name (the plan's, which the owner may change), key, repository name and visibility. The kind and
+ * the description are the plan's.
+ */
+export const ApprovalProject = z.strictObject({
+  name: ProjectName,
+  key: ProjectKey,
+  repositoryName: RepositoryName,
+  private: z.boolean(),
+});
+export type ApprovalProject = z.infer<typeof ApprovalProject>;
+
+/**
+ * **Approve**: `project` required for a plan creating a project, refused for any other (owner's
+ * answer 2, lot 5 step G).
+ */
+export const ApprovePlanRequest = z.strictObject({
+  ...PlanId,
+  project: ApprovalProject.optional(),
+});
+export type ApprovePlanRequest = z.infer<typeof ApprovePlanRequest>;
 
 /** **Reject with feedback**: the feedback, with the comment box's rules (owner's answer 11). */
 export const RejectPlanRequest = z.strictObject({ ...PlanId, feedback: CommentBody });

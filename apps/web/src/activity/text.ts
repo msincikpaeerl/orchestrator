@@ -276,6 +276,8 @@ const describe: { [T in EventType]: Describe<T> } = {
     p.requiredCapabilities && p.requiredCapabilities.length > 0
       ? `, requiring ${list(p.requiredCapabilities)}`
       : '',
+    // Created by approving a request's plan (lot 5 step G).
+    ...(p.request === undefined ? [] : [', from the plan of ', requestLink(p.request)]),
   ],
   'project.updated': (p, c) => {
     const pieces: Piece[] = [c.project];
@@ -601,7 +603,12 @@ const describe: { [T in EventType]: Describe<T> } = {
   'plan.approved': (p) => [
     'You approved the plan of ',
     requestLink(p.request),
-    `: ${String(p.tickets.length)} ${p.tickets.length === 1 ? 'ticket' : 'tickets'} created`,
+    ': ',
+    // A plan creating a project names it first (lot 5 step G).
+    ...(p.newProject && p.project !== null
+      ? ['project ', { text: p.project, to: projectPath(p.project) }, ' created, ']
+      : []),
+    `${String(p.tickets.length)} ${p.tickets.length === 1 ? 'ticket' : 'tickets'} created`,
     ...p.tickets.flatMap((each, index) => [index === 0 ? ', ' : ', ', ticketRefLink(each.ticket)]),
   ],
   'plan.rejected': (p) =>

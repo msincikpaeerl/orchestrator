@@ -309,7 +309,7 @@ describe('editing the plan (answers 5, 7, 8 and 14)', () => {
     });
   });
 
-  it("keeps a new project's bootstrap ticket in its place, and approves such a plan from step G only", async () => {
+  it("keeps a new project's bootstrap ticket in its place", async () => {
     const setup = {
       key: 'setup',
       type: 'chore',
@@ -365,9 +365,10 @@ describe('editing the plan (answers 5, 7, 8 and 14)', () => {
       'WEB-1 is a ticket number, but the new project has no tickets yet: wait only for tickets of the plan.',
     );
 
+    // Approving it needs the approval form (step G, plans-new-project.test.ts).
     expect(await refused('POST', '/api/requests/1/plan/approve', { planId })).toMatchObject({
-      status: 409,
-      error: { code: 'plan_new_project_later' },
+      status: 400,
+      error: { code: 'invalid_request' },
     });
     expect((await request()).status).toBe('plan_proposed');
   });

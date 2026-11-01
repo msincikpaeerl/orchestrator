@@ -182,8 +182,6 @@ const texts: Record<ApiErrorCode, (error: ApiRequestError) => string> = {
   request_not_stopped: () => 'This request is not stopped any more. Reload the page.',
   plan_not_proposed: () =>
     'This plan is no longer waiting for your review: it was approved, rejected or replaced. Reload the page.',
-  plan_new_project_later: () =>
-    'A plan that creates a new project cannot be approved yet: reject it with feedback, or close the request.',
   plan_invalid: () => 'The plan has problems. They are listed below; correct them and try again.',
   plan_ticket_not_found: () => 'This ticket is no longer in the plan. Reload the page.',
   plan_last_ticket: () =>

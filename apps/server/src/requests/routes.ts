@@ -3,6 +3,7 @@ import {
   ACTIVE_RUN_STATUSES,
   AddCommentRequest,
   AnswerRequest,
+  ApprovePlanRequest,
   CreateRequestRequest,
   PlanActionRequest,
   ProjectKey,
@@ -21,18 +22,29 @@ import {
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/routes.js';
-import type { Database, Executor } from '../database.js';
+import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
 import { HttpError, parseInput } from '../http.js';
 import { resolveSettings } from '../settings/store.js';
 import { profileLinks, toComment } from '../tickets/model.js';
 import type { RunService } from '../runs/service.js';
+import type { Templates } from '../agents/files.js';
+import {
+  githubAccount,
+  keyIsTaken,
+  keyTaken,
+  requireRepositoryNameFree,
+  type GitHubAccess,
+} from '../projects/creation.js';
 import type { ProjectRow } from '../projects/model.js';
+import type { ProjectSetupRunner } from '../projects/setup.js';
 import { changeRequestStatus, requestEntity, requestProjectKey, type RequestRow } from './model.js';
 import {
   approvePlan,
+  type ApprovalNewProject,
   editPlanTicket,
   planViews,
+  projectFormUnwanted,
   proposedPlan,
   rejectForClosing,
   rejectPlan,
@@ -41,13 +53,16 @@ import {
 } from './plan-review.js';
 import { requestStop } from './planning-end.js';
 
-export interface RequestRoutesOptions {
-  db: Database;
+export interface RequestRoutesOptions extends GitHubAccess {
   /**
    * Delivers the owner's answer to a planning run's question (lot 5 step D2a), and stops the
    * planning run of a request the owner closes (step F).
    */
   runs: Pick<RunService, 'answerRequest' | 'endForRequest'>;
+  /** Starts the setup of a project an approved plan creates (lot 5 step G). */
+  setups: Pick<ProjectSetupRunner, 'start'>;
+  /** The run message templates: the bootstrap ticket's fixed criteria (lot 5 step G). */
+  templates: () => Promise<Templates>;
   now?: () => Date;
 }
 
@@ -392,24 +407,51 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
     });
   });
 
-  // **Approve** (owner's answers 4, 9 and 10): the plan checked again, its tickets created in the
-  // project in `todo`, the request closed. The scheduler starts them by itself.
+  // **Approve** (owner's answers 4, 9 and 10, lot 5 step F; 2 to 4, step G): the plan checked
+  // again, its tickets created in the project in `todo`, the request closed. For a plan creating a
+  // project: the repository name checked free on GitHub first, then the project created with its
+  // tickets in one transaction, and its setup started after it. The scheduler starts the tickets
+  // by itself once the project is ready.
   app.post<{ Params: { number: string } }>(
     '/api/requests/:number/plan/approve',
     async (request) => {
       await requireSession(db, request);
-      const input = parseInput(PlanActionRequest, request.body);
+      const input = parseInput(ApprovePlanRequest, request.body);
+      let newProject: ApprovalNewProject | undefined;
+      if (input.project !== undefined) {
+        // Asked before the locks: GitHub's answer never holds them (owner's answer 3). A name
+        // taken since fails the setup's first step, which Try again resumes.
+        const found = await findRequest(db, request.params.number);
+        const plan = await proposedPlan(db, found, input.planId, false);
+        if (plan.newProject === null) throw projectFormUnwanted();
+        if (await keyIsTaken(db, input.project.key)) throw keyTaken();
+        const github = await githubAccount({ ...options, log: request.log });
+        await requireRepositoryNameFree(request.log, github, input.project.repositoryName);
+        newProject = {
+          form: input.project,
+          account: github.account,
+          bootstrap: (await options.templates()).bootstrap,
+        };
+      }
       const result = await db.transaction(async (tx) => {
         const { row, project } = await lockRequest(tx, request.params.number);
         const plan = await proposedPlan(tx, row, input.planId);
-        const created = await approvePlan(tx, { request: row, project, plan, at: now() });
-        return { detail: await detail(tx, await findRequest(tx, request.params.number)), created };
+        const approved = await approvePlan(tx, {
+          request: row,
+          project,
+          plan,
+          at: now(),
+          ...(newProject ? { newProject } : {}),
+        });
+        return { detail: await detail(tx, await findRequest(tx, request.params.number)), approved };
       });
+      if (result.approved.created) options.setups.start(result.approved.project.id);
       request.log.info(
         {
           request: result.detail.number,
-          project: result.detail.project?.key,
-          tickets: result.created.length,
+          project: result.approved.project.key,
+          tickets: result.approved.tickets.length,
+          newProject: result.approved.created,
         },
         'plan approved by the owner',
       );
