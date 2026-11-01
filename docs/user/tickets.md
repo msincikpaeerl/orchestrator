@@ -425,7 +425,7 @@ On a machine, it keeps the branch when the branch's latest commit is not the mer
 
 | State | Meaning |
 |---|---|
-| **Proposed** | Proposed by an agent and waiting for you to accept or reject it. From a later version, also part of a plan not approved yet. |
+| **Proposed** | Proposed by an agent and waiting for you to accept or reject it. A plan's tickets are not tickets yet: they stay on the plan until you approve it ([Review a plan](requests.md#review-a-plan)). |
 | **To do** | Waiting for work. |
 | **In progress** | An agent is working on it (see [Runs](runs.md)). |
 | **Waiting for you** | An agent asked you a question (see [Questions](runs.md#questions)). |
