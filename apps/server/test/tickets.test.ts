@@ -306,6 +306,25 @@ describe('the board', () => {
     ]);
   });
 
+  it('gives the numbers of the tickets each ticket waits for (lot 5 step H)', async () => {
+    await create();
+    await create();
+    await create({ blockedBy: [2, 1] });
+    await create({ blockedBy: [3] });
+    await act(1, 'cancel');
+
+    const tickets = await board();
+    expect(Object.fromEntries(tickets.map((row) => [row.number, row.blockedBy]))).toEqual({
+      1: [],
+      2: [],
+      3: [1, 2],
+      4: [3],
+    });
+    await seedProject('APP');
+    await create({}, 'APP');
+    expect((await board('APP')).map((row) => row.blockedBy)).toEqual([[]]);
+  });
+
   it('counts the tickets of each project per state in the project list', async () => {
     await seedProject('APP');
     await create();

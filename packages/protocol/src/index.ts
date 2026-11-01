@@ -100,6 +100,7 @@ export {
   WorkflowFlag,
   TicketLink,
   TicketListResponse,
+  BoardTicket,
   TicketNumber,
   TicketPriority,
   TicketReference,

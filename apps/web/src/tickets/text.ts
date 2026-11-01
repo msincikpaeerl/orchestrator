@@ -3,6 +3,7 @@ import {
   PULL_REQUEST_PERMISSION_WORDS,
   PUSH_PERMISSION_WORDS,
   type AgentLink,
+  type BoardTicket,
   type NeedsYouItem,
   type DodCheck,
   type PullRequestFailure,
@@ -279,4 +280,22 @@ export function pullRequestNotOpenedText(
 
 function sentenceOf(text: string): string {
   return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+/**
+ * The tickets of the board's graph (owner's answer 2): every ticket but done and cancelled ones,
+ * and a cancelled ticket that one of them waits for, since it keeps it blocked.
+ */
+export function graphTickets<T extends Pick<BoardTicket, 'number' | 'status' | 'blockedBy'>>(
+  tickets: readonly T[],
+): T[] {
+  const open = tickets.filter(
+    (ticket) => ticket.status !== 'done' && ticket.status !== 'cancelled',
+  );
+  const waitedFor = new Set(open.flatMap((ticket) => ticket.blockedBy));
+  return tickets.filter(
+    (ticket) =>
+      (ticket.status !== 'done' && ticket.status !== 'cancelled') ||
+      (ticket.status === 'cancelled' && waitedFor.has(ticket.number)),
+  );
 }

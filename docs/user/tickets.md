@@ -14,6 +14,20 @@ Open **Projects**, then a project: its tickets are on the project page, under **
 - Each card shows the ticket's number, title, type and assignee, **Blocked** when it waits for another ticket (see [Blocked tickets](#blocked-tickets)), **Stopped** when it was stopped after too many review rounds (see [Too many review rounds](#too-many-review-rounds)), **created by agent** for a ticket an agent proposed, and the run in progress with the agent's latest progress line (see [Watch a run](runs.md#watch-a-run)).
 - The board updates on its own while you look at it.
 - **Type** shows only tickets of one type. **Assignee** shows only the tickets of one agent, or the **Unassigned** ones. **Search** finds a ticket by its number (`WEB-12` or `12`) or by words of its title.
+- **Dependency graph** shows the same tickets by what they wait for instead of by state; **Columns** brings the states back. See [The dependency graph](#the-dependency-graph).
+
+## The dependency graph
+
+Click **Dependency graph** above the board to see in which order the tickets can be done:
+
+- **Step 1 · waits for nothing** holds the tickets that wait for no other ticket; **Step 2** the ones that wait only for tickets of step 1; and so on. A ticket sits one step after the last ticket it waits for.
+- On a computer the steps are columns side by side, with an arrow from each ticket to the tickets waiting for it. On a phone they are one list, step after step.
+- Each card shows the ticket's number and title (click it to open the ticket), its type, assignee and state, the badges of the board (**Blocked**, **Stopped**, **Held**, **created by agent**), its run's state while one works on it (for example "Running on Laptop"), and "Waits for WEB-3, WEB-5.".
+- **Done** and **Cancelled** tickets are left out: a done ticket no longer holds anything back. A cancelled ticket stays when a ticket still waits for it, since it keeps that ticket blocked (see [Blocked tickets](#blocked-tickets)).
+- **Type**, **Assignee** and **Search** hide the cards that do not match; the other tickets stay in their steps. A step whose tickets are all hidden says "No tickets shown".
+- The page remembers the view in its address: reloading it, or sending its link, opens the graph again.
+
+A plan's tickets are not on the board until you approve the plan: its review shows them in the same graph (see [Review a plan](requests.md#review-a-plan)).
 
 On a computer the states sit side by side. On a phone they are one below the other: scroll down to see them all.
 

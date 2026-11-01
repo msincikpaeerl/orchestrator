@@ -1,6 +1,11 @@
 import type { NeedsYouItem } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { pullRequestFailureText, pullRequestNotOpenedText, pushFailedText } from './text';
+import {
+  graphTickets,
+  pullRequestFailureText,
+  pullRequestNotOpenedText,
+  pushFailedText,
+} from './text';
 
 type PushFailed = Extract<NeedsYouItem, { type: 'push_failed' }>;
 
@@ -130,5 +135,23 @@ describe("a pull request not updated (owner's correction, step F4)", () => {
     const failure = notOpened({ reason: 'unreachable' }).failure;
     expect(pullRequestFailureText('WEB-4', failure, 12).heading).toBe('Pull request not updated');
     expect(pullRequestFailureText('WEB-4', failure, null).heading).toBe('Pull request not opened');
+  });
+});
+
+describe("the board's graph tickets (lot 5 step H, answer 2)", () => {
+  it('leaves out done and cancelled tickets, but a cancelled one that an open ticket waits for', () => {
+    const tickets = [
+      { number: 1, status: 'done', blockedBy: [] },
+      { number: 2, status: 'cancelled', blockedBy: [] },
+      { number: 3, status: 'cancelled', blockedBy: [] },
+      { number: 4, status: 'todo', blockedBy: [1, 2] },
+      { number: 5, status: 'in_progress', blockedBy: [] },
+      { number: 6, status: 'done', blockedBy: [3] },
+    ] as const;
+    expect(
+      graphTickets(tickets.map((ticket) => ({ ...ticket, blockedBy: [...ticket.blockedBy] }))).map(
+        (ticket) => ticket.number,
+      ),
+    ).toEqual([2, 4, 5]);
   });
 });

@@ -183,8 +183,15 @@ export const TicketSummary = z.object({
 });
 export type TicketSummary = z.infer<typeof TicketSummary>;
 
+/**
+ * A ticket of the board's list: its summary and the numbers of the tickets it waits for, for the
+ * board's dependency graph (02, section 6.3; owner's answer 1, lot 5 step H).
+ */
+export const BoardTicket = TicketSummary.extend({ blockedBy: z.array(TicketNumber) });
+export type BoardTicket = z.infer<typeof BoardTicket>;
+
 /** `GET /api/projects/:key/tickets`: every ticket of the project, in board order. */
-export const TicketListResponse = z.object({ tickets: z.array(TicketSummary) });
+export const TicketListResponse = z.object({ tickets: z.array(BoardTicket) });
 export type TicketListResponse = z.infer<typeof TicketListResponse>;
 
 export const Comment = z.object({
