@@ -39,6 +39,7 @@ export const eventTypeLabel: Record<EventType, string> = {
   'owner.created': 'Owner account created',
   'owner.login_throttled': 'Logins delayed after failures',
   'owner.password_reset': 'Password reset with the server command',
+  'owner.setup_finished': 'Setup finished',
   'session.created': 'Logged in',
   'session.revoked': 'Logged out',
   'github.token_saved': 'GitHub token saved',
@@ -242,6 +243,11 @@ const describe: { [T in EventType]: Describe<T> } = {
   ],
   'owner.password_reset': (p) => [
     `Password reset with the server command; ${String(p.revokedSessions)} login session${p.revokedSessions === 1 ? '' : 's'} ended`,
+  ],
+  'owner.setup_finished': (p) => [
+    p.machineEnrolled
+      ? 'Setup wizard finished, with a machine enrolled'
+      : 'Setup wizard finished; the machine was skipped for now',
   ],
   'session.created': () => ['Logged in'],
   'session.revoked': (p) => [p.reason === 'logout' ? 'Logged out' : 'Login session ended'],

@@ -43,6 +43,11 @@ export const owner = pgTable(
     /** Argon2id hash in PHC format (ADR 0015). */
     passwordHash: text('password_hash').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * When the owner left the wizard's last step (02, section 3; lot 5 step J). Filled by the
+     * migration for an owner created before 0.6.0, who is never sent through steps 3 and 4.
+     */
+    setupFinishedAt: timestamp('setup_finished_at', { withTimezone: true }),
   },
   (table) => [check('owner_single_row', sql`${table.id} = 1`)],
 );

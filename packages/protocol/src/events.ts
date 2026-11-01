@@ -66,6 +66,7 @@ export const EventType = z.enum([
   'owner.created',
   'owner.login_throttled',
   'owner.password_reset',
+  'owner.setup_finished',
   'session.created',
   'session.revoked',
   'github.token_saved',
@@ -204,6 +205,11 @@ export const EventPayloads = {
     delaySeconds: z.int(),
   }),
   'owner.password_reset': z.object({ revokedSessions: z.int() }),
+  /**
+   * The owner left the setup wizard's last step (02, section 3; lot 5 step J), with **Continue**
+   * (a machine ready) or **Skip for now**; whether a machine was enrolled then.
+   */
+  'owner.setup_finished': z.object({ machineEnrolled: z.boolean() }),
   'session.created': z.object({ expiresAt: z.iso.datetime() }),
   'session.revoked': z.object({ reason: z.string() }),
   'github.token_saved': z.object({ account: z.string(), expiresOn: z.string().nullable() }),

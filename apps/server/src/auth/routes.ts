@@ -6,6 +6,7 @@ import {
   type SessionResponse,
   type SetupStateResponse,
 } from '@orchestrator/protocol';
+import { and, isNotNull, isNull } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Database } from '../database.js';
 import { recordEvent } from '../events.js';
@@ -63,14 +64,46 @@ export function registerAuthRoutes(app: FastifyInstance, { db, secureCookies, no
   }
 
   app.get('/api/setup', async () => {
-    const [owner] = await db.select({ id: schema.owner.id }).from(schema.owner);
+    const [owner] = await db
+      .select({ setupFinishedAt: schema.owner.setupFinishedAt })
+      .from(schema.owner);
     const [github] = await db
       .select({ id: schema.githubConnection.id })
       .from(schema.githubConnection);
     return {
       ownerCreated: owner !== undefined,
       githubConnected: github !== undefined,
+      setupFinished: owner?.setupFinishedAt != null,
     } satisfies SetupStateResponse;
+  });
+
+  // The wizard's step 4 left, with **Continue** or **Skip for now** (02, section 3; lot 5 step
+  // J). Only the first call records it: the wizard is never shown again.
+  app.post('/api/setup/finish', async (request, reply) => {
+    await requireSession(db, request);
+    const finished = await db.transaction(async (tx) => {
+      const changed = await tx
+        .update(schema.owner)
+        .set({ setupFinishedAt: now?.() ?? new Date() })
+        .where(isNull(schema.owner.setupFinishedAt))
+        .returning({ id: schema.owner.id });
+      if (changed.length === 0) return false;
+      const [enrolled] = await tx
+        .select({ id: schema.machines.id })
+        .from(schema.machines)
+        .where(and(isNotNull(schema.machines.enrolledAt), isNull(schema.machines.revokedAt)))
+        .limit(1);
+      await recordEvent(tx, {
+        actor: 'owner',
+        entityType: 'owner',
+        entityId: '1',
+        type: 'owner.setup_finished',
+        payload: { machineEnrolled: enrolled !== undefined },
+      });
+      return true;
+    });
+    if (finished) request.log.info('setup wizard finished');
+    return reply.code(204).send();
   });
 
   // Wizard step 1 (02, section 3). The single-row constraint refuses a second owner, even when
