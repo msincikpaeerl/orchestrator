@@ -500,6 +500,17 @@ The owner's answers to H's questions (2026-11-01), A to all:
 
 **Done when** Playwright on both viewports goes through the whole wizard (a scripted daemon enrolling), and through step 4's skip leaving "No machine enrolled yet".
 
+The owner's answers to J's questions (2026-11-01), A to all:
+
+1. **A fresh install**: the owner's row gains the date the wizard was finished (`owner.setup_finished_at`), set when the owner leaves step 4 (**Continue** or **Skip for now**, `POST /api/setup/finish`, event `owner.setup_finished`); the migration fills it for an owner created before 0.6.0, so an older install never sees steps 3 and 4. `GET /api/setup` gains `setupFinished`.
+2. **Leaving the wizard**: not possible during steps 3 and 4: as for steps 1 and 2, every screen sends the owner back to the wizard until step 4 is left, and the wizard resumes where the owner was (a reload, another device). Step 3 has no skip; Help and the login page stay open.
+3. **Step 3**: the Machines' account form (label, plan, **Runs at the same time**); once the account is added, the same step shows the existing **Windows** and **Budget** editors with the time zone note (left empty: no window, no budget), then **Continue**.
+4. **Step 4**: a name (the account is step 3's, or a choice when there are several), then the commands and status of **Add machine**, updated live; **Continue** appears once the machine is connected and ready; connected with problems, the problems are listed and only **Skip for now** goes on; **Skip for now** is always shown.
+5. **A reload after the commands were shown**: step 4 shows that machine's status and **New enrollment code**, as the machine page does.
+6. **Step 5, Setup done**: says what is set up (the account; the machine ready, or "No machine yet": "Needs you" reminds the owner); main button **Submit a first request** (the new request form) with a one-line example; then **Open Help** and **Go to Needs you**. An older install that finishes only step 2 keeps today's text pointing to Machines.
+7. **The counter**: "Setup, step N of 4" on a fresh install, "step 2 of 2" for an older install with only step 2 left; Done has no number.
+8. **Documents and tests**: Help > Getting started gains "6. Add your Claude account", "7. Add a machine" (details in Machines) and "8. Done", Help > Machines a line saying the wizard adds the first account and machine; CHANGELOG; spec 02 section 3 as built. `setup.e2e.ts` goes through the whole wizard on both viewports with a scripted daemon enrolling, and through **Skip for now** to "No machine enrolled yet" (screenshots); the e2e helper setting up the owner through the API also finishes the wizard; server tests in the existing `auth.test.ts` (no shard moves); no daemon change, no `PROTOCOL_VERSION` bump.
+
 ### [ ] K. End-to-end lot 5 test (branch `lot5/k-acceptance`)
 
 - `apps/server/test/acceptance-lot5.test.ts`, with the real server, the real daemon, tmux, the fake `claude` and the fake GitHub:
