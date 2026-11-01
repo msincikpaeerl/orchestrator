@@ -75,7 +75,7 @@ The daemon's libraries are bundled into its package (ADR 0026), so they are `dev
 | `POST /api/projects/:key/setup/retry` | yes | **Try again** a failed setup, from the failed step. |
 | `POST /api/projects/:key/harness/check` | yes | **Check again** the harness elements of a linked repository. |
 | `POST /api/projects/:key/archive`, `.../unarchive` | yes | Archive (refused while the setup runs) or unarchive; no request to GitHub. |
-| `GET /api/projects/:key/tickets`, `POST ...` | yes | Board data (every ticket in board order with its blocked flag and its active run with the progress line shown); create a ticket in `todo`, with optional dependencies and assignee (a profile key; `agent_not_found` when unknown). |
+| `GET /api/projects/:key/tickets`, `POST ...` | yes | Board data (every ticket in board order with its blocked flag, `blockedBy`, the numbers of the tickets it waits for, for the dependency graph (lot 5 step H), and its active run with the progress line shown); create a ticket in `todo`, with optional dependencies and assignee (a profile key; `agent_not_found` when unknown). |
 | `GET /api/projects/:key/tickets/:number`, `PATCH ...` | yes | Detail with "Blocked by", "Blocks" and the timeline (comments and status changes); edit in `proposed` or `todo`, the assignee included. |
 | `POST /api/projects/:key/tickets/:number/dependencies`, `DELETE .../dependencies/:blockedBy` | yes | Add (same project, not itself, no cycle: the refusal names it) or remove a dependency, while the waiting ticket is `proposed` or `todo`. |
 | `POST /api/projects/:key/tickets/:number/comments` | yes | Owner note, on any ticket of an active, ready project. |

@@ -25,7 +25,7 @@ The project page opens and shows the setup while it runs. The page updates by it
 2. **Add the starting files**: a README, a CLAUDE.md with the instructions for the agents, folders for the documentation and the decisions, and a CI workflow on GitHub that checks the documentation links. On GitHub, the repository then has two commits: GitHub's own first README, then the starting files.
 3. **Protect the default branch** (see [Branch protection](#branch-protection)).
 
-When all the steps are done, the setup says **Ready**, and you can create the project's tickets on its page (see [Tickets](tickets.md)).
+When all the steps are done, the setup says **Ready**, and you can create the project's tickets on its page (see [Tickets](tickets.md)). **Dependency graph**, above the tickets, shows them by what they wait for (see [The dependency graph](tickets.md#the-dependency-graph)).
 
 ## Create a project from a request
 
