@@ -429,6 +429,17 @@ The owner's answers to F's questions (2026-10-31), A to all:
 - The request page's plan section (02, section 5.3): summary, new project, tickets with type, assignee, priority, criteria and dependencies; the edit form, **Remove**, **Approve**, **Reject with feedback** and **Close request** with their confirmations (answer 12); the earlier plans; the ticket page's "From request 7's plan"; Needs you's "Plan to review" card.
 - Help > Requests ("Review a plan", "Close a request"); CHANGELOG.
 
+The owner's answers to F2's questions (2026-11-01), A to all:
+
+1. **"From request 7's plan"**: `TicketDetail` gains `fromPlan` (`{ request }` or null), read through the ticket's `plan_id`, with a server test in `plans-review.test.ts`; the ticket page says "From request 7's plan, approved by you", "request 7" linked to the request. No migration, no daemon change, no `PROTOCOL_VERSION` bump.
+2. **The edit form**: **Edit** opens the form in the ticket's card on the request page (**Save**, **Cancel**): type, title, description, criteria, priority, assignee and "Waits for" (each with **Remove**, and a menu adding another ticket of the plan or a ticket of the project not cancelled). The bootstrap ticket shows its type, assignee and dependencies read-only, "Fixed: every other ticket waits for this one.". The criteria editor is shared with the ticket form.
+3. **Close request**: "Close request 7?", "It is final: the request cannot be reopened. Submit a new request to ask again.", "Its planning run stops now; this does not count as a failed attempt." (a run active), "Its proposed plan is rejected: no ticket is created." (a plan proposed), "You can still add comments.", **Close request** and **Keep it open**; the button at the bottom of the request's card, at any status but `closed`.
+4. **Remove**: "Remove CONTACT (Contact form) from the plan?", "CONTACT and DOCS wait for it: they will no longer." (when others wait for it), "A removed ticket cannot be added back: to get it again, reject the plan with feedback.", **Remove** and **Keep it**; no **Remove** on the bootstrap ticket; on the last ticket, the server's refusal is shown.
+5. **When it cannot be approved**: no **Approve**; a new project's plan shows the spec's sentence, an archived project's "TESTB is archived: its plan cannot be approved. Reject it with feedback, or close the request."; a new project's name, kind and description above the tickets.
+6. **Reject with feedback**: a box under the plan's actions (not a dialog): "What should change?" (the comment box's hint and rules), "A new planning run starts: one Claude Code session.", **Reject with feedback** and **Keep reviewing**.
+7. **Earlier plans and the approved plan**: "Earlier plans (2)", newest first, each folded under "Proposed at <time>, rejected with your feedback at <time>", opening on the feedback (or "Rejected: you closed the request.") and its tickets read-only; an approved plan stays as "Plan, approved by you at <time>", each ticket "Created as TESTB-12" (linked), no actions.
+8. **Step size**: F2 stays one step.
+
 **Done when** Playwright on both viewports reviews, edits, removes, rejects, approves and closes.
 
 ### F as first planned (split above)
