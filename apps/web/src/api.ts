@@ -26,6 +26,8 @@ export class ApiRequestError extends Error {
     readonly ciRefusal?: ApiError['error']['ciRefusal'],
     /** Every problem of an imported file, for `ticket_import_invalid`. */
     readonly importProblems?: ApiError['error']['importProblems'],
+    /** Every problem of a plan's edit or approval, for `plan_invalid`. */
+    readonly planProblems?: ApiError['error']['planProblems'],
   ) {
     super(message);
   }
@@ -76,6 +78,7 @@ export async function api<T>(
       settingSum,
       ciRefusal,
       importProblems,
+      planProblems,
     } = parsed.data.error;
     if (code === 'not_authenticated') onUnauthenticated();
     throw new ApiRequestError(
@@ -92,6 +95,7 @@ export async function api<T>(
       settingSum,
       ciRefusal,
       importProblems,
+      planProblems,
     );
   }
   if (schema === null) return undefined as T;

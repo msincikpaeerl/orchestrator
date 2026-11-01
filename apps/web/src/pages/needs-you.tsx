@@ -6,7 +6,14 @@ import {
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { UntrustedMarkdown } from '../components/markdown';
-import { Card, HelpLink, InfoMessage, Loading, PageHeader } from '../components/ui';
+import {
+  buttonLinkClass,
+  Card,
+  HelpLink,
+  InfoMessage,
+  Loading,
+  PageHeader,
+} from '../components/ui';
 import { formatDateTime, problemText } from '../github/text';
 import { Command } from '../machines/command';
 import { needsYouText, RESTART_COMMAND, type MachineNeedsYouItem } from '../machines/text';
@@ -18,6 +25,7 @@ import {
   requestQuestionHeading,
   requestSubjectText,
 } from '../requests/text';
+import { planToReviewHeading, planToReviewText } from '../requests/plan-text';
 import { RequestTryAgain } from '../requests/try-again';
 import { useGitHubStatus, useNeedsYou, useTicket } from '../queries';
 import { PauseButton } from '../machines/account-parts';
@@ -176,6 +184,24 @@ function PlanningStoppedCard({
       <p className="break-words text-slate-700">{planningStoppedText(item.stop)}</p>
       <p className="text-sm text-slate-600">Since {formatDateTime(item.since)}</p>
       <RequestTryAgain number={item.request.number} />
+    </Card>
+  );
+}
+
+/**
+ * "Plan to review for request 7 (TESTB): <first line>" (owner's answer 13, lot 5 step F): a link
+ * to the request, where the plan is reviewed; no inline button.
+ */
+function PlanToReviewCard({ item }: { item: Extract<NeedsYouItem, { type: 'plan_to_review' }> }) {
+  return (
+    <Card className="space-y-2">
+      <p className="font-semibold break-words text-slate-900">
+        {planToReviewHeading(item.request)}
+      </p>
+      <p className="text-slate-700">{planToReviewText(item.ticketCount, item.since)}</p>
+      <Link to={requestPath(item.request.number)} className={buttonLinkClass}>
+        Review the plan
+      </Link>
     </Card>
   );
 }
@@ -951,7 +977,9 @@ export function NeedsYouPage() {
                     setOffer({ ticket, after: 'try_again' });
                   }}
                 />
-              ) : item.type === 'plan_to_review' ? null /* Its card comes with step F2. */ : (
+              ) : item.type === 'plan_to_review' ? (
+                <PlanToReviewCard item={item} />
+              ) : (
                 <MachineItemCard item={item} />
               )}
             </li>

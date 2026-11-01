@@ -152,10 +152,11 @@ export function useProjects(archived: boolean) {
 }
 
 /** One project; its repository setup's progress comes with the realtime stream. */
-export function useProject(key: string) {
+export function useProject(key: string, enabled = true) {
   return useQuery({
     queryKey: keys.project(key),
     queryFn: () => api('GET', `/api/projects/${encodeURIComponent(key)}`, Project),
+    enabled,
   });
 }
 

@@ -15,6 +15,7 @@ import {
   Button,
   buttonLinkClass,
   Card,
+  ConfirmDialog,
   ErrorMessage,
   Loading,
   PageHeader,
@@ -33,6 +34,8 @@ import {
   requestPath,
   requestStatusLabel,
 } from '../requests/text';
+import { closeTexts } from '../requests/plan-text';
+import { PlanSection } from '../requests/plan';
 import { RequestTryAgain } from '../requests/try-again';
 import { QuestionAnswer } from '../runs/components';
 import { runPath } from '../runs/text';
@@ -270,6 +273,53 @@ function Conversation({ request }: { request: RequestDetail }) {
   );
 }
 
+/** **Close request**, at any status but closed, with its confirmation (owner's answer 3, F2). */
+function CloseRequest({ request }: { request: RequestDetail }) {
+  const [asking, setAsking] = useState(false);
+  const close = useMutation({
+    mutationFn: () => api('POST', `/api/requests/${String(request.number)}/close`, RequestDetail),
+    onSuccess: async (detail) => {
+      await requestsChanged(detail);
+      setAsking(false);
+    },
+  });
+  return (
+    <div className="border-t border-slate-200 pt-3">
+      <Button
+        variant="secondary"
+        onClick={() => {
+          close.reset();
+          setAsking(true);
+        }}
+      >
+        Close request
+      </Button>
+      {asking && (
+        <ConfirmDialog
+          title={`Close request ${String(request.number)}?`}
+          confirmLabel="Close request"
+          dismissLabel="Keep it open"
+          busy={close.isPending}
+          error={close.error && <ErrorMessage>{refusalText(close.error)}</ErrorMessage>}
+          onConfirm={() => {
+            close.mutate();
+          }}
+          onCancel={() => {
+            setAsking(false);
+          }}
+        >
+          {closeTexts({
+            runActive: request.run !== null,
+            planProposed: request.plan?.status === 'proposed',
+          }).map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </ConfirmDialog>
+      )}
+    </div>
+  );
+}
+
 function RequestContent({ number }: { number: number }) {
   const request = useRequest(number);
   if (request.isPending) return <Loading />;
@@ -336,6 +386,7 @@ function RequestContent({ number }: { number: number }) {
               )}
             </p>
           )}
+          {data.status !== 'closed' && <CloseRequest request={data} />}
         </Card>
         {data.stopped && (
           <section aria-label="Planning stopped">
@@ -356,10 +407,7 @@ function RequestContent({ number }: { number: number }) {
             {!question.live && <p className="text-slate-700">{ENDED_QUESTION_TEXT}</p>}
           </div>
         )}
-        <Card className="space-y-2">
-          <SectionTitle>Plan</SectionTitle>
-          <p className="text-slate-700">No plan yet.</p>
-        </Card>
+        <PlanSection request={data} />
         <Conversation request={data} />
       </div>
     </>
