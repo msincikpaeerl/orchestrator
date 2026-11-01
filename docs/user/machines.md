@@ -2,7 +2,7 @@
 
 Agents work on your own computers, called **machines**. On each machine, a small program, the **Orchestrator daemon**, receives the work, starts Claude Code for it and reports back. Each machine uses one of your **Claude accounts**: the Claude subscription it is logged into.
 
-Everything here is in **Machines**, in the menu. Add a Claude account first, then a machine.
+Everything here is in **Machines**, in the menu. Add a Claude account first, then a machine. On a new installation, the setup wizard adds the first account and the first machine with you ([Getting started](getting-started.md#6-add-your-claude-account)); this page is for the next ones and for changing them.
 
 ## Add a Claude account
 

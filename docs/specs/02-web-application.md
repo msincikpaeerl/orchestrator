@@ -39,10 +39,18 @@ The wizard covers only the steps that exist in the current version and ends on a
 3. **Add a Claude account**: label, plan, optional schedule windows and daily budget. *(Version 0.6.0, lot 5.)*
 4. **Add a machine**: name, account; shows the install and enrollment commands and waits until the daemon connects and passes its checks. *(Version 0.6.0, lot 5.)*
 
-Before these wizard steps exist, accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine enrolled yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
+On an install from before these wizard steps (before 0.6.0), accounts and machines are added from Machines (section 9), and "Needs you" shows "No Claude account yet" and "No machine enrolled yet" until they are (owner's decision, lot 2 step A; 10, lot 5).
 5. **Done**: links to Help; once requests exist, suggests submitting a first request.
 
 **As decided for lot 5** (owner's answer 15, lot 5 step A): steps 3 and 4 are shown on a fresh install only; an owner who went through the wizard before 0.6.0 is not sent through it again (the "Needs you" items above stay). Step 4 has **Skip for now**, since a machine may not be ready yet: "No machine enrolled yet" then stays in "Needs you" until one enrolls.
+
+**As built in lot 5 step J** (owner's answers to step J's questions):
+
+- The owner's row records when the wizard's last step was left (`setup_finished_at`; `POST /api/setup/finish`, event `owner.setup_finished` saying whether a machine was enrolled); the 0.6.0 migration fills it for an existing owner. `GET /api/setup` says `setupFinished`. Until then, every logged-in screen sends the owner to the wizard, which resumes where the owner was: step 3 while no Claude account exists, step 4 otherwise. Step 3 has no skip; Help and the login page stay open.
+- The counter reads "Setup, step N of 4" on a fresh install, "step 2 of 2" for an older install with only step 2 left; **Done** has no number.
+- Step 3: label, plan and **Runs at the same time** (the Machines form, without **Cancel**); once added, the same step shows the account's **Schedule windows** and **Daily budget** editors with the time zone note, both optional, then **Continue**.
+- Step 4: a name (the account is the only one, or chosen when there are several), then the commands and connection of **Add machine** (9.2), updated live, with no link to the machine's page; after a reload, the machine already added, with **New enrollment code** while it has not enrolled. **Continue** appears once the machine is connected and ready; connected with problems, only **Skip for now** goes on; **Skip for now** is always shown.
+- Step 5, **Setup done**: what is set up (the owner account and GitHub, the Claude account, the machine ready or not), **Submit a first request** (the new request form) with an example, **Open Help**, **Go to Needs you**. An install from before 0.6.0 finishing step 2 keeps the earlier text pointing to Machines.
 
 ### 3.1 GitHub token requirements
 
