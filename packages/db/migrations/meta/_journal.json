@@ -337,6 +337,13 @@
       "when": 1793401262879,
       "tag": "0047_request_machine_failures",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793571165480,
+      "tag": "0048_wizard_finished",
+      "breakpoints": true
     }
   ]
 }

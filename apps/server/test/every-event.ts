@@ -177,6 +177,8 @@ export async function writeEveryEvent(t: TestApp, github: FakeGitHub): Promise<v
   const token = await enrollToken(t.url, enrollment.code);
   const daemon = await ScriptedDaemon.connect(t.url, token);
   expect((await daemon.hello()).accepted).toBe(true);
+  // The wizard's step 4 left with the machine ready (`owner.setup_finished`).
+  await call('POST', '/api/setup/finish');
   // A run of SHOP-2: a usage limit without a reset time, a Resume once the limit time has passed,
   // then a start with a Claude Code too old.
   const created = Run.parse((await call('POST', '/api/projects/SHOP/tickets/2/run')).json());

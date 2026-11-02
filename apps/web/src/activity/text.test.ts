@@ -25,6 +25,7 @@ const examples: { [T in EventType]: EventPayload<T> } = {
     delaySeconds: 20,
   },
   'owner.password_reset': { revokedSessions: 2 },
+  'owner.setup_finished': { machineEnrolled: false },
   'session.created': { expiresAt: '2026-10-24T10:00:00.000Z' },
   'session.revoked': { reason: 'logout' },
   'github.token_saved': { account: 'octo-owner', expiresOn: '2027-09-23' },

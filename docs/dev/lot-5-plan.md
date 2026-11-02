@@ -1,6 +1,6 @@
 # Lot 5 — Implementation plan
 
-> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a and D2b done (2026-10-28); step E1 split into E1a and E1b, E1a done (2026-10-28), E1b done (2026-10-30); step E2 split into E2a and E2b (2026-10-30), E2a and E2b done (2026-10-31); step F split into F1 and F2, F1 done (2026-10-31), F2 done (2026-11-01); step G done (2026-11-01)
+> Status: step A done (2026-10-24): this plan, the owner's answers and the spec changes approved, with the owner's simplification of answer 1; step B split into B1 and B2, B1 and B2 done (2026-10-24); step C split into C1 and C2, both done (2026-10-25); step D split into D1 and D2, with side step 5bis E between them, D1 done (2026-10-26); side step 5bis E done (2026-10-27), the owner's probe passed on Claude Code 2.1.311; step D2 split into D2a and D2b, D2a and D2b done (2026-10-28); step E1 split into E1a and E1b, E1a done (2026-10-28), E1b done (2026-10-30); step E2 split into E2a and E2b (2026-10-30), E2a and E2b done (2026-10-31); step F split into F1 and F2, F1 done (2026-10-31), F2 done (2026-11-01); step G done (2026-11-01); step H done (2026-11-01); step J done (2026-11-01)
 > Scope: "Lot 5 — Requests and planning" in [10 — Delivery Plan](../specs/10-delivery-plan.md), the items lot 1 moved to lot 5 (the dependency graph, the board's toggle for plan tickets, dropped by the owner's answer 9 of step E1; [lot 1 plan](lot-1-plan.md), steps A and F), and lot 4's "Carried to lot 5" ([lot 4 plan](lot-4-plan.md#carried-to-lot-5)).
 > **Lot 5 is done when** the owner submits "a simple website with a contact form" and, after approving the plan and merging pull requests, gets a working website with CI, tests and documentation (made testable below, "What the website must be").
 
@@ -493,12 +493,23 @@ The owner's answers to H's questions (2026-11-01), A to all:
 9. **The board's toggle**: **Dependency graph** / **Columns** next to the filters, only when the project has tickets, kept in the address (`?view=graph`); the graph's cards show number, title, type, assignee, state, the **Blocked**, **Stopped**, **Held** and **created by agent** badges and a short "Running" line for an active run (no progress text).
 10. **Documents and tests**: Help > Tickets gains "The dependency graph" (the board's Help is there), Help > Requests a paragraph under "Review a plan", Help > Projects a line pointing to it; CHANGELOG. The component in `apps/web/src/components/dependency-graph.tsx`, depth in `dependency-depth.ts` with its unit test; a new Playwright file `graph.e2e.ts` (the board on both viewports; a plan with a diamond and an existing ticket; screenshots), checked against the two e2e shards; specs 02 (5.3, 6.3) as built.
 
-### [ ] J. Setup wizard steps 3 to 5 (branch `lot5/j-wizard`)
+### [x] J. Setup wizard steps 3 to 5 (branch `lot5/j-wizard`, 2026-11-01)
 
 - Step 3 (a Claude account: label, plan, optional windows and budget), step 4 (a machine: its commands, waiting for the daemon and its checks, **Skip for now**), step 5 (Done, suggesting a first request); fresh installs only (answer 15).
 - Help > Getting started; CHANGELOG.
 
 **Done when** Playwright on both viewports goes through the whole wizard (a scripted daemon enrolling), and through step 4's skip leaving "No machine enrolled yet".
+
+The owner's answers to J's questions (2026-11-01), A to all:
+
+1. **A fresh install**: the owner's row gains the date the wizard was finished (`owner.setup_finished_at`), set when the owner leaves step 4 (**Continue** or **Skip for now**, `POST /api/setup/finish`, event `owner.setup_finished`); the migration fills it for an owner created before 0.6.0, so an older install never sees steps 3 and 4. `GET /api/setup` gains `setupFinished`.
+2. **Leaving the wizard**: not possible during steps 3 and 4: as for steps 1 and 2, every screen sends the owner back to the wizard until step 4 is left, and the wizard resumes where the owner was (a reload, another device). Step 3 has no skip; Help and the login page stay open.
+3. **Step 3**: the Machines' account form (label, plan, **Runs at the same time**); once the account is added, the same step shows the existing **Windows** and **Budget** editors with the time zone note (left empty: no window, no budget), then **Continue**.
+4. **Step 4**: a name (the account is step 3's, or a choice when there are several), then the commands and status of **Add machine**, updated live; **Continue** appears once the machine is connected and ready; connected with problems, the problems are listed and only **Skip for now** goes on; **Skip for now** is always shown.
+5. **A reload after the commands were shown**: step 4 shows that machine's status and **New enrollment code**, as the machine page does.
+6. **Step 5, Setup done**: says what is set up (the account; the machine ready, or "No machine yet": "Needs you" reminds the owner); main button **Submit a first request** (the new request form) with a one-line example; then **Open Help** and **Go to Needs you**. An older install that finishes only step 2 keeps today's text pointing to Machines.
+7. **The counter**: "Setup, step N of 4" on a fresh install, "step 2 of 2" for an older install with only step 2 left; Done has no number.
+8. **Documents and tests**: Help > Getting started gains "6. Add your Claude account", "7. Add a machine" (details in Machines) and "8. Done", Help > Machines a line saying the wizard adds the first account and machine; CHANGELOG; spec 02 section 3 as built. `setup.e2e.ts` goes through the whole wizard on both viewports with a scripted daemon enrolling, and through **Skip for now** to "No machine enrolled yet" (screenshots); the e2e helper setting up the owner through the API also finishes the wizard; server tests in the existing `auth.test.ts` (no shard moves); no daemon change, no `PROTOCOL_VERSION` bump.
 
 ### [ ] K. End-to-end lot 5 test (branch `lot5/k-acceptance`)
 

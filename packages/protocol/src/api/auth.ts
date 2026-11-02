@@ -16,6 +16,11 @@ export const NewPassword = z
 export const SetupStateResponse = z.object({
   ownerCreated: z.boolean(),
   githubConnected: z.boolean(),
+  /**
+   * The owner left the wizard's last step (lot 5 step J): steps 3 and 4 (a Claude account, a
+   * machine) are shown until then. Already true for an owner created before 0.6.0.
+   */
+  setupFinished: z.boolean(),
 });
 export type SetupStateResponse = z.infer<typeof SetupStateResponse>;
 

@@ -70,14 +70,35 @@ The second step of the wizard connects the Orchestrator to your GitHub account w
 
 Details and answers to common problems: [Connect GitHub](github-token.md).
 
-## 6. Done
+## 6. Add your Claude account
 
-The wizard ends on the **Setup done** page. From there:
+Agents work with your Claude subscription. The third step of the wizard adds it.
 
+1. Give the account a **Label** you recognise, for example "Personal", choose its **Plan** (Pro, Max 5x or Max 20x) and how many **Runs at the same time** it may do (1 is a good start), then click **Add the account**.
+2. If you also use Claude yourself, you can keep part of your usage for you: **Schedule windows** (when agents may start work) and a **Daily budget**. Both are optional: click **Continue** to leave them empty, and change them later in **Machines**. See [Keep Claude usage for yourself](machines.md#keep-claude-usage-for-yourself).
+
+## 7. Add a machine
+
+The fourth step connects the computer where agents will work: this computer, in Ubuntu on Windows, or another one. Prepare it first as [Before you start](machines.md#before-you-start) says (Node.js, Git, tmux, Claude Code and, on Windows, systemd).
+
+1. Give the machine a **Name**, for example "Desktop", then click **Show the commands**.
+2. Type the four commands the page shows in a terminal of that computer, in order. [Add a machine](machines.md#add-a-machine) explains each of them.
+3. The page shows **Connected: Desktop is ready.** once the daemon has connected and passed its checks. Click **Continue**.
+
+If the computer is not ready yet, click **Skip for now**: "Needs you" then shows "No machine enrolled yet" until a machine enrolls, and **Machines** > **Add machine** shows the commands again. If you reload the page before the machine enrolled, click **New enrollment code** to see the commands again: each code works only once.
+
+You cannot leave the wizard during these two steps: every page brings you back to it, where you were, until you click **Continue** or **Skip for now**.
+
+## 8. Done
+
+The wizard ends on the **Setup done** page, which lists what is set up. From there:
+
+- **Submit a first request** opens the new request form: describe what you want in plain words, for example "A simple website with a home page and a contact form." The Project Manager plans it into tickets and asks you to review the plan before any work starts. See [Requests](requests.md).
 - **Help** (in the menu) contains this guide and every other page.
 - **Needs you** is the home page: it lists what needs your attention, such as a GitHub token about to expire. See [Needs you](needs-you.md).
-- **Projects** is where you create your first project, with a new GitHub repository or one you already have. See [Projects](projects.md).
-- **Machines** is where you add your Claude account and the computer where agents will work: "Needs you" shows "No Claude account yet" and "No machine enrolled yet" until you do. See [Machines](machines.md).
+- **Projects** is where you can also create a project yourself, with a new GitHub repository or one you already have. See [Projects](projects.md).
+
+If you installed the Orchestrator before version 0.6.0, the wizard did not have these two steps and does not show them now: add your Claude account and your machine in **Machines**, as "Needs you" reminds you ("No Claude account yet", "No machine enrolled yet"). See [Machines](machines.md).
 
 On a phone or a small window, the menu is behind the **Menu** button at the top.
 

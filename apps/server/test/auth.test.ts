@@ -33,13 +33,69 @@ describe('GET /api/setup', () => {
     expect(SetupStateResponse.parse(response.json())).toEqual({
       ownerCreated: false,
       githubConnected: false,
+      setupFinished: false,
     });
   });
 
   it('reports the owner once created', async () => {
     await createOwner(t.app);
     const response = await t.app.inject({ method: 'GET', url: '/api/setup' });
-    expect(response.json()).toEqual({ ownerCreated: true, githubConnected: false });
+    expect(response.json()).toEqual({
+      ownerCreated: true,
+      githubConnected: false,
+      setupFinished: false,
+    });
+  });
+});
+
+describe('POST /api/setup/finish', () => {
+  async function setupFinished() {
+    const response = await t.app.inject({ method: 'GET', url: '/api/setup' });
+    return SetupStateResponse.parse(response.json()).setupFinished;
+  }
+
+  it('needs the login session', async () => {
+    await createOwner(t.app);
+    const response = await t.app.inject({ method: 'POST', url: '/api/setup/finish' });
+    expect(response.statusCode).toBe(401);
+    expect(await setupFinished()).toBe(false);
+  });
+
+  it('finishes the wizard once, saying whether a machine was enrolled', async () => {
+    const cookie = await createOwner(t.app);
+    const finish = () =>
+      t.app.inject({ method: 'POST', url: '/api/setup/finish', headers: { cookie } });
+
+    expect((await finish()).statusCode).toBe(204);
+    expect(await setupFinished()).toBe(true);
+    // Again (another tab): nothing more is recorded.
+    expect((await finish()).statusCode).toBe(204);
+    const events = await t.db
+      .select({ payload: schema.events.payload })
+      .from(schema.events)
+      .where(eq(schema.events.type, 'owner.setup_finished'));
+    expect(events).toEqual([{ payload: { machineEnrolled: false } }]);
+  });
+
+  it('records an enrolled machine, not a revoked one', async () => {
+    const cookie = await createOwner(t.app);
+    const [account] = await t.db
+      .insert(schema.claudeAccounts)
+      .values({ label: 'Personal', plan: 'pro', maxConcurrentRuns: 1 })
+      .returning();
+    if (!account) throw new Error('account not inserted');
+    await t.db.insert(schema.machines).values([
+      { name: 'Old', accountId: account.id, enrolledAt: new Date(), revokedAt: new Date() },
+      { name: 'Desktop', accountId: account.id, enrolledAt: new Date() },
+    ]);
+
+    await t.app.inject({ method: 'POST', url: '/api/setup/finish', headers: { cookie } });
+
+    const [event] = await t.db
+      .select({ payload: schema.events.payload })
+      .from(schema.events)
+      .where(eq(schema.events.type, 'owner.setup_finished'));
+    expect(event?.payload).toEqual({ machineEnrolled: true });
   });
 });
 

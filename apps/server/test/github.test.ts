@@ -139,7 +139,11 @@ describe('PUT /api/github/token', () => {
     expect(status.permissions.every((check) => check.result === 'ok')).toBe(true);
     expect(status.problems).toEqual([]);
     const setup = await t.app.inject({ method: 'GET', url: '/api/setup' });
-    expect(setup.json()).toEqual({ ownerCreated: true, githubConnected: true });
+    expect(setup.json()).toEqual({
+      ownerCreated: true,
+      githubConnected: true,
+      setupFinished: false,
+    });
     const events = await t.db.select({ type: schema.events.type }).from(schema.events);
     expect(events.map((event) => event.type)).toContain('github.token_saved');
   });
