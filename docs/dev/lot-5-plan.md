@@ -521,6 +521,18 @@ The owner's answers to J's questions (2026-11-01), A to all:
 
 **Done when** the three scenarios pass in `pnpm test`, within CI's 8 minutes per shard (placement checked as above).
 
+The owner's answers to K's questions (2026-11-02), A to all:
+
+1. **The protocol 2 daemon of K3**: the real daemon enrolls; before it starts, a scripted client (`daemon-client.ts`) connects with that machine's token and says `hello` with protocol 2 (daemon 0.5.0); a planning run and an `implement` run wait; the client leaves and the real protocol 3 daemon starts and takes both. No production code changes.
+2. **Browser tests in K1**: the test home gets fake browsers (the fake Chromium and `ldd` moved from the daemon's `browsers.test.ts` to its test helpers), so `doctor` reports `browser-tests` as after `orchestrator-daemon browsers`, and the website project created from the plan keeps its requirement; the website's runs are checked to have `PLAYWRIGHT_BROWSERS_PATH` in their environment.
+3. **"Update the daemon to 0.6.0"**: the server test checks the queue's reason (`daemon_outdated`, protocol 2) with `serverVersion` equal to the server's own `/version`; the words are the web unit tests'. Step L's version changes nothing here.
+4. **K1's question** is answered live, into the waiting planning run's session; the delivery by resume stays `request-questions-and-answers.test.ts`'s.
+5. **Close request** ends K2: a second request on the same project, its planning run running on the real daemon; **Close request** stops it (its tmux session closed) and closes the request for good, nothing added to the project.
+6. **Merges in K1**: automatic merge off; the owner merges each pull request on the fake GitHub.
+7. **K3's account** runs at most 2 at a time: once the protocol 3 daemon connects, one scheduler pass starts both, the planning run first (category 4 before `implement`).
+
+Placement checked before writing (Vitest's split replayed, matching the real one): `acceptance-lot5.test.ts` lands in shard 4, moving `packages/protocol/src/secrets.test.ts` from 3 to 2 and `apps/server/test/github-layer.test.ts` from 4 to 3. Every run is started by the scheduler (`schedulerTick()`); the owner only answers, rejects, approves and merges.
+
 ### [ ] L. Version 0.6.0 (branch `lot5/l-release-0.6.0`)
 
 - Rule 14: every `package.json` and the `/version` test, a dated CHANGELOG section, README's status line, CLAUDE.md's "Current state", the "(from version 0.6.0)" labels removed (`settings.e2e.ts`'s mark moved to a setting of a later version, or the check reworded if none exists).
