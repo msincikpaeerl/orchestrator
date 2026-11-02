@@ -33,12 +33,10 @@ test('changing a global limit, which applies at once, then resetting it', async 
   const title = setting(page, 'Longest ticket title');
   await expect(title).toContainText('Default: 200 characters (in use).');
   await expect(title.getByRole('button', { name: 'Reset to default' })).toBeDisabled();
-  // A setting of a later version says so; one used from this version does not.
-  await expect(setting(page, 'Most tickets per plan')).toContainText(
-    'Used from version 0.6.0: it changes nothing in this version.',
-  );
-  await expect(setting(page, 'Scheduler check interval')).not.toContainText('Used from version');
-  await expect(setting(page, 'Longest run')).not.toContainText('Used from version');
+  // Every setting is used in 0.6.0: none says "Used from version" (laterText's unit tests cover the
+  // mark itself; rule 14 of docs/dev/working-rules.md).
+  await expect(setting(page, 'Most tickets per plan')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Used from version')).toHaveCount(0);
 
   // A value outside the allowed range is refused with the range.
   await title.getByLabel('Value (characters)').fill('0');
@@ -83,12 +81,10 @@ test('overriding a limit for one project, then resetting it', async ({ page }) =
     '/help/settings#override-a-limit-for-one-project',
   );
 
-  // Only the settings a project can override are listed, a later version's marked as such: CI
-  // wait at submission is used from 0.4.0 on, Most tickets per plan from 0.6.0.
+  // Only the settings a project can override are listed, none marked "Used from version" in 0.6.0.
   await expect(setting(page, 'Longest ticket title')).toHaveCount(0);
-  await expect(setting(page, 'Most tickets per plan')).toContainText(
-    'Used from version 0.6.0: it changes nothing in this version.',
-  );
+  await expect(setting(page, 'Most tickets per plan')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Used from version')).toHaveCount(0);
   const ciWait = setting(page, 'CI wait at submission');
   await expect(ciWait).toContainText('This project uses the global value (20 minutes).');
   await expect(ciWait).not.toContainText('Used from version');

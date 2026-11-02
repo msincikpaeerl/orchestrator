@@ -2,7 +2,17 @@
 
 Agents are the AI workers of the Orchestrator. Each one is Claude Code, running on one of your machines, with a role: what it is for, the instructions it follows, and the commands it may use. You choose which agent should do a ticket with its **Assignee** (see [Tickets](tickets.md#assignee)).
 
-This version has three agents: two that do the work of tickets, and **Quality**, which reviews it. More agents, and a screen to read and change them, come in a later version.
+This version has four agents: the **Project Manager**, which turns your requests into plans, two that do the work of tickets, and **Quality**, which reviews it. More agents, and a screen to read and change them, come in a later version.
+
+## Project Manager
+
+Turns each request you submit into a plan: a few small tickets, in the order they can be done, each one something you can see working, with acceptance criteria you could check (see [Requests](requests.md)). The scheduler starts it by itself on a request (a **planning run**). It:
+
+- reads the request and its conversation, and for an existing project its `CLAUDE.md`, its user documentation, its decision records and its tickets, so that the plan repeats none of them;
+- asks you a question only when the request is unclear about what it should do or about something you would notice, in one question with the options and its recommendation; never about technical choices, which are the Architect's;
+- proposes one plan, with a summary written for you: what will be built and in which order, what is left out, and what it assumed instead of asking.
+
+For a new project it also proposes the project (a website, or a web app when the request needs user accounts or a database) and starts the plan with the project's setup ticket, for the Architect. It never writes code or documentation, only reads the project (and Git's history), and is never a ticket's assignee.
 
 ## Architect
 
@@ -31,7 +41,7 @@ Quality never changes the work: it may read the project, see the changes, and ru
 
 ## What every agent follows
 
-Every agent works on one ticket at a time, in its own copy of the project on your machine. It:
+Every agent works on one ticket at a time (the Project Manager on one request), in its own copy of the project on your machine. It:
 
 - reads the project's `CLAUDE.md` first;
 - runs one command at a time, so a refusal names the command really refused;
