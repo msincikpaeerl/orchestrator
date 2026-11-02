@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { cp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   BROWSER_TESTS_CAPABILITY,
@@ -8,13 +8,16 @@ import {
   type DoctorCheck,
 } from '@orchestrator/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { headlessShellPath, LIBRARIES_COMMAND } from '../src/browsers.js';
+import { LIBRARIES_COMMAND } from '../src/browsers.js';
 import { writeConfig } from '../src/config.js';
 import { PLAYWRIGHT_LOCK, PLAYWRIGHT_PACKAGE } from '../src/playwright-install.js';
 import { runDoctor } from '../src/doctor.js';
 import { ScriptedServer } from './scripted-server.js';
 import {
+  BLANK_PAGE,
+  LDD_FOUND,
   createTestHome,
+  fakeChromium as fakeChromiumIn,
   fakeExecutable,
   healthyTools,
   linkSystemTool,
@@ -38,8 +41,7 @@ let download: string;
 let npmLog: string;
 let cliLog: string;
 
-const PAGE = '<html><head></head><body></body></html>';
-const LDD_FOUND = '\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f)';
+const PAGE = BLANK_PAGE;
 const LDD_MISSING = ['\tlibnss3.so => not found', '\tlibasound.so.2 => not found'].join('\n');
 
 beforeEach(async () => {
@@ -58,19 +60,7 @@ afterEach(async () => {
 });
 
 /** The download's headless shell, running `script`, as Playwright unpacks it. */
-async function fakeChromium(script: string): Promise<void> {
-  const shell = headlessShellPath(download) ?? '';
-  await mkdir(join(shell, '..'), { recursive: true });
-  await fakeExecutable(join(shell, '..'), 'chrome-headless-shell', script);
-  await writeFile(
-    join(
-      download,
-      `chromium_headless_shell-${PLAYWRIGHT_CHROMIUM_REVISION}`,
-      'INSTALLATION_COMPLETE',
-    ),
-    '',
-  );
-}
+const fakeChromium = (script: string) => fakeChromiumIn(download, script);
 
 /**
  * A fake `npm` recording its arguments and folder, then `ci` installing a fake Playwright whose

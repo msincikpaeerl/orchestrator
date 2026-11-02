@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pino, type Logger } from 'pino';
+import { PLAYWRIGHT_CHROMIUM_REVISION } from '@orchestrator/protocol';
+import { headlessShellPath } from '../src/browsers.js';
 import { findExecutable } from '../src/exec.js';
 import { daemonPaths, type DaemonPaths } from '../src/paths.js';
 import { REAL_GITHUB_GIT_CONFIG, REAL_GITHUB_PROXY_ENV } from './real-github-guard.js';
@@ -120,6 +122,39 @@ export function printing(folder: string, name: string, output: string): Promise<
 /** A fake tool that appends its arguments, one call per line, to `log`, and prints `output`. */
 export function recording(folder: string, name: string, log: string, output = ''): Promise<string> {
   return fakeExecutable(folder, name, `echo "$*" >> '${log}'\n${output ? print(output) : ''}`);
+}
+
+/** What the headless shell prints for `--dump-dom about:blank`. */
+export const BLANK_PAGE = '<html><head></head><body></body></html>';
+/** `ldd` finding every library the headless shell needs. */
+export const LDD_FOUND = '\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f)';
+
+/**
+ * The pinned headless shell in the browsers folder `browsers`, running `script`, as Playwright
+ * unpacks it (lot 5 step C1). No real browser: the script stands for it.
+ */
+export async function fakeChromium(browsers: string, script = print(BLANK_PAGE)): Promise<void> {
+  const shell = headlessShellPath(browsers) ?? '';
+  await mkdir(join(shell, '..'), { recursive: true });
+  await fakeExecutable(join(shell, '..'), 'chrome-headless-shell', script);
+  await writeFile(
+    join(
+      browsers,
+      `chromium_headless_shell-${PLAYWRIGHT_CHROMIUM_REVISION}`,
+      'INSTALLATION_COMPLETE',
+    ),
+    '',
+  );
+}
+
+/**
+ * A machine after the owner's system libraries command and `orchestrator-daemon browsers`
+ * (Help > Machines > "Browser tests"): the fake headless shell in the daemon's browsers folder and
+ * an `ldd` finding every library, so `doctor` reports the capability `browser-tests`.
+ */
+export async function installedBrowsers(home: TestHome): Promise<void> {
+  await fakeChromium(home.paths.browsers);
+  await printing(home.bin, 'ldd', LDD_FOUND);
 }
 
 /** Healthy fakes of every tool the daemon checks, for tests about something else. */
