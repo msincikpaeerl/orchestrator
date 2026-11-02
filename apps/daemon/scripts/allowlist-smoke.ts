@@ -282,7 +282,9 @@ function reviewerChecks(layout: Layout): Check[] {
  * then what it must not do: write a file, commit, install, build or run a program (owner's answer
  * 16, lot 5 step E1), and what no profile may do. `ls`, `cat` and `find` are in Claude Code's
  * built-in read-only set, which runs whatever the allowlist (05, section 4.6): they are expected
- * to run.
+ * to run. So is `node --version`: Claude Code 2.1.316 lists exactly `node -v` and `node --version`
+ * in that set (the owner's `pm` run, lot 5 step M), so only `node` with a script, `-e` or `npx`
+ * shows that the Project Manager cannot run a program.
  */
 function plannerChecks(layout: Layout): Check[] {
   return [
@@ -299,6 +301,7 @@ function plannerChecks(layout: Layout): Check[] {
     bash('ls', 'allowed'),
     bash('cat README.md', 'allowed'),
     bash('find . -name README.md', 'allowed'),
+    bash('node --version', 'allowed'),
     { ...write, expect: 'refused' },
     bash('mkdir -p src', 'refused'),
     bash('rm README.md', 'refused'),
@@ -306,7 +309,9 @@ function plannerChecks(layout: Layout): Check[] {
     bash('git commit --allow-empty -m "Smoke"', 'refused'),
     bash('pnpm install', 'refused'),
     bash('npm test', 'refused'),
-    bash('node --version', 'refused'),
+    bash(`node -e "require('fs').writeFileSync('smoke-node.txt','x')"`, 'refused'),
+    bash('node smoke.js', 'refused'),
+    bash('npx --yes cowsay hi', 'refused'),
     ...forbidden(layout),
   ];
 }
