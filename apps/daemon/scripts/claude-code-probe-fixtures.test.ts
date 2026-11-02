@@ -213,11 +213,13 @@ describe("check 6, the session's permission mode (lot 3 step L)", () => {
     }
   });
 
-  it("passes on Claude Code 2.1.311's transcript, with the resume's message line too (lot 5 step 5bis E)", () => {
-    expect(permissionModeCheck(fixture('2.1.311'))).toEqual({
-      verdict: 'PASS',
-      detail: 'dontAsk on 2 transcript line(s), no other mode',
-    });
+  it("passes on Claude Code 2.1.311's and 2.1.316's transcripts, with the resume's message line too (lot 5 steps 5bis E and M)", () => {
+    for (const version of ['2.1.311', '2.1.316']) {
+      expect(permissionModeCheck(fixture(version)), version).toEqual({
+        verdict: 'PASS',
+        detail: 'dontAsk on 2 transcript line(s), no other mode',
+      });
+    }
   });
 
   it('fails when a line records another mode, or when none records a mode', () => {
@@ -278,18 +280,20 @@ describe('checks 7 and 8, the launch message taken (lot 5 step 5bis E)', () => {
     expect(firstMessageCheck([start, submit(3)], 'Do it.')).toMatchObject({ verdict: 'FAIL' });
   });
 
-  it("passes on the resume the owner's probe run recorded with Claude Code 2.1.311", () => {
-    const hooks = readFileSync(
-      new URL('../test/fixtures/claude-code-2.1.311/resume-hooks.jsonl', import.meta.url),
-      'utf8',
-    )
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as { event: string; input: Record<string, unknown> });
-    // The probe's RESUME_MESSAGE.
-    expect(firstMessageCheck(hooks, 'Reply with the word OK.')).toEqual({
-      verdict: 'PASS',
-      detail: 'UserPromptSubmit has the message exactly',
-    });
+  it("passes on the resumes the owner's probe runs recorded with Claude Code 2.1.311 and 2.1.316", () => {
+    for (const version of ['2.1.311', '2.1.316']) {
+      const hooks = readFileSync(
+        new URL(`../test/fixtures/claude-code-${version}/resume-hooks.jsonl`, import.meta.url),
+        'utf8',
+      )
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { event: string; input: Record<string, unknown> });
+      // The probe's RESUME_MESSAGE.
+      expect(firstMessageCheck(hooks, 'Reply with the word OK.'), version).toEqual({
+        verdict: 'PASS',
+        detail: 'UserPromptSubmit has the message exactly',
+      });
+    }
   });
 });
