@@ -173,6 +173,37 @@ describe('plan_propose for a new project', () => {
     expect((await requestRow()).status).toBe('plan_proposed');
   });
 
+  it('gives a website its own stack and the end-to-end criterion, each once (step M1, gaps 1 and 2)', async () => {
+    const { daemon, runToken } = await planning({ newProject: true });
+    const endToEnd = WEBSITE_CRITERIA.find((text) =>
+      text.startsWith('End-to-end tests use Playwright'),
+    );
+    if (endToEnd === undefined) throw new Error('no end-to-end criterion');
+    await h.ok(daemon, runToken, 'plan_propose', {
+      ...newPlan,
+      tickets: [{ ...setup, acceptance_criteria: [endToEnd.toLowerCase()] }, contact],
+    });
+    const [plan] = await h.t.db.select().from(schema.plans);
+    const stored = PlanTickets.parse(plan?.tickets)[0]?.acceptance_criteria ?? [];
+    const added = stored.slice(1);
+    expect(
+      added.filter((text) =>
+        text.startsWith(
+          "The stack is the default for a website: Astro, TypeScript and static output, with Astro's Node.js server adapter only when the site saves what visitors send on a server.",
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(added.join('\n')).not.toMatch(/React|PostgreSQL|default stack of the project's kind/);
+    expect(added).not.toContain(endToEnd);
+    expect(added).toEqual(WEBSITE_CRITERIA.filter((text) => text !== endToEnd));
+    expect(
+      stored.filter((text) => text.toLowerCase().startsWith('end-to-end tests use playwright')),
+    ).toHaveLength(1);
+    expect(endToEnd).toBe(
+      "End-to-end tests use Playwright, with one sample test. It runs on the agent's machine with the browsers the machine already provides (never set PLAYWRIGHT_BROWSERS_PATH and never write a browser path in the project), and in CI in its own job, which installs the browsers itself and is listed in the needs of the ci job.",
+    );
+  });
+
   it('adds the web_app criterion for a web_app, and keeps a plan whose run fails after it', async () => {
     const { daemon, runToken, runId } = await planning({ newProject: true });
     const output = await h.ok(daemon, runToken, 'plan_propose', {
@@ -182,6 +213,16 @@ describe('plan_propose for a new project', () => {
     const webApp = fixedCriteria(bootstrapTemplate, 'web_app');
     expect(webApp).toHaveLength(WEBSITE_CRITERIA.length + 1);
     expect(output.tickets).toMatchObject([{ key: 'setup', added_criteria: webApp }, {}]);
+    // A web app's own stack and the end-to-end criterion, never the website's stack (step M1).
+    expect(
+      webApp.filter((text) =>
+        text.startsWith('The stack is the default for a web app: React, Vite and TypeScript'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      webApp.filter((text) => text.startsWith('End-to-end tests use Playwright')),
+    ).toHaveLength(1);
+    expect(webApp.join('\n')).not.toContain('Astro');
     const [plan] = await h.t.db.select().from(schema.plans);
     expect(plan?.newProject).toEqual({ name: 'Bakery shop', kind: 'web_app', description: '' });
 
@@ -283,7 +324,8 @@ describe('plan_propose for a new project', () => {
   });
 
   it('refuses a bootstrap whose criteria, with the fixed ones, pass Most acceptance criteria, saying how many of its own it may have', async () => {
-    const max = WEBSITE_CRITERIA.length + 2;
+    // One slot is kept for the scope criterion the approval adds (owner's answer 2, step M1).
+    const max = WEBSITE_CRITERIA.length + 3;
     const { daemon, runToken } = await planning({
       newProject: true,
       settings: { ticketMaxAcceptanceCriteria: max },
@@ -295,12 +337,35 @@ describe('plan_propose for a new project', () => {
       }),
     );
     expect(error.message.split('\n').slice(1)).toEqual([
-      `- Ticket 1 (setup), acceptance_criteria: ${String(3 + WEBSITE_CRITERIA.length)} criteria once the ${String(WEBSITE_CRITERIA.length)} fixed ones the Orchestrator adds are counted: at most ${String(max)} (setting "Most acceptance criteria"). Keep at most 2 criteria of your own besides the fixed ones`,
+      `- Ticket 1 (setup), acceptance_criteria: ${String(3 + WEBSITE_CRITERIA.length + 1)} criteria once the ${String(WEBSITE_CRITERIA.length + 1)} fixed ones the Orchestrator adds are counted: at most ${String(max)} (setting "Most acceptance criteria"). Keep at most 2 criteria of your own besides the fixed ones`,
     ]);
     await h.ok(daemon, runToken, 'plan_propose', {
       ...newPlan,
       tickets: [{ ...setup, acceptance_criteria: ['One', 'Two'] }, contact],
     });
+  });
+
+  it("counts the scope criterion's slot only when the plan has other tickets (owner's answers 1 and 2, step M1)", async () => {
+    const max = WEBSITE_CRITERIA.length;
+    const { daemon, runToken } = await planning({
+      newProject: true,
+      settings: { ticketMaxAcceptanceCriteria: max },
+    });
+    const error = refusal(
+      await h.tool(daemon, runToken, 'plan_propose', {
+        ...newPlan,
+        tickets: [{ ...setup, acceptance_criteria: [] }, contact],
+      }),
+    );
+    expect(error.message.split('\n').slice(1)).toEqual([
+      `- Ticket 1 (setup), acceptance_criteria: the setting "Most acceptance criteria" (${String(max)}) is too low for the fixed criteria of the bootstrap ticket, which need ${String(max + 1)} criteria. Only the owner can raise it: end your run with ticket_give_up, saying so`,
+    ]);
+    await h.ok(daemon, runToken, 'plan_propose', {
+      ...newPlan,
+      tickets: [{ ...setup, acceptance_criteria: [] }],
+    });
+    const [plan] = await h.t.db.select().from(schema.plans);
+    expect(PlanTickets.parse(plan?.tickets)[0]?.acceptance_criteria).toEqual(WEBSITE_CRITERIA);
   });
 
   it('tells the agent to give up when the settings cannot hold the fixed criteria', async () => {
@@ -316,7 +381,7 @@ describe('plan_propose for a new project', () => {
       }),
     );
     expect(error.message.split('\n').slice(1)).toEqual([
-      `- Ticket 1 (setup), acceptance_criteria: the setting "Most acceptance criteria" (5) is too low for the fixed criteria of the bootstrap ticket, which need ${String(WEBSITE_CRITERIA.length)} criteria. Only the owner can raise it: end your run with ticket_give_up, saying so`,
+      `- Ticket 1 (setup), acceptance_criteria: the setting "Most acceptance criteria" (5) is too low for the fixed criteria of the bootstrap ticket, which need ${String(WEBSITE_CRITERIA.length + 1)} criteria. Only the owner can raise it: end your run with ticket_give_up, saying so`,
       `- Ticket 1 (setup), acceptance_criteria: the setting "Longest acceptance criterion" (100) is too low for the fixed criteria of the bootstrap ticket, which need ${String(longest)} characters. Only the owner can raise it: end your run with ticket_give_up, saying so`,
     ]);
   });
@@ -336,13 +401,17 @@ describe('plan_propose for an existing project', () => {
       request: { status: 'plan_proposed', project: 'WEB' },
       tickets: [
         { key: 'contact', blocked_by: ['WEB-2'], added_criteria: [] },
-        { key: 'list', blocked_by: ['contact'] },
+        { key: 'list', blocked_by: ['contact'], added_criteria: [] },
       ],
       note: "Your plan for request 1 is recorded, with 2 tickets, and waits for the owner's review. End your turn now, without another tool call.",
     });
     const [plan] = await h.t.db.select().from(schema.plans);
     expect(plan?.newProject).toBeNull();
     expect(PlanTickets.parse(plan?.tickets).map((each) => each.bootstrap)).toEqual([false, false]);
+    // No fixed criterion of a bootstrap, the stack's and the end-to-end one included (step M1).
+    expect(PlanTickets.parse(plan?.tickets).flatMap((each) => each.acceptance_criteria)).toEqual([
+      ...contact.acceptance_criteria,
+    ]);
     expect(await h.t.db.select().from(schema.tickets)).toHaveLength(2);
     expect(await h.events('ticket.created')).toHaveLength(2);
     const [proposed] = await h.events('plan.proposed');
@@ -425,7 +494,8 @@ describe("plan_propose's state refusals", () => {
 
 describe("the bootstrap's fixed criteria (08, section 3.2)", () => {
   it('are one per criterion but Android, the web_app one only for a web_app, each within the default limits', () => {
-    expect(WEBSITE_CRITERIA).toHaveLength(8);
+    expect(WEBSITE_CRITERIA).toHaveLength(9);
+    expect(WEBSITE_CRITERIA.join('\n')).not.toContain('It builds no feature');
     expect(fixedCriteria(bootstrapTemplate, 'web_app').at(-1)).toContain('integration tests');
     for (const text of fixedCriteria(bootstrapTemplate, 'web_app')) {
       expect(text.length).toBeLessThanOrEqual(500);

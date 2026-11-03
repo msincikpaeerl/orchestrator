@@ -24,10 +24,10 @@ import type { Template } from '../agents/files.js';
 import { insertProject, keyIsTaken, keyTaken, newRepositoryValues } from '../projects/creation.js';
 import type { ProjectRow } from '../projects/model.js';
 import { ticketReference, type TicketRow } from '../tickets/model.js';
-import { completeOwnerTicket, insertNumberedTicket } from '../tickets/rules.js';
+import { completeOwnerTicket, insertNumberedTicket, ticketLimits } from '../tickets/rules.js';
 import { checkTickets, type CheckedEntry, type TicketProblem } from '../tickets/ticket-checks.js';
 import { changeRequestStatus, requestEntity, type RequestRow } from './model.js';
-import { fixedCriteria } from './plan-propose.js';
+import { fixedCriteria, scopeCriterion } from './plan-propose.js';
 
 /*
  * The owner's review of a plan (01, section 3.3; 02, section 5.3; owner's answers, lot 5 step F):
@@ -504,6 +504,7 @@ function bootstrapAtApproval(
   tickets: readonly PlanTicket[],
   kind: ProjectKind,
   template: Template,
+  scope: { projectKey: string; criterionMaxLength: number },
 ): { tickets: PlanTicket[]; problems: TicketImportProblem[]; added: number } {
   const problems: TicketImportProblem[] = [];
   const bootstraps = tickets.filter((each) => each.bootstrap);
@@ -540,18 +541,38 @@ function bootstrapAtApproval(
   const missing = fixedCriteria(template, kind).filter(
     (text) => !bootstrap.acceptance_criteria.some((mine) => same(mine) === same(text)),
   );
-  const result = tickets.map((ticket): PlanTicket => {
-    if (ticket === bootstrap) {
-      return { ...ticket, acceptance_criteria: [...ticket.acceptance_criteria, ...missing] };
-    }
-    return ticket.blocked_by.includes(bootstrap.key)
+  // The bootstrap first, as `plan_propose` keeps it: it becomes the project's first ticket, and
+  // the others are numbered after it in the plan's order (`approvePlan` checks the keys).
+  const others = tickets.filter((each) => each !== bootstrap);
+  const scoped = scopeCriterion(
+    template,
+    others.map((each, index) => ({
+      key: ticketReference(scope.projectKey, index + 2),
+      title: each.title,
+    })),
+    scope.criterionMaxLength,
+  );
+  const scopeAdded =
+    scoped !== null &&
+    ![...bootstrap.acceptance_criteria, ...missing].some((mine) => same(mine) === same(scoped));
+  const first: PlanTicket = {
+    ...bootstrap,
+    acceptance_criteria: [
+      ...bootstrap.acceptance_criteria,
+      ...missing,
+      ...(scopeAdded ? [scoped] : []),
+    ],
+  };
+  const waiting = others.map((ticket): PlanTicket =>
+    ticket.blocked_by.includes(bootstrap.key)
       ? ticket
-      : { ...ticket, blocked_by: [...ticket.blocked_by, bootstrap.key] };
-  });
-  // The bootstrap first, as `plan_propose` keeps it: it becomes the project's first ticket.
-  const first = result.find((each) => each.bootstrap);
-  const ordered = first ? [first, ...result.filter((each) => each !== first)] : result;
-  return { tickets: ordered, problems, added: missing.length };
+      : { ...ticket, blocked_by: [...ticket.blocked_by, bootstrap.key] },
+  );
+  return {
+    tickets: [first, ...waiting],
+    problems,
+    added: missing.length + (scopeAdded ? 1 : 0),
+  };
 }
 
 /**
@@ -594,7 +615,10 @@ export async function approvePlan(
   } else {
     const { newProject } = input;
     if (newProject === undefined) throw projectFormMissing();
-    const bootstrap = bootstrapAtApproval(tickets, planned.kind, newProject.bootstrap);
+    const bootstrap = bootstrapAtApproval(tickets, planned.kind, newProject.bootstrap, {
+      projectKey: newProject.form.key,
+      criterionMaxLength: (await ticketLimits(tx)).acceptanceCriterionMaxLength,
+    });
     tickets = bootstrap.tickets;
     checked = await planProblems(tx, null, tickets);
     const problems = [
@@ -603,7 +627,7 @@ export async function approvePlan(
         problem.position === 1 && problem.field === 'acceptanceCriteria' && bootstrap.added > 0
           ? {
               ...problem,
-              message: `${problem.message.replace(/\.$/, '')}, with the ${String(bootstrap.added)} fixed criteria it lacked added again. Remove some of its own criteria.`,
+              message: `${problem.message.replace(/\.$/, '')}, once the ${String(bootstrap.added)} fixed criteria it lacked are added. Remove some of its own criteria.`,
             }
           : problem,
       ),
@@ -646,6 +670,14 @@ export async function approvePlan(
   const rows: TicketRow[] = [];
   for (const each of checked.planned) {
     rows.push(await insertNumberedTicket(tx, project, each.ticket, at, origin));
+  }
+  // A new project's tickets are numbered from 1 in the plan's order, as the bootstrap's scope
+  // criterion named them (step M1).
+  if (planned !== null && input.project === null) {
+    for (const [index, row] of rows.entries()) {
+      if (row.number !== index + 1)
+        throw new Error(`plan ticket ${String(index + 1)} numbered ${String(row.number)}`);
+    }
   }
   const rowByKey = new Map(checked.planned.map((each, index) => [each.key, rows[index]]));
   for (const [index, each] of checked.planned.entries()) {

@@ -420,3 +420,80 @@ describe('the shipped profiles (lot 5 step 5bis C)', () => {
     }
   });
 });
+
+/** The names of a cell of 08 section 3.3's table: its capitalised words ("Docker Compose"). */
+function namesIn(cell: string): string[] {
+  return [...new Set(cell.match(/[A-Z][\w.]*(?: [A-Z][\w.]*)*/g) ?? [])];
+}
+
+describe('the default stacks (08, section 3.3; lot 5 step M1, gap 2)', () => {
+  it("are 08's in the bootstrap's fixed criteria and in the Architect's text", async () => {
+    const spec = await readFile(
+      new URL('../../../../docs/specs/08-harness.md', import.meta.url),
+      'utf8',
+    );
+    const row = (kind: string) => {
+      const line = spec.split('\n').find((each) => each.startsWith(`| \`${kind}\` |`));
+      if (!line) throw new Error(`08 section 3.3 has no row for ${kind}`);
+      const [, , stack = '', tests = ''] = line.split('|').map((cell) => cell.trim());
+      return { stack: namesIn(stack), tests: namesIn(tests) };
+    };
+    const website = row('website');
+    const webApp = row('web_app');
+    expect(website.stack).toEqual(['Astro', 'TypeScript']);
+    expect(webApp.stack).toEqual([
+      'React',
+      'Vite',
+      'TypeScript',
+      'Node.js',
+      'Fastify',
+      'PostgreSQL',
+      'Docker Compose',
+    ]);
+
+    const bootstrap = (await loadTemplates()).bootstrap.parts;
+    const architect =
+      (await loadShippedAgents()).profiles.find((profile) => profile.key === 'architect')
+        ?.instructions ?? '';
+    const line = (start: string) =>
+      architect.split('\n').find((each) => each.startsWith(start)) ?? '';
+    const checks = [
+      { part: 'stack-website', line: line('- Website: '), names: website },
+      { part: 'stack-web-app', line: line('- Web app: '), names: webApp },
+    ];
+    for (const each of checks) {
+      for (const name of each.names.stack) {
+        expect(bootstrap.get(each.part), `${each.part}: ${name}`).toContain(name);
+        expect(each.line, `the Architect: ${name}`).toContain(name);
+      }
+      for (const name of each.names.tests) {
+        expect(each.line, `the Architect's tests: ${name}`).toContain(name);
+      }
+    }
+    // A website's static output, and the server adapter only to save what visitors send.
+    expect(spec).toMatch(/may add Astro's Node\.js server adapter/);
+    expect(bootstrap.get('stack-website')).toContain(
+      "static output, with Astro's Node.js server adapter only when the site saves what visitors send on a server",
+    );
+    expect(line('- Website: ')).toContain(
+      "static output; Astro's Node.js server adapter only when the site saves what visitors send on a server",
+    );
+    expect(architect).toContain(
+      'Another choice needs an ADR naming the default and why it is not used.',
+    );
+  });
+
+  it("keep a bootstrap to the structure, in the Architect's and the Project Manager's texts (gap 3)", async () => {
+    const { profiles } = await loadShippedAgents();
+    const text = (key: string) =>
+      profiles.find((profile) => profile.key === key)?.instructions ?? '';
+    expect(text('architect')).toContain(
+      'It sets up the structure, the tooling and one sample test of each test level the project uses, and nothing else',
+    );
+    expect(text('architect')).toContain(
+      'with the browsers the machine already provides (never set PLAYWRIGHT_BROWSERS_PATH and never write a browser path in the project)',
+    );
+    expect(text('pm')).toContain('It sets the project up and builds no feature');
+    expect(text('pm')).not.toContain("the site's server can save what a form sends");
+  });
+});

@@ -68,7 +68,7 @@ You own the structure of the project and keep its harness working: the tools and
 
 ## You do not
 
-- Implement product features, except what a bootstrap needs.
+- Implement product features. A bootstrap builds none, even when its criteria name what the stack must make possible: a sample test shows it, and the plan's other tickets build the features.
 
 ## How you work
 
@@ -76,3 +76,17 @@ You own the structure of the project and keep its harness working: the tools and
 - Keep the harness runnable with one command each for install, lint, test and build, and write those commands in `CLAUDE.md`.
 - A change of structure keeps every existing test passing; run the project's full check before you submit.
 - When a choice depends on what the owner wants (a paid service, a hosting provider, a trade-off they would notice), ask with `ticket_ask` and give your recommendation.
+
+## The bootstrap
+
+- It sets up the structure, the tooling and one sample test of each test level the project uses, and nothing else: no page, form or behaviour that another ticket of the plan builds.
+- A criterion about what the stack must make possible is met by a sample test, not by the feature.
+- For a website or a web app, the end-to-end level is Playwright: a sample test run on your machine, with the browsers the machine already provides (never set PLAYWRIGHT_BROWSERS_PATH and never write a browser path in the project), and in its own CI job.
+
+## Default stacks
+
+Use the default of the project's kind. Another choice needs an ADR naming the default and why it is not used.
+
+- Website: Astro, TypeScript, static output; Astro's Node.js server adapter only when the site saves what visitors send on a server. Tests: Vitest for logic, Playwright for key pages.
+- Web app: React, Vite and TypeScript for the front end; Node.js, Fastify and TypeScript for the server; PostgreSQL; Docker Compose to run it locally. Tests: Vitest (unit), integration tests against a test database (in CI only for now), Playwright (end-to-end).
+- Common to both: ESLint and Prettier, a committed lock file, Node.js LTS.
