@@ -685,6 +685,15 @@ Step M's six gaps (above) are fixed before `v0.6.0` is tagged, in the order M1, 
 
 **Done when** `planning-plan-propose.test.ts` covers `e2e` and the per-kind `stack` for a `website` and a `web_app` plan, neither added twice, and neither for an existing project; `plans-new-project.test.ts` covers the scope criterion added at approval, with the final keys and the edited titles, and its text within **Most acceptance criteria**; a unit test checks that the stacks named in the texts are 08 section 3.3's; the snapshots of the Architect's and the Project Manager's texts are read and accepted. The new tests fail on `main`'s code.
 
+The owner's answers (2026-11-03, A to all, with the `e2e` part's words changed):
+
+1. **A plan with only the bootstrap**: no scope criterion; the Architect's text keeps the bootstrap to the structure.
+2. **Counting**: `plan_propose` counts one slot for the scope criterion when the plan has other tickets, so an approval is never refused for it alone; **Approve** checks it again (the owner's edits may add criteria).
+3. **Too long**: the keys and titles; above **Longest acceptance criterion**, the keys only; still above, **Approve** is refused, naming the setting.
+4. **Before Approve**: no screen change; Help > Requests says what **Approve** adds.
+5. **The old `stack` text**: replaced by `stack-website` and `stack-web-app`; a plan proposed before the update keeps the old sentence and gets the new one beside it at **Approve**.
+6. **The texts**, word for word as proposed, but the `e2e` part: "End-to-end tests use Playwright, with one sample test. It runs on the agent's machine with the browsers the machine already provides (never set PLAYWRIGHT_BROWSERS_PATH and never write a browser path in the project), and in CI in its own job, which installs the browsers itself and is listed in the needs of the ci job." The Architect's text uses the same words for the machine's browsers.
+
 ### [ ] M2. The closing comment and the criteria kept (branch `lot5/m2-criteria-kept`; gaps 5 and 6)
 
 - **Gap 5**: the comment written by **Close request** is signed `system`, like the request's other status changes, so the conversation shows "Orchestrator · The owner closed the request." (`apps/server/src/requests/routes.ts`).
