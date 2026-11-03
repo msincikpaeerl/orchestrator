@@ -84,8 +84,9 @@ The server never takes over a repository it did not create. When trying again fi
 
 Every plan for a new project starts with a bootstrap ticket assigned to the Architect (03, section 2.1). Its acceptance criteria are fixed:
 
-- the stack is chosen and recorded in ADRs, following the defaults below unless the request justifies another choice;
+- the stack is chosen and recorded in ADRs: the default of the project's kind (section 3.3), named in the criterion; another choice needs an ADR naming the default and why it is not used;
 - the project builds, and a sample test runs at each test level used by the project;
+- for a `website` or a `web_app`, the end-to-end level is Playwright, with one sample test run on the agent's machine with the browsers it already provides (never setting `PLAYWRIGHT_BROWSERS_PATH`, never a browser path in the project) and in CI in its own job, listed in the `needs` of `ci`;
 - lint, format check and type check (when applicable) are configured;
 - CI runs all of the above on every pull request, plus the build artefact for Android;
 - the documentation link check is moved into the stack's own tooling (for example a pinned dev dependency and a script), replacing the skeleton's npm install command in CLAUDE.md and CI; both stay identical;
@@ -93,7 +94,7 @@ Every plan for a new project starts with a bootstrap ticket assigned to the Arch
 - `docs/dev/setup.md` and `docs/dev/testing.md` are written;
 - `docs/user/getting-started.md` explains how to run the product.
 
-All other tickets of the plan depend on it.
+All other tickets of the plan depend on it. It builds none of their features: only the structure, the tooling and one sample test of each test level; at the plan's approval, a last fixed criterion names the plan's other tickets by their final keys and titles (lot 5 step M1).
 
 **As decided for lot 5** (owner's answers 5, 6 and 8, lot 5 step A):
 
@@ -101,6 +102,13 @@ All other tickets of the plan depend on it.
 - **End-to-end tests run locally and in CI**: on a machine with the capability `browser-tests` (05, section 2), which a new `website` or `web_app` project requires, the builders and Quality run them in the worktree; browsers come from `PLAYWRIGHT_BROWSERS_PATH`, set by the daemon, never a path written in the project. So the criterion "a sample test runs at each test level" holds on the machine and in CI, whose workflow installs the browsers and their libraries itself.
 - **No Docker and no database locally** until lot 6, Isolated agent workspace (05, section 4.6): for a `web_app` with PostgreSQL, the integration tests' criterion holds in CI only, and its bootstrap ticket and `docs/dev/testing.md` say so.
 - A project generator runs without prompts, and the bootstrap's checks use the build and the tests, never a development server left running (03, section 2.2).
+
+**As fixed in lot 5 step M1** (gaps 1 to 3 of the owner's check, step M: CNT-1 chose no end-to-end tests, did not know the default stack, and built the other tickets' features):
+
+- The template's stack criterion is one part per kind (`stack-website`, `stack-web-app`), naming section 3.3's default; the Architect's text has the same "Default stacks" (a unit test compares both with section 3.3's table).
+- The `end-to-end` part above, for a `website` and a `web_app` only.
+- The `scope` part, added by **Approve** only, after the others: "It builds no feature of the plan's other tickets (CNT-2 Home page, CNT-3 Contact form): only the structure, the tooling and one sample test of each test level.", with the final keys and the owner's edited titles; the keys only when that passes **Longest acceptance criterion**; none for a plan with the bootstrap only. `plan.propose` already counts its slot under **Most acceptance criteria** when the plan has other tickets (owner's answers 1 to 3, step M1).
+- The Project Manager's bootstrap criteria say what the stack must make possible, each shown by a sample test, never a feature to build; the Architect's text keeps a bootstrap to the structure.
 
 ### 3.3 Default stacks
 

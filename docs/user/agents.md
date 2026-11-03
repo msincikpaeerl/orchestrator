@@ -22,7 +22,12 @@ Owns the structure of each project and keeps it working for the other agents: th
 - **Spike** tickets, a short investigation that ends with a written recommendation;
 - **Chore** tickets that change the structure: upgrading tools, reorganising code.
 
-It records every important technical choice in the project's decision records (ADRs), and does not build product features.
+It records every important technical choice in the project's decision records (ADRs), and does not build product features. A new project's setup builds none of the plan's other tickets: only the structure, the tools and one sample test of each kind of test. It uses the default stack of the project's kind unless a decision record explains why not:
+
+- a website: Astro, TypeScript and static pages, with Astro's Node.js server adapter only when the site saves what visitors send (a contact form, for example); tests with Vitest and Playwright;
+- a web app: React, Vite and TypeScript for the screens; Node.js, Fastify and TypeScript for the server; PostgreSQL; Docker Compose to run it; tests with Vitest, integration tests against a test database (in CI only for now) and Playwright.
+
+For a website or a web app, the setup includes a Playwright end-to-end sample test, run on your machine with the browsers it already has (Help > Machines, "Browser tests") and in its own CI job.
 
 ## Web Developer
 
