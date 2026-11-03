@@ -177,7 +177,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(builder).toMatch(/`git merge origin\/<your ticket branch>`/);
   });
 
-  it("forbid turning off what a criterion relies on, and make Quality ask for changes when it happens (lot 5 step M2, gap 6)", async () => {
+  it('forbid turning off what a criterion relies on, and make Quality ask for changes when it happens (lot 5 step M2, gap 6)', async () => {
     const { rules, profiles } = await loadShippedAgents();
     const builder = runRules(rules, 'implement');
     expect(builder).toContain(
@@ -194,7 +194,7 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     );
     const pm = profiles.find((profile) => profile.key === 'pm');
     expect(pm?.instructions).toContain(
-      "- Each behaviour the request states goes into a criterion in the request's own words, even when it sounds technical, so that no agent can drop it: when the request says each field is \"checked in the browser and again by the site's own server\", a criterion says exactly that.",
+      '- Each behaviour the request states goes into a criterion in the request\'s own words, even when it sounds technical, so that no agent can drop it: when the request says each field is "checked in the browser and again by the site\'s own server", a criterion says exactly that.',
     );
   });
 
