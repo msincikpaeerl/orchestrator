@@ -6,11 +6,20 @@ import { DaemonRunState, RunId } from './runs.js';
 
 /**
  * The daemon's control socket, `~/.orchestrator/daemon.sock` (05, section 8): one JSON request
- * per line, one JSON answer per line. It is read-only: no request changes any state, and no
- * answer holds a token or another secret, since agents run under the same user.
+ * per line, one JSON answer per line. No request changes the daemon's state, and no answer holds
+ * a token or another secret, since agents run under the same user. `status` reads it;
+ * `recheck`, sent by `orchestrator-daemon login` once Claude Code exits, makes the daemon run its
+ * checks again and send them to the server (`machine.doctor`) when connected (lot 5 step M2b).
  */
-export const ControlRequest = z.object({ type: z.literal('status') });
+export const ControlRequest = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('status') }),
+  z.object({ type: z.literal('recheck') }),
+]);
 export type ControlRequest = z.infer<typeof ControlRequest>;
+
+/** Answer to `recheck`: whether the checks were sent, false while not connected. */
+export const ControlRechecked = z.object({ type: z.literal('rechecked'), sent: z.boolean() });
+export type ControlRechecked = z.infer<typeof ControlRechecked>;
 
 /** Where the daemon is in its connection to the server (05, section 3.2). */
 export const ConnectionState = z.enum([
