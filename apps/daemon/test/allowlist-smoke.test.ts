@@ -160,6 +160,8 @@ const PLANNER_ALLOWED = [
   'ls',
   'cat README.md',
   'find . -name README.md',
+  // In Claude Code's read-only set (2.1.316: exactly `node -v` and `node --version`; lot 5 step M).
+  'node --version',
 ];
 const PLANNER_REFUSED = [
   'WRITE',
@@ -169,7 +171,9 @@ const PLANNER_REFUSED = [
   'git commit --allow-empty -m "Smoke"',
   'pnpm install',
   'npm test',
-  'node --version',
+  `node -e "require('fs').writeFileSync('smoke-node.txt','x')"`,
+  'node smoke.js',
+  'npx --yes cowsay hi',
   'cat ../../config.json',
   'curl -sI https://example.com',
   'sudo true',
@@ -467,7 +471,7 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
   it(
     "checks the Project Manager's reading, and its refusals of everything that writes, installs or runs a program (owner's answer 16, lot 5 step E1)",
     async () => {
-      await fake.play(session(plannerAnswers(['node --version'])), 'pm');
+      await fake.play(session(plannerAnswers(['node smoke.js'])), 'pm');
       const { code, output } = await runSmoke('--profile', 'pm');
       expect(output).toMatch(/Profiles: +pm$/m);
       expect(output).toMatch(
@@ -483,7 +487,14 @@ describe('allowlist smoke test, dry run with the fake claude', () => {
       expect(output).toMatch(
         /^pm: PASS +Create the file smoke-note\.txt with the Write tool, containing the word smoke: refused \(not in the allowlist\), expected refused$/m,
       );
-      expect(output).toMatch(/^pm: FAIL +node --version: allowed, expected refused$/m);
+      expect(output).toMatch(/^pm: PASS +node --version: allowed, expected allowed$/m);
+      expect(output).toMatch(
+        /^pm: PASS +node -e "require\('fs'\)\.writeFileSync\('smoke-node\.txt','x'\)": refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(
+        /^pm: PASS +npx --yes cowsay hi: refused \(not in the allowlist\), expected refused$/m,
+      );
+      expect(output).toMatch(/^pm: FAIL +node smoke\.js: allowed, expected refused$/m);
       expect(code).toBe(1);
     },
     TIMEOUT,
