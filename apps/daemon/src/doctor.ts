@@ -8,6 +8,7 @@ import {
 } from '@orchestrator/protocol';
 import { checkBrowsers, describeBrowsers } from './browsers.js';
 import { CERTIFICATE_WARNING_DAYS, checkCertificate } from './certificate.js';
+import { loginCheck } from './claude-login.js';
 import { readConfig, type DaemonConfig } from './config.js';
 import { findExecutable, runCommand } from './exec.js';
 import type { DaemonPaths } from './paths.js';
@@ -102,7 +103,7 @@ export async function runDoctor(
   checks.push(...tools.checks);
   const browsers = await browserCheck(environment, config);
   checks.push(browsers);
-  checks.push(loginCheck(environment));
+  checks.push(await loginCheck(environment.paths, environment.toolPath));
   checks.push(...(await serviceChecks(environment, config)));
   if (processScopes) checks.push(processScopes);
   checks.push(managedSettingsCheck(environment));
@@ -274,17 +275,6 @@ async function toolChecks(
     );
   }
   return { checks, claudeCodeVersion };
-}
-
-/** Only the presence of the login file is checked: the daemon never reads it (05, section 7). */
-function loginCheck(environment: DoctorEnvironment): DoctorCheck {
-  return existsSync(join(environment.paths.claudeConfig, '.credentials.json'))
-    ? check('Claude Code login', 'ok', 'Logged in')
-    : check(
-        'Claude Code login',
-        'error',
-        'Not logged in: type "orchestrator-daemon login" and log in with the Claude account of this machine.',
-      );
 }
 
 async function serviceChecks(

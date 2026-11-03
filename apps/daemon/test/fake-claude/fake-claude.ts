@@ -472,6 +472,15 @@ async function main(): Promise<void> {
     process.stdout.write(`${scenario.version}\n`);
     return;
   }
+  if (args.length === 2 && args[0] === 'auth' && args[1] === 'status') {
+    // No session and nothing recorded: `doctor` asks it at every `hello` (lot 5 step M2b).
+    const answer = scenario.authStatus;
+    process.stdout.write(
+      typeof answer === 'string' ? `${answer}\n` : `${JSON.stringify(answer, null, 2)}\n`,
+    );
+    if (typeof answer !== 'string' && !answer.loggedIn) process.exitCode = 1;
+    return;
+  }
   record({
     event: 'start',
     pid: process.pid,

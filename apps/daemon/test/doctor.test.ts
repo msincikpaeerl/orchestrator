@@ -100,15 +100,81 @@ describe('tools against their minimums', () => {
 });
 
 describe('Claude Code login', () => {
-  it('is an error until the login file exists in the dedicated folder, never read', async () => {
+  /** A fake `claude` answering `auth status` with `answer` and `code`, recording its folder. */
+  async function authStatus(answer: string, code = 0): Promise<string> {
+    const log = join(home.root, 'auth-status.log');
+    await fakeExecutable(
+      home.bin,
+      'claude',
+      [
+        'if [ "$1 $2" = "auth status" ]; then',
+        `  echo "$CLAUDE_CONFIG_DIR" >> '${log}'`,
+        `  printf '%s\\n' '${answer}'`,
+        `  exit ${String(code)}`,
+        'fi',
+        "printf '%s\\n' '2.1.317 (Claude Code)'",
+      ].join('\n'),
+    );
+    return log;
+  }
+
+  const CANNOT_TELL =
+    'Claude Code does not say whether the login is still valid without starting a session. A run that finds it expired marks this machine unusable.';
+
+  it('reads only loggedIn of claude auth status, in the dedicated folder (lot 5 step M2b)', async () => {
+    const answer = JSON.stringify({
+      loggedIn: true,
+      authMethod: 'claude.ai',
+      apiProvider: 'firstParty',
+      email: 'owner@example.com',
+    });
+    const log = await authStatus(answer);
+    const check = (await checks()).get('Claude Code login');
+    expect(check).toEqual({
+      name: 'Claude Code login',
+      status: 'ok',
+      message: `Logged in. ${CANNOT_TELL}`,
+      link: null,
+    });
+    expect(await readFile(log, 'utf8')).toBe(`${home.paths.claudeConfig}\n`);
+    // Nothing else it prints reaches the checks.
+    expect(JSON.stringify(await runDoctor(environment))).not.toContain('owner@example.com');
+  });
+
+  it('is an error when claude auth status says no login is there', async () => {
+    // The login file is not what counts once Claude Code answers.
+    await mkdir(home.paths.claudeConfig, { recursive: true });
+    await writeFile(join(home.paths.claudeConfig, '.credentials.json'), '{}');
+    await authStatus(JSON.stringify({ loggedIn: false, authMethod: 'none' }), 1);
     expect(await grade('Claude Code login')).toEqual([
       'error',
-      expect.stringMatching(/orchestrator-daemon login/),
+      'Not logged in: type "orchestrator-daemon login" and log in with the Claude account of this machine.',
+    ]);
+  });
+
+  it('falls back to the login file, never read, when auth status gives no readable answer', async () => {
+    await authStatus('Unknown command: auth', 1);
+    expect(await grade('Claude Code login')).toEqual([
+      'error',
+      expect.stringMatching(/^Not logged in: type "orchestrator-daemon login"/),
     ]);
     await mkdir(home.paths.claudeConfig, { recursive: true });
     // Unreadable: only its presence counts.
     await writeFile(join(home.paths.claudeConfig, '.credentials.json'), 'secret', { mode: 0o000 });
+    expect(await grade('Claude Code login')).toEqual(['ok', `Login file found: ${CANNOT_TELL}`]);
+    // No claude at all: the file decides too.
+    await rm(join(home.bin, 'claude'));
     expect((await grade('Claude Code login'))[0]).toBe('ok');
+  });
+
+  it('is an error while a run marked the login expired, whatever auth status says', async () => {
+    await authStatus(JSON.stringify({ loggedIn: true }));
+    await mkdir(home.paths.home, { recursive: true });
+    await writeFile(home.paths.loginExpired, '{}');
+    expect(await grade('Claude Code login')).toEqual([
+      'error',
+      'Claude Code is logged out on this machine: type "orchestrator-daemon login" and log in with the Claude account of this machine.',
+    ]);
   });
 });
 

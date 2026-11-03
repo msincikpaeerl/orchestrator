@@ -64,6 +64,17 @@ export type Turn = z.infer<typeof Turn>;
 export const Scenario = z.object({
   /** What `claude --version` prints. */
   version: z.string().default('2.1.282 (Claude Code)'),
+  /**
+   * What `claude auth status` prints, JSON by default as Claude Code 2.1.317 does (owner's check,
+   * lot 5 step M2b), with the account's e-mail address the daemon must never log or send; a
+   * string is printed as it is. The exit code is 1 when `loggedIn` is false, as Claude Code's.
+   */
+  authStatus: z.union([z.looseObject({ loggedIn: z.boolean() }), z.string()]).default({
+    loggedIn: true,
+    authMethod: 'claude.ai',
+    apiProvider: 'firstParty',
+    email: 'owner@example.com',
+  }),
   /** Wait before the `SessionStart` hook. */
   startDelayMs: z.int().min(0).default(0),
   /** Lines written at startup to the file of `--debug-file`, when given. */

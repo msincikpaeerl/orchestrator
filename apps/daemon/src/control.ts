@@ -1,17 +1,25 @@
 import { chmod, rm } from 'node:fs/promises';
 import { createConnection, createServer, type Server } from 'node:net';
-import { ControlRequest, ControlStatus } from '@orchestrator/protocol';
+import { ControlRechecked, ControlRequest, ControlStatus } from '@orchestrator/protocol';
 import { safeJson } from './config.js';
 
-// The control socket `~/.orchestrator/daemon.sock` (05, section 8). Read-only: its only request
-// is `status`, which changes nothing, and its answer never holds a token or another secret,
-// because agents run under the same user as the daemon.
+// The control socket `~/.orchestrator/daemon.sock` (05, section 8). No request changes the
+// daemon's state: `status` reads it, `recheck` runs the checks again and sends them to the server
+// (lot 5 step M2b). No answer holds a token or another secret, because agents run under the same
+// user as the daemon.
 
 /** Longest request line read, far above `{"type":"status"}`. */
 const MAX_REQUEST_BYTES = 1024;
 
-/** Starts answering on `path`, which must not exist (see `probeControl`). */
-export async function serveControl(path: string, status: () => ControlStatus): Promise<Server> {
+/**
+ * Starts answering on `path`, which must not exist (see `probeControl`). `recheck` resolves with
+ * whether the checks reached the server.
+ */
+export async function serveControl(
+  path: string,
+  recheck: () => Promise<boolean>,
+  status: () => ControlStatus,
+): Promise<Server> {
   const server = createServer((socket) => {
     let buffer = '';
     socket.setEncoding('utf8');
@@ -24,9 +32,16 @@ export async function serveControl(path: string, status: () => ControlStatus): P
       const end = buffer.indexOf('\n');
       if (end < 0) return;
       const request = ControlRequest.safeParse(safeJson(buffer.slice(0, end)));
-      socket.end(
-        `${JSON.stringify(request.success ? status() : { type: 'error', message: 'unknown request' })}\n`,
-      );
+      buffer = '';
+      if (!request.success) {
+        socket.end(`${JSON.stringify({ type: 'error', message: 'unknown request' })}\n`);
+      } else if (request.data.type === 'status') {
+        socket.end(`${JSON.stringify(status())}\n`);
+      } else {
+        void recheck().then((sent) => {
+          socket.end(`${JSON.stringify({ type: 'rechecked', sent } satisfies ControlRechecked)}\n`);
+        });
+      }
     });
     socket.on('error', () => {
       // The client went away: nothing to answer.
@@ -74,6 +89,37 @@ export function probeControl(path: string, timeoutMs = 3000): Promise<ControlPro
     socket.on('error', (error: NodeJS.ErrnoException) => {
       clearTimeout(timer);
       resolve(error.code === 'ENOENT' ? { kind: 'absent' } : { kind: 'stale' });
+    });
+  });
+}
+
+/**
+ * Asks the running daemon to run its checks again and send them (`recheck`): whether they reached
+ * the server, or null when no daemon answers.
+ */
+export function requestRecheck(path: string, timeoutMs = 30_000): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    const socket = createConnection(path);
+    let answer = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(null);
+    }, timeoutMs);
+    socket.setEncoding('utf8');
+    socket.on('connect', () => {
+      socket.write(`${JSON.stringify({ type: 'recheck' } satisfies ControlRequest)}\n`);
+    });
+    socket.on('data', (chunk: string) => {
+      answer += chunk;
+    });
+    socket.on('end', () => {
+      clearTimeout(timer);
+      const rechecked = ControlRechecked.safeParse(safeJson(answer.trim()));
+      resolve(rechecked.success ? rechecked.data.sent : null);
+    });
+    socket.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
     });
   });
 }

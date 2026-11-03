@@ -32,7 +32,7 @@ export const TOOL_SEARCH = 'ToolSearch';
 export const ORCHESTRATOR_MCP = 'mcp__orchestrator';
 
 /** Entries of the daemon's folder closed by settings deny rules; `worktrees/` stays open. */
-const DAEMON_FILES = ['config.json', 'daemon.sock', 'last-stop.json'];
+const DAEMON_FILES = ['config.json', 'daemon.sock', 'last-stop.json', 'login-expired.json'];
 const DAEMON_FOLDERS = ['browsers', 'claude-config', 'playwright', 'repos', 'runs'];
 
 /**

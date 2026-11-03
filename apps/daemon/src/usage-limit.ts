@@ -22,6 +22,13 @@ export const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
 /** API error texts, as Claude Code shows them as a turn's text. */
 export const API_ERROR_PATTERNS: readonly RegExp[] = [/^\s*API Error\b/i];
 
+/**
+ * Claude Code's own login error text, as it ends a turn: "Login expired · Please run /login" (the
+ * owner's run, lot 5 step M), and the same for an invalid key. Matched only in Claude Code's error
+ * output, never in the agent's words (owner's decision, lot 5 step M2b).
+ */
+export const LOGIN_ERROR_PATTERNS: readonly RegExp[] = [/please run \/login/i];
+
 /** The reset time in a usage-limit message: `resets 3:45pm`, `resets Mon 12:00am`. */
 export const RESET_PATTERN =
   /resets\s+(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
@@ -101,8 +108,33 @@ export function parseResetTime(message: string, now: Date): Date | null {
 
 const clip = (text: string | null) => (text === null ? null : text.slice(0, TEXT_CEILING));
 
-/** Detects or suspects a usage limit at the end of a turn (05, section 4.10). */
+/**
+ * Claude Code's login error at the end of a turn (05, section 4.10; lot 5 step M2b): a
+ * `StopFailure` with `authentication_failed`, the error text of a `StopFailure`, or the turn's last
+ * assistant entry that Claude Code marked as an API error. Never the agent's last message after a
+ * `Stop`, its tool output or its files: an agent may write "Please run /login" about a login page.
+ * Null when there is no login error; otherwise the error text it gives (clipped), or null.
+ */
+export function loginError(facts: Pick<TurnFacts, 'end' | 'transcriptApiError'>): {
+  message: string | null;
+} | null {
+  const { end, transcriptApiError } = facts;
+  const failure = end.kind === 'stop_failure' ? end.message : null;
+  if (end.kind === 'stop_failure' && end.error === 'authentication_failed') {
+    return { message: clip(failure ?? transcriptApiError) };
+  }
+  for (const text of [failure, transcriptApiError]) {
+    if (matches(LOGIN_ERROR_PATTERNS, text)) return { message: clip(text) };
+  }
+  return null;
+}
+
+/**
+ * Detects or suspects a usage limit at the end of a turn (05, section 4.10). Claude Code's login
+ * error is neither: `loginError` names it.
+ */
 export function assessTurn(facts: TurnFacts): Assessment {
+  if (loginError(facts)) return null;
   const { end, now } = facts;
   const status = windows(facts.statusLine, now);
   const evidenceWindow =

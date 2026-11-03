@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -33,6 +34,9 @@ afterEach(async () => {
 });
 
 const RUN_ID = '0b6f2f7e-3c1a-4d5e-9f8a-1b2c3d4e5f60';
+
+/** A daemon whose `recheck` reaches no server. */
+const noRecheck = () => Promise.resolve(false);
 
 async function enroll() {
   await writeConfig(home.paths.config, {
@@ -116,7 +120,7 @@ describe('start', () => {
 
   it('refuses when another daemon answers on the control socket', async () => {
     await enroll();
-    const server = await serveControl(home.paths.controlSocket, terminalDaemon);
+    const server = await serveControl(home.paths.controlSocket, noRecheck, terminalDaemon);
     try {
       const result = await runDaemon(['start', '--service'], home.env);
       expect(result.code).toBe(EXIT_REFUSED);
@@ -130,7 +134,7 @@ describe('start', () => {
 describe('status', () => {
   it("shows the running daemon's version and build", async () => {
     await enroll();
-    const server = await serveControl(home.paths.controlSocket, () => ({
+    const server = await serveControl(home.paths.controlSocket, noRecheck, () => ({
       ...terminalDaemon(),
       daemonBuild: '0123456789abcdef',
     }));
@@ -208,7 +212,7 @@ describe('install-service', () => {
   it('refuses before enrollment, and while a daemon runs in a terminal', async () => {
     expect((await runDaemon(['install-service'], home.env)).stderr).toMatch(/not enrolled/);
     await enroll();
-    const server = await serveControl(home.paths.controlSocket, terminalDaemon);
+    const server = await serveControl(home.paths.controlSocket, noRecheck, terminalDaemon);
     try {
       const result = await runDaemon(['install-service'], home.env);
       expect(result.code).toBe(1);
@@ -281,6 +285,45 @@ describe('login', () => {
     expect(await trust.isTrusted(folder)).toBe(true);
     expect((await stat(home.paths.home)).mode & 0o777).toBe(0o700);
     expect((await stat(home.paths.claudeConfig)).mode & 0o777).toBe(0o700);
+    expect(result.stdout).toMatch(
+      /The daemon is not running: it checks this machine when it starts/,
+    );
+  });
+
+  it('removes the mark of an expired login and has the daemon check again (lot 5 step M2b)', async () => {
+    await fakeExecutable(home.bin, 'claude', 'exit 0');
+    await mkdir(home.paths.home, { recursive: true });
+    await writeFile(home.paths.loginExpired, '{}');
+    let rechecks = 0;
+    const server = await serveControl(
+      home.paths.controlSocket,
+      () => {
+        rechecks++;
+        return Promise.resolve(true);
+      },
+      terminalDaemon,
+    );
+    try {
+      const result = await runDaemon(['login'], home.env);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toMatch(
+        /The daemon checked this machine again and told the Orchestrator/,
+      );
+    } finally {
+      server.close();
+    }
+    expect(rechecks).toBe(1);
+    expect(existsSync(home.paths.loginExpired)).toBe(false);
+  });
+
+  it('keeps the mark when Claude Code did not exit normally, and asks nothing', async () => {
+    await fakeExecutable(home.bin, 'claude', 'exit 3');
+    await mkdir(home.paths.home, { recursive: true });
+    await writeFile(home.paths.loginExpired, '{}');
+    const result = await runDaemon(['login'], home.env);
+    expect(result.code).toBe(3);
+    expect(result.stdout).not.toMatch(/checked this machine again|not running/);
+    expect(existsSync(home.paths.loginExpired)).toBe(true);
   });
 
   it('says what to install when claude is missing', async () => {

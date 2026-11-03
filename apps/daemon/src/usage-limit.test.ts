@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { StatusLineInput } from '@orchestrator/protocol';
 import { describe, expect, it } from 'vitest';
-import { assessTurn, parseResetTime, type TurnEnd } from './usage-limit.js';
+import { assessTurn, loginError, parseResetTime, type TurnEnd } from './usage-limit.js';
 
 // The usage-limit module against its fixtures (05, section 4.10). Local times keep the cases
 // true in any time zone.
@@ -82,6 +82,90 @@ describe('usage-limit detection (fixtures from the documentation)', () => {
       message: 'API Error: Overloaded',
       statusLine: null,
     });
+  });
+});
+
+describe("Claude Code's login error (lot 5 step M2b)", () => {
+  /** The owner's run, lot 5 step M: the agent line of the run's log. */
+  const LOGIN = 'Login expired · Please run /login';
+  const facts = (end: TurnEnd, transcriptApiError: string | null = null, toolUsed = false) => ({
+    end,
+    toolUsed,
+    transcriptApiError,
+    statusLine: null,
+    now: new Date('2026-11-03T10:00:00'),
+  });
+
+  it.each([
+    [
+      'a StopFailure authentication_failed with the login text',
+      facts({ kind: 'stop_failure', error: 'authentication_failed', message: LOGIN }),
+      LOGIN,
+    ],
+    [
+      'a StopFailure authentication_failed without a text',
+      facts({ kind: 'stop_failure', error: 'authentication_failed', message: null }),
+      null,
+    ],
+    [
+      'a StopFailure of another type with the login text',
+      facts({ kind: 'stop_failure', error: 'unknown', message: LOGIN }),
+      LOGIN,
+    ],
+    [
+      'an API-error turn whose transcript entry has the login text',
+      facts({ kind: 'stop', message: LOGIN }, LOGIN),
+      LOGIN,
+    ],
+    [
+      'an idle timeout after the login text in the transcript',
+      facts({ kind: 'idle_timeout' }, LOGIN),
+      LOGIN,
+    ],
+    [
+      'an invalid key',
+      facts({ kind: 'stop', message: null }, 'Invalid API key · Please run /login'),
+      'Invalid API key · Please run /login',
+    ],
+  ])('is %s, and neither a detected nor a suspected limit', (_name, turn, message) => {
+    expect(loginError(turn)).toEqual({ message });
+    expect(assessTurn(turn)).toBeNull();
+  });
+
+  it("is never the agent's own words after a Stop, its tool output or its files", () => {
+    // A ticket about a login page: the agent's last message says it, with no API-error mark.
+    const said = 'The page now says "Session over · Please run /login" when the token is gone.';
+    for (const turn of [
+      facts({ kind: 'stop', message: said }),
+      facts({ kind: 'stop', message: said }, null, true),
+    ]) {
+      expect(loginError(turn)).toBeNull();
+      expect(assessTurn(turn)).toBeNull();
+    }
+  });
+
+  it('leaves a rate limit and an overload as they were', () => {
+    const limit = "You've hit your session limit · resets 3:45pm";
+    expect(
+      loginError(facts({ kind: 'stop_failure', error: 'rate_limit', message: limit })),
+    ).toBeNull();
+    expect(
+      assessTurn(facts({ kind: 'stop_failure', error: 'rate_limit', message: limit }))?.kind,
+    ).toBe('detected');
+    const overload = facts({
+      kind: 'stop_failure',
+      error: 'overloaded',
+      message: 'API Error: Overloaded',
+    });
+    expect(loginError(overload)).toBeNull();
+    expect(assessTurn(overload)?.kind).toBe('suspected');
+    const rateLimited = facts({
+      kind: 'stop_failure',
+      error: 'rate_limit',
+      message: 'API Error: Rate limited',
+    });
+    expect(loginError(rateLimited)).toBeNull();
+    expect(assessTurn(rateLimited)?.kind).toBe('suspected');
   });
 });
 

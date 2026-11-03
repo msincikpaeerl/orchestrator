@@ -2,8 +2,11 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import type { ControlStatus } from '@orchestrator/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { probeControl, removeStaleControl, serveControl } from '../src/control.js';
+import { probeControl, removeStaleControl, requestRecheck, serveControl } from '../src/control.js';
 import { createTestHome, type TestHome } from './testing.js';
+
+/** A daemon whose `recheck` reaches no server. */
+const noRecheck = () => Promise.resolve(false);
 
 let home: TestHome;
 beforeEach(async () => {
@@ -55,7 +58,7 @@ function raw(path: string, text: string): Promise<string> {
 
 describe('the control socket (05, section 8)', () => {
   it('answers status, readable by the owner only', async () => {
-    const server = await serveControl(home.paths.controlSocket, () => status);
+    const server = await serveControl(home.paths.controlSocket, noRecheck, () => status);
     try {
       expect(await probeControl(home.paths.controlSocket)).toEqual({ kind: 'running', status });
       expect((await stat(home.paths.controlSocket)).mode & 0o777).toBe(0o600);
@@ -64,8 +67,31 @@ describe('the control socket (05, section 8)', () => {
     }
   });
 
-  it('is read-only: anything but status is refused', async () => {
-    const server = await serveControl(home.paths.controlSocket, () => status);
+  it('runs the checks again on recheck, and says whether they reached the server', async () => {
+    let rechecks = 0;
+    let connected = false;
+    const server = await serveControl(
+      home.paths.controlSocket,
+      () => {
+        rechecks++;
+        return Promise.resolve(connected);
+      },
+      () => status,
+    );
+    try {
+      expect(await requestRecheck(home.paths.controlSocket)).toBe(false);
+      connected = true;
+      expect(await requestRecheck(home.paths.controlSocket)).toBe(true);
+      expect(rechecks).toBe(2);
+    } finally {
+      server.close();
+    }
+    // No daemon: no answer.
+    expect(await requestRecheck(home.paths.controlSocket)).toBeNull();
+  });
+
+  it('refuses any request but status and recheck', async () => {
+    const server = await serveControl(home.paths.controlSocket, noRecheck, () => status);
     try {
       expect(JSON.parse(await raw(home.paths.controlSocket, '{"type":"stop"}\n'))).toEqual({
         type: 'error',
@@ -83,7 +109,7 @@ describe('the control socket (05, section 8)', () => {
     await writeFile(home.paths.controlSocket, '');
     expect(await probeControl(home.paths.controlSocket)).toEqual({ kind: 'stale' });
     await removeStaleControl(home.paths.controlSocket);
-    const server = await serveControl(home.paths.controlSocket, () => status);
+    const server = await serveControl(home.paths.controlSocket, noRecheck, () => status);
     server.close();
   });
 });

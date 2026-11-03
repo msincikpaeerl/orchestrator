@@ -9,6 +9,7 @@ import type {
   RunStop,
 } from '@orchestrator/protocol';
 import { BranchDeletes } from './branch-deletes.js';
+import { LOGGED_OUT } from './claude-login.js';
 import { Outbox } from './outbox.js';
 import { RunStateFile, readJson, stateFilePath } from './run-files.js';
 import { runFolder } from './run-socket.js';
@@ -101,6 +102,11 @@ export class RunManager {
     return handling;
   }
 
+  /** A run met an expired Claude Code login: no session starts until a new login (05, 4.10). */
+  private loggedOut(): string | null {
+    return this.context.login.expired ? LOGGED_OUT : null;
+  }
+
   private async apply(command: RunCommand): Promise<Ack['payload']> {
     const { runId } = command.payload;
     const run = this.runs.get(runId);
@@ -108,7 +114,7 @@ export class RunManager {
       case 'run.start': {
         if (run) return { ok: true };
         // A session started without its scope would be stopped by a restart (05, section 2).
-        const refused = this.context.scopes.problem;
+        const refused = this.context.scopes.problem ?? this.loggedOut();
         if (refused !== null) return { ok: false, message: refused };
         const created = Run.create(this.context, command.payload);
         this.runs.set(runId, created);
@@ -127,7 +133,7 @@ export class RunManager {
         return refused ? { ok: false, message: refused } : { ok: true };
       }
       case 'run.resume': {
-        const problem = this.context.scopes.problem;
+        const problem = this.context.scopes.problem ?? this.loggedOut();
         if (problem !== null) return { ok: false, message: problem };
         if (!run) return { ok: false, message: 'No such run on this machine.' };
         if (run.delivered(command.id)) return { ok: true };

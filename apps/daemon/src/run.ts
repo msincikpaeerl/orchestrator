@@ -55,6 +55,7 @@ import {
   type RunConnection,
   type RunSocketAnswer,
 } from './run-socket.js';
+import type { ClaudeLogin } from './claude-login.js';
 import type { ProcessScopes } from './scopes.js';
 import {
   ScopeRefused,
@@ -66,7 +67,7 @@ import {
 import { sessionName, type Tmux } from './tmux.js';
 import { TranscriptReader, type LogEntry } from './transcript.js';
 import type { TrustRegistry } from './trust.js';
-import { assessTurn, type Assessment, type TurnEnd } from './usage-limit.js';
+import { assessTurn, loginError, type Assessment, type TurnEnd } from './usage-limit.js';
 import { DownloadFailed } from './isolated-git.js';
 import { ReviewCommitMoved, ticketRepository, worktreePath, type Workspaces } from './workspace.js';
 
@@ -102,12 +103,17 @@ export interface RunContext {
   unitPrefix: string;
   /** Whether sessions may start; told when a run's scope cannot be created (05, section 2). */
   scopes: ProcessScopes;
+  /** The marker of an expired Claude Code login, written when a run meets it (05, section 4.10). */
+  login: ClaudeLogin;
   /** Called once a run has ended and its folder may go when its reports are acknowledged. */
   onEnded: (run: Run) => void;
 }
 
 /** Purposes whose runs push their ticket branch (05, section 4.9); a review run never does. */
 const PUSHING: readonly RunStart['payload']['purpose'][] = ['implement', 'fix_review'];
+
+/** The longest part of Claude Code's login error quoted in the run's end detail. */
+const LOGIN_TEXT_MAX_CHARACTERS = 200;
 
 /** States in which a closed session takes no `run.input`, only `run.resume` (05, section 4.4). */
 const CLOSED_STATES: readonly DaemonRunState[] = ['waiting_human', 'quota_paused', 'waiting_ci'];
@@ -880,12 +886,20 @@ export class Run {
     await this.readTranscript();
     // A message or a stop may have come while the transcript was read.
     if (!this.turnStillEnded()) return;
+    const { decision } = this.data;
+    const expired = this.loginExpired(end);
+    if (expired !== null) {
+      // Work the server accepted during the turn still ends the run as decided.
+      const decided =
+        decision === 'submitted' || decision === 'gave_up' || decision === 'push_failed';
+      await this.end(decided ? decision : 'claude_login_expired', decided ? null : expired);
+      return;
+    }
     const limit = this.assess(end);
     if (limit) {
       await this.pauseForQuota(limit);
       return;
     }
-    const { decision } = this.data;
     if (decision === 'submitted' || decision === 'gave_up' || decision === 'push_failed') {
       await this.end(decision, null);
       return;
@@ -909,6 +923,24 @@ export class Run {
       return;
     }
     await this.end('nudges_exhausted', null);
+  }
+
+  /**
+   * Claude Code's login error ended the turn (05, section 4.10; lot 5 step M2b): the marker is
+   * written, so the machine reports its login check as an error at once and takes no runs until
+   * `orchestrator-daemon login`. Returns the run's end detail, or null for any other turn.
+   */
+  private loginExpired(end: TurnEnd): string | null {
+    const error = loginError({ end, transcriptApiError: this.reader.lastApiError });
+    if (!error) return null;
+    this.log.warn({ message: error.message }, "Claude Code's login expired: the run ends");
+    try {
+      this.context.login.markExpired();
+    } catch (failure) {
+      this.log.error({ err: failure }, 'the expired login could not be marked');
+    }
+    const said = error.message?.split('\n')[0]?.trim().slice(0, LOGIN_TEXT_MAX_CHARACTERS);
+    return `Claude Code is logged out on this machine${said ? ` ("${said}")` : ''}: type "orchestrator-daemon login" on the machine and log in with the Claude account of this machine. It is not the ticket's fault and does not count as a failed attempt.`;
   }
 
   private assess(end: TurnEnd): Assessment {
@@ -1224,7 +1256,13 @@ export class Run {
       this.toolsRunning.size === 0 &&
       now - this.lastActivity >= limits.idleTimeoutMinutes * 60 * second
     ) {
-      // Right after an API error, the idle timeout is a suspected usage limit (05, section 4.10).
+      // Right after an API error, the idle timeout is a suspected usage limit (05, section 4.10),
+      // unless the error is Claude Code's login error.
+      const expired = this.loginExpired({ kind: 'idle_timeout' });
+      if (expired !== null) {
+        await this.end('claude_login_expired', expired);
+        return;
+      }
       const limit = this.assess({ kind: 'idle_timeout' });
       if (limit) {
         await this.pauseForQuota(limit);
