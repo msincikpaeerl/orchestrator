@@ -257,7 +257,7 @@ If you run the daemon yourself in a terminal (`orchestrator-daemon start`) inste
 | Update the daemon on … | The machine's daemon is too old (or too new) for this version of the Orchestrator. Either it cannot connect, or it connects but gets no runs. This happens after updating the Orchestrator. | [Update the daemon](#update-the-daemon) with the commands the item shows. |
 | The daemon on … is not the one this Orchestrator provides | The daemon works with this Orchestrator, but it is not the daemon this Orchestrator provides: an older or a newer build of it (see [Update the daemon](#update-the-daemon)). The machine still gets runs. | [Update the daemon](#update-the-daemon) with the commands the item shows, so the machine runs the daemon this Orchestrator was tested with. |
 | Claude Code not supported on … | Claude Code is missing, or older than 2.1.280. The machine gets no runs. | Install or update Claude Code (see [Before you start](#before-you-start)), then restart the daemon. |
-| Problem on … | A check on the machine found an error, for example tmux missing or too old, or [process scopes](#process-scopes) that cannot be created. The machine gets no runs. | Fix what the item names, then restart the daemon. |
+| Problem on … | A check on the machine found an error, for example tmux missing or too old, [process scopes](#process-scopes) that cannot be created, or a [Claude Code login that expired](#when-the-claude-code-login-expires). The machine gets no runs. | Fix what the item names, then restart the daemon. For the Claude Code login, type `orchestrator-daemon login` instead: no restart is needed. |
 
 An item disappears once the daemon connects again without the problem.
 
@@ -282,6 +282,17 @@ To fix it, on the machine:
 3. Restart the service: `systemctl --user restart orchestrator-daemon`. The item disappears once the daemon connects without the problem.
 
 A daemon you run yourself in a terminal (`orchestrator-daemon start`) does not need process scopes: where systemd does not run, it starts sessions without them.
+
+### When the Claude Code login expires
+
+The machine's Claude Code login can expire, or end because the account was logged out elsewhere. Claude Code cannot say whether a login still works without starting a session, so the check "Claude Code login" in `orchestrator-daemon doctor` only says whether you are logged in at all: "Logged in. Claude Code does not say whether the login is still valid without starting a session. A run that finds it expired marks this machine unusable."
+
+When a run finds the login expired (Claude Code says "Login expired · Please run /login"):
+
+- the run fails as a machine problem, which never counts as a failed attempt. Its ticket goes back to To do, or its request back to Open. It is not taken for a usage limit: the run is not paused and your Claude account is not marked as limited;
+- the machine takes no runs. "Needs you" shows **Problem on …** with "Claude Code is logged out on this machine: type "orchestrator-daemon login" and log in with the Claude account of this machine.", and `orchestrator-daemon doctor` shows the same.
+
+To fix it, type `orchestrator-daemon login` on the machine, log in with the Claude account of this machine, then type `/exit`. The command then says "The daemon checked this machine again and told the Orchestrator": the item goes, and the machine takes runs again at once, including the tickets and requests whose run failed there. No restart is needed. If you leave Claude Code without logging in, the next run finds the login expired again and the machine is marked again.
 
 ### When the daemon stopped by itself
 
