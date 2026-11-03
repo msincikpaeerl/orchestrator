@@ -35,12 +35,13 @@ Builds features and fixes bugs on web apps and websites. Assign it **Feature** a
 
 - does what the acceptance criteria say, and nothing more;
 - writes tests, and for a bug, first a test that shows the bug;
+- never turns off something a criterion relies on (the browser's own form checks, a test, a lint rule) to make its work pass; it asks you instead;
 - updates the user documentation of the project when something visible changes;
 - asks you rather than making a new technical decision alone, and proposes a new ticket for a problem it finds outside its ticket.
 
 ## Quality
 
-Reviews the work another agent submitted for a ticket, as a demanding reviewer would if they read code: does the change do what the acceptance criteria say, and nothing unrelated; do the tests really test it; does the user documentation describe the change for someone who never reads code; does the code follow the project's `CLAUDE.md`. It then approves the work or asks for changes, with points the agent can act on.
+Reviews the work another agent submitted for a ticket, as a demanding reviewer would if they read code: does the change do what the acceptance criteria say, and nothing unrelated; do the tests really test it; does the user documentation describe the change for someone who never reads code; does the code follow the project's `CLAUDE.md`. It then approves the work or asks for changes, with points the agent can act on. A change that turns off something an acceptance criterion relies on, such as the browser's own form checks, is always a request for changes.
 
 Quality never changes the work: it may read the project, see the changes, and run its tests and build, but not edit a file, commit, or move the branch. When CI passed on GitHub it does not run the tests again unless it has a reason; when no CI ran, it runs them itself. It is never a ticket's assignee, and never reviews a ticket it implemented. The scheduler starts a review by itself once a ticket is **In review**; **Start review** starts it at once, and **Skip review** skips it: see [Review by Quality](tickets.md#review-by-quality). A review uses one Claude Code session; a review that does not finish never counts as a failed attempt.
 
