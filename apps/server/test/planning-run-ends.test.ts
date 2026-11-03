@@ -163,7 +163,7 @@ describe('a planning run that fails (owner answers 4 and 6)', () => {
     );
     const machines = () =>
       h.t.db
-        .select({ id: schema.machines.id, connectedAt: schema.machines.connectedAt })
+        .select({ id: schema.machines.id, usableSince: schema.machines.usableSince })
         .from(schema.machines);
     const failures = requestMachineFailures(await requestRow());
     expect(failures).toMatchObject([

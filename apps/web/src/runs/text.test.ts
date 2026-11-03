@@ -18,6 +18,7 @@ import {
   runBranchText,
   runRefusalText,
   runTimes,
+  runStateText,
   runTimesText,
   ticketUsageText,
   unavailableText,
@@ -442,5 +443,22 @@ describe("a run's waiting time split between you, CI and the usage limit (lot 4 
         waiting: { ownerMs: 0, ciMs: 0, quotaMs: 0 },
       }),
     ).toBe('working 45 s · waiting 0 s');
+  });
+});
+
+describe('a run ended on an expired Claude Code login (lot 5 step M2b)', () => {
+  it('says the login expired, not that Claude Code could not start', () => {
+    const run = {
+      status: 'failed' as const,
+      pauseReason: null,
+      failureReason: 'machine_problem' as const,
+      machine: { ...machine, online: true },
+    };
+    expect(runStateText({ ...run, endReason: 'claude_login_expired' })).toBe(
+      "Failed: its machine's Claude Code login expired",
+    );
+    expect(runStateText({ ...run, endReason: 'launch_failed' })).toBe(
+      'Failed: its machine could not start Claude Code',
+    );
   });
 });

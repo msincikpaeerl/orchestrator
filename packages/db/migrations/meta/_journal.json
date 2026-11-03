@@ -344,6 +344,13 @@
       "when": 1793571165480,
       "tag": "0048_wizard_finished",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793746957052,
+      "tag": "0049_machine_usable_since",
+      "breakpoints": true
     }
   ]
 }

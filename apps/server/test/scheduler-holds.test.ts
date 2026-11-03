@@ -516,6 +516,107 @@ describe('failures the machine caused (07, section 4)', () => {
   });
 });
 
+describe('an expired Claude Code login (lot 5 step M2b)', () => {
+  const login = {
+    name: 'Claude Code login',
+    status: 'error' as const,
+    message:
+      'Claude Code is logged out on this machine: type "orchestrator-daemon login" and log in with the Claude account of this machine.',
+    link: null,
+  };
+  const loggedIn = { ...login, status: 'ok' as const, message: 'Logged in.' };
+
+  /** A run of WEB-1 on Laptop that met the expired login, then the daemon's checks at once. */
+  async function expired() {
+    await h.start({ now: clock });
+    await h.createTicket();
+    const laptop = await h.machine();
+    expect(await tick()).toEqual(['implement WEB-1 on Laptop']);
+    const first = await latestRun();
+    await h.working(laptop.daemon, first.id);
+    await h.report(
+      laptop.daemon,
+      state(first.id, {
+        state: 'ended',
+        reason: 'claude_login_expired',
+        detail: 'Claude Code is logged out on this machine ("Login expired · Please run /login")',
+      }),
+    );
+    await ended(first.id, 'failed');
+    expect(await h.run(first.id)).toMatchObject({
+      failureReason: 'machine_problem',
+      endReason: 'claude_login_expired',
+      pauseReason: null,
+    });
+    expect((await ticketRow()).attemptCount).toBe(0);
+    const doctor = async (
+      checks: { name: string; status: 'ok' | 'error'; message: string; link: null }[],
+    ) => {
+      expect(
+        await laptop.daemon.request({
+          type: 'machine.doctor',
+          id: randomUUID(),
+          payload: { doctor: checks },
+        }),
+      ).toMatchObject({ type: 'ack' });
+    };
+    await doctor([login]);
+    expect(await reasonOf()).toMatchObject({ unavailable: { why: 'unusable' } });
+    expect(await needsYou()).toContainEqual(
+      expect.objectContaining({ type: 'machine_problem', checks: [login] }),
+    );
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect(starts(laptop.daemon)).toHaveLength(1);
+    return { laptop, doctor };
+  }
+
+  it('fails the run uncounted; errors cleared by machine.doctor give the machine back', async () => {
+    const { laptop, doctor } = await expired();
+    // `orchestrator-daemon login`, then the daemon's checks again, still connected.
+    await doctor([loggedIn]);
+    expect((await needsYou()).some((item) => item.type === 'machine_problem')).toBe(false);
+    expect(await tick()).toEqual(['implement WEB-1 on Laptop']);
+    expect(starts(laptop.daemon)).toHaveLength(2);
+    expect((await ticketRow()).attemptCount).toBe(0);
+  });
+
+  it('keeps the machine out while its errors stand, whatever else its checks say', async () => {
+    const { laptop, doctor } = await expired();
+    // The checks change, but the login error stays: still unusable, still left out.
+    await doctor([login, { ...loggedIn, name: 'Git', message: 'Git 2.53.0' }]);
+    expect(await reasonOf()).toMatchObject({ unavailable: { why: 'unusable' } });
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect(starts(laptop.daemon)).toHaveLength(1);
+  });
+
+  it('keeps the machine out when no error was there to clear', async () => {
+    await h.start({ now: clock });
+    await h.createTicket();
+    const laptop = await h.machine();
+    expect(await tick()).toEqual(['implement WEB-1 on Laptop']);
+    const first = await latestRun();
+    await h.working(laptop.daemon, first.id);
+    await h.report(
+      laptop.daemon,
+      state(first.id, { state: 'ended', reason: 'claude_login_expired', detail: 'Login expired' }),
+    );
+    await ended(first.id, 'failed');
+    // A report with no error, as when the daemon had nothing to report blocking: not "back".
+    expect(
+      await laptop.daemon.request({
+        type: 'machine.doctor',
+        id: randomUUID(),
+        payload: { doctor: [loggedIn] },
+      }),
+    ).toMatchObject({ type: 'ack' });
+    expect(await reasonOf()).toMatchObject({
+      unavailable: { why: 'left_out', cause: 'machine_problem' },
+    });
+    for (let pass = 0; pass < 3; pass += 1) expect(await tick()).toEqual([]);
+    expect(starts(laptop.daemon)).toHaveLength(1);
+  });
+});
+
 describe('a run ending otherwise starts the counts again', () => {
   it('a counted failure between two machine failures: no item', async () => {
     await h.start({

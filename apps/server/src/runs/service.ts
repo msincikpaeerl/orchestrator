@@ -148,6 +148,7 @@ import type { CiDecision } from './ci-wait.js';
 import {
   ciDeadlines,
   endOfReason,
+  endWords,
   failureWords,
   isCounted,
   isLimited,
@@ -557,6 +558,7 @@ export class RunService {
         to,
         cause,
         failureReason: facts.failureReason,
+        endReason: facts.endReason,
         detail: facts.detail,
         comment: facts.requestComment ?? true,
         at: now,
@@ -628,7 +630,7 @@ export class RunService {
       return;
     }
     const counted = isCounted(failureReason);
-    const words = failureWords(failureReason);
+    const words = endWords(failureReason, facts.endReason);
     const detail = facts.detail ? ` (${facts.detail})` : '';
     const comment =
       facts.comment ??
@@ -722,7 +724,7 @@ export class RunService {
       const { why } = downloadWords(runDownload(run), repository);
       return `${failureWords(failureReason)} at its start${sentence(why)}`;
     }
-    return `${failureWords(failureReason)}${detail ? ` (${sentence(detail)})` : ''}`;
+    return `${endWords(failureReason, run.endReason)}${detail ? ` (${sentence(detail)})` : ''}`;
   }
 
   /**
@@ -1575,7 +1577,7 @@ export class RunService {
         throw new Error('the request is stopped: only Try again lets it be planned');
       }
       const machines = await tx
-        .select({ id: schema.machines.id, connectedAt: schema.machines.connectedAt })
+        .select({ id: schema.machines.id, usableSince: schema.machines.usableSince })
         .from(schema.machines);
       if (leftOutMachines(requestMachineFailures(request), machines).has(starter.machineId)) {
         throw new Error('the machine the scheduler chose is left out for this request');
@@ -2189,7 +2191,7 @@ export class RunService {
       throw new Error('this ticket waits for the owner in Needs you');
     }
     const machines = await tx
-      .select({ id: schema.machines.id, connectedAt: schema.machines.connectedAt })
+      .select({ id: schema.machines.id, usableSince: schema.machines.usableSince })
       .from(schema.machines);
     if (leftOutMachines(failures, machines).has(starter.machineId)) {
       throw new Error('the machine the scheduler chose is left out for this ticket');

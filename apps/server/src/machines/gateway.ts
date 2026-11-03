@@ -406,8 +406,9 @@ export class DaemonGateway {
 
   /**
    * `machine.doctor` (05, section 3.3): the checks changed while connected, for example a run's
-   * process scope could not be created. The machine is unusable while one reports an error, as
-   * after `hello`; a duplicate changes nothing.
+   * process scope could not be created, or a run met an expired Claude Code login. The machine is
+   * unusable while one reports an error, as after `hello`; once they clear, it is usable again
+   * (`usableSince`). A duplicate changes nothing.
    */
   private async doctorChanged(
     machineId: string,
@@ -430,6 +431,9 @@ export class DaemonGateway {
         .set({
           doctor: message.payload.doctor,
           doctorErrorSince: errors.length > 0 ? (machine.doctorErrorSince ?? now) : null,
+          // Its errors cleared while connected (a new Claude Code login): usable again, it is
+          // released for the tickets and requests that left it out (07, section 4; lot 5 M2b).
+          ...(errors.length === 0 && machine.doctorErrorSince !== null ? { usableSince: now } : {}),
           updatedAt: now,
         })
         .where(eq(schema.machines.id, machineId));
@@ -560,8 +564,9 @@ export class DaemonGateway {
           doctor: payload.doctor,
           detectedCapabilities: detected,
           lastHeartbeatAt: now,
-          // Releases the machines left out for a ticket after a failure (07, section 4).
           connectedAt,
+          // Releases the machines left out for a ticket or a request after a failure (07, 4).
+          usableSince: connectedAt,
           offlineSince: null,
           daemonIncompatibleSince: null,
           daemonOutdatedSince: outdated
