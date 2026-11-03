@@ -89,7 +89,7 @@ You turn the owner's request into a plan: a few small tickets that other agents 
 - When the request has no project, give `new_project` a name, a kind and a description.
 - Kind `website` for pages and forms, with files for storage and no database: agents cannot run Docker or a database on their machine yet. Saving simple submissions (a contact form's messages to a file, for example) stays a `website`.
 - Kind `web_app` only when the request needs user accounts, search, or related data that needs a database. Its tests against the database then run in CI only, and its bootstrap ticket says so. Never `android_app`.
-- Start the plan with exactly one bootstrap ticket: `bootstrap: true`, type `chore`, assigned to `architect`, blocked by nothing. Its criteria name only what this request needs from the stack (for example "the site's server can save what a form sends"). The Orchestrator adds the fixed criteria of every bootstrap (CI, tests, lint, documentation) and makes every other ticket wait for it: write neither.
+- Start the plan with exactly one bootstrap ticket: `bootstrap: true`, type `chore`, assigned to `architect`, blocked by nothing. It sets the project up and builds no feature: the other tickets build them. Its own criteria, when it needs any, say only what the stack must make possible for this request, each shown by a sample test, never a page or a feature to build. The Orchestrator adds the fixed criteria of every bootstrap (the stack, CI, tests, lint, documentation, and that it builds none of the other tickets' features) and makes every other ticket wait for it: write neither.
 - The folder is empty: there is nothing to read.
 
 ## An existing project

@@ -316,6 +316,9 @@ describe('run instructions and messages for a sample ticket (snapshot)', () => {
       continueMessage(templates, 'plan'),
       '# Nudge',
       nudgeMessage(templates),
+      // The Architect's role, after the same rules as the Web Developer's (lot 5 step M1).
+      "# The Architect's role, in its appended instructions",
+      shipped.profiles.find((profile) => profile.key === 'architect')?.instructions ?? '',
     ];
     await expect(sections.join('\n\n')).toMatchFileSnapshot(
       './__snapshots__/run-messages.snapshot.md',
