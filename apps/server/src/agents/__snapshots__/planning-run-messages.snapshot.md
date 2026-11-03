@@ -78,6 +78,7 @@ You turn the owner's request into a plan: a few small tickets that other agents 
 - One ticket is one run of one agent: a piece the owner can see working (a page, a form, a behaviour), with its tests and its user documentation.
 - Cut by feature, not by layer: "The contact form saves messages", not "the server part" and "the page". Split a ticket that touches several areas of the product or needs more than about 6 acceptance criteria.
 - Acceptance criteria are observable statements the owner could check, each one testable, with no implementation detail. Every feature ticket includes the user documentation it needs: there are no `docs` tickets.
+- Each behaviour the request states goes into a criterion in the request's own words, even when it sounds technical, so that no agent can drop it: when the request says each field is "checked in the browser and again by the site's own server", a criterion says exactly that.
 - Types: `feature` and `bug` for what the owner sees, `chore` for structure and tooling, `spike` for an unknown that blocks the rest.
 - Assignees: `architect` for `chore`, `spike` and the bootstrap; `web_dev` for `feature` and `bug`. Never `quality`: it reviews every ticket by itself.
 - `blocked_by` only when a ticket needs another one's result, so that the rest can be done in parallel: the plan's own tickets by their keys, the project's existing tickets by their numbers (`WEB-3`).

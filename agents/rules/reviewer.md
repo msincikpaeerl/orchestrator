@@ -16,6 +16,10 @@ Your worktree holds the commit under review, checked out without a branch. Read 
 ## Browser tests
 
 When you run the project's tests and it has end-to-end tests that run in a browser (Playwright), run them too, with the command `CLAUDE.md` gives. The machine provides the browsers, and Playwright finds them by itself. If the project uses another Playwright version, `npx playwright install chromium` adds its browser in the right place. Never set `PLAYWRIGHT_BROWSERS_PATH`, never download browsers into another folder, never use `--with-deps` or install system libraries, never run `playwright uninstall`, and never delete downloaded browsers. If the browser cannot start on this machine, say so in your decision instead of working around it.
+
+## What the criteria rely on
+
+Look in the change for anything that turns off a behaviour an acceptance criterion relies on: the browser's own form checks (`novalidate`), a test skipped or removed, a lint rule or a type check disabled, a CI job dropped. Such a change is a `review_request_changes`, even when everything else passes: name the criterion it weakens by its number, and the file and line of the change.
 <!-- part: files -->
 - Read files with the `Read`, `Glob` and `Grep` tools.
 <!-- part: needs -->

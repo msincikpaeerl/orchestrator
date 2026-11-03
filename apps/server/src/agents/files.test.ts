@@ -139,12 +139,16 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(before).not.toContain('Browser tests');
     const browsers = /\n## Browser tests\n\n.*/.exec(rules.builder.main)?.[0];
     expect(browsers).toBeDefined();
+    // Lot 5 step M2 (gap 6): what the criteria rely on, after the browser tests.
+    const relied = /\n\n## What the criteria rely on\n\n.*/.exec(rules.builder.main)?.[0];
+    expect(relied).toBeDefined();
+    expect(before).not.toContain('What the criteria rely on');
     expect(runRules(rules, 'implement')).toBe(
       `${before
         .replace(reviewParagraph, '')
         .replace(reviewAside, '')
         .replace(toolsEnd, `instead of fixing it.\n\n${CRITERION_NUMBERS}\n\n`)
-        .replace(gitEnd, `${gitEnd.trimEnd()}\n${browsers ?? ''}\n\n`)
+        .replace(gitEnd, `${gitEnd.trimEnd()}\n${browsers ?? ''}${relied ?? ''}\n\n`)
         .trim()}${tips}`,
     );
     expect(runRules(rules, 'review')).toContain(tips);
@@ -171,6 +175,27 @@ describe('the shipped files of agents/ (03, sections 2 and 6)', () => {
     expect(builder).toMatch(/must be a file your branch changed.*a folder is not accepted/);
     expect(builder).toMatch(/If the push itself fails.*end your turn at once/);
     expect(builder).toMatch(/`git merge origin\/<your ticket branch>`/);
+  });
+
+  it("forbid turning off what a criterion relies on, and make Quality ask for changes when it happens (lot 5 step M2, gap 6)", async () => {
+    const { rules, profiles } = await loadShippedAgents();
+    const builder = runRules(rules, 'implement');
+    expect(builder).toContain(
+      "Never turn off a behaviour an acceptance criterion relies on to make your work pass: the browser's own form checks (`novalidate`), a test skipped or removed, a lint rule or a type check disabled, a CI job dropped. When a criterion seems to need it, or two criteria seem to contradict each other, do not choose alone: say so with `ticket_ask`, naming the criterion by its number.",
+    );
+    const reviewer = runRules(rules, 'review');
+    expect(reviewer).toContain(
+      "Look in the change for anything that turns off a behaviour an acceptance criterion relies on: the browser's own form checks (`novalidate`), a test skipped or removed, a lint rule or a type check disabled, a CI job dropped. Such a change is a `review_request_changes`, even when everything else passes: name the criterion it weakens by its number, and the file and line of the change.",
+    );
+    expect(reviewer).not.toContain('ticket_ask`, naming the criterion');
+    const quality = profiles.find((profile) => profile.key === 'quality');
+    expect(quality?.instructions).toContain(
+      "- Nothing turns off a behaviour an acceptance criterion relies on (the browser's own form checks, a test, a lint rule, a CI job). When something does, ask for changes, naming the criterion.",
+    );
+    const pm = profiles.find((profile) => profile.key === 'pm');
+    expect(pm?.instructions).toContain(
+      "- Each behaviour the request states goes into a criterion in the request's own words, even when it sounds technical, so that no agent can drop it: when the request says each field is \"checked in the browser and again by the site's own server\", a criterion says exactly that.",
+    );
   });
 
   it("tell a reviewer how to end and what not to change, never to submit, commit, merge, rebase or use Edit and Write (owner's answer 1, lot 3 step H5)", async () => {
