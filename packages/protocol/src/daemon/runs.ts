@@ -75,6 +75,13 @@ export const RunEndReason = z.enum([
    * a failed attempt.
    */
   'launch_failed',
+  /**
+   * A turn ended on Claude Code's own login error (`StopFailure` `authentication_failed`, or its
+   * "Please run /login" error text): the machine's login expired. The daemon marks the machine
+   * unusable until `orchestrator-daemon login` (05, section 4.10; lot 5 step M2b). Never a failed
+   * attempt.
+   */
+  'claude_login_expired',
   /** The workspace could not be prepared, or the session ended unexpectedly. */
   'crashed',
   /** One CI failure more than **Most CI failures per run** (04, section 3.1; protocol 2). */

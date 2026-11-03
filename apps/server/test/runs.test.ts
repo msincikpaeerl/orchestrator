@@ -939,6 +939,32 @@ describe('the run reported by the daemon (05, section 4.7)', () => {
     ]);
   });
 
+  it('fails a run that met an expired Claude Code login with machine_problem, not counted (lot 5 step M2b)', async () => {
+    await start();
+    const { daemon } = await laptop();
+    const { run: created } = await started(daemon);
+    const detail =
+      'Claude Code is logged out on this machine ("Login expired · Please run /login"): type "orchestrator-daemon login" on the machine and log in with the Claude account of this machine. It is not the ticket\'s fault and does not count as a failed attempt.';
+    expect(
+      await report(
+        daemon,
+        state(created.id, { state: 'ended', reason: 'claude_login_expired', detail }),
+      ),
+    ).toEqual({ ok: true });
+    expect(await run(created.id)).toMatchObject({
+      status: 'failed',
+      failureReason: 'machine_problem',
+      endReason: 'claude_login_expired',
+      endDetail: detail,
+      pauseReason: null,
+    });
+    const after = await ticket();
+    expect(after).toMatchObject({ status: 'todo', attemptCount: 0 });
+    expect(comments(after)).toEqual([
+      `The run on machine Laptop ended: its machine's Claude Code login expired (${detail}). It does not count as a failed attempt.`,
+    ]);
+  });
+
   it('fails a run whose push at its submission failed with push_failed, not counted (lot 3 step F)', async () => {
     await start();
     const { daemon } = await laptop();

@@ -28,6 +28,11 @@ export interface DaemonPaths {
   /** The control socket of the running daemon (05, section 8). */
   controlSocket: string;
   lastStop: string;
+  /**
+   * Written when a run found Claude Code's login expired, removed by `orchestrator-daemon login`:
+   * while it exists the machine takes no runs (05, section 8; lot 5 step M2b). No secret in it.
+   */
+  loginExpired: string;
   /** `~/.config/systemd/user/orchestrator-daemon.service`, or under `XDG_CONFIG_HOME`. */
   unit: string;
 }
@@ -45,6 +50,7 @@ export function daemonPaths(env: NodeJS.ProcessEnv = process.env): DaemonPaths {
     playwright: join(home, 'playwright'),
     controlSocket: join(home, 'daemon.sock'),
     lastStop: join(home, 'last-stop.json'),
+    loginExpired: join(home, 'login-expired.json'),
     unit: join(configHome, 'systemd', 'user', `${SERVICE_NAME}.service`),
   };
 }

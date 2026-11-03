@@ -11,6 +11,7 @@ import {
 import { requireConfig } from './config.js';
 import { ServerConnection, type SocketFactory } from './connection.js';
 import type { CredentialSource } from './credentials.js';
+import { ClaudeLogin } from './claude-login.js';
 import { probeControl, removeStaleControl, serveControl } from './control.js';
 import { detectCapabilities, machineOs } from './detect.js';
 import { helpLink, runDoctor } from './doctor.js';
@@ -116,6 +117,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     mode === 'service' ? problem : null,
     helpLink(config, 'process-scopes'),
   );
+  const login = new ClaudeLogin(paths.loginExpired);
   const runs = new RunManager({
     paths,
     log,
@@ -148,6 +150,7 @@ export async function startDaemon(options: StartOptions): Promise<number> {
     systemd,
     unitPrefix: prefix,
     scopes,
+    login,
   });
   if (systemd) log.info('process scopes used');
   else if (scopes.problem)
@@ -262,20 +265,28 @@ export async function startDaemon(options: StartOptions): Promise<number> {
 
   connection = server;
   runs.outbox.connect((message) => server.sendMessage(message));
-  // A run's scope could not be created: the server hears it at once (05, section 3.3). When not
-  // connected, the next `hello` carries the same checks.
-  scopes.onProblem = () => {
-    void buildHello()
+  // The checks again, sent at once (05, section 3.3); false when not connected, and the next
+  // `hello` then carries them.
+  const sendChecks = (): Promise<boolean> =>
+    buildHello()
       .then(({ doctor }) =>
         server.sendMessage({ type: 'machine.doctor', id: randomUUID(), payload: { doctor } }),
       )
       .catch((error: unknown) => {
         // Never an unhandled rejection, which would stop the daemon.
         log.error({ err: error }, 'checks not sent');
+        return false;
       });
+  // A run's scope could not be created, or a run met an expired Claude Code login (lot 5 step
+  // M2b): the machine becomes unusable at once.
+  scopes.onProblem = () => {
+    void sendChecks();
+  };
+  login.onExpired = () => {
+    void sendChecks();
   };
 
-  control = await serveControl(paths.controlSocket, () => ({
+  control = await serveControl(paths.controlSocket, sendChecks, () => ({
     type: 'status',
     mode,
     pid: process.pid,

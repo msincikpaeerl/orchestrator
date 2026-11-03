@@ -16,6 +16,7 @@ import { findExecutable } from '../src/exec.js';
 import { Git } from '../src/git.js';
 import { TMUX_SOCKET_NAME, daemonPaths, type DaemonPaths } from '../src/paths.js';
 import { RunManager } from '../src/runs.js';
+import { ClaudeLogin } from '../src/claude-login.js';
 import { ProcessScopes } from '../src/scopes.js';
 import { tmuxScopeName, unitPrefix, type UserSystemd } from '../src/systemd.js';
 import { Tmux } from '../src/tmux.js';
@@ -118,6 +119,8 @@ export function daemon(
     acknowledge?: boolean;
     systemd?: UserSystemd;
     scopes?: ProcessScopes;
+    /** The marker of an expired Claude Code login: in the daemon's data folder by default. */
+    login?: ClaudeLogin;
     tmux?: Tmux;
     log?: Logger;
     /** How the scripted server answers credential requests: refused by default. */
@@ -165,6 +168,7 @@ export function daemon(
     systemd: options.systemd ?? null,
     unitPrefix: prefix,
     scopes: options.scopes ?? new ProcessScopes('terminal', null),
+    login: options.login ?? new ClaudeLogin(paths.loginExpired),
   });
   manager.outbox.connect((message) => {
     sent.push(message);

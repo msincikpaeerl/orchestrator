@@ -76,20 +76,21 @@ export function machineFailures(row: Pick<TicketRow, 'machineFailures'>): Ticket
 }
 
 /**
- * The machines left out for the ticket (07, section 4): each from its latest failure until it
- * connects again (`connectedAt` after that failure; a machine that never connected since stays
- * out). The owner's **Run now** clears the failures, and so releases them all.
+ * The machines left out for the ticket or the request (07, section 4): each from its latest
+ * failure until it becomes usable again (`usableSince` after that failure: a new connection, or
+ * its errors cleared while connected, lot 5 step M2b; a machine never usable since stays out). The
+ * owner's **Run now** clears the failures, and so releases them all.
  */
 export function leftOutMachines(
   failures: TicketMachineFailures,
-  machines: readonly { id: string; connectedAt: Date | null }[],
+  machines: readonly { id: string; usableSince: Date | null }[],
 ): Map<string, MachineUnavailable> {
   const left = new Map<string, MachineUnavailable>();
   for (const entry of failures) {
     const latest = entry.failures.at(-1);
     if (!latest) continue;
-    const connectedAt = machines.find((machine) => machine.id === entry.machineId)?.connectedAt;
-    if (connectedAt && connectedAt.getTime() > Date.parse(latest.at)) continue;
+    const usableSince = machines.find((machine) => machine.id === entry.machineId)?.usableSince;
+    if (usableSince && usableSince.getTime() > Date.parse(latest.at)) continue;
     left.set(entry.machineId, { why: 'left_out', cause: latest.cause, at: latest.at });
   }
   return left;

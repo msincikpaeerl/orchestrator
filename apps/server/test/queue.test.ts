@@ -808,10 +808,13 @@ describe('the holds and the machines left out, kept on the ticket (lot 4 step D2
     expect(await loopAsks()).toEqual(['WEB-4', 'WEB-2']);
   });
 
-  it('leaves a machine out from its failure until it connects again, and blocks at the item', async () => {
+  it('leaves a machine out from its failure until it is usable again, and blocks at the item', async () => {
     const web = await project('WEB');
     const personal = await account('Personal');
-    const laptop = await machine('Laptop', personal.id, { connectedAt: minutes(-30) });
+    const laptop = await machine('Laptop', personal.id, {
+      connectedAt: minutes(-30),
+      usableSince: minutes(-30),
+    });
     const failure = {
       cause: 'dispatch_timeout',
       at: minutes(-20).toISOString(),
@@ -825,10 +828,10 @@ describe('the holds and the machines left out, kept on the ticket (lot 4 step D2
       machines: [{ unavailable: { why: 'left_out', cause: 'dispatch_timeout', at: failure.at } }],
     });
 
-    // Connected again since: released.
+    // Connected again, or its errors cleared, since (lot 5 step M2b): released.
     await db
       .update(schema.machines)
-      .set({ connectedAt: minutes(-10) })
+      .set({ connectedAt: minutes(-10), usableSince: minutes(-10) })
       .where(eq(schema.machines.id, laptop.id));
     expect(await reasonOf('WEB-1')).toBeNull();
 

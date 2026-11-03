@@ -63,6 +63,9 @@ export const failureText: Record<FailureReason, string> = {
   download_failed: 'the project could not be downloaded from GitHub',
 };
 
+/** A run ended `claude_login_expired`: its failure reason is `machine_problem` (lot 5 step M2b). */
+export const LOGIN_EXPIRED_TEXT = "its machine's Claude Code login expired";
+
 export const pauseText: Record<PauseReason, string> = {
   usage_limit: 'the Claude usage limit was reached',
   suspected_usage_limit: 'suspected usage limit (an error that may be the limit)',
@@ -511,7 +514,10 @@ export function accountStatusText(
 
 /** The run's status in one sentence, for the run page and the lists of runs. */
 export function runStateText(
-  run: Pick<Run, 'status' | 'pauseReason' | 'failureReason' | 'machine'> & { ci?: Run['ci'] },
+  run: Pick<Run, 'status' | 'pauseReason' | 'failureReason' | 'machine'> & {
+    ci?: Run['ci'];
+    endReason?: Run['endReason'];
+  },
 ): string {
   const offline = isActive(run.status) && !run.machine.online ? ' (machine offline)' : '';
   // Its work accepted, the run waits for CI on GitHub (lot 3 step G1b).
@@ -521,6 +527,10 @@ export function runStateText(
       return `Paused: ${run.pauseReason ? pauseText[run.pauseReason] : 'usage limit'}${offline}`;
     case 'failed':
     case 'cancelled':
+      // An expired login is a machine problem after Claude Code started (lot 5 step M2b).
+      if (run.endReason === 'claude_login_expired') {
+        return `${runStatusLabel[run.status]}: ${LOGIN_EXPIRED_TEXT}`;
+      }
       return `${runStatusLabel[run.status]}: ${run.failureReason ? failureText[run.failureReason] : 'no reason given'}`;
     default:
       return `${runStatusLabel[run.status]}${offline}`;

@@ -135,6 +135,7 @@ export function endOfReason(
       return { status: 'failed', failureReason: 'claude_code_unsupported' };
     case 'process_scope_failed':
     case 'launch_failed':
+    case 'claude_login_expired':
       return { status: 'failed', failureReason: 'machine_problem' };
     case 'stopped':
       return { status: 'cancelled', failureReason: 'cancelled' };
@@ -186,6 +187,17 @@ export function failureWords(reason: FailureReason): string {
     case 'download_failed':
       return 'the project could not be downloaded from GitHub';
   }
+}
+
+/**
+ * The failure in words, for a `system` comment: the end reason's when it says more than the
+ * failure reason (an expired Claude Code login is a `machine_problem` that started Claude Code,
+ * lot 5 step M2b).
+ */
+export function endWords(reason: FailureReason, endReason?: string | null): string {
+  return endReason === 'claude_login_expired'
+    ? "its machine's Claude Code login expired"
+    : failureWords(reason);
 }
 
 export interface RunViewContext {

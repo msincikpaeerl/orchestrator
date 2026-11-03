@@ -67,6 +67,7 @@ describe('settings rules', () => {
       `/${daemonHome}/config.json`,
       `/${daemonHome}/daemon.sock`,
       `/${daemonHome}/last-stop.json`,
+      `/${daemonHome}/login-expired.json`,
       `/${daemonHome}/browsers/**`,
       `/${daemonHome}/claude-config/**`,
       `/${daemonHome}/playwright/**`,

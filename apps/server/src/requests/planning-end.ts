@@ -5,12 +5,13 @@ import {
   TicketMachineFailures,
   type FailureReason,
   type RunChangeCause,
+  type RunEndReason,
   type RunStatus,
 } from '@orchestrator/protocol';
 import { eq } from 'drizzle-orm';
 import type { Executor } from '../database.js';
 import { recordEvent } from '../events.js';
-import { failureWords, isCounted } from '../runs/model.js';
+import { endWords, isCounted } from '../runs/model.js';
 import { resolveSettings } from '../settings/store.js';
 import { machineFailureOf } from '../tickets/holds.js';
 import {
@@ -52,6 +53,8 @@ export async function planningRunEnded(
     to: RunStatus;
     cause: RunChangeCause;
     failureReason?: FailureReason;
+    /** The daemon's end reason, when it says more than the failure reason (lot 5 step M2b). */
+    endReason?: RunEndReason;
     detail?: string;
     /** False when the caller writes its own comment (an answer that could not reach the run). */
     comment: boolean;
@@ -102,7 +105,8 @@ export async function planningRunEnded(
   }
 
   if (input.comment) {
-    const words = failureReason === undefined ? 'it ended' : failureWords(failureReason);
+    const words =
+      failureReason === undefined ? 'it ended' : endWords(failureReason, input.endReason);
     const detail = input.detail ? ` (${input.detail})` : '';
     const body = ownerStopped
       ? failureReason === 'machine_offline'

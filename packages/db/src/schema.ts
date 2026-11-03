@@ -688,6 +688,13 @@ export const machines = pgTable(
      */
     connectedAt: timestamp('connected_at', { withTimezone: true }),
     /**
+     * When it last became able to take runs (lot 5 step M2b): each accepted `hello`, and a
+     * `machine.doctor` that cleared its errors while connected (a new Claude Code login). A machine
+     * left out for a ticket or a request after a failure it caused is released by this time after
+     * that failure (07, section 4).
+     */
+    usableSince: timestamp('usable_since', { withTimezone: true }),
+    /**
      * Since when it is offline, on the application's clock (lot 4 step G): its runs `dispatched`,
      * `starting` or `running` fail once **Runs of an offline machine fail after** has passed, and
      * the queue says since when. Cleared by an accepted `hello`.
