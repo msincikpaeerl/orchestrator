@@ -30,8 +30,18 @@ export interface PlanProblem {
   message: string;
 }
 
-/** The bootstrap's part of 08 section 3.2 that only a `web_app` gets (owner's answer 13). */
-const WEB_APP_PART = 'web-app';
+/**
+ * The kinds each kind-specific part of the bootstrap template is for (owner's answer 13, lot 5
+ * step E1b; answers 1 and 2 of step M1): a part not listed is for every kind. `scope` is never a
+ * fixed criterion of `plan_propose`: the approval adds it with the final keys (`scopeCriterion`).
+ */
+const PART_KINDS: Readonly<Record<string, readonly ProjectKind[]>> = {
+  'stack-website': ['website'],
+  'stack-web-app': ['web_app'],
+  'end-to-end': ['website', 'web_app'],
+  'web-app': ['web_app'],
+  scope: [],
+};
 
 /**
  * The bootstrap ticket's fixed criteria for a project of this kind (08, section 3.2), in the
@@ -39,8 +49,29 @@ const WEB_APP_PART = 'web-app';
  */
 export function fixedCriteria(bootstrap: Template, kind: ProjectKind): string[] {
   return [...bootstrap.parts]
-    .filter(([name]) => name !== WEB_APP_PART || kind === 'web_app')
+    .filter(([name]) => PART_KINDS[name]?.includes(kind) ?? true)
     .map(([, text]) => text.trim());
+}
+
+/**
+ * The bootstrap's scope criterion, added at the plan's approval (step M1, gap 3): it names the
+ * plan's other tickets by their final keys and titles, or by their keys only when that passes
+ * **Longest acceptance criterion** (owner's answer 3; still too long, the approval's checks refuse
+ * it). Null for a plan with no other ticket (answer 1).
+ */
+export function scopeCriterion(
+  bootstrap: Template,
+  others: readonly { key: string; title: string }[],
+  maxLength: number,
+): string | null {
+  if (others.length === 0) return null;
+  const withTitles = part(bootstrap, 'scope', {
+    tickets: others.map((each) => `${each.key} ${each.title}`).join(', '),
+  }).trim();
+  if (withTitles.length <= maxLength) return withTitles;
+  return part(bootstrap, 'scope', {
+    tickets: others.map((each) => each.key).join(', '),
+  }).trim();
 }
 
 /** Two criteria are the same when only their case and spaces differ (owner's answer 13). */
@@ -169,7 +200,10 @@ export async function checkPlan(
     const added = fixed.filter(
       (text) => !own.some((mine) => sameCriterion(mine) === sameCriterion(text)),
     );
-    if (fixed.length > limits.ticketMaxAcceptanceCriteria) {
+    // The scope criterion the approval adds has its slot counted now, so that an approval is
+    // never refused for it alone (owner's answer 2, lot 5 step M1).
+    const scope = plan.tickets.length > 1 ? 1 : 0;
+    if (fixed.length + scope > limits.ticketMaxAcceptanceCriteria) {
       // Settings the agent cannot change (owner's answer 7, lot 5 step E1b).
       atTicket(
         position,
@@ -177,21 +211,21 @@ export async function checkPlan(
         part(texts, 'plan-bootstrap-settings', {
           setting: LIMIT_SETTINGS.acceptance_criteria,
           value: String(limits.ticketMaxAcceptanceCriteria),
-          needed: `${String(fixed.length)} criteria`,
+          needed: `${String(fixed.length + scope)} criteria`,
         }),
       );
     } else if (
       own.length <= limits.ticketMaxAcceptanceCriteria &&
-      own.length + added.length > limits.ticketMaxAcceptanceCriteria
+      own.length + added.length + scope > limits.ticketMaxAcceptanceCriteria
     ) {
       atTicket(
         position,
         'acceptance_criteria',
         part(texts, 'plan-bootstrap-criteria', {
-          count: String(own.length + added.length),
-          added: String(added.length),
+          count: String(own.length + added.length + scope),
+          added: String(added.length + scope),
           max: String(limits.ticketMaxAcceptanceCriteria),
-          own: String(limits.ticketMaxAcceptanceCriteria - fixed.length),
+          own: String(limits.ticketMaxAcceptanceCriteria - fixed.length - scope),
         }),
       );
     }

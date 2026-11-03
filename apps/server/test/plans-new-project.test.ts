@@ -48,6 +48,10 @@ const PLAN = {
 };
 const FORM = { name: 'Bakery shop', key: 'SHOP', repositoryName: 'bakery-shop', private: true };
 
+/** The bootstrap's scope criterion, added at approval (lot 5 step M1, gap 3). */
+const scope = (tickets: string) =>
+  `It builds no feature of the plan's other tickets (${tickets}): only the structure, the tooling and one sample test of each test level.`;
+
 async function tick(): Promise<string[]> {
   const result = await h.t.schedulerTick();
   return result.started.map((start) => `${start.kind} ${start.ticket} on ${start.machine}`);
@@ -174,7 +178,9 @@ describe('Approve for a new project (answers 2 to 4)', () => {
       [1, 'Set up the project', 'todo'],
       [2, 'Contact form', 'todo'],
     ]);
-    expect(tickets[0]?.acceptanceCriteria).toHaveLength(9);
+    // Its own criterion, the 9 fixed ones of a website, then the scope criterion (step M1).
+    expect(tickets[0]?.acceptanceCriteria).toHaveLength(11);
+    expect(tickets[0]?.acceptanceCriteria.at(-1)).toBe(scope('SHOP-2 Contact form'));
     const dependencies = await h.t.db.select().from(schema.ticketDependencies);
     expect(dependencies).toMatchObject([{ ticketId: tickets[1]?.id, blockedById: tickets[0]?.id }]);
 
@@ -301,7 +307,7 @@ describe('The bootstrap ticket at approval (answer 5)', () => {
       acceptanceCriteria: ['The home page says hello', 'The page has a footer'],
     });
     expect(edited.statusCode, edited.body).toBe(200);
-    const lowered = await h.call('PUT', '/api/settings/ticketMaxAcceptanceCriteria', { value: 9 });
+    const lowered = await h.call('PUT', '/api/settings/ticketMaxAcceptanceCriteria', { value: 11 });
     expect(lowered.statusCode, lowered.body).toBe(200);
 
     const { status, error } = await refused({ planId, project: FORM });
@@ -313,7 +319,7 @@ describe('The bootstrap ticket at approval (answer 5)', () => {
         key: 'setup',
         field: 'acceptanceCriteria',
         message: expect.stringContaining(
-          'with the 8 fixed criteria it lacked added again. Remove some of its own criteria.',
+          'once the 10 fixed criteria it lacked are added. Remove some of its own criteria.',
         ) as unknown,
       },
     ]);
@@ -326,8 +332,52 @@ describe('The bootstrap ticket at approval (answer 5)', () => {
     expect(back.statusCode, back.body).toBe(200);
     const detail = await approve({ planId, project: FORM });
     const bootstrap = detail.plan?.tickets[0];
-    expect(bootstrap?.acceptance_criteria).toHaveLength(9);
+    expect(bootstrap?.acceptance_criteria).toHaveLength(11);
     expect(bootstrap?.acceptance_criteria[0]).toBe('The home page says hello');
+    await settled();
+  });
+
+  it("names the other tickets by their final keys and the owner's titles, within the settings (step M1, gap 3)", async () => {
+    const home = { key: 'home', type: 'feature', title: 'Home page', assignee: 'web_dev' };
+    const { planId } = await proposed({ ...PLAN, tickets: [setup, contact, home] });
+    const edited = await h.call('PATCH', '/api/requests/1/plan/tickets/contact', {
+      planId,
+      title: 'Contact form with an e-mail check',
+    });
+    expect(edited.statusCode, edited.body).toBe(200);
+    const detail = await approve({ planId, project: FORM });
+    const criteria = detail.plan?.tickets[0]?.acceptance_criteria ?? [];
+    expect(criteria.at(-1)).toBe(
+      scope('SHOP-2 Contact form with an e-mail check, SHOP-3 Home page'),
+    );
+    expect(criteria.filter((text) => text.startsWith('It builds no feature'))).toHaveLength(1);
+    const [bootstrap] = await h.t.db
+      .select()
+      .from(schema.tickets)
+      .where(eq(schema.tickets.number, 1));
+    expect(bootstrap?.acceptanceCriteria).toEqual(criteria);
+    expect(criteria.length).toBeLessThanOrEqual(20);
+    await settled();
+  });
+
+  it('names the keys only when the titles pass Longest acceptance criterion (answer 3)', async () => {
+    const long = (word: string) => `${word} ${'x'.repeat(190)}`;
+    const home = { key: 'home', type: 'feature', title: long('Home'), assignee: 'web_dev' };
+    const { planId } = await proposed({
+      ...PLAN,
+      tickets: [setup, { ...contact, title: long('Contact') }, home],
+    });
+    const detail = await approve({ planId, project: FORM });
+    expect(detail.plan?.tickets[0]?.acceptance_criteria.at(-1)).toBe(scope('SHOP-2, SHOP-3'));
+    await settled();
+  });
+
+  it('adds no scope criterion to a plan with the bootstrap only (answer 1)', async () => {
+    const { planId } = await proposed({ ...PLAN, tickets: [setup] });
+    const detail = await approve({ planId, project: FORM });
+    const criteria = detail.plan?.tickets[0]?.acceptance_criteria ?? [];
+    expect(criteria).toHaveLength(10);
+    expect(criteria.join('\n')).not.toContain('It builds no feature');
     await settled();
   });
 });
