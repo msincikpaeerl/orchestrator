@@ -549,10 +549,15 @@ describe('Close request (answer 3)', () => {
     at = new Date(at.getTime() + 60_000);
     const detail = await owner('POST', '/api/requests/1/close');
     expect(detail).toMatchObject({ status: 'closed', run: null, stopped: null, attemptCount: 0 });
+    // Lot 5 step M, gap 5: signed by the Orchestrator, like the request's other status changes.
     expect(detail.comments.at(-1)).toMatchObject({
-      author: 'owner',
+      author: 'system',
       kind: 'status_change',
       body: 'The owner closed the request. Its planning run was stopped; it does not count as a failed attempt. Nothing is planned for it any more.',
+    });
+    expect((await h.events('request.commented')).at(-1)).toMatchObject({
+      actor: 'system',
+      payload: { request: 1, kind: 'status_change' },
     });
     expect((await h.run(run.id)).status).toBe('cancelled');
     await eventually('run.stop sent', () => {
@@ -590,9 +595,10 @@ describe('Close request (answer 3)', () => {
     expect(detail.earlierPlans).toMatchObject([
       { id: planId, status: 'rejected', ownerFeedback: null },
     ]);
-    expect(detail.comments.at(-1)?.body).toBe(
-      'The owner closed the request. Its proposed plan is rejected. Nothing is planned for it any more.',
-    );
+    expect(detail.comments.at(-1)).toMatchObject({
+      author: 'system',
+      body: 'The owner closed the request. Its proposed plan is rejected. Nothing is planned for it any more.',
+    });
     expect((await h.events('plan.rejected'))[0]?.payload).toMatchObject({
       status: 'rejected',
       feedback: null,

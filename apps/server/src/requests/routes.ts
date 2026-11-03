@@ -38,7 +38,13 @@ import {
 } from '../projects/creation.js';
 import type { ProjectRow } from '../projects/model.js';
 import type { ProjectSetupRunner } from '../projects/setup.js';
-import { changeRequestStatus, requestEntity, requestProjectKey, type RequestRow } from './model.js';
+import {
+  changeRequestStatus,
+  requestEntity,
+  requestProjectKey,
+  requestSystemComment,
+  type RequestRow,
+} from './model.js';
 import {
   approvePlan,
   type ApprovalNewProject,
@@ -510,23 +516,8 @@ export function registerRequestRoutes(app: FastifyInstance, options: RequestRout
         ...(rejected ? ['Its proposed plan is rejected.'] : []),
         'Nothing is planned for it any more.',
       ].join(' ');
-      const [comment] = await tx
-        .insert(schema.comments)
-        .values({ requestId: row.id, author: 'owner', kind: 'status_change', body, createdAt: at })
-        .returning({ id: schema.comments.id });
-      if (!comment) throw new Error('comment not inserted');
-      await recordEvent(tx, {
-        actor: 'owner',
-        ...requestEntity(closed),
-        type: 'request.commented',
-        payload: {
-          request: closed.number,
-          project: project?.key ?? null,
-          commentId: comment.id,
-          kind: 'status_change',
-        },
-        at,
-      });
+      // Signed by the Orchestrator, like the request's other status changes (lot 5 step M, gap 5).
+      await requestSystemComment(tx, closed, body, at);
       return { detail: await detail(tx, closed), send: run.send };
     });
     await result.send();
