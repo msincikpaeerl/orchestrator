@@ -464,9 +464,11 @@ test('a request closed while its planning run works and its plan is proposed', a
   const earlier = page.getByRole('region', { name: 'Earlier plans' });
   await earlier.getByText(/^Proposed at .+, rejected at .+$/).click();
   await expect(earlier).toContainText('Rejected: you closed the request.');
-  await expect(page.getByRole('list', { name: 'Conversation' })).toContainText(
-    'The owner closed the request.',
-  );
+  // Lot 5 step M, gap 5: signed by the Orchestrator, not by the owner.
+  const closing = page.getByRole('list', { name: 'Conversation' }).getByRole('listitem').last();
+  await expect(closing).toContainText('The Orchestrator ·');
+  await expect(closing).toContainText('The owner closed the request.');
+  await expect(closing).not.toContainText('You ·');
   await expect(page.getByLabel('Add a comment')).toBeVisible();
   await expectFitsScreen(page);
 

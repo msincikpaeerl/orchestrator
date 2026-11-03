@@ -19,6 +19,10 @@ When your first message says that GitHub's copy of your ticket's branch has comm
 ## Browser tests
 
 When the project has end-to-end tests that run in a browser (Playwright), run them before you submit, with the command `CLAUDE.md` gives. The machine provides the browsers, and Playwright finds them by itself. If the project uses another Playwright version, `npx playwright install chromium` adds its browser in the right place. Never set `PLAYWRIGHT_BROWSERS_PATH`, never download browsers into another folder, never use `--with-deps` or install system libraries, never run `playwright uninstall`, and never delete downloaded browsers. If the browser cannot start on this machine, say so in your report instead of working around it.
+
+## What the criteria rely on
+
+Never turn off a behaviour an acceptance criterion relies on to make your work pass: the browser's own form checks (`novalidate`), a test skipped or removed, a lint rule or a type check disabled, a CI job dropped. When a criterion seems to need it, or two criteria seem to contradict each other, do not choose alone: say so with `ticket_ask`, naming the criterion by its number.
 <!-- part: files -->
 - Change files with the `Edit` and `Write` tools, never with the shell: no `>`, `>>`, `tee`, `sed -i` or here-documents.
 <!-- part: needs -->

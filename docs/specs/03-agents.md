@@ -51,6 +51,7 @@ This document defines the six default agent profiles, how their instructions are
 - Until lot 6 (Isolated agent workspace), agents cannot use Docker or run a database locally (05, section 4.6): the Project Manager steers a simple request to kind `website` with file storage and no database. A `web_app` with PostgreSQL stays possible; its integration tests then run in CI only, which its bootstrap ticket says. `web_app` only when the request needs user accounts, search, or related data that needs a database; saving simple submissions (a contact form's messages to a file) stays a `website` (owner's change, answer 3 of lot 5 step E1).
 - For a new project, the plan starts with one bootstrap ticket (`bootstrap: true`, `chore`, assigned to `architect`, blocked by nothing); the server adds the fixed criteria of 08 section 3.2 and the dependencies of every other ticket on it.
 - A planning run of a new project starts in an empty folder (05, section 4.2): there is nothing to read yet, and `git log` fails; of an existing project, in the base branch as on GitHub.
+- Each behaviour the request states goes into an acceptance criterion in the request's own words, even when it sounds technical ("checked in the browser and again by the site's own server"), so that no agent can drop it (owner's check, lot 5 step M, gap 6; step M2).
 
 ### 2.2 Architect (`architect`)
 
@@ -86,6 +87,7 @@ This document defines the six default agent profiles, how their instructions are
 - Updates the user documentation for any user-visible change, in the same branch.
 - Follows CLAUDE.md and the ADRs. When a change seems to require a new technical decision, asks with `ticket.ask` or creates a `spike` ticket instead of deciding alone.
 - Creates a ticket with `ticket.create` for out-of-scope problems it notices, instead of fixing them.
+- Never turns off a behaviour an acceptance criterion relies on (the browser's own form checks with `novalidate`, a test skipped, a lint rule disabled, a CI job dropped); when a criterion seems to need it, asks with `ticket.ask`. The builder rules say it, so the Architect follows it too (lot 5 step M2, gap 6).
 
 **Tools.** Full file tools. Bash limited to package managers, build, test, lint, local dev server and local Git commands.
 
@@ -107,6 +109,7 @@ Same responsibilities as the Web Developer, for Android projects (Kotlin, Jetpac
 - Runs the tests and the build locally only when the diff or the CI result gives a reason, since CI already ran on GitHub; when CI found nothing to run ("No CI found"), nothing on GitHub tested the work, so it runs the project's tests and build itself when the project has any, and says in its decision what it ran (owner's answers 4 and 6a, lot 3 step H).
 - Checks that tests really cover the acceptance criteria and that documentation is written for a user, not a developer.
 - From lot 5, on a machine with the capability `browser-tests` (05, section 2), runs a project's end-to-end tests locally when the diff or the CI result gives a reason, as the other tests (owner's answer 5, lot 5 step A); the Web Developer runs them before submitting.
+- Requests changes, naming the criterion, for a change that turns off a behaviour an acceptance criterion relies on (the browser's own form checks, a test, a lint rule, a CI job), even when everything else passes; the reviewer rules and its profile both say it (lot 5 step M2, gap 6).
 - Approves with a short summary, or requests changes with specific, actionable points.
 
 **Does not**
