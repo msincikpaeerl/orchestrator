@@ -180,7 +180,7 @@ describe('Approve for a new project (answers 2 to 4)', () => {
     ]);
     // Its own criterion, the 9 fixed ones of a website, then the scope criterion (step M1).
     expect(tickets[0]?.acceptanceCriteria).toHaveLength(11);
-    expect(tickets[0]?.acceptanceCriteria.at(-1)).toBe(scope('SHOP-2 Contact form'));
+    expect(detail.plan?.tickets[0]?.acceptance_criteria.at(-1)).toBe(scope('SHOP-2 Contact form'));
     const dependencies = await h.t.db.select().from(schema.ticketDependencies);
     expect(dependencies).toMatchObject([{ ticketId: tickets[1]?.id, blockedById: tickets[0]?.id }]);
 

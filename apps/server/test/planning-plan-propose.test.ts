@@ -179,11 +179,13 @@ describe('plan_propose for a new project', () => {
       text.startsWith('End-to-end tests use Playwright'),
     );
     if (endToEnd === undefined) throw new Error('no end-to-end criterion');
-    const output = await h.ok(daemon, runToken, 'plan_propose', {
+    await h.ok(daemon, runToken, 'plan_propose', {
       ...newPlan,
       tickets: [{ ...setup, acceptance_criteria: [endToEnd.toLowerCase()] }, contact],
     });
-    const added = output.tickets[0]?.added_criteria ?? [];
+    const [plan] = await h.t.db.select().from(schema.plans);
+    const stored = PlanTickets.parse(plan?.tickets)[0]?.acceptance_criteria ?? [];
+    const added = stored.slice(1);
     expect(
       added.filter((text) =>
         text.startsWith(
@@ -194,8 +196,6 @@ describe('plan_propose for a new project', () => {
     expect(added.join('\n')).not.toMatch(/React|PostgreSQL|default stack of the project's kind/);
     expect(added).not.toContain(endToEnd);
     expect(added).toEqual(WEBSITE_CRITERIA.filter((text) => text !== endToEnd));
-    const [plan] = await h.t.db.select().from(schema.plans);
-    const stored = PlanTickets.parse(plan?.tickets)[0]?.acceptance_criteria ?? [];
     expect(
       stored.filter((text) => text.toLowerCase().startsWith('end-to-end tests use playwright')),
     ).toHaveLength(1);
@@ -360,11 +360,12 @@ describe('plan_propose for a new project', () => {
     expect(error.message.split('\n').slice(1)).toEqual([
       `- Ticket 1 (setup), acceptance_criteria: the setting "Most acceptance criteria" (${String(max)}) is too low for the fixed criteria of the bootstrap ticket, which need ${String(max + 1)} criteria. Only the owner can raise it: end your run with ticket_give_up, saying so`,
     ]);
-    const output = await h.ok(daemon, runToken, 'plan_propose', {
+    await h.ok(daemon, runToken, 'plan_propose', {
       ...newPlan,
       tickets: [{ ...setup, acceptance_criteria: [] }],
     });
-    expect(output.tickets[0]?.added_criteria).toEqual(WEBSITE_CRITERIA);
+    const [plan] = await h.t.db.select().from(schema.plans);
+    expect(PlanTickets.parse(plan?.tickets)[0]?.acceptance_criteria).toEqual(WEBSITE_CRITERIA);
   });
 
   it('tells the agent to give up when the settings cannot hold the fixed criteria', async () => {
