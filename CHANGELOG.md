@@ -2,7 +2,7 @@
 
 User-facing changes, newest first. One entry per change that users can see.
 
-## 0.6.0 — 2026-11-02
+## 0.6.0 — 2026-11-04
 
 Lot 5, Requests and planning: you now ask for what you want in your own words. **New request** takes a request for one of your projects or for a new one; the **Project Manager**, a new agent, plans it by itself (the scheduler starts it once a machine and its Claude account are free), may ask you a question in **Needs you**, and proposes a plan: a few small tickets in the order they can be done, shown as a **dependency graph**. You edit the plan's tickets, remove some, **Reject with feedback** (a new planning run proposes another plan) or **Approve**: the tickets are created in **To do** and the scheduler starts them. A plan for a new project creates the project and its GitHub repository with the starting files when you approve it, its first ticket setting it up for the Architect. **Close request** ends a request you no longer want. Agents can test websites and web apps in a browser on your machines (Help > Machines > "Browser tests"), and a new website or web app requires a machine that can. A new installation's setup wizard now adds your Claude account and your first machine. Also in this version: **Import tickets** from a file, **Merge automatically** on a project, and fixes to how Claude Code is started. **This version needs the daemon 0.6.0** on every machine: a machine with the daemon 0.5.0 gets no runs until you update it (Help > Machines > "Update the daemon"). Each planning run uses a Claude Code session from your plan, like any run: Help > Runs > "What starts by itself" says what starts and how often at most.
 
