@@ -50,6 +50,7 @@ The system has two parts.
 - opens an outbound connection to the web application;
 - clones repositories and manages one Git worktree per run;
 - starts Claude Code in interactive mode inside a tmux session and sends it instructions;
+- from lot 6, on a machine dedicated to agents, runs each run's commands in a container of their own, away from the daemon's and Claude Code's credentials (05, section 4.12);
 - collects state from Claude Code hooks and session transcripts;
 - exposes a local MCP server to Claude Code and relays calls to the web application.
 
@@ -89,7 +90,7 @@ The system has two parts.
 |---|---|
 | Claude Pro subscription shared with personal use | One run at a time per account, time windows, automatic pause on limit, Sonnet by default, small focused tickets. |
 | Interactive Claude Code only | Daemon drives tmux; state comes from hooks, transcripts and MCP. |
-| Runs first on WSL, later on a dedicated server | Web app is fully containerised (Docker Compose). Daemon connects outbound; no inbound port needed on dev machines. Agents get a machine or environment of their own in lot 6 (10, Isolated agent workspace). |
+| Runs first on WSL, later on a dedicated server | Web app is fully containerised (Docker Compose). Daemon connects outbound; no inbound port needed on dev machines. Agents get a machine or environment of their own in lot 6 (10, Isolated agent workspace): Claude Code on a dedicated agent machine, each run's commands in a run container of a separate user's rootless Docker (05, section 4.12). |
 | No public endpoint in v1 | GitHub state (PR merged, CI status) is read by polling, not webhooks. |
 | Owner does not read the code | User documentation is a deliverable of every feature. |
 
@@ -125,4 +126,4 @@ v1 is successful when the owner can, using only the UI and the user documentatio
 - a dry run first wherever the tool offers one, its result shown with the plan;
 - every action, its result and its output summary written to the event log (01, section 3.10).
 
-Nothing is built for it in v1. Choices made before then must not block it: the runner abstraction and the MCP tools stay the only channel between agents and the system, credentials never reach an agent, the plan-and-approve flow of requests (lot 5) is general enough to carry another kind of plan, and the daemon stays the only component that acts on a machine.
+Nothing is built for it in v1. From lot 6, the place where a run's commands execute is a **workspace** of a kind (`host`, `container`; 05, section 4.12), so a deployment target can later be another kind, driven by the daemon alone (owner's answer 15, lot 6 step A). Choices made before then must not block it: the runner abstraction and the MCP tools stay the only channel between agents and the system, credentials never reach an agent, the plan-and-approve flow of requests (lot 5) is general enough to carry another kind of plan, and the daemon stays the only component that acts on a machine.

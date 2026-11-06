@@ -15,7 +15,7 @@ The Orchestrator is delivered in lots. Each lot ends with something the owner ca
 | 3 | Full ticket lifecycle | Submission, pull request, CI, review by Quality, merge detection. |
 | 4 | Scheduler and quota | Tickets run automatically within windows and budget; quota pauses and resumes. |
 | 5 | Requests and planning | The owner describes what they want; the Project Manager plans; new projects are bootstrapped. |
-| 6 | Isolated agent workspace | Agents work on a machine or environment of their own, with Docker, databases and servers, away from the owner's files. |
+| 6 | Isolated agent workspace | Agents work on a machine or environment of their own, with Docker, databases and servers, away from the owner's files and credentials. |
 | 7 | Agent management | Custom agents, profile editing, Technical Writer, Android projects. |
 | 8 | Hardening | Deployment guides, backups, harness checks, resilience. |
 
@@ -110,15 +110,25 @@ Lots 0 to 3 are built by the owner with Claude Code directly. From lot 4 the Orc
 
 ## Lot 6 — Isolated agent workspace
 
-Added by the owner in lot 5 step A. Its steps are planned when the lot starts.
+Added by the owner in lot 5 step A; planned in lot 6 step A (`docs/dev/lot-6-plan.md`, owner's answers of 2026-11-07).
 
 **Scope**
 
-- The daemon runs agents' sessions on a machine or an environment dedicated to agents, with no access to the owner's personal files or credentials (the owner's GitHub and Claude credentials, home folder, other projects): the main target is a dedicated Linux machine (the owner has one); a dedicated WSL distribution is the fallback on a Windows host.
+- The daemon runs agents' sessions on a machine or an environment dedicated to agents, with no access to the owner's personal files or credentials (the owner's GitHub and Claude credentials, home folder, other projects): the main target is a dedicated Linux machine (the owner has one); a dedicated WSL distribution is the fallback on a Windows host, with Help saying that WSL distributions share one kernel and are not a security boundary.
 - There agents may use Docker, install packages, run servers and search the web for integration research, which the rules of 05 section 4.6 forbid on the owner's own user (container tools denied, paths outside the worktree refused).
 - What it unlocks: a `web_app` with PostgreSQL (08, section 3.3) whose integration tests run locally, not only in CI; heavier stacks needing services or containers; browser tests without the owner's system libraries; the separation the separate system user of lot 8 was meant to give, on machines dedicated to agents.
+- Decided in lot 6 step A (owner's answers; 05 section 4.12):
+  - Claude Code stays on the agent machine with the daemon, its login, hooks, status line and MCP relay; every Bash command of the agent runs in a **run container** of its own, through Claude Code's `CLAUDE_CODE_SHELL_PREFIX` and a wrapper of the daemon (answer 1). **Nothing after step B is built until the owner's probe with the real Claude Code has passed**; a failure is reported and the plan revised with the owner, never switched by itself.
+  - Two Linux users: `orchestrator` (daemon, Claude Code, every secret, home mode 700) and `orchestrator-agent` (no secret, a rootless Docker for agents); worktrees and bare clones in a shared folder, `/srv/orchestrator/`, with a group of both users; the agent reaches Docker only through a per-run socket the daemon filters (no `--privileged`, no host folder but its worktree, ports on `127.0.0.1`, the run's label and limits) (answer 2).
+  - The internet is open to agents' containers; the local network, the machine and the Orchestrator are blocked for the agent user, IPv4 and IPv6 private and link-local ranges included, with DNS to the machine's resolvers kept (answer 4).
+  - One workspace image the Orchestrator provides, built on the machine (answer 5); per-project caches kept, everything else of a run thrown away (answer 6); **Reset agent workspace** and **Clear caches** on the machine page (answer 7).
+  - Limits as settings, global with a per-project override, applied to a run as a whole (its run container and every container it starts), under a machine-wide ceiling for the agent user (answer 8).
+  - The capability `isolated-workspace`, detected by `doctor`, required by projects created from 0.7.0; a machine without it keeps today's rules (answer 9).
+  - Protocol version 4; a protocol 3 daemon takes no run, "Update the daemon to 0.7.0" (answer 13).
+  - Reaching an Orchestrator running in WSL from the local network, carried from lot 2's check to Hardening, comes into this lot (answer 11): the agent machine's daemon reaches the Orchestrator on the owner's Desktop over HTTPS.
+  - Nothing built for operations agents; the place where a run's commands execute is a **workspace** of a kind (`host`, `container`), so a later deployment target can be another kind (answer 15).
 
-**Done when** to be written with the lot's plan.
+**Done when** the owner, on the dedicated agent machine with the real Claude Code, submits a request for a `web_app` with PostgreSQL and, after approving the plan and merging pull requests, gets it working with CI, tests and documentation, its integration and browser tests run in the run container on the machine as well as in CI; a run can read neither the Claude login nor the machine token and reaches no local-network address; the agent's `docker` refuses `--privileged` and a host folder; a run's containers, networks and volumes are gone after it; **Reset agent workspace** works; and the owner's Desktop WSL still runs a project that does not require isolation.
 
 ## Lot 7 — Agent management
 
@@ -135,7 +145,7 @@ Added by the owner in lot 5 step A. Its steps are planned when the lot starts.
 
 **Scope**
 
-- Deployment guides for a dedicated server (the Orchestrator's future host) and a VPS, reverse proxy and VPN notes.
+- Deployment guides for a dedicated server (the Orchestrator's future host) and a VPS, reverse proxy and VPN notes. Reaching an Orchestrator running in WSL from the local network, carried here from lot 2's check, moved to lot 6 (owner's answer 11, lot 6 step A).
 - Backup and restore command and guide.
 - Harness check tickets (08, section 7).
 - Browser notifications.

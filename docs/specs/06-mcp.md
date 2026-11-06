@@ -231,7 +231,8 @@ The server builds the first message of each run. It always states:
 - that pushing to GitHub is done by the system, and the agent only commits; a review run commits nothing and changes no file itself, and runs no Git command that moves HEAD or changes tracked files (what installing, building and testing create is expected);
 - where to find the project conventions (CLAUDE.md, docs, ADRs), and that the agent reads `CLAUDE.md` first: Claude Code does not load it on its own in a run (05, section 4.3);
 - that when a tool or command is refused, the agent must not look for a workaround and never asks the owner to allow it: if the ticket cannot be done without it, it says so in plain words with `ticket.ask` (something the owner can decide) or `ticket.give_up` (03, section 3; owner's decisions, lot 2 step N and lot 3 step A);
-- that tips Claude Code shows about its own commands (such as `/ultrareview`) are not for the agent and are ignored (owner's decision, lot 3 step A).
+- that tips Claude Code shows about its own commands (such as `/ultrareview`) are not for the agent and are ignored (owner's decision, lot 3 step A);
+- from lot 6, what the run's machine allows: on an isolated machine, Docker and services in its run container; elsewhere, today's restrictions (05, sections 4.6 and 4.12; lot 6 step G).
 
 Most of these are said by the rules appended to the system prompt, picked by the run's purpose (03, section 3; lot 3 step H5), the rest by the first message. The template for each purpose is versioned with the application and documented in [03 — Agents](03-agents.md).
 
