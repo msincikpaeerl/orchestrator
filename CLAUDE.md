@@ -14,7 +14,7 @@ The owner does not read code. Every user-facing change must be usable from the U
 
 ## Current state
 
-Lots 0 to 5 of `docs/specs/10-delivery-plan.md` are done (version 0.1.0, `docs/dev/lot-0-plan.md`; version 0.2.0, `docs/dev/lot-1-plan.md`; version 0.3.0, `docs/dev/lot-2-plan.md`; version 0.4.0, `docs/dev/lot-3-plan.md`; version 0.5.0, `docs/dev/lot-4-plan.md`; each tagged). Lot 5 (`docs/dev/lot-5-plan.md`) is checked as version 0.6.0 (2026-11-04): step M's six gaps were fixed in steps M1, M2 and M2b, and the owner's re-check M3 passed; the owner tags v0.6.0 after its merge. Lot 6 has no plan yet. Do only the plan's next unchecked step. Lot 6 is now Isolated agent workspace; Agent management is lot 7 and Hardening lot 8. Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
+Lots 0 to 5 of `docs/specs/10-delivery-plan.md` are done (versions 0.1.0 to 0.6.0, `docs/dev/lot-0-plan.md` to `lot-5-plan.md`, each tagged). Lot 6, Isolated agent workspace (version 0.7.0), is planned in `docs/dev/lot-6-plan.md`; do only its next unchecked step. Nothing after its step B is built until the owner's probe with the real Claude Code has passed. Agent management is lot 7, Hardening lot 8. Only the owner touches the real GitHub (working rule 9; tests use the local fake GitHub). Never start a real Claude Code session (working rule 10): tests use the fake `claude` executable. Commands marked *(later)* are not implemented yet. Update this file when the setup changes.
 
 ## Read before working
 
